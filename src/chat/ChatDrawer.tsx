@@ -1,11 +1,14 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
-import { X, Send, Bot } from 'lucide-react';
+import { X, Send, Bot, Loader2 } from 'lucide-react';
 import { useGraphStore } from '../store/graph-store';
+import { useAgentRuntimeStore } from '../store/agent-runtime-store';
+import { useSettingsStore } from '../settings/settings-store';
 import { resolveAgentConfig } from '../utils/graph-to-agent';
+import type { RuntimeEvent } from '../runtime/agent-runtime';
 
 interface Message {
   id: string;
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'tool';
   content: string;
   timestamp: number;
 }
@@ -18,16 +21,28 @@ interface ChatDrawerProps {
 export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
   const nodes = useGraphStore((s) => s.nodes);
   const edges = useGraphStore((s) => s.edges);
+  const getOrCreateRuntime = useAgentRuntimeStore((s) => s.getOrCreateRuntime);
+  const destroyRuntime = useAgentRuntimeStore((s) => s.destroyRuntime);
+  const getApiKey = useSettingsStore((s) => s.getApiKey);
+
   const config = resolveAgentConfig(agentNodeId, nodes, edges);
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const unsubRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Cleanup runtime subscription on unmount
+  useEffect(() => {
+    return () => {
+      unsubRef.current?.();
+    };
+  }, []);
 
   const sendMessage = useCallback(async () => {
     if (!input.trim() || isStreaming || !config) return;
@@ -44,62 +59,103 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
     setIsStreaming(true);
 
     try {
-      // Dynamic import of pi-ai for LLM streaming
-      const { getModel, stream } = await import('@mariozechner/pi-ai');
-
-      const model = getModel(
-        config.provider as any,
-        config.modelId as any,
+      const runtime = getOrCreateRuntime(agentNodeId, config, (provider) =>
+        Promise.resolve(getApiKey(provider)),
       );
 
-      const allMessages = [
-        ...messages.map((m) => ({
-          role: m.role as 'user' | 'assistant',
-          content: m.content,
-          timestamp: m.timestamp,
-        })),
-        { role: 'user' as const, content: userMessage.content, timestamp: userMessage.timestamp },
-      ];
+      // Set up event listener for this prompt
+      const assistantMessageId = `msg_${Date.now()}_a`;
+      let assistantContent = '';
 
-      const context = {
-        systemPrompt: config.systemPrompt,
-        messages: allMessages,
-      } as any;
+      // Unsubscribe previous listener
+      unsubRef.current?.();
 
-      const assistantMessage: Message = {
-        id: `msg_${Date.now()}_a`,
-        role: 'assistant',
-        content: '',
-        timestamp: Date.now(),
-      };
-
-      setMessages((prev) => [...prev, assistantMessage]);
-
-      const s = stream(model, context);
-      for await (const event of s) {
-        if (event.type === 'text_delta') {
-          assistantMessage.content += event.delta;
+      const unsub = runtime.subscribe((event: RuntimeEvent) => {
+        if (event.type === 'message_start') {
+          const msg = event.message as { role?: string };
+          if (msg.role === 'assistant') {
+            assistantContent = '';
+            setMessages((prev) => [
+              ...prev,
+              { id: assistantMessageId, role: 'assistant', content: '', timestamp: Date.now() },
+            ]);
+          }
+        } else if (event.type === 'message_update') {
+          const aEvent = event.assistantMessageEvent;
+          if (aEvent.type === 'text_delta') {
+            assistantContent += aEvent.delta;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantMessageId
+                  ? { ...m, content: assistantContent }
+                  : m,
+              ),
+            );
+          }
+        } else if (event.type === 'tool_execution_start') {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `tool_${event.toolCallId}`,
+              role: 'tool',
+              content: `Calling tool: ${event.toolName}`,
+              timestamp: Date.now(),
+            },
+          ]);
+        } else if (event.type === 'tool_execution_end') {
+          const resultText = event.result?.content
+            ?.map((c: { type: string; text?: string }) =>
+              c.type === 'text' ? c.text : '',
+            )
+            .join('') || '';
           setMessages((prev) =>
             prev.map((m) =>
-              m.id === assistantMessage.id
-                ? { ...m, content: assistantMessage.content }
+              m.id === `tool_${event.toolCallId}`
+                ? {
+                    ...m,
+                    content: `${event.toolName}: ${resultText.slice(0, 500)}${event.isError ? ' (error)' : ''}`,
+                  }
                 : m,
             ),
           );
+        } else if (event.type === 'agent_end') {
+          setIsStreaming(false);
+        } else if (event.type === 'runtime_error') {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `err_${Date.now()}`,
+              role: 'assistant',
+              content: `Error: ${event.error}`,
+              timestamp: Date.now(),
+            },
+          ]);
+          setIsStreaming(false);
         }
-      }
+      });
+
+      unsubRef.current = unsub;
+
+      await runtime.prompt(userMessage.content);
     } catch (error) {
-      const errorMessage: Message = {
-        id: `msg_${Date.now()}_err`,
-        role: 'assistant',
-        content: `Error: ${error instanceof Error ? error.message : 'Failed to get response'}. Make sure you have configured your API keys.`,
-        timestamp: Date.now(),
-      };
-      setMessages((prev) => [...prev, errorMessage]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `msg_${Date.now()}_err`,
+          role: 'assistant',
+          content: `Error: ${error instanceof Error ? error.message : 'Failed to get response'}. Make sure you have configured your API keys in Settings.`,
+          timestamp: Date.now(),
+        },
+      ]);
     } finally {
       setIsStreaming(false);
     }
-  }, [input, isStreaming, config, messages]);
+  }, [input, isStreaming, config, agentNodeId, getOrCreateRuntime, getApiKey]);
+
+  const handleClose = () => {
+    destroyRuntime(agentNodeId);
+    onClose();
+  };
 
   if (!config) return null;
 
@@ -109,15 +165,16 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
       <div className="flex items-center gap-3 border-b border-slate-800 px-4 py-3">
         <Bot size={18} className="text-blue-400" />
         <div className="flex-1">
-          <h3 className="text-sm font-bold text-slate-100">
-            {config.agentNode.data.name}
-          </h3>
+          <h3 className="text-sm font-bold text-slate-100">{config.name}</h3>
           <p className="text-[10px] text-slate-500">
             {config.provider} / {config.modelId}
           </p>
         </div>
+        {isStreaming && (
+          <Loader2 size={14} className="animate-spin text-blue-400" />
+        )}
         <button
-          onClick={onClose}
+          onClick={handleClose}
           className="rounded p-1 text-slate-500 transition hover:bg-slate-800 hover:text-slate-300"
         >
           <X size={16} />
@@ -142,7 +199,9 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
               className={`max-w-[85%] rounded-lg px-3 py-2 text-xs leading-relaxed ${
                 msg.role === 'user'
                   ? 'bg-blue-600 text-white'
-                  : 'bg-slate-800 text-slate-200'
+                  : msg.role === 'tool'
+                    ? 'border border-slate-700 bg-slate-800/50 text-slate-400 italic'
+                    : 'bg-slate-800 text-slate-200'
               }`}
             >
               <pre className="whitespace-pre-wrap font-sans">{msg.content}</pre>

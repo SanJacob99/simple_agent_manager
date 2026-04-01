@@ -34,6 +34,8 @@ export default function DatabaseProperties({ nodeId, data }: Props) {
           <option value="mysql">MySQL</option>
           <option value="sqlite">SQLite</option>
           <option value="mongodb">MongoDB</option>
+          <option value="indexeddb">IndexedDB (browser)</option>
+          <option value="rest-api">REST API</option>
         </select>
       </Field>
 
