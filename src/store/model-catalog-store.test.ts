@@ -56,4 +56,19 @@ describe('model catalog store', () => {
     expect(state.lastSyncedKeys.openrouter).toBe('key-2');
     expect(state.models.openrouter.stale).toBeUndefined();
   });
+
+  it('does not refetch when the OpenRouter key is unchanged', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ data: [] }),
+    })) as typeof fetch;
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const store = useModelCatalogStore.getState();
+    await store.syncOpenRouterKey('same-key');
+    await store.syncOpenRouterKey('same-key');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

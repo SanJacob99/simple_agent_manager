@@ -57,6 +57,10 @@ export const useModelCatalogStore = create<ModelCatalogState>((set, get) => ({
       return;
     }
 
+    if (get().lastSyncedKeys.openrouter === apiKey) {
+      return;
+    }
+
     set({
       models: { openrouter: {} },
       loading: { openrouter: true },
