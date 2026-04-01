@@ -14,8 +14,8 @@ function ContextEngineNodeComponent({ data, selected }: NodeProps<ContextEngineN
       icon={<BookOpen size={14} />}
       selected={selected}
     >
-      <div>Strategy: {data.strategy}</div>
-      <div>Max tokens: {data.maxTokens.toLocaleString()}</div>
+      <div>Strategy: {data.compactionStrategy}</div>
+      <div>Budget: {data.tokenBudget.toLocaleString()} tokens</div>
     </BasePeripheralNode>
   );
 }

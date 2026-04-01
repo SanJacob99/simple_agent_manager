@@ -2,11 +2,30 @@ import { useGraphStore } from '../../store/graph-store';
 import type { AgentNodeData, ThinkingLevel } from '../../types/nodes';
 import { Field, inputClass, selectClass, textareaClass } from './shared';
 
-const PROVIDERS = ['anthropic', 'openai', 'google', 'ollama', 'mistral', 'groq', 'xai'];
+const PROVIDERS = [
+  'anthropic',
+  'openai',
+  'openrouter',
+  'google',
+  'ollama',
+  'mistral',
+  'groq',
+  'xai',
+];
 
 const MODELS: Record<string, string[]> = {
   anthropic: ['claude-opus-4-20250514', 'claude-sonnet-4-20250514', 'claude-haiku-4-5-20251001'],
   openai: ['gpt-4o', 'gpt-4o-mini', 'o1', 'o1-mini', 'o3-mini'],
+  openrouter: [
+    'anthropic/claude-sonnet-4-20250514',
+    'anthropic/claude-haiku-4-5-20251001',
+    'openai/gpt-4o',
+    'openai/o3-mini',
+    'google/gemini-2.0-flash',
+    'meta-llama/llama-3.1-70b-instruct',
+    'mistralai/mistral-large',
+    'deepseek/deepseek-chat-v3',
+  ],
   google: ['gemini-2.0-flash', 'gemini-2.0-pro', 'gemini-1.5-pro'],
   ollama: ['llama3.1', 'mistral', 'codellama', 'mixtral'],
   mistral: ['mistral-large-latest', 'mistral-medium-latest', 'mistral-small-latest'],
@@ -32,6 +51,31 @@ export default function AgentProperties({ nodeId, data }: Props) {
           value={data.name}
           onChange={(e) => update(nodeId, { name: e.target.value })}
           placeholder="My Agent"
+        />
+      </Field>
+
+      <Field label="Description">
+        <input
+          className={inputClass}
+          value={data.description || ''}
+          onChange={(e) => update(nodeId, { description: e.target.value })}
+          placeholder="What does this agent do?"
+        />
+      </Field>
+
+      <Field label="Tags">
+        <input
+          className={inputClass}
+          value={(data.tags || []).join(', ')}
+          onChange={(e) =>
+            update(nodeId, {
+              tags: e.target.value
+                .split(',')
+                .map((t) => t.trim())
+                .filter(Boolean),
+            })
+          }
+          placeholder="tag1, tag2, ..."
         />
       </Field>
 

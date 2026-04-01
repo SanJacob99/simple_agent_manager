@@ -10,19 +10,37 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         provider: 'anthropic',
         modelId: 'claude-sonnet-4-20250514',
         thinkingLevel: 'off',
+        description: '',
+        tags: [],
       };
     case 'memory':
       return {
         type: 'memory',
         label: 'Memory',
-        maxMessages: 100,
+        backend: 'builtin',
+        maxSessionMessages: 100,
         persistAcrossSessions: false,
+        compactionEnabled: false,
+        compactionStrategy: 'summary',
+        compactionThreshold: 0.8,
+        exposeMemorySearch: true,
+        exposeMemoryGet: true,
+        exposeMemorySave: true,
+        searchMode: 'hybrid',
+        externalEndpoint: '',
+        externalApiKey: '',
       };
     case 'tools':
       return {
         type: 'tools',
         label: 'Tools',
-        enabledTools: ['read_file', 'write_file', 'web_search'],
+        profile: 'full',
+        enabledTools: [],
+        enabledGroups: [],
+        skills: [],
+        plugins: [],
+        subAgentSpawning: false,
+        maxSubAgents: 3,
       };
     case 'skills':
       return {
@@ -34,8 +52,17 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
       return {
         type: 'contextEngine',
         label: 'Context Engine',
-        strategy: 'sliding-window',
-        maxTokens: 4096,
+        tokenBudget: 128000,
+        reservedForResponse: 4096,
+        ownsCompaction: false,
+        compactionStrategy: 'sliding-window',
+        compactionTrigger: 'auto',
+        compactionThreshold: 0.8,
+        systemPromptAdditions: [],
+        autoFlushBeforeCompact: true,
+        ragEnabled: false,
+        ragTopK: 5,
+        ragMinScore: 0.7,
       };
     case 'agentComm':
       return {
@@ -55,7 +82,7 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
       return {
         type: 'database',
         label: 'Database',
-        dbType: 'postgresql',
+        dbType: 'indexeddb',
         connectionString: '',
       };
     case 'vectorDatabase':

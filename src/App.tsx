@@ -4,6 +4,7 @@ import FlowCanvas from './canvas/FlowCanvas';
 import Sidebar from './panels/Sidebar';
 import PropertiesPanel from './panels/PropertiesPanel';
 import ChatDrawer from './chat/ChatDrawer';
+import SettingsModal from './settings/SettingsModal';
 import { useGraphStore } from './store/graph-store';
 import { useAgentRuntimeStore } from './store/agent-runtime-store';
 
@@ -39,6 +40,9 @@ export default function App() {
       {chatAgentId && (
         <ChatDrawer agentNodeId={chatAgentId} onClose={closeChatDrawer} />
       )}
+
+      {/* Settings Modal */}
+      {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
     </div>
   );
 }

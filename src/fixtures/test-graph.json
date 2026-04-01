@@ -1,0 +1,135 @@
+{
+  "version": 2,
+  "exportedAt": 0,
+  "graph": {
+    "id": "test-fixture",
+    "version": 2,
+    "graph": {
+      "nodes": [
+        {
+          "id": "agent-1",
+          "type": "agent",
+          "position": { "x": 500, "y": 250 },
+          "data": {
+            "type": "agent",
+            "name": "Research Assistant",
+            "systemPrompt": "You are a helpful research assistant. Use your tools to search the web, save important findings to memory, and provide well-researched answers.",
+            "provider": "anthropic",
+            "modelId": "claude-sonnet-4-20250514",
+            "thinkingLevel": "medium",
+            "description": "A research assistant that can search the web and remember findings",
+            "tags": ["research", "web", "memory"]
+          }
+        },
+        {
+          "id": "memory-1",
+          "type": "memory",
+          "position": { "x": 100, "y": 100 },
+          "data": {
+            "type": "memory",
+            "label": "Research Memory",
+            "backend": "builtin",
+            "maxSessionMessages": 200,
+            "persistAcrossSessions": true,
+            "compactionEnabled": true,
+            "compactionStrategy": "summary",
+            "compactionThreshold": 0.8,
+            "exposeMemorySearch": true,
+            "exposeMemoryGet": true,
+            "exposeMemorySave": true,
+            "searchMode": "hybrid",
+            "externalEndpoint": "",
+            "externalApiKey": ""
+          }
+        },
+        {
+          "id": "tools-1",
+          "type": "tools",
+          "position": { "x": 100, "y": 250 },
+          "data": {
+            "type": "tools",
+            "label": "Research Tools",
+            "profile": "custom",
+            "enabledTools": ["web_fetch", "calculator", "web_search"],
+            "enabledGroups": ["web"],
+            "skills": [
+              {
+                "id": "skill-research",
+                "name": "Research Methodology",
+                "content": "When researching a topic:\n1. Start with a broad web search\n2. Identify key sources\n3. Cross-reference findings\n4. Save important facts to memory\n5. Synthesize into a clear answer",
+                "injectAs": "system-prompt"
+              }
+            ],
+            "plugins": [],
+            "subAgentSpawning": false,
+            "maxSubAgents": 3
+          }
+        },
+        {
+          "id": "context-1",
+          "type": "contextEngine",
+          "position": { "x": 100, "y": 400 },
+          "data": {
+            "type": "contextEngine",
+            "label": "Smart Context",
+            "tokenBudget": 128000,
+            "reservedForResponse": 4096,
+            "ownsCompaction": false,
+            "compactionStrategy": "hybrid",
+            "compactionTrigger": "auto",
+            "compactionThreshold": 0.8,
+            "systemPromptAdditions": [
+              "Always cite your sources when providing information."
+            ],
+            "autoFlushBeforeCompact": true,
+            "ragEnabled": false,
+            "ragTopK": 5,
+            "ragMinScore": 0.7
+          }
+        },
+        {
+          "id": "database-1",
+          "type": "database",
+          "position": { "x": 100, "y": 530 },
+          "data": {
+            "type": "database",
+            "label": "Local Storage",
+            "dbType": "indexeddb",
+            "connectionString": ""
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "edge_memory-1_agent-1",
+          "source": "memory-1",
+          "target": "agent-1",
+          "type": "data",
+          "animated": true
+        },
+        {
+          "id": "edge_tools-1_agent-1",
+          "source": "tools-1",
+          "target": "agent-1",
+          "type": "data",
+          "animated": true
+        },
+        {
+          "id": "edge_context-1_agent-1",
+          "source": "context-1",
+          "target": "agent-1",
+          "type": "data",
+          "animated": true
+        },
+        {
+          "id": "edge_database-1_agent-1",
+          "source": "database-1",
+          "target": "agent-1",
+          "type": "data",
+          "animated": true
+        }
+      ]
+    },
+    "updatedAt": 0
+  }
+}

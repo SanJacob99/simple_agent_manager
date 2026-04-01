@@ -14,7 +14,7 @@ function MemoryNodeComponent({ data, selected }: NodeProps<MemoryNode>) {
       icon={<BrainCircuit size={14} />}
       selected={selected}
     >
-      <div>Max: {data.maxMessages} messages</div>
+      <div>{data.backend} / {data.maxSessionMessages} msgs</div>
       <div>{data.persistAcrossSessions ? 'Persistent' : 'Session only'}</div>
     </BasePeripheralNode>
   );

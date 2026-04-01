@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
-import { Bot, Play, Square } from 'lucide-react';
+import { Bot, MessageSquare } from 'lucide-react';
 import type { AgentNodeData } from '../types/nodes';
 import { NODE_COLORS } from '../utils/theme';
 import { useAgentRuntimeStore } from '../store/agent-runtime-store';
@@ -10,7 +10,8 @@ type AgentNode = Node<AgentNodeData>;
 function AgentNodeComponent({ id, data, selected }: NodeProps<AgentNode>) {
   const color = NODE_COLORS.agent;
   const openChat = useAgentRuntimeStore((s) => s.openChatDrawer);
-  const isRunning = useAgentRuntimeStore((s) => s.runningAgentIds.has(id));
+  const chatAgentId = useAgentRuntimeStore((s) => s.chatAgentNodeId);
+  const isActive = chatAgentId === id;
 
   return (
     <div
@@ -37,6 +38,9 @@ function AgentNodeComponent({ id, data, selected }: NodeProps<AgentNode>) {
         <span className="flex-1 text-sm font-bold text-slate-100">
           {data.name}
         </span>
+        {isActive && (
+          <span className="h-2 w-2 rounded-full bg-green-400 animate-pulse" />
+        )}
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -44,13 +48,13 @@ function AgentNodeComponent({ id, data, selected }: NodeProps<AgentNode>) {
           }}
           className="nodrag flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-semibold transition"
           style={{
-            backgroundColor: isRunning ? '#ef444430' : `${color}30`,
-            color: isRunning ? '#ef4444' : color,
+            backgroundColor: `${color}30`,
+            color: color,
           }}
-          title={isRunning ? 'Open Chat' : 'Run Agent'}
+          title="Open Chat"
         >
-          {isRunning ? <Square size={10} /> : <Play size={10} />}
-          {isRunning ? 'Chat' : 'Run'}
+          <MessageSquare size={10} />
+          Chat
         </button>
       </div>
 
@@ -76,6 +80,20 @@ function AgentNodeComponent({ id, data, selected }: NodeProps<AgentNode>) {
           <span className="inline-block rounded bg-purple-500/10 px-1.5 py-0.5 text-[10px] text-purple-400">
             thinking: {data.thinkingLevel}
           </span>
+        )}
+
+        {/* Tags */}
+        {data.tags && data.tags.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {data.tags.map((tag) => (
+              <span
+                key={tag}
+                className="rounded bg-slate-800 px-1.5 py-0.5 text-[9px] text-slate-500"
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
         )}
       </div>
     </div>
