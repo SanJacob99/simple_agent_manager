@@ -1,10 +1,11 @@
 import { Agent, type AgentEvent, type AgentTool } from '@mariozechner/pi-agent-core';
-import { getModel } from '@mariozechner/pi-ai';
 import type { TSchema } from '@sinclair/typebox';
 import type { AgentConfig } from './agent-config';
 import { MemoryEngine } from './memory-engine';
 import { ContextEngine } from './context-engine';
 import { resolveToolNames, createAgentTools } from './tool-factory';
+import { resolveRuntimeModel } from './model-resolver';
+import { useModelCatalogStore } from '../store/model-catalog-store';
 
 export type RuntimeEvent =
   | AgentEvent
@@ -58,11 +59,13 @@ export class AgentRuntime {
       }
     }
 
-    // Get model -- dynamic provider/model strings require casting
-    const model = (getModel as (p: string, m: string) => ReturnType<typeof getModel>)(
-      config.provider,
-      config.modelId,
-    );
+    const model = resolveRuntimeModel({
+      provider: config.provider,
+      modelId: config.modelId,
+      modelCapabilities: config.modelCapabilities,
+      getDiscoveredModel: (provider, modelId) =>
+        useModelCatalogStore.getState().getModelMetadata(provider, modelId),
+    });
 
     // Create Agent
     this.agent = new Agent({
