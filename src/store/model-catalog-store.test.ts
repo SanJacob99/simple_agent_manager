@@ -1,6 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useModelCatalogStore } from './model-catalog-store';
 
+function jsonResponse(data: unknown, init?: ResponseInit) {
+  return new Response(JSON.stringify(data), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+    ...init,
+  });
+}
+
 describe('model catalog store', () => {
   beforeEach(() => {
     useModelCatalogStore.getState().reset();
@@ -9,9 +17,8 @@ describe('model catalog store', () => {
   it('fetches OpenRouter models when a new key is provided', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => ({
-        ok: true,
-        json: async () => ({
+      vi.fn(async () =>
+        jsonResponse({
           data: [
             {
               id: 'xiaomi/mimo-v2-pro',
@@ -23,7 +30,7 @@ describe('model catalog store', () => {
             },
           ],
         }),
-      })) as typeof fetch,
+      ) as unknown as typeof fetch,
     );
 
     await useModelCatalogStore.getState().syncOpenRouterKey('key-1');
@@ -36,10 +43,7 @@ describe('model catalog store', () => {
   it('clears stale OpenRouter metadata before refetching when the key changes', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => ({
-        ok: true,
-        json: async () => ({ data: [] }),
-      })) as typeof fetch,
+      vi.fn(async () => jsonResponse({ data: [] })) as unknown as typeof fetch,
     );
 
     useModelCatalogStore.setState({
@@ -58,12 +62,9 @@ describe('model catalog store', () => {
   });
 
   it('does not refetch when the OpenRouter key is unchanged', async () => {
-    const fetchMock = vi.fn(async () => ({
-      ok: true,
-      json: async () => ({ data: [] }),
-    })) as typeof fetch;
+    const fetchMock = vi.fn(async () => jsonResponse({ data: [] }));
 
-    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
 
     const store = useModelCatalogStore.getState();
     await store.syncOpenRouterKey('same-key');
