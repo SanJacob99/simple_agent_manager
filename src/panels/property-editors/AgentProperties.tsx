@@ -1,47 +1,133 @@
+import { useMemo } from 'react';
 import { useGraphStore } from '../../store/graph-store';
+import { useModelCatalogStore } from '../../store/model-catalog-store';
 import type { AgentNodeData, ThinkingLevel } from '../../types/nodes';
+import type {
+  ModelCapabilityOverrides,
+  ModelCostInfo,
+  ModelInputModality,
+} from '../../types/model-metadata';
+import {
+  PROVIDERS,
+  STATIC_MODELS,
+} from '../../runtime/provider-model-options';
 import { Field, inputClass, selectClass, textareaClass } from './shared';
 
-const PROVIDERS = [
-  'anthropic',
-  'openai',
-  'openrouter',
-  'google',
-  'ollama',
-  'mistral',
-  'groq',
-  'xai',
+const THINKING_LEVELS: ThinkingLevel[] = [
+  'off',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
 ];
 
-const MODELS: Record<string, string[]> = {
-  anthropic: ['claude-opus-4-20250514', 'claude-sonnet-4-20250514', 'claude-haiku-4-5-20251001'],
-  openai: ['gpt-4o', 'gpt-4o-mini', 'o1', 'o1-mini', 'o3-mini'],
-  openrouter: [
-    'anthropic/claude-sonnet-4-20250514',
-    'anthropic/claude-haiku-4-5-20251001',
-    'openai/gpt-4o',
-    'openai/o3-mini',
-    'google/gemini-2.0-flash',
-    'meta-llama/llama-3.1-70b-instruct',
-    'mistralai/mistral-large',
-    'deepseek/deepseek-chat-v3',
-  ],
-  google: ['gemini-2.0-flash', 'gemini-2.0-pro', 'gemini-1.5-pro'],
-  ollama: ['llama3.1', 'mistral', 'codellama', 'mixtral'],
-  mistral: ['mistral-large-latest', 'mistral-medium-latest', 'mistral-small-latest'],
-  groq: ['llama-3.1-70b-versatile', 'mixtral-8x7b-32768'],
-  xai: ['grok-2', 'grok-2-mini'],
-};
-
-const THINKING_LEVELS: ThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
+const CUSTOM_MODEL_VALUE = '__custom__';
 
 interface Props {
   nodeId: string;
   data: AgentNodeData;
 }
 
+function getModelOptions(provider: string, discovered: string[]) {
+  return [...new Set([...(STATIC_MODELS[provider] || []), ...discovered])];
+}
+
+function getCustomModelPlaceholder(provider: string) {
+  if (provider === 'openrouter') {
+    return 'xiaomi/mimo-v2-pro';
+  }
+  return 'provider-specific-model-id';
+}
+
+function parseOptionalNumber(value: string): number | undefined {
+  if (!value.trim()) return undefined;
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function emptyCost(): ModelCostInfo {
+  return {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+  };
+}
+
 export default function AgentProperties({ nodeId, data }: Props) {
   const update = useGraphStore((s) => s.updateNodeData);
+  const openRouterModels = useModelCatalogStore((s) => s.models.openrouter);
+
+  const discoveredModels = useMemo(
+    () => (data.provider === 'openrouter' ? Object.keys(openRouterModels) : []),
+    [data.provider, openRouterModels],
+  );
+  const discoveredModel =
+    data.provider === 'openrouter'
+      ? openRouterModels[data.modelId]
+      : undefined;
+
+  const availableModels = useMemo(
+    () => getModelOptions(data.provider, discoveredModels),
+    [data.provider, discoveredModels],
+  );
+
+  const isCustomModel = !availableModels.includes(data.modelId);
+
+  const resolvedCapabilities = {
+    reasoningSupported:
+      data.modelCapabilities.reasoningSupported ??
+      discoveredModel?.reasoningSupported ??
+      false,
+    inputModalities:
+      data.modelCapabilities.inputModalities ??
+      discoveredModel?.inputModalities ??
+      ['text'],
+    contextWindow:
+      data.modelCapabilities.contextWindow ?? discoveredModel?.contextWindow,
+    maxTokens: data.modelCapabilities.maxTokens ?? discoveredModel?.maxTokens,
+    cost: data.modelCapabilities.cost ?? discoveredModel?.cost ?? emptyCost(),
+  };
+
+  const updateCapabilities = (updates: Partial<ModelCapabilityOverrides>) => {
+    update(nodeId, {
+      modelCapabilities: {
+        ...data.modelCapabilities,
+        ...updates,
+      },
+    });
+  };
+
+  const clearCapability = (key: keyof ModelCapabilityOverrides) => {
+    const next = { ...data.modelCapabilities };
+    delete next[key];
+    update(nodeId, { modelCapabilities: next });
+  };
+
+  const updateCost = (key: keyof ModelCostInfo, value: string) => {
+    const nextCost = {
+      ...(data.modelCapabilities.cost ?? resolvedCapabilities.cost ?? emptyCost()),
+      [key]: Number(value) || 0,
+    };
+    updateCapabilities({ cost: nextCost });
+  };
+
+  const toggleInputModality = (
+    modality: ModelInputModality,
+    checked: boolean,
+  ) => {
+    const next = new Set(resolvedCapabilities.inputModalities);
+    if (checked) {
+      next.add(modality);
+    } else {
+      next.delete(modality);
+    }
+    updateCapabilities({
+      inputModalities: [...next] as ModelInputModality[],
+    });
+  };
 
   return (
     <div className="space-y-1">
@@ -85,8 +171,12 @@ export default function AgentProperties({ nodeId, data }: Props) {
           value={data.provider}
           onChange={(e) => {
             const provider = e.target.value;
-            const models = MODELS[provider] || [];
-            update(nodeId, { provider, modelId: models[0] || '' });
+            const models = STATIC_MODELS[provider] || [];
+            update(nodeId, {
+              provider,
+              modelId: models[0] || '',
+              modelCapabilities: {},
+            });
           }}
         >
           {PROVIDERS.map((p) => (
@@ -98,17 +188,213 @@ export default function AgentProperties({ nodeId, data }: Props) {
       </Field>
 
       <Field label="Model">
-        <select
-          className={selectClass}
-          value={data.modelId}
-          onChange={(e) => update(nodeId, { modelId: e.target.value })}
-        >
-          {(MODELS[data.provider] || []).map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
-        </select>
+        <div className="space-y-2">
+          <select
+            className={selectClass}
+            value={isCustomModel ? CUSTOM_MODEL_VALUE : data.modelId}
+            onChange={(e) => {
+              if (e.target.value === CUSTOM_MODEL_VALUE) {
+                update(nodeId, { modelId: '' });
+                return;
+              }
+
+              update(nodeId, {
+                modelId: e.target.value,
+                modelCapabilities: {},
+              });
+            }}
+          >
+            {availableModels.map((modelId) => (
+              <option key={modelId} value={modelId}>
+                {modelId}
+              </option>
+            ))}
+            <option value={CUSTOM_MODEL_VALUE}>Custom model...</option>
+          </select>
+
+          {isCustomModel && (
+            <>
+              <input
+                className={inputClass}
+                value={data.modelId}
+                onChange={(e) => update(nodeId, { modelId: e.target.value })}
+                placeholder={getCustomModelPlaceholder(data.provider)}
+              />
+              <p className="text-[10px] text-slate-500">
+                Enter a provider-supported model ID that may not be listed in the
+                app yet.
+              </p>
+            </>
+          )}
+        </div>
+      </Field>
+
+      <Field label="Model Capabilities">
+        <div className="space-y-3 rounded-md border border-slate-800 bg-slate-900/40 p-3">
+          <p className="text-[10px] text-slate-500">
+            These fields use discovered/default values until you override them
+            for this agent.
+          </p>
+
+          <div className="flex items-center justify-between gap-3">
+            <label className="flex items-center gap-2 text-xs text-slate-300">
+              <input
+                type="checkbox"
+                checked={resolvedCapabilities.reasoningSupported}
+                onChange={(e) =>
+                  updateCapabilities({
+                    reasoningSupported: e.target.checked,
+                  })
+                }
+              />
+              Supports reasoning
+            </label>
+            {data.modelCapabilities.reasoningSupported !== undefined && (
+              <button
+                type="button"
+                className="text-[10px] text-slate-500 hover:text-slate-300"
+                onClick={() => clearCapability('reasoningSupported')}
+              >
+                Use default
+              </button>
+            )}
+          </div>
+
+          <div className="space-y-1">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs text-slate-300">Input modalities</span>
+              {data.modelCapabilities.inputModalities !== undefined && (
+                <button
+                  type="button"
+                  className="text-[10px] text-slate-500 hover:text-slate-300"
+                  onClick={() => clearCapability('inputModalities')}
+                >
+                  Use default
+                </button>
+              )}
+            </div>
+            <div className="flex gap-4">
+              {(['text', 'image'] as ModelInputModality[]).map((modality) => (
+                <label
+                  key={modality}
+                  className="flex items-center gap-2 text-xs text-slate-400"
+                >
+                  <input
+                    type="checkbox"
+                    checked={resolvedCapabilities.inputModalities.includes(
+                      modality,
+                    )}
+                    onChange={(e) =>
+                      toggleInputModality(modality, e.target.checked)
+                    }
+                  />
+                  {modality}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs text-slate-300">Context window</span>
+              {data.modelCapabilities.contextWindow !== undefined && (
+                <button
+                  type="button"
+                  className="text-[10px] text-slate-500 hover:text-slate-300"
+                  onClick={() => clearCapability('contextWindow')}
+                >
+                  Use default
+                </button>
+              )}
+            </div>
+            <input
+              className={inputClass}
+              type="number"
+              value={resolvedCapabilities.contextWindow ?? ''}
+              onChange={(e) =>
+                updateCapabilities({
+                  contextWindow: parseOptionalNumber(e.target.value),
+                })
+              }
+              placeholder="Context window"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs text-slate-300">Max tokens</span>
+              {data.modelCapabilities.maxTokens !== undefined && (
+                <button
+                  type="button"
+                  className="text-[10px] text-slate-500 hover:text-slate-300"
+                  onClick={() => clearCapability('maxTokens')}
+                >
+                  Use default
+                </button>
+              )}
+            </div>
+            <input
+              className={inputClass}
+              type="number"
+              value={resolvedCapabilities.maxTokens ?? ''}
+              onChange={(e) =>
+                updateCapabilities({
+                  maxTokens: parseOptionalNumber(e.target.value),
+                })
+              }
+              placeholder="Max tokens"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs text-slate-300">Cost metadata</span>
+              {data.modelCapabilities.cost !== undefined && (
+                <button
+                  type="button"
+                  className="text-[10px] text-slate-500 hover:text-slate-300"
+                  onClick={() => clearCapability('cost')}
+                >
+                  Use default
+                </button>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                className={inputClass}
+                type="number"
+                step="any"
+                value={resolvedCapabilities.cost.input}
+                onChange={(e) => updateCost('input', e.target.value)}
+                placeholder="Input cost"
+              />
+              <input
+                className={inputClass}
+                type="number"
+                step="any"
+                value={resolvedCapabilities.cost.output}
+                onChange={(e) => updateCost('output', e.target.value)}
+                placeholder="Output cost"
+              />
+              <input
+                className={inputClass}
+                type="number"
+                step="any"
+                value={resolvedCapabilities.cost.cacheRead}
+                onChange={(e) => updateCost('cacheRead', e.target.value)}
+                placeholder="Cache read cost"
+              />
+              <input
+                className={inputClass}
+                type="number"
+                step="any"
+                value={resolvedCapabilities.cost.cacheWrite}
+                onChange={(e) => updateCost('cacheWrite', e.target.value)}
+                placeholder="Cache write cost"
+              />
+            </div>
+          </div>
+        </div>
       </Field>
 
       <Field label="Thinking Level">
