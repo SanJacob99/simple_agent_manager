@@ -1,0 +1,59 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { useModelCatalogStore } from './model-catalog-store';
+
+describe('model catalog store', () => {
+  beforeEach(() => {
+    useModelCatalogStore.getState().reset();
+  });
+
+  it('fetches OpenRouter models when a new key is provided', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          data: [
+            {
+              id: 'xiaomi/mimo-v2-pro',
+              context_length: 128000,
+              pricing: { prompt: '0.1', completion: '0.2' },
+              architecture: { input_modalities: ['text'] },
+              top_provider: { max_completion_tokens: 8192 },
+              supported_parameters: ['reasoning'],
+            },
+          ],
+        }),
+      })) as typeof fetch,
+    );
+
+    await useModelCatalogStore.getState().syncOpenRouterKey('key-1');
+
+    expect(
+      useModelCatalogStore.getState().models.openrouter['xiaomi/mimo-v2-pro'],
+    ).toBeDefined();
+  });
+
+  it('clears stale OpenRouter metadata before refetching when the key changes', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({ data: [] }),
+      })) as typeof fetch,
+    );
+
+    useModelCatalogStore.setState({
+      models: {
+        openrouter: {
+          stale: { id: 'stale', provider: 'openrouter' },
+        },
+      },
+    } as any);
+
+    await useModelCatalogStore.getState().syncOpenRouterKey('key-2');
+
+    const state = useModelCatalogStore.getState();
+    expect(state.lastSyncedKeys.openrouter).toBe('key-2');
+    expect(state.models.openrouter.stale).toBeUndefined();
+  });
+});
