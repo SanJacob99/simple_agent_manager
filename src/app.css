@@ -1,0 +1,37 @@
+@import "tailwindcss";
+@import "@xyflow/react/dist/style.css";
+
+@theme {
+  --color-slate-925: #0b1222;
+  --color-node-agent: #3b82f6;
+  --color-node-memory: #22c55e;
+  --color-node-tools: #f97316;
+  --color-node-skills: #a855f7;
+  --color-node-context: #06b6d4;
+  --color-node-comm: #ec4899;
+  --color-node-connectors: #eab308;
+  --color-node-database: #ef4444;
+  --color-node-vectordb: #14b8a6;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+/* React Flow dark theme overrides */
+.react-flow {
+  --xy-background-color: transparent;
+  --xy-node-background-color: transparent;
+  --xy-node-border: none;
+  --xy-node-border-radius: 0;
+  --xy-minimap-background-color: #0f172a;
+  --xy-controls-button-background-color: #1e293b;
+  --xy-controls-button-color: #94a3b8;
+  --xy-controls-button-border-color: #334155;
+}
+
+.react-flow__attribution {
+  display: none;
+}
