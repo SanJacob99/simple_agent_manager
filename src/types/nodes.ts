@@ -1,4 +1,5 @@
 import type { Node } from '@xyflow/react';
+import type { ModelCapabilityOverrides } from './model-metadata';
 
 export type NodeType =
   | 'agent'
@@ -25,6 +26,7 @@ export interface AgentNodeData {
   thinkingLevel: ThinkingLevel;
   description: string;
   tags: string[];
+  modelCapabilities: ModelCapabilityOverrides;
 }
 
 // --- Memory Node (OpenClaw-inspired) ---

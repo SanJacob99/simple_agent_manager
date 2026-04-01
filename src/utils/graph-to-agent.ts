@@ -174,6 +174,7 @@ export function resolveAgentConfig(
     modelId: data.modelId,
     thinkingLevel: data.thinkingLevel,
     systemPrompt,
+    modelCapabilities: data.modelCapabilities ?? {},
     memory,
     tools: toolsConfig,
     contextEngine,

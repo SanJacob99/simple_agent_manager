@@ -6,6 +6,7 @@ import type {
   PluginDefinition,
   CompactionStrategy,
 } from '../types/nodes';
+import type { ModelCapabilityOverrides } from '../types/model-metadata';
 
 export interface AgentConfig {
   id: string;
@@ -18,6 +19,7 @@ export interface AgentConfig {
   modelId: string;
   thinkingLevel: string;
   systemPrompt: string;
+  modelCapabilities: ModelCapabilityOverrides;
 
   memory: ResolvedMemoryConfig | null;
   tools: ResolvedToolsConfig | null;

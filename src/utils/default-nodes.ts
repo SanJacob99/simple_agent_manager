@@ -12,6 +12,7 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         thinkingLevel: 'off',
         description: '',
         tags: [],
+        modelCapabilities: {},
       };
     case 'memory':
       return {
