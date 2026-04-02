@@ -1,3 +1,5 @@
+![Cyborg Squid Logo No Text](/home/jacob/.gemini/antigravity/brain/1f5f050e-037c-44f0-9599-0e54a313e599/minimal_friendly_cyborg_squid_no_text_1775089248387.png)
+
 # Simple Agent Manager
 
 A node-based graphical interface for building and managing custom AI agents. Drag-and-drop nodes onto a canvas to visually configure agents with memory, tools, context engines, databases, and more -- then chat with them directly from the dashboard.
