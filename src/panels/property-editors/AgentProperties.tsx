@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useGraphStore } from '../../store/graph-store';
 import { useModelCatalogStore } from '../../store/model-catalog-store';
 import type { AgentNodeData, ThinkingLevel } from '../../types/nodes';
@@ -12,6 +12,32 @@ import {
   STATIC_MODELS,
 } from '../../runtime/provider-model-options';
 import { Field, inputClass, selectClass, textareaClass } from './shared';
+
+function CostInput({ value, onChange, placeholder }: { value: number, onChange: (val: string) => void, placeholder?: string }) {
+  const [localVal, setLocalVal] = useState(() => value === 0 ? '' : Number((value * 1e6).toPrecision(6)).toString());
+  
+  useEffect(() => {
+    const propsVal = Number((value * 1e6).toPrecision(6));
+    const localNum = Number(localVal) || 0;
+    if (Math.abs(localNum - propsVal) > 1e-9) {
+      setLocalVal(propsVal === 0 ? '' : propsVal.toString());
+    }
+  }, [value]);
+
+  return (
+    <input
+      className={inputClass}
+      type="number"
+      step="any"
+      value={localVal}
+      onChange={(e) => {
+        setLocalVal(e.target.value);
+        onChange(e.target.value);
+      }}
+      placeholder={placeholder}
+    />
+  );
+}
 
 const THINKING_LEVELS: ThinkingLevel[] = [
   'off',
@@ -107,9 +133,10 @@ export default function AgentProperties({ nodeId, data }: Props) {
   };
 
   const updateCost = (key: keyof ModelCostInfo, value: string) => {
+    const num = Number(value);
     const nextCost = {
       ...(data.modelCapabilities.cost ?? resolvedCapabilities.cost ?? emptyCost()),
-      [key]: Number(value) || 0,
+      [key]: Number.isNaN(num) ? 0 : num / 1e6,
     };
     updateCapabilities({ cost: nextCost });
   };
@@ -359,39 +386,39 @@ export default function AgentProperties({ nodeId, data }: Props) {
                 </button>
               )}
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <input
-                className={inputClass}
-                type="number"
-                step="any"
-                value={resolvedCapabilities.cost.input}
-                onChange={(e) => updateCost('input', e.target.value)}
-                placeholder="Input cost"
-              />
-              <input
-                className={inputClass}
-                type="number"
-                step="any"
-                value={resolvedCapabilities.cost.output}
-                onChange={(e) => updateCost('output', e.target.value)}
-                placeholder="Output cost"
-              />
-              <input
-                className={inputClass}
-                type="number"
-                step="any"
-                value={resolvedCapabilities.cost.cacheRead}
-                onChange={(e) => updateCost('cacheRead', e.target.value)}
-                placeholder="Cache read cost"
-              />
-              <input
-                className={inputClass}
-                type="number"
-                step="any"
-                value={resolvedCapabilities.cost.cacheWrite}
-                onChange={(e) => updateCost('cacheWrite', e.target.value)}
-                placeholder="Cache write cost"
-              />
+            <div className="grid grid-cols-2 gap-2 mt-1">
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400">Input (per 1M)</label>
+                <CostInput
+                  value={resolvedCapabilities.cost.input}
+                  onChange={(val) => updateCost('input', val)}
+                  placeholder="0.00"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400">Output (per 1M)</label>
+                <CostInput
+                  value={resolvedCapabilities.cost.output}
+                  onChange={(val) => updateCost('output', val)}
+                  placeholder="0.00"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400">Cache Read (per 1M)</label>
+                <CostInput
+                  value={resolvedCapabilities.cost.cacheRead}
+                  onChange={(val) => updateCost('cacheRead', val)}
+                  placeholder="0.00"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400">Cache Write (per 1M)</label>
+                <CostInput
+                  value={resolvedCapabilities.cost.cacheWrite}
+                  onChange={(val) => updateCost('cacheWrite', val)}
+                  placeholder="0.00"
+                />
+              </div>
             </div>
           </div>
         </div>

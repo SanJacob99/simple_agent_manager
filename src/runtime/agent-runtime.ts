@@ -79,6 +79,9 @@ export class AgentRuntime {
       transformContext: this.contextEngine?.buildTransformContext(),
       getApiKey,
       toolExecution: 'parallel',
+      onPayload: (payload) => {
+        console.debug('[pi-ai Request Payload]', payload);
+      },
     });
 
     // Forward agent events to runtime listeners
