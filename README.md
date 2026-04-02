@@ -1,4 +1,4 @@
-![Cyborg Squid Logo No Text](/home/jacob/.gemini/antigravity/brain/1f5f050e-037c-44f0-9599-0e54a313e599/minimal_friendly_cyborg_squid_no_text_1775089248387.png)
+![Cyborg Squid Logo](./docs/logo.png)
 
 # Simple Agent Manager
 
