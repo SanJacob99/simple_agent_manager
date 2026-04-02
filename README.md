@@ -1,6 +1,7 @@
-![Cyborg Squid Logo](./docs/logo.png)
 
-# Simple Agent Manager
+# 🦑 Simple Agent Manager - Node Based Agent Builder
+
+![Cyborg Squid Logo](./docs/logo.png)
 
 A node-based graphical interface for building and managing custom AI agents. Drag-and-drop nodes onto a canvas to visually configure agents with memory, tools, context engines, databases, and more -- then chat with them directly from the dashboard.
 
