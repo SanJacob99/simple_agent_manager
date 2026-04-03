@@ -4,6 +4,7 @@
 
 <!-- source: src/types/nodes.ts#ContextEngineNodeData -->
 <!-- last-verified: 2026-04-03 -->
+<!-- token-budget-inheritance, compaction-trigger-modes, tooltips -->
 
 ## Overview
 
@@ -18,17 +19,27 @@ The Context Engine also supports system prompt additions — extra instructions 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
 | `label` | `string` | `"Context Engine"` | Display label on the canvas |
-| `tokenBudget` | `number` | `128000` | Maximum tokens for the full context |
+| `tokenBudget` | `number` | Inherited from model | Maximum tokens for the full context. Auto-inherited from the connected agent's model context window when available. Falls back to `128000` if model metadata is unavailable. |
 | `reservedForResponse` | `number` | `4096` | Tokens reserved for the model's response |
-| `ownsCompaction` | `boolean` | `false` | Whether this node owns compaction (vs. memory node) |
-| `compactionStrategy` | `CompactionStrategy` | `"sliding-window"` | Strategy: `summary`, `sliding-window`, `trim-oldest`, `hybrid` |
-| `compactionTrigger` | `string` | `"auto"` | When to compact: `auto`, `manual`, `threshold` |
-| `compactionThreshold` | `number` | `0.8` | Usage ratio that triggers compaction (0-1) |
+| `ownsCompaction` | `boolean` | `false` | Whether this node owns compaction (vs. memory node). When enabled, no other node triggers its own compaction. |
+| `compactionStrategy` | `CompactionStrategy` | `"trim-oldest"` | Strategy: `summary`, `sliding-window`, `trim-oldest`, `hybrid` |
+| `compactionTrigger` | `string` | `"auto"` | When to compact: `auto`, `manual`, `threshold`. Controls what input is shown for the threshold value (see below). |
+| `compactionThreshold` | `number` | `0.8` | Meaning depends on trigger: ratio (0-1) for `threshold`, token count for `manual`, unused for `auto`. |
 | `systemPromptAdditions` | `string[]` | `[]` | Extra text appended to the system prompt |
-| `autoFlushBeforeCompact` | `boolean` | `true` | Flush pending operations before compacting |
-| `ragEnabled` | `boolean` | `false` | Enable RAG retrieval |
+| `autoFlushBeforeCompact` | `boolean` | `true` | Flush pending tool results and buffered messages before compacting |
+| `ragEnabled` | `boolean` | `false` | Enable RAG retrieval. Requires a connected Vector Database node. |
 | `ragTopK` | `number` | `5` | Number of RAG results to retrieve |
 | `ragMinScore` | `number` | `0.7` | Minimum similarity score for RAG results |
+
+### Compaction trigger modes
+
+- **`auto`** — Compaction fires automatically when context usage reaches 80% of `tokenBudget`. No additional configuration needed.
+- **`threshold`** — Compaction fires when usage exceeds the configured ratio (0-1) of `tokenBudget`. The `compactionThreshold` field shows a 0-1 input.
+- **`manual`** — Compaction is user-triggered. The `compactionThreshold` field shows a token-count input representing the point after which compaction is available.
+
+### Token budget inheritance
+
+When a Context Engine is connected to an Agent, the `tokenBudget` is automatically set to the model's context window size. The value is resolved in order: OpenRouter model catalog → agent `modelCapabilities.contextWindow` override → well-known defaults for common models. If none are available, the field becomes a manual input.
 
 ## Runtime Behavior
 

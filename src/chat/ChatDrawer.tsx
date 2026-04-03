@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
-import { X, Send, Bot, Loader2, Square, Trash2, Wrench, Plus, ChevronDown } from 'lucide-react';
+import { X, Send, Bot, Loader2, Square, Trash2, Wrench, Plus, ChevronDown, Unplug } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useGraphStore } from '../store/graph-store';
@@ -343,10 +343,12 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
     onClose();
   };
 
+  const hasContextEngine = config?.contextEngine != null;
+
   if (!config) return null;
 
   return (
-    <div className="fixed inset-y-0 right-0 z-50 flex w-[420px] flex-col border-l border-slate-700 bg-slate-900 shadow-2xl">
+    <div className="fixed inset-y-0 right-0 z-50 flex w-[420px] flex-col border-l border-slate-700 bg-slate-900 shadow-2xl relative">
       {/* Header */}
       <div className="flex flex-col border-b border-slate-800">
         {/* Top row: agent name + controls */}
@@ -466,8 +468,26 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
         </div>
       </div>
 
+      {/* No Context Engine Warning Overlay */}
+      {!hasContextEngine && (
+        <div className="absolute inset-0 top-[88px] z-10 flex flex-col items-center justify-center gap-4 bg-slate-900/70 backdrop-blur-sm px-8">
+          <div className="rounded-full bg-amber-500/10 p-4">
+            <Unplug size={32} className="text-amber-400" />
+          </div>
+          <h4 className="text-sm font-semibold text-slate-100 text-center">
+            Context Engine Required
+          </h4>
+          <p className="text-xs text-slate-400 text-center leading-relaxed max-w-[280px]">
+            A Context Engine manages the conversation's token budget, compaction strategy, and memory window. Without it, the agent cannot track how much context is available, when to summarize or trim history, or how to allocate space for tools and system prompts.
+          </p>
+          <p className="text-[10px] text-slate-500 text-center max-w-[260px]">
+            Drag a <span className="text-amber-400 font-medium">Context Engine</span> node onto the canvas and connect it to this agent to enable chat.
+          </p>
+        </div>
+      )}
+
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div className={`flex-1 overflow-y-auto p-4 space-y-3 ${!hasContextEngine ? 'pointer-events-none select-none blur-[2px]' : ''}`}>
         {messages.length === 0 && (
           <div className="flex h-full items-center justify-center">
             <p className="text-xs text-slate-600">
@@ -560,14 +580,16 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
       </div>
 
       {/* Context Usage Panel — above input */}
-      <ContextUsagePanel
-        messages={messages}
-        contextInfo={contextInfo}
-        peripheralReservations={peripheralReservations}
-      />
+      <div className={!hasContextEngine ? 'pointer-events-none select-none blur-[2px]' : ''}>
+        <ContextUsagePanel
+          messages={messages}
+          contextInfo={contextInfo}
+          peripheralReservations={peripheralReservations}
+        />
+      </div>
 
       {/* Input */}
-      <div className="border-t border-slate-800 p-3">
+      <div className={`border-t border-slate-800 p-3 ${!hasContextEngine ? 'pointer-events-none select-none blur-[2px]' : ''}`}>
         <div className="flex gap-2">
           <input
             className="flex-1 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:border-blue-500 focus:outline-none"
@@ -575,7 +597,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
             placeholder="Type a message..."
-            disabled={isStreaming}
+            disabled={isStreaming || !hasContextEngine}
           />
           {isStreaming ? (
             <button
@@ -588,7 +610,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
           ) : (
             <button
               onClick={sendMessage}
-              disabled={!input.trim()}
+              disabled={!input.trim() || !hasContextEngine}
               className="rounded-lg bg-blue-600 p-2 text-white transition hover:bg-blue-500 disabled:opacity-50"
               title="Send Message"
             >

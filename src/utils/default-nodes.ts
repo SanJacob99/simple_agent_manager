@@ -57,7 +57,7 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         tokenBudget: 128000,
         reservedForResponse: 4096,
         ownsCompaction: false,
-        compactionStrategy: 'sliding-window',
+        compactionStrategy: 'trim-oldest',
         compactionTrigger: 'auto',
         compactionThreshold: 0.8,
         systemPromptAdditions: [],

@@ -1,9 +1,52 @@
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useGraphStore } from '../../store/graph-store';
-import type { ContextEngineNodeData, CompactionStrategy } from '../../types/nodes';
+import { useModelCatalogStore } from '../../store/model-catalog-store';
+import type { ContextEngineNodeData, CompactionStrategy, AgentNodeData } from '../../types/nodes';
 import { Field, inputClass, selectClass, textareaClass } from './shared';
 
 const COMPACTION_STRATEGIES: CompactionStrategy[] = ['summary', 'sliding-window', 'trim-oldest', 'hybrid'];
 const COMPACTION_TRIGGERS = ['auto', 'manual', 'threshold'] as const;
+
+// --- Tooltip component ---
+
+function Tooltip({ text, children }: { text: string; children: ReactNode }) {
+  const [visible, setVisible] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  return (
+    <div
+      ref={wrapperRef}
+      className="relative inline-flex"
+      onMouseEnter={() => setVisible(true)}
+      onMouseLeave={() => setVisible(false)}
+    >
+      {children}
+      {visible && (
+        <div className="absolute bottom-full left-1/2 z-50 mb-1.5 -translate-x-1/2 whitespace-normal rounded-md border border-slate-600 bg-slate-800 px-2.5 py-1.5 text-[10px] leading-relaxed text-slate-300 shadow-lg"
+             style={{ width: 220 }}>
+          {text}
+          <div className="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-slate-600" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --- Well-known context windows for non-catalog providers ---
+
+const KNOWN_CONTEXT_WINDOWS: Record<string, number> = {
+  'claude-sonnet-4-20250514': 200000,
+  'claude-haiku-3-5-20241022': 200000,
+  'claude-opus-4-20250514': 200000,
+  'claude-3-5-sonnet-20241022': 200000,
+  'claude-3-5-haiku-20241022': 200000,
+  'claude-3-opus-20240229': 200000,
+  'gpt-4o': 128000,
+  'gpt-4o-mini': 128000,
+  'gpt-4-turbo': 128000,
+  'gpt-4': 8192,
+  'o3-mini': 200000,
+};
 
 interface Props {
   nodeId: string;
@@ -12,6 +55,40 @@ interface Props {
 
 export default function ContextEngineProperties({ nodeId, data }: Props) {
   const update = useGraphStore((s) => s.updateNodeData);
+  const nodes = useGraphStore((s) => s.nodes);
+  const edges = useGraphStore((s) => s.edges);
+  const getModelMetadata = useModelCatalogStore((s) => s.getModelMetadata);
+
+  // --- Find connected agent and inherit token budget ---
+
+  const connectedAgentEdge = edges.find((e) => e.source === nodeId);
+  const connectedAgent = connectedAgentEdge
+    ? nodes.find((n) => n.id === connectedAgentEdge.target && n.data.type === 'agent')
+    : undefined;
+
+  const agentData = connectedAgent?.data as AgentNodeData | undefined;
+  const provider = agentData?.provider;
+  const modelId = agentData?.modelId;
+
+  // Try catalog first, then agent overrides, then well-known defaults
+  const catalogMeta = provider && modelId ? getModelMetadata(provider, modelId) : undefined;
+  const modelContextWindow =
+    catalogMeta?.contextWindow ??
+    agentData?.modelCapabilities?.contextWindow ??
+    (modelId ? KNOWN_CONTEXT_WINDOWS[modelId] : undefined);
+
+  // Auto-sync tokenBudget when model context window is discovered
+  const prevContextWindowRef = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (modelContextWindow && modelContextWindow !== prevContextWindowRef.current) {
+      prevContextWindowRef.current = modelContextWindow;
+      if (data.tokenBudget !== modelContextWindow) {
+        update(nodeId, { tokenBudget: modelContextWindow });
+      }
+    }
+  }, [modelContextWindow, nodeId, data.tokenBudget, update]);
+
+  // --- System prompt additions ---
 
   const addSystemPromptAddition = () => {
     update(nodeId, {
@@ -41,21 +118,51 @@ export default function ContextEngineProperties({ nodeId, data }: Props) {
         />
       </Field>
 
-      {/* Token Budget */}
+      {/* Token Budget — inherited from model */}
       <Field label="Token Budget">
-        <input
-          className={inputClass}
-          type="number"
-          min={1024}
-          step={1024}
-          value={data.tokenBudget}
-          onChange={(e) =>
-            update(nodeId, { tokenBudget: parseInt(e.target.value) || 128000 })
-          }
-        />
-        <p className="mt-0.5 text-[10px] text-slate-600">
-          Total context window size for this agent
-        </p>
+        {modelContextWindow ? (
+          <>
+            <div className={`${inputClass} flex items-center justify-between bg-slate-800/60 cursor-default`}>
+              <span>{data.tokenBudget.toLocaleString()}</span>
+              <span className="text-[9px] text-blue-400 font-medium">inherited</span>
+            </div>
+            <p className="mt-0.5 text-[10px] text-slate-600">
+              From {modelId} ({modelContextWindow.toLocaleString()} tokens)
+            </p>
+          </>
+        ) : connectedAgent ? (
+          <>
+            <input
+              className={inputClass}
+              type="number"
+              min={1024}
+              step={1024}
+              value={data.tokenBudget}
+              onChange={(e) =>
+                update(nodeId, { tokenBudget: parseInt(e.target.value) || 128000 })
+              }
+            />
+            <p className="mt-0.5 text-[10px] text-amber-500/80">
+              Model metadata unavailable — set manually
+            </p>
+          </>
+        ) : (
+          <>
+            <input
+              className={inputClass}
+              type="number"
+              min={1024}
+              step={1024}
+              value={data.tokenBudget}
+              onChange={(e) =>
+                update(nodeId, { tokenBudget: parseInt(e.target.value) || 128000 })
+              }
+            />
+            <p className="mt-0.5 text-[10px] text-slate-600">
+              Connect to an agent to inherit from model
+            </p>
+          </>
+        )}
       </Field>
 
       <Field label="Reserved for Response">
@@ -98,19 +205,49 @@ export default function ContextEngineProperties({ nodeId, data }: Props) {
         </select>
       </Field>
 
-      <Field label="Compaction Threshold (0-1)">
-        <input
-          className={inputClass}
-          type="number"
-          min={0}
-          max={1}
-          step={0.05}
-          value={data.compactionThreshold}
-          onChange={(e) =>
-            update(nodeId, { compactionThreshold: parseFloat(e.target.value) || 0.8 })
-          }
-        />
-      </Field>
+      {/* Threshold input — depends on trigger type */}
+      {data.compactionTrigger === 'threshold' && (
+        <Field label="Compaction Threshold (0-1)">
+          <input
+            className={inputClass}
+            type="number"
+            min={0}
+            max={1}
+            step={0.05}
+            value={data.compactionThreshold}
+            onChange={(e) =>
+              update(nodeId, { compactionThreshold: parseFloat(e.target.value) || 0.8 })
+            }
+          />
+          <p className="mt-0.5 text-[10px] text-slate-600">
+            Ratio of token budget usage that triggers compaction
+          </p>
+        </Field>
+      )}
+
+      {data.compactionTrigger === 'manual' && (
+        <Field label="Compaction Token Limit">
+          <input
+            className={inputClass}
+            type="number"
+            min={0}
+            step={1024}
+            value={data.compactionThreshold}
+            onChange={(e) =>
+              update(nodeId, { compactionThreshold: parseFloat(e.target.value) || 0 })
+            }
+          />
+          <p className="mt-0.5 text-[10px] text-slate-600">
+            Number of tokens after which to compact when triggered
+          </p>
+        </Field>
+      )}
+
+      {data.compactionTrigger === 'auto' && (
+        <p className="mb-3 text-[10px] text-slate-600 italic">
+          Compaction runs automatically when the context window reaches 80% capacity.
+        </p>
+      )}
 
       <Field label="Owns Compaction">
         <label className="flex items-center gap-2">
@@ -120,9 +257,11 @@ export default function ContextEngineProperties({ nodeId, data }: Props) {
             onChange={(e) => update(nodeId, { ownsCompaction: e.target.checked })}
             className="rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500/30"
           />
-          <span className="text-xs text-slate-300">
-            Engine controls all compaction
-          </span>
+          <Tooltip text="When enabled, the Context Engine takes full control of compaction. No other node (e.g. Memory) will trigger its own compaction — all history trimming and summarization is managed here.">
+            <span className="text-xs text-slate-300 underline decoration-dotted decoration-slate-600 underline-offset-4 cursor-help">
+              Engine controls all compaction
+            </span>
+          </Tooltip>
         </label>
       </Field>
 
@@ -134,9 +273,11 @@ export default function ContextEngineProperties({ nodeId, data }: Props) {
             onChange={(e) => update(nodeId, { autoFlushBeforeCompact: e.target.checked })}
             className="rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500/30"
           />
-          <span className="text-xs text-slate-300">
-            Flush pending writes before compacting
-          </span>
+          <Tooltip text="Before compaction starts, all pending tool results and buffered messages are flushed into the conversation. This ensures no in-flight data is lost when history is trimmed or summarized.">
+            <span className="text-xs text-slate-300 underline decoration-dotted decoration-slate-600 underline-offset-4 cursor-help">
+              Flush pending writes before compacting
+            </span>
+          </Tooltip>
         </label>
       </Field>
 
@@ -150,7 +291,11 @@ export default function ContextEngineProperties({ nodeId, data }: Props) {
               onChange={(e) => update(nodeId, { ragEnabled: e.target.checked })}
               className="rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500/30"
             />
-            <span className="text-xs text-slate-300">Enable RAG retrieval</span>
+            <Tooltip text="Retrieval-Augmented Generation injects relevant document chunks into the context before each prompt. Requires a connected Vector Database node to search against.">
+              <span className="text-xs text-slate-300 underline decoration-dotted decoration-slate-600 underline-offset-4 cursor-help">
+                Enable RAG retrieval
+              </span>
+            </Tooltip>
           </label>
           {data.ragEnabled && (
             <>
@@ -188,6 +333,11 @@ export default function ContextEngineProperties({ nodeId, data }: Props) {
 
       {/* System Prompt Additions */}
       <Field label="System Prompt Additions">
+        <Tooltip text="Additional text injected into the system prompt at runtime. Use this to add dynamic instructions, persona details, or context-specific rules that augment the agent's base system prompt.">
+          <span className="mb-1.5 inline-block text-[10px] text-slate-500 underline decoration-dotted decoration-slate-600 underline-offset-4 cursor-help">
+            What are these?
+          </span>
+        </Tooltip>
         <div className="space-y-2">
           {data.systemPromptAdditions.map((addition, i) => (
             <div key={i} className="flex gap-1.5">
