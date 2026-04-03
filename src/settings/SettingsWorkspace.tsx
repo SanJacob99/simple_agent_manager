@@ -2,6 +2,7 @@ import { ArrowLeft } from 'lucide-react';
 import { SETTINGS_SECTIONS, type SettingsSectionId } from './types';
 import ProvidersApiKeysSection from './sections/ProvidersApiKeysSection';
 import ModelCatalogSection from './sections/ModelCatalogSection';
+import DefaultsSection from './sections/DefaultsSection';
 
 interface SettingsWorkspaceProps {
   activeSection: SettingsSectionId;
@@ -40,6 +41,8 @@ export default function SettingsWorkspace({
           <ProvidersApiKeysSection />
         ) : activeSection === 'model-catalog' ? (
           <ModelCatalogSection />
+        ) : activeSection === 'defaults' ? (
+          <DefaultsSection />
         ) : (
           <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 text-sm text-slate-400">
             Section content placeholder for {section.label}
