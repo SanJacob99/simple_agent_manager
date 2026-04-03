@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "description": "Maps each NodeType to its concept doc, type definition, and runtime implementation. AI tools use this to find which doc to update when source files change.",
+  "concepts": {
+    "agent": {
+      "doc": "agent-node.md",
+      "type": "src/types/nodes.ts#AgentNodeData",
+      "runtime": "src/runtime/agent-runtime.ts"
+    },
+    "memory": {
+      "doc": "memory-node.md",
+      "type": "src/types/nodes.ts#MemoryNodeData",
+      "runtime": "src/runtime/memory-engine.ts"
+    },
+    "tools": {
+      "doc": "tool-node.md",
+      "type": "src/types/nodes.ts#ToolsNodeData",
+      "runtime": "src/runtime/tool-factory.ts"
+    },
+    "skills": {
+      "doc": "skill-node.md",
+      "type": "src/types/nodes.ts#SkillsNodeData",
+      "runtime": null
+    },
+    "contextEngine": {
+      "doc": "context-engine-node.md",
+      "type": "src/types/nodes.ts#ContextEngineNodeData",
+      "runtime": "src/runtime/context-engine.ts"
+    },
+    "agentComm": {
+      "doc": "agent-comm-node.md",
+      "type": "src/types/nodes.ts#AgentCommNodeData",
+      "runtime": null
+    },
+    "connectors": {
+      "doc": "connector-node.md",
+      "type": "src/types/nodes.ts#ConnectorsNodeData",
+      "runtime": null
+    },
+    "database": {
+      "doc": "database-node.md",
+      "type": "src/types/nodes.ts#DatabaseNodeData",
+      "runtime": null
+    },
+    "vectorDatabase": {
+      "doc": "vector-database-node.md",
+      "type": "src/types/nodes.ts#VectorDatabaseNodeData",
+      "runtime": null
+    }
+  }
+}

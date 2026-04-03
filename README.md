@@ -34,6 +34,10 @@ Built with React 19, TypeScript, and [@xyflow/react](https://reactflow.dev/) for
 | **Database** | Data storage (PostgreSQL, MySQL, SQLite, MongoDB, IndexedDB, REST API) |
 | **Vector Database** | Vector storage (Pinecone, ChromaDB, Qdrant, Weaviate) |
 
+## Concepts Documentation
+
+Detailed documentation for each node type lives in [`docs/concepts/`](docs/concepts/). Each concept doc covers the node's purpose, configuration properties, runtime behavior, connections, and examples. These docs are maintained by AI tools via rules in `CLAUDE.md` and `.agents/rules/docs-maintenance.md`.
+
 ## Getting Started
 
 ### Prerequisites
