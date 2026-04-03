@@ -16,6 +16,23 @@ import { getDefaultNodeData } from '../utils/default-nodes';
 import { saveGraph, loadGraph } from './storage';
 import { useSessionStore } from './session-store';
 import { useAgentRuntimeStore } from './agent-runtime-store';
+import { useSettingsStore } from '../settings/settings-store';
+
+function buildNodeData(nodeType: NodeType): FlowNodeData {
+  const defaults = getDefaultNodeData(nodeType);
+  if (nodeType !== 'agent' || defaults.type !== 'agent') {
+    return defaults;
+  }
+
+  const agentDefaults = useSettingsStore.getState().agentDefaults;
+  return {
+    ...defaults,
+    provider: agentDefaults.provider,
+    modelId: agentDefaults.modelId,
+    thinkingLevel: agentDefaults.thinkingLevel,
+    systemPrompt: agentDefaults.systemPrompt,
+  };
+}
 
 interface GraphStore {
   nodes: AppNode[];
@@ -31,6 +48,8 @@ interface GraphStore {
   addNode: (nodeType: NodeType, position: XYPosition) => string;
   removeNode: (nodeId: string) => void;
   updateNodeData: (nodeId: string, data: Partial<FlowNodeData>) => void;
+  applyAgentDefaultsToExistingAgents: () => void;
+  clearGraph: () => void;
   setSelectedNode: (nodeId: string | null) => void;
   getSelectedNode: () => AppNode | undefined;
   setPendingNameNodeId: (nodeId: string | null) => void;
@@ -92,7 +111,7 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
       id,
       type: nodeType,
       position,
-      data: getDefaultNodeData(nodeType),
+      data: buildNodeData(nodeType),
     };
     set({ nodes: [...get().nodes, newNode] });
 
@@ -132,6 +151,35 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
           ? { ...node, data: { ...node.data, ...data } as FlowNodeData }
           : node,
       ),
+    });
+  },
+
+  applyAgentDefaultsToExistingAgents: () => {
+    const agentDefaults = useSettingsStore.getState().agentDefaults;
+    set({
+      nodes: get().nodes.map((node) =>
+        node.data.type === 'agent'
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                provider: agentDefaults.provider,
+                modelId: agentDefaults.modelId,
+                thinkingLevel: agentDefaults.thinkingLevel,
+                systemPrompt: agentDefaults.systemPrompt,
+              },
+            }
+          : node,
+      ),
+    });
+  },
+
+  clearGraph: () => {
+    set({
+      nodes: [],
+      edges: [],
+      selectedNodeId: null,
+      pendingNameNodeId: null,
     });
   },
 

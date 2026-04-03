@@ -72,6 +72,7 @@ interface SessionStore {
   // Maintenance
   pruneOrphanSessions: (validAgentNames: string[]) => void;
   enforceSessionLimit: (agentName: string, maxSessions?: number) => void;
+  resetAllSessions: () => void;
 }
 
 export const useSessionStore = create<SessionStore>()(
@@ -271,6 +272,13 @@ export const useSessionStore = create<SessionStore>()(
           }
 
           return { sessions: nextSessions, activeSessionId: nextActive };
+        });
+      },
+
+      resetAllSessions: () => {
+        set({
+          sessions: {},
+          activeSessionId: {},
         });
       },
     }),
