@@ -23,6 +23,11 @@ import {
   uploadJson,
 } from '../utils/export-import';
 import testFixture from '../fixtures/test-graph.json';
+import {
+  SETTINGS_SECTIONS,
+  type AppView,
+  type SettingsSectionId,
+} from '../settings/types';
 
 interface PaletteItem {
   type: NodeType;
@@ -83,7 +88,17 @@ function ActionButton({
   );
 }
 
-export default function Sidebar() {
+interface SidebarProps {
+  appView: AppView;
+  activeSettingsSection: SettingsSectionId;
+  onSettingsSectionChange: (section: SettingsSectionId) => void;
+}
+
+export default function Sidebar({
+  appView,
+  activeSettingsSection,
+  onSettingsSectionChange,
+}: SidebarProps) {
   const nodes = useGraphStore((s) => s.nodes);
   const edges = useGraphStore((s) => s.edges);
   const loadGraph = useGraphStore((s) => s.loadGraph);
@@ -120,60 +135,88 @@ export default function Sidebar() {
       <div className="border-b border-slate-800 px-4 py-3">
         <h1 className="text-sm font-bold text-slate-100">Agent Manager</h1>
         <p className="mt-0.5 text-[10px] text-slate-500">
-          Drag nodes onto the canvas
+          {appView === 'canvas'
+            ? 'Drag nodes onto the canvas'
+            : 'App-level settings'}
         </p>
       </div>
 
-      {/* Node Palette */}
-      <div className="flex-1 overflow-y-auto p-3">
-        {/* Core */}
-        <div className="mb-4">
+      {appView === 'canvas' ? (
+        /* Node Palette */
+        <div className="flex-1 overflow-y-auto p-3">
+          {/* Core */}
+          <div className="mb-4">
+            <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+              Core
+            </h2>
+            <div className="space-y-1.5">
+              {CORE_ITEMS.map((item) => (
+                <DraggableItem key={item.type} item={item} />
+              ))}
+            </div>
+          </div>
+
+          {/* Peripherals */}
+          <div className="mb-4">
+            <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+              Peripherals
+            </h2>
+            <div className="space-y-1.5">
+              {PERIPHERAL_ITEMS.map((item) => (
+                <DraggableItem key={item.type} item={item} />
+              ))}
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div>
+            <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+              Actions
+            </h2>
+            <div className="space-y-1.5">
+              <ActionButton
+                icon={<Download size={14} />}
+                label="Export Graph"
+                onClick={handleExport}
+              />
+              <ActionButton
+                icon={<Upload size={14} />}
+                label="Import Graph"
+                onClick={handleImport}
+              />
+              <ActionButton
+                icon={<FileJson size={14} />}
+                label="Load Test Fixture"
+                onClick={handleLoadFixture}
+              />
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto p-3">
           <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-            Core
+            Sections
           </h2>
           <div className="space-y-1.5">
-            {CORE_ITEMS.map((item) => (
-              <DraggableItem key={item.type} item={item} />
+            {SETTINGS_SECTIONS.map((section) => (
+              <button
+                key={section.id}
+                onClick={() => onSettingsSectionChange(section.id)}
+                className={`w-full rounded-lg border px-3 py-2 text-left text-xs transition ${
+                  activeSettingsSection === section.id
+                    ? 'border-blue-500/60 bg-blue-500/10 text-blue-200'
+                    : 'border-slate-800 bg-slate-900 text-slate-300 hover:border-slate-600 hover:bg-slate-800'
+                }`}
+              >
+                <div className="font-medium">{section.label}</div>
+                <div className="mt-0.5 text-[10px] text-slate-500">
+                  {section.description}
+                </div>
+              </button>
             ))}
           </div>
         </div>
-
-        {/* Peripherals */}
-        <div className="mb-4">
-          <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-            Peripherals
-          </h2>
-          <div className="space-y-1.5">
-            {PERIPHERAL_ITEMS.map((item) => (
-              <DraggableItem key={item.type} item={item} />
-            ))}
-          </div>
-        </div>
-
-        {/* Actions */}
-        <div>
-          <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-            Actions
-          </h2>
-          <div className="space-y-1.5">
-            <ActionButton
-              icon={<Download size={14} />}
-              label="Export Graph"
-              onClick={handleExport}
-            />
-            <ActionButton
-              icon={<Upload size={14} />}
-              label="Import Graph"
-              onClick={handleImport}
-            />
-            <ActionButton
-              icon={<FileJson size={14} />}
-              label="Load Test Fixture"
-              onClick={handleLoadFixture}
-            />
-          </div>
-        </div>
-      </div>
+      )}
     </aside>
   );
 }
