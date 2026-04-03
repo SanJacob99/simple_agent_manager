@@ -99,7 +99,7 @@ In `settings` mode:
 - the old `SettingsModal` is removed
 - canvas-only UI such as the properties panel and chat drawer is hidden
 
-Important consideration: hidden canvas UI should be treated as view-only suppression, not destructive teardown of persisted graph/session state. Returning to canvas should preserve the user’s graph and selection context as much as practical.
+Important consideration: hidden canvas UI should be treated as view-only suppression, not destructive teardown of persisted graph/session state. The selected node ID should remain in store while settings are open, so returning to canvas restores the properties panel for the previously selected node.
 
 ### Entry And Exit
 
@@ -153,6 +153,12 @@ It should show:
 
 Assumption: this change continues to support provider-backed discovery only for OpenRouter.
 
+Sync behavior for this change:
+
+- automatically sync on app startup if an OpenRouter API key already exists
+- automatically re-sync when the OpenRouter API key changes
+- allow the user to trigger a manual refresh from Settings
+
 Important consideration: catalog sync failure must be non-blocking. The user should still be able to configure and run agents with built-in/static model options and manual model IDs where supported elsewhere in the app.
 
 ### Defaults
@@ -174,7 +180,7 @@ This section should also include an explicit action:
 
 That action must require confirmation.
 
-Important consideration: applying defaults to existing agents can overwrite intentional customization. The UI should make the scope explicit and, if practical in implementation, allow per-field selection before the change is confirmed.
+Important consideration: applying defaults to existing agents can overwrite intentional customization. The confirmation flow must clearly list the affected fields. Per-field selection is not required in this change and can be treated as future enhancement work.
 
 ### Data & Maintenance
 
