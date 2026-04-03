@@ -72,4 +72,16 @@ describe('model catalog store', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it('refetches when sync is forced with the same OpenRouter key', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ data: [] }));
+
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+    const store = useModelCatalogStore.getState();
+    await store.syncOpenRouterKey('same-key');
+    await store.syncOpenRouterKey('same-key', { force: true });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });

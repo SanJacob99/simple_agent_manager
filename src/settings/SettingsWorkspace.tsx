@@ -1,5 +1,7 @@
 import { ArrowLeft } from 'lucide-react';
 import { SETTINGS_SECTIONS, type SettingsSectionId } from './types';
+import ProvidersApiKeysSection from './sections/ProvidersApiKeysSection';
+import ModelCatalogSection from './sections/ModelCatalogSection';
 
 interface SettingsWorkspaceProps {
   activeSection: SettingsSectionId;
@@ -34,9 +36,15 @@ export default function SettingsWorkspace({
         </button>
       </div>
       <div className="flex-1 overflow-y-auto p-6">
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 text-sm text-slate-400">
-          Section content placeholder for {section.label}
-        </div>
+        {activeSection === 'api-keys' ? (
+          <ProvidersApiKeysSection />
+        ) : activeSection === 'model-catalog' ? (
+          <ModelCatalogSection />
+        ) : (
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 text-sm text-slate-400">
+            Section content placeholder for {section.label}
+          </div>
+        )}
       </div>
     </div>
   );

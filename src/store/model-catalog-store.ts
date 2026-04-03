@@ -2,13 +2,19 @@ import { create } from 'zustand';
 import type { DiscoveredModelMetadata } from '../types/model-metadata';
 
 type ProviderModelMap = Record<string, DiscoveredModelMetadata>;
+interface SyncOptions {
+  force?: boolean;
+}
 
 interface ModelCatalogState {
   models: { openrouter: ProviderModelMap };
   loading: { openrouter: boolean };
   errors: { openrouter: string | null };
   lastSyncedKeys: { openrouter?: string };
-  syncOpenRouterKey: (apiKey: string | undefined) => Promise<void>;
+  syncOpenRouterKey: (
+    apiKey: string | undefined,
+    options?: SyncOptions,
+  ) => Promise<void>;
   getProviderModels: (provider: string) => string[];
   getModelMetadata: (
     provider: string,
@@ -46,7 +52,7 @@ function mapOpenRouterModel(entry: any): DiscoveredModelMetadata {
 export const useModelCatalogStore = create<ModelCatalogState>((set, get) => ({
   ...INITIAL_STATE,
 
-  async syncOpenRouterKey(apiKey) {
+  async syncOpenRouterKey(apiKey, options = {}) {
     if (!apiKey) {
       set({
         models: { openrouter: {} },
@@ -57,7 +63,7 @@ export const useModelCatalogStore = create<ModelCatalogState>((set, get) => ({
       return;
     }
 
-    if (get().lastSyncedKeys.openrouter === apiKey) {
+    if (!options.force && get().lastSyncedKeys.openrouter === apiKey) {
       return;
     }
 
