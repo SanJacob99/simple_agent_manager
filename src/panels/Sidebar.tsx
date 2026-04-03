@@ -8,21 +8,10 @@ import {
   Plug,
   Database,
   Container,
-  Download,
-  Upload,
-  FileJson,
 } from 'lucide-react';
 import type { NodeType } from '../types/nodes';
 import { NODE_COLORS, NODE_LABELS } from '../utils/theme';
 import type { DragEvent, ReactNode } from 'react';
-import { useGraphStore } from '../store/graph-store';
-import {
-  exportGraph,
-  importGraph,
-  downloadJson,
-  uploadJson,
-} from '../utils/export-import';
-import testFixture from '../fixtures/test-graph.json';
 import {
   SETTINGS_SECTIONS,
   type AppView,
@@ -68,26 +57,6 @@ function DraggableItem({ item }: { item: PaletteItem }) {
   );
 }
 
-function ActionButton({
-  icon,
-  label,
-  onClick,
-}: {
-  icon: ReactNode;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="flex w-full items-center gap-2 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-400 transition hover:border-slate-600 hover:bg-slate-800 hover:text-slate-200"
-    >
-      {icon}
-      {label}
-    </button>
-  );
-}
-
 interface SidebarProps {
   appView: AppView;
   activeSettingsSection: SettingsSectionId;
@@ -99,36 +68,6 @@ export default function Sidebar({
   activeSettingsSection,
   onSettingsSectionChange,
 }: SidebarProps) {
-  const nodes = useGraphStore((s) => s.nodes);
-  const edges = useGraphStore((s) => s.edges);
-  const loadGraph = useGraphStore((s) => s.loadGraph);
-
-  const handleExport = () => {
-    const bundle = exportGraph(nodes, edges);
-    downloadJson(bundle, `agent-graph-${Date.now()}.json`);
-  };
-
-  const handleImport = async () => {
-    try {
-      const data = await uploadJson();
-      const result = importGraph(data);
-      if (result) {
-        loadGraph(result.nodes, result.edges);
-      } else {
-        alert('Invalid graph file format.');
-      }
-    } catch {
-      // User cancelled or invalid file
-    }
-  };
-
-  const handleLoadFixture = () => {
-    const result = importGraph(testFixture);
-    if (result) {
-      loadGraph(result.nodes, result.edges);
-    }
-  };
-
   return (
     <aside className="flex w-56 shrink-0 flex-col border-r border-slate-800 bg-slate-925">
       {/* Header */}
@@ -165,30 +104,6 @@ export default function Sidebar({
               {PERIPHERAL_ITEMS.map((item) => (
                 <DraggableItem key={item.type} item={item} />
               ))}
-            </div>
-          </div>
-
-          {/* Actions */}
-          <div>
-            <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-              Actions
-            </h2>
-            <div className="space-y-1.5">
-              <ActionButton
-                icon={<Download size={14} />}
-                label="Export Graph"
-                onClick={handleExport}
-              />
-              <ActionButton
-                icon={<Upload size={14} />}
-                label="Import Graph"
-                onClick={handleImport}
-              />
-              <ActionButton
-                icon={<FileJson size={14} />}
-                label="Load Test Fixture"
-                onClick={handleLoadFixture}
-              />
             </div>
           </div>
         </div>
