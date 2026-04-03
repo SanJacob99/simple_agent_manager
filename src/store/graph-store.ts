@@ -14,6 +14,8 @@ import type { AppNode, FlowNodeData, NodeType } from '../types/nodes';
 import { createNodeId } from '../utils/id';
 import { getDefaultNodeData } from '../utils/default-nodes';
 import { saveGraph, loadGraph } from './storage';
+import { useChatStore } from './chat-store';
+import { useAgentRuntimeStore } from './agent-runtime-store';
 
 interface GraphStore {
   nodes: AppNode[];
@@ -39,6 +41,12 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   selectedNodeId: null,
 
   onNodesChange: (changes) => {
+    for (const change of changes) {
+      if (change.type === 'remove') {
+        useChatStore.getState().clearChat(change.id);
+        useAgentRuntimeStore.getState().destroyRuntime(change.id);
+      }
+    }
     set({ nodes: applyNodeChanges(changes, get().nodes) });
   },
 
@@ -74,6 +82,9 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   },
 
   removeNode: (nodeId) => {
+    useChatStore.getState().clearChat(nodeId);
+    useAgentRuntimeStore.getState().destroyRuntime(nodeId);
+    
     set({
       nodes: get().nodes.filter((n) => n.id !== nodeId),
       edges: get().edges.filter(
