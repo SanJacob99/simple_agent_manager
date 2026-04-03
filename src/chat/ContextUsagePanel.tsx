@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { ChevronDown, ChevronUp, AlertCircle, Cpu, Wrench, BookOpen, Layers, Plug } from 'lucide-react';
-import type { Message } from '../store/chat-store';
+import type { Message } from '../store/session-store';
 import type { ContextWindowInfo, PeripheralReservation, ContextSource } from './useContextWindow';
 
 interface ContextUsagePanelProps {

@@ -29,10 +29,19 @@ export function loadGraph(): GraphState | null {
     // Migrate nodes: fill in default values for new fields
     graph.nodes = graph.nodes.map((node: AppNode) => {
       const defaults = getDefaultNodeData(node.data.type);
-      return {
-        ...node,
-        data: { ...defaults, ...node.data } as FlowNodeData,
-      };
+      const merged = { ...defaults, ...node.data } as FlowNodeData;
+
+      // Auto-confirm names for existing agents that already have a name
+      if (
+        merged.type === 'agent' &&
+        'nameConfirmed' in merged &&
+        !(merged as any).nameConfirmed &&
+        (merged as any).name
+      ) {
+        (merged as any).nameConfirmed = true;
+      }
+
+      return { ...node, data: merged };
     });
 
     return graph;

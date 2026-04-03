@@ -8,6 +8,7 @@ function createAgentData(overrides: Record<string, unknown> = {}) {
   return {
     type: 'agent' as const,
     name: 'Agent',
+    nameConfirmed: true,
     systemPrompt: 'Test',
     provider: 'openrouter',
     modelId: 'xiaomi/mimo-v2-pro',

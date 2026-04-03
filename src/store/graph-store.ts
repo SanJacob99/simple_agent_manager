@@ -14,13 +14,15 @@ import type { AppNode, FlowNodeData, NodeType } from '../types/nodes';
 import { createNodeId } from '../utils/id';
 import { getDefaultNodeData } from '../utils/default-nodes';
 import { saveGraph, loadGraph } from './storage';
-import { useChatStore } from './chat-store';
+import { useSessionStore } from './session-store';
 import { useAgentRuntimeStore } from './agent-runtime-store';
 
 interface GraphStore {
   nodes: AppNode[];
   edges: Edge[];
   selectedNodeId: string | null;
+  /** Node ID of an agent that needs naming (dialog pending) */
+  pendingNameNodeId: string | null;
 
   onNodesChange: OnNodesChange<AppNode>;
   onEdgesChange: OnEdgesChange;
@@ -31,6 +33,12 @@ interface GraphStore {
   updateNodeData: (nodeId: string, data: Partial<FlowNodeData>) => void;
   setSelectedNode: (nodeId: string | null) => void;
   getSelectedNode: () => AppNode | undefined;
+  setPendingNameNodeId: (nodeId: string | null) => void;
+
+  /** Check if an agent name is already taken */
+  isAgentNameTaken: (name: string, excludeNodeId?: string) => boolean;
+  /** Get all agent names currently in the graph */
+  getAgentNames: () => string[];
 
   loadGraph: (nodes: AppNode[], edges: Edge[]) => void;
 }
@@ -39,11 +47,20 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   nodes: [],
   edges: [],
   selectedNodeId: null,
+  pendingNameNodeId: null,
 
   onNodesChange: (changes) => {
     for (const change of changes) {
       if (change.type === 'remove') {
-        useChatStore.getState().clearChat(change.id);
+        // Find the node being removed to get agent name
+        const removedNode = get().nodes.find((n) => n.id === change.id);
+        if (removedNode?.data.type === 'agent') {
+          const agentName = (removedNode.data as { name: string }).name;
+          if (agentName) {
+            useSessionStore.getState().deleteAllSessionsForAgent(agentName);
+          }
+        }
+        useSessionStore.getState().clearActiveSession(change.id);
         useAgentRuntimeStore.getState().destroyRuntime(change.id);
       }
     }
@@ -78,13 +95,26 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
       data: getDefaultNodeData(nodeType),
     };
     set({ nodes: [...get().nodes, newNode] });
+
+    // If this is an agent node, trigger the naming dialog
+    if (nodeType === 'agent') {
+      set({ pendingNameNodeId: id });
+    }
+
     return id;
   },
 
   removeNode: (nodeId) => {
-    useChatStore.getState().clearChat(nodeId);
+    const node = get().nodes.find((n) => n.id === nodeId);
+    if (node?.data.type === 'agent') {
+      const agentName = (node.data as { name: string }).name;
+      if (agentName) {
+        useSessionStore.getState().deleteAllSessionsForAgent(agentName);
+      }
+    }
+    useSessionStore.getState().clearActiveSession(nodeId);
     useAgentRuntimeStore.getState().destroyRuntime(nodeId);
-    
+
     set({
       nodes: get().nodes.filter((n) => n.id !== nodeId),
       edges: get().edges.filter(
@@ -112,6 +142,33 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   getSelectedNode: () => {
     const { nodes, selectedNodeId } = get();
     return nodes.find((n) => n.id === selectedNodeId);
+  },
+
+  setPendingNameNodeId: (nodeId) => {
+    set({ pendingNameNodeId: nodeId });
+  },
+
+  isAgentNameTaken: (name, excludeNodeId) => {
+    const { nodes } = get();
+    return nodes.some(
+      (n) =>
+        n.id !== excludeNodeId &&
+        n.data.type === 'agent' &&
+        (n.data as { name: string; nameConfirmed?: boolean }).nameConfirmed &&
+        (n.data as { name: string }).name.toLowerCase() === name.toLowerCase(),
+    );
+  },
+
+  getAgentNames: () => {
+    const { nodes } = get();
+    return nodes
+      .filter(
+        (n) =>
+          n.data.type === 'agent' &&
+          (n.data as { name: string; nameConfirmed?: boolean }).nameConfirmed &&
+          (n.data as { name: string }).name,
+      )
+      .map((n) => (n.data as { name: string }).name);
   },
 
   loadGraph: (nodes, edges) => {

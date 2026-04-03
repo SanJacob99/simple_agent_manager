@@ -5,7 +5,8 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
     case 'agent':
       return {
         type: 'agent',
-        name: 'New Agent',
+        name: '',
+        nameConfirmed: false,
         systemPrompt: 'You are a helpful assistant.',
         provider: 'anthropic',
         modelId: 'claude-sonnet-4-20250514',

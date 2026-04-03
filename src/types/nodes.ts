@@ -20,6 +20,7 @@ export interface AgentNodeData {
   [key: string]: unknown;
   type: 'agent';
   name: string;
+  nameConfirmed: boolean;
   systemPrompt: string;
   provider: string;
   modelId: string;

@@ -159,12 +159,25 @@ export default function AgentProperties({ nodeId, data }: Props) {
   return (
     <div className="space-y-1">
       <Field label="Agent Name">
-        <input
-          className={inputClass}
-          value={data.name}
-          onChange={(e) => update(nodeId, { name: e.target.value })}
-          placeholder="My Agent"
-        />
+        {data.nameConfirmed ? (
+          <div className="flex items-center gap-2">
+            <input
+              className={`${inputClass} opacity-60 cursor-not-allowed`}
+              value={data.name}
+              disabled
+            />
+            <span className="text-[9px] text-slate-600 whitespace-nowrap" title="Agent names cannot be changed after creation">
+              🔒
+            </span>
+          </div>
+        ) : (
+          <input
+            className={inputClass}
+            value={data.name}
+            onChange={(e) => update(nodeId, { name: e.target.value })}
+            placeholder="My Agent"
+          />
+        )}
       </Field>
 
       <Field label="Description">

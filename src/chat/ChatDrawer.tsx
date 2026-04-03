@@ -1,5 +1,5 @@
-import { useRef, useEffect, useState, useCallback } from 'react';
-import { X, Send, Bot, Loader2, Square, Trash2, Wrench } from 'lucide-react';
+import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import { X, Send, Bot, Loader2, Square, Trash2, Wrench, Plus, ChevronDown } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useGraphStore } from '../store/graph-store';
@@ -7,7 +7,7 @@ import { useAgentRuntimeStore } from '../store/agent-runtime-store';
 import { useSettingsStore } from '../settings/settings-store';
 import { resolveAgentConfig } from '../utils/graph-to-agent';
 import type { RuntimeEvent } from '../runtime/agent-runtime';
-import { useChatStore, type Message } from '../store/chat-store';
+import { useSessionStore, type Message } from '../store/session-store';
 import { estimateTokens } from '../runtime/token-estimator';
 import { useContextWindow, usePeripheralReservations } from './useContextWindow';
 import ContextUsagePanel from './ContextUsagePanel';
@@ -22,6 +22,35 @@ function formatTokenBadge(count: number): string {
   return count.toString();
 }
 
+function formatSessionDate(timestamp: number): string {
+  const date = new Date(timestamp);
+  const now = new Date();
+  const isToday =
+    date.getDate() === now.getDate() &&
+    date.getMonth() === now.getMonth() &&
+    date.getFullYear() === now.getFullYear();
+
+  if (isToday) {
+    return date.toLocaleTimeString(undefined, {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+  return date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+function formatSessionLabel(llmSlug: string, lastMessageAt: number, isDefault: boolean): string {
+  // Shorten the llm slug for display
+  const parts = llmSlug.split('/');
+  const shortSlug = parts.length > 2 ? `${parts[0]}/${parts[parts.length - 1]}` : llmSlug;
+  const dateStr = formatSessionDate(lastMessageAt);
+  const prefix = isDefault ? '● ' : '';
+  return `${prefix}${shortSlug} · ${dateStr}`;
+}
+
 export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
   const nodes = useGraphStore((s) => s.nodes);
   const edges = useGraphStore((s) => s.edges);
@@ -31,10 +60,52 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
 
   const config = resolveAgentConfig(agentNodeId, nodes, edges);
 
-  const messages = useChatStore((s) => s.chats[agentNodeId]) || [];
-  const addMessage = useChatStore((s) => s.addMessage);
-  const updateMessage = useChatStore((s) => s.updateMessage);
-  const clearChat = useChatStore((s) => s.clearChat);
+  // Session store
+  const sessions = useSessionStore((s) => s.sessions);
+  const activeSessionIdMap = useSessionStore((s) => s.activeSessionId);
+  const createSession = useSessionStore((s) => s.createSession);
+  const deleteSession = useSessionStore((s) => s.deleteSession);
+  const setActiveSession = useSessionStore((s) => s.setActiveSession);
+  const addMessage = useSessionStore((s) => s.addMessage);
+  const updateMessage = useSessionStore((s) => s.updateMessage);
+  const clearSessionMessages = useSessionStore((s) => s.clearSessionMessages);
+  const getSessionsForAgent = useSessionStore((s) => s.getSessionsForAgent);
+  const enforceSessionLimit = useSessionStore((s) => s.enforceSessionLimit);
+
+  // Find the agent node to get name
+  const agentNode = nodes.find((n) => n.id === agentNodeId && n.data.type === 'agent');
+  const agentName =
+    agentNode?.data.type === 'agent' ? (agentNode.data as { name: string }).name : '';
+
+  // Get sessions for this agent
+  const agentSessions = useMemo(
+    () => getSessionsForAgent(agentName),
+    [sessions, agentName, getSessionsForAgent],
+  );
+
+  // Active session ID
+  const activeSessionId = activeSessionIdMap[agentNodeId] ?? null;
+  const activeSession = activeSessionId ? sessions[activeSessionId] : null;
+  const messages = activeSession?.messages ?? [];
+
+  // Auto-create default session if none exists
+  useEffect(() => {
+    if (!config || !agentName) return;
+
+    if (agentSessions.length === 0) {
+      // No sessions at all — create default
+      const id = createSession(agentName, config.provider, config.modelId, true);
+      setActiveSession(agentNodeId, id);
+    } else if (!activeSessionId || !sessions[activeSessionId]) {
+      // No active session or active session was deleted — pick the most recent
+      setActiveSession(agentNodeId, agentSessions[0].id);
+    }
+  }, [agentName, config, agentSessions.length, activeSessionId]);
+
+  // UI state
+  const [showSessionDropdown, setShowSessionDropdown] = useState(false);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Context window and peripheral reservations
   const contextInfo = useContextWindow(config);
@@ -56,8 +127,77 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
     };
   }, []);
 
+  // Close dropdown on click outside
+  useEffect(() => {
+    if (!showSessionDropdown) return;
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setShowSessionDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showSessionDropdown]);
+
+  const handleNewSession = () => {
+    if (!config || !agentName) return;
+
+    // Enforce limit before creating
+    enforceSessionLimit(agentName, 3);
+
+    // Check if we're at the limit after enforcement
+    const currentSessions = getSessionsForAgent(agentName);
+    if (currentSessions.length >= 3) {
+      // Drop the oldest
+      const oldest = currentSessions[currentSessions.length - 1];
+      if (oldest.id.endsWith(':default')) {
+        // Don't delete default if it's the only one — delete second oldest
+        if (currentSessions.length > 1) {
+          deleteSession(currentSessions[currentSessions.length - 1].id);
+        }
+      } else {
+        deleteSession(oldest.id);
+      }
+    }
+
+    const id = createSession(agentName, config.provider, config.modelId, false);
+    setActiveSession(agentNodeId, id);
+    setShowSessionDropdown(false);
+
+    // Destroy current runtime so a fresh one is used for the new session
+    destroyRuntime(agentNodeId);
+  };
+
+  const handleDeleteSession = (sessionId: string) => {
+    if (deleteConfirmId === sessionId) {
+      deleteSession(sessionId);
+      setDeleteConfirmId(null);
+
+      // If we deleted the active session, switch to another
+      if (activeSessionId === sessionId) {
+        const remaining = getSessionsForAgent(agentName);
+        if (remaining.length > 0) {
+          setActiveSession(agentNodeId, remaining[0].id);
+        } else if (config) {
+          // Create a new default session
+          const id = createSession(agentName, config.provider, config.modelId, true);
+          setActiveSession(agentNodeId, id);
+        }
+      }
+    } else {
+      setDeleteConfirmId(sessionId);
+    }
+  };
+
+  const handleSwitchSession = (sessionId: string) => {
+    setActiveSession(agentNodeId, sessionId);
+    setShowSessionDropdown(false);
+    // Destroy runtime so it rebuilds with the new session's context
+    destroyRuntime(agentNodeId);
+  };
+
   const sendMessage = useCallback(async () => {
-    if (!input.trim() || isStreaming || !config) return;
+    if (!input.trim() || isStreaming || !config || !activeSessionId) return;
 
     const trimmedInput = input.trim();
     const userMessage: Message = {
@@ -65,10 +205,10 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
       role: 'user',
       content: trimmedInput,
       timestamp: Date.now(),
-      tokenCount: estimateTokens(trimmedInput), // estimate tokens for user message
+      tokenCount: estimateTokens(trimmedInput),
     };
 
-    addMessage(agentNodeId, userMessage);
+    addMessage(activeSessionId, userMessage);
     setInput('');
     setIsStreaming(true);
 
@@ -77,11 +217,9 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
         Promise.resolve(getApiKey(provider)),
       );
 
-      // Set up event listener for this prompt
       const assistantMessageId = `msg_${Date.now()}_a`;
       let assistantContent = '';
 
-      // Unsubscribe previous listener
       unsubRef.current?.();
 
       const unsub = runtime.subscribe((event: RuntimeEvent) => {
@@ -89,16 +227,24 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
           const msg = event.message as { role?: string };
           if (msg.role === 'assistant') {
             assistantContent = '';
-            addMessage(agentNodeId, { id: assistantMessageId, role: 'assistant', content: '', timestamp: Date.now() });
+            addMessage(activeSessionId, {
+              id: assistantMessageId,
+              role: 'assistant',
+              content: '',
+              timestamp: Date.now(),
+            });
           }
         } else if (event.type === 'message_update') {
           const aEvent = event.assistantMessageEvent;
           if (aEvent.type === 'text_delta') {
             assistantContent += aEvent.delta;
-            updateMessage(agentNodeId, assistantMessageId, (m) => ({ ...m, content: assistantContent }));
+            updateMessage(activeSessionId, assistantMessageId, (m) => ({
+              ...m,
+              content: assistantContent,
+            }));
           } else if (aEvent.type === 'error') {
             console.error('[pi-ai Error]', aEvent);
-            addMessage(agentNodeId, {
+            addMessage(activeSessionId, {
               id: `err_${Date.now()}`,
               role: 'assistant',
               content: `API Error: ${aEvent.error?.errorMessage || 'Unknown provider error'}`,
@@ -107,7 +253,6 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
             setIsStreaming(false);
           }
         } else if (event.type === 'message_end') {
-          // Capture real usage data from the API response
           const endMsg = event.message as {
             role?: string;
             usage?: {
@@ -120,7 +265,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
             content?: Array<{ type: string; text?: string }>;
           };
           if (endMsg.role === 'assistant' && endMsg.usage) {
-            updateMessage(agentNodeId, assistantMessageId, (m) => ({
+            updateMessage(activeSessionId, assistantMessageId, (m) => ({
               ...m,
               tokenCount: endMsg.usage!.output,
               usage: {
@@ -133,20 +278,21 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
             }));
           }
         } else if (event.type === 'tool_execution_start') {
-          addMessage(agentNodeId, {
+          addMessage(activeSessionId, {
             id: `tool_${event.toolCallId}`,
             role: 'tool',
             content: `Calling tool: ${event.toolName}`,
             timestamp: Date.now(),
           });
         } else if (event.type === 'tool_execution_end') {
-          const resultText = event.result?.content
-            ?.map((c: { type: string; text?: string }) =>
-              c.type === 'text' ? c.text : '',
-            )
-            .join('') || '';
+          const resultText =
+            event.result?.content
+              ?.map((c: { type: string; text?: string }) =>
+                c.type === 'text' ? c.text : '',
+              )
+              .join('') || '';
           const toolContent = `${event.toolName}: ${resultText.slice(0, 500)}${event.isError ? ' (error)' : ''}`;
-          updateMessage(agentNodeId, `tool_${event.toolCallId}`, (m) => ({
+          updateMessage(activeSessionId, `tool_${event.toolCallId}`, (m) => ({
             ...m,
             content: toolContent,
             tokenCount: estimateTokens(toolContent),
@@ -154,7 +300,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
         } else if (event.type === 'agent_end') {
           setIsStreaming(false);
         } else if (event.type === 'runtime_error') {
-          addMessage(agentNodeId, {
+          addMessage(activeSessionId, {
             id: `err_${Date.now()}`,
             role: 'assistant',
             content: `Error: ${event.error}`,
@@ -168,7 +314,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
 
       await runtime.prompt(userMessage.content);
     } catch (error) {
-      addMessage(agentNodeId, {
+      addMessage(activeSessionId, {
         id: `msg_${Date.now()}_err`,
         role: 'assistant',
         content: `Error: ${error instanceof Error ? error.message : 'Failed to get response'}. Make sure you have configured your API keys in Settings.`,
@@ -177,7 +323,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
     } finally {
       setIsStreaming(false);
     }
-  }, [input, isStreaming, config, agentNodeId, getOrCreateRuntime, getApiKey]);
+  }, [input, isStreaming, config, agentNodeId, activeSessionId, getOrCreateRuntime, getApiKey]);
 
   const handleStop = () => {
     if (!config) return;
@@ -202,32 +348,122 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
   return (
     <div className="fixed inset-y-0 right-0 z-50 flex w-[420px] flex-col border-l border-slate-700 bg-slate-900 shadow-2xl">
       {/* Header */}
-      <div className="flex items-center gap-3 border-b border-slate-800 px-4 py-3">
-        <Bot size={18} className="text-blue-400" />
-        <div className="flex-1">
-          <h3 className="text-sm font-bold text-slate-100">{config.name}</h3>
-          <p className="text-[10px] text-slate-500">
-            {config.provider} / {config.modelId}
-          </p>
-        </div>
-        {isStreaming && (
-          <Loader2 size={14} className="animate-spin text-blue-400" />
-        )}
-        {messages.length > 0 && (
+      <div className="flex flex-col border-b border-slate-800">
+        {/* Top row: agent name + controls */}
+        <div className="flex items-center gap-3 px-4 py-3">
+          <Bot size={18} className="text-blue-400" />
+          <div className="flex-1">
+            <h3 className="text-sm font-bold text-slate-100">{config.name}</h3>
+            <p className="text-[10px] text-slate-500">
+              {config.provider} / {config.modelId}
+            </p>
+          </div>
+          {isStreaming && (
+            <Loader2 size={14} className="animate-spin text-blue-400" />
+          )}
+          {messages.length > 0 && (
+            <button
+              onClick={() => activeSessionId && clearSessionMessages(activeSessionId)}
+              className="rounded p-1 text-slate-500 transition hover:bg-slate-800 hover:text-red-400"
+              title="Clear Messages"
+            >
+              <Trash2 size={16} />
+            </button>
+          )}
           <button
-            onClick={() => clearChat(agentNodeId)}
-            className="rounded p-1 text-slate-500 transition hover:bg-slate-800 hover:text-red-400"
-            title="Clear Chat"
+            onClick={handleClose}
+            className="rounded p-1 text-slate-500 transition hover:bg-slate-800 hover:text-slate-300"
           >
-            <Trash2 size={16} />
+            <X size={16} />
           </button>
-        )}
-        <button
-          onClick={handleClose}
-          className="rounded p-1 text-slate-500 transition hover:bg-slate-800 hover:text-slate-300"
-        >
-          <X size={16} />
-        </button>
+        </div>
+
+        {/* Session selector row */}
+        <div className="flex items-center gap-1.5 border-t border-slate-800/50 px-4 py-1.5">
+          <span className="text-[9px] uppercase tracking-wider text-slate-600 font-semibold">
+            Session
+          </span>
+          <div className="relative flex-1" ref={dropdownRef}>
+            <button
+              onClick={() => setShowSessionDropdown(!showSessionDropdown)}
+              className="flex w-full items-center justify-between gap-1 rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-[10px] text-slate-300 transition hover:border-slate-600"
+            >
+              <span className="truncate">
+                {activeSession
+                  ? formatSessionLabel(
+                      activeSession.llmSlug,
+                      activeSession.lastMessageAt,
+                      activeSession.id.endsWith(':default'),
+                    )
+                  : 'No session'}
+              </span>
+              <ChevronDown size={10} className="flex-shrink-0 text-slate-500" />
+            </button>
+
+            {/* Dropdown */}
+            {showSessionDropdown && (
+              <div className="absolute left-0 right-0 top-full z-10 mt-1 rounded-lg border border-slate-700 bg-slate-850 shadow-xl overflow-hidden"
+                   style={{ backgroundColor: '#1a2332' }}>
+                {agentSessions.map((session) => (
+                  <div
+                    key={session.id}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] cursor-pointer transition ${
+                      session.id === activeSessionId
+                        ? 'bg-blue-500/10 text-blue-300'
+                        : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200'
+                    }`}
+                  >
+                    <button
+                      className="flex-1 text-left truncate"
+                      onClick={() => handleSwitchSession(session.id)}
+                    >
+                      {formatSessionLabel(
+                        session.llmSlug,
+                        session.lastMessageAt,
+                        session.id.endsWith(':default'),
+                      )}
+                      <span className="ml-1 text-[8px] text-slate-600">
+                        ({session.messages.length} msgs)
+                      </span>
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteSession(session.id);
+                      }}
+                      className={`flex-shrink-0 rounded p-0.5 transition ${
+                        deleteConfirmId === session.id
+                          ? 'bg-red-500/20 text-red-400'
+                          : 'text-slate-600 hover:text-red-400'
+                      }`}
+                      title={
+                        deleteConfirmId === session.id
+                          ? 'Click again to confirm'
+                          : 'Delete session'
+                      }
+                    >
+                      <Trash2 size={10} />
+                    </button>
+                  </div>
+                ))}
+                {agentSessions.length === 0 && (
+                  <div className="px-2.5 py-2 text-[10px] text-slate-600 italic">
+                    No sessions
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* New session button */}
+          <button
+            onClick={handleNewSession}
+            className="rounded p-1 text-slate-500 transition hover:bg-slate-800 hover:text-blue-400"
+            title="New Session"
+          >
+            <Plus size={14} />
+          </button>
+        </div>
       </div>
 
       {/* Messages */}
@@ -308,7 +544,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
                 <div className={`flex items-center gap-1 mt-0.5 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   {msg.role === 'tool' && <Wrench size={8} className="text-slate-600" />}
                   <span className="text-[8px] tabular-nums text-slate-600 font-mono">
-                    {msg.role === 'tool' ? '' : ''}{formatTokenBadge(msg.tokenCount)} tokens
+                    {formatTokenBadge(msg.tokenCount)} tokens
                   </span>
                   {msg.usage && (
                     <span className="text-[8px] text-slate-600 font-mono">

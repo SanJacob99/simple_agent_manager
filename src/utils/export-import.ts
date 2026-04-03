@@ -55,10 +55,19 @@ export function importGraph(bundle: unknown): { nodes: AppNode[]; edges: Edge[] 
   // Migrate nodes: fill in default values for new fields
   const migratedNodes = graphState.nodes.map((node) => {
     const defaults = getDefaultNodeData(node.data.type);
-    return {
-      ...node,
-      data: { ...defaults, ...node.data } as FlowNodeData,
-    };
+    const merged = { ...defaults, ...node.data } as FlowNodeData;
+
+    // Auto-confirm names for imported agents that already have a name
+    if (
+      merged.type === 'agent' &&
+      'nameConfirmed' in merged &&
+      !(merged as any).nameConfirmed &&
+      (merged as any).name
+    ) {
+      (merged as any).nameConfirmed = true;
+    }
+
+    return { ...node, data: merged };
   });
 
   return {
