@@ -1,12 +1,23 @@
 import express from 'express';
-import { StorageEngine } from '../src/runtime/storage-engine';
-import type { ResolvedStorageConfig } from '../src/runtime/agent-config';
-import type { SessionMeta, SessionEntry } from '../src/runtime/storage-engine';
+import { createServer } from 'http';
+import { WebSocketServer } from 'ws';
+import { StorageEngine } from './runtime/storage-engine';
+import { AgentManager } from './agents/agent-manager';
+import { ApiKeyStore } from './auth/api-keys';
+import { handleConnection } from './connections/ws-handler';
+import type { ResolvedStorageConfig } from '../shared/agent-config';
+import type { SessionMeta, SessionEntry } from '../shared/storage-types';
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 
-// Engine instances keyed by agentName
+// --- Shared state ---
+
+const apiKeys = new ApiKeyStore();
+const agentManager = new AgentManager(apiKeys);
+
+// --- Storage engine instances ---
+
 const engines = new Map<string, StorageEngine>();
 
 function getOrCreateEngine(config: ResolvedStorageConfig, agentName: string): StorageEngine {
@@ -19,7 +30,7 @@ function getOrCreateEngine(config: ResolvedStorageConfig, agentName: string): St
   return engine;
 }
 
-// --- Init ---
+// --- Storage REST routes (unchanged) ---
 
 app.post('/api/storage/init', async (req, res) => {
   const { config, agentName } = req.body as { config: ResolvedStorageConfig; agentName: string };
@@ -31,8 +42,6 @@ app.post('/api/storage/init', async (req, res) => {
     res.status(500).json({ error: (err as Error).message });
   }
 });
-
-// --- Sessions ---
 
 app.get('/api/storage/sessions', async (req, res) => {
   const { config, agentName } = req.query as { config: string; agentName: string };
@@ -100,8 +109,6 @@ app.patch('/api/storage/sessions/:id', async (req, res) => {
   }
 });
 
-// --- Entries ---
-
 app.post('/api/storage/sessions/:id/entries', async (req, res) => {
   const { config, agentName, entry } = req.body as {
     config: ResolvedStorageConfig;
@@ -129,8 +136,6 @@ app.get('/api/storage/sessions/:id/entries', async (req, res) => {
   }
 });
 
-// --- Retention ---
-
 app.post('/api/storage/sessions/enforce-retention', async (req, res) => {
   const { config, agentName, maxSessions } = req.body as {
     config: ResolvedStorageConfig;
@@ -145,8 +150,6 @@ app.post('/api/storage/sessions/enforce-retention', async (req, res) => {
     res.status(500).json({ error: (err as Error).message });
   }
 });
-
-// --- Memory ---
 
 app.post('/api/storage/memory/daily', async (req, res) => {
   const { config, agentName, content, date } = req.body as {
@@ -215,9 +218,50 @@ app.get('/api/storage/memory/files', async (req, res) => {
   }
 });
 
-// --- Start ---
+// --- Health check ---
+
+app.get('/api/health', (_req, res) => {
+  res.json({ status: 'ok' });
+});
+
+// --- Start server with WebSocket support ---
 
 const PORT = parseInt(process.env.STORAGE_PORT ?? '3210', 10);
-app.listen(PORT, () => {
-  console.log(`Storage server listening on http://localhost:${PORT}`);
+const httpServer = createServer(app);
+
+const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
+
+wss.on('connection', (socket) => {
+  handleConnection(socket, agentManager, apiKeys);
 });
+
+httpServer.listen(PORT, () => {
+  console.log(`Server listening on http://localhost:${PORT}`);
+  console.log(`WebSocket available at ws://localhost:${PORT}/ws`);
+});
+
+// --- Graceful shutdown ---
+
+function shutdown() {
+  console.log('\nShutting down...');
+
+  // Close WebSocket connections
+  for (const client of wss.clients) {
+    client.close(1001, 'Server shutting down');
+  }
+
+  agentManager.shutdown()
+    .then(() => {
+      httpServer.close(() => {
+        console.log('Server closed.');
+        process.exit(0);
+      });
+    })
+    .catch((err) => {
+      console.error('Error during shutdown:', err);
+      process.exit(1);
+    });
+}
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
