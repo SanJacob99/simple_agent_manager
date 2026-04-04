@@ -18,14 +18,19 @@ vi.mock('../runtime/agent-runtime', () => {
 function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
   return {
     id: 'agent-1',
-    version: 2,
+    version: 3,
     name: 'Test Agent',
     description: '',
     tags: [],
     provider: 'openai',
     modelId: 'gpt-4',
     thinkingLevel: 'none',
-    systemPrompt: 'You are a test agent.',
+    systemPrompt: {
+      mode: 'manual',
+      sections: [{ key: 'manual', label: 'Manual Prompt', content: 'You are a test agent.', tokenEstimate: 6 }],
+      assembled: 'You are a test agent.',
+      userInstructions: 'You are a test agent.',
+    },
     modelCapabilities: {},
     memory: null,
     tools: null,
@@ -64,7 +69,14 @@ describe('AgentManager', () => {
 
   it('replaces an existing agent on re-start', () => {
     manager.start(makeConfig());
-    manager.start(makeConfig({ systemPrompt: 'Updated prompt' }));
+    manager.start(makeConfig({
+      systemPrompt: {
+        mode: 'manual',
+        sections: [{ key: 'manual', label: 'Manual Prompt', content: 'Updated prompt', tokenEstimate: 3 }],
+        assembled: 'Updated prompt',
+        userInstructions: 'Updated prompt',
+      },
+    }));
     expect(manager.has('agent-1')).toBe(true);
   });
 
