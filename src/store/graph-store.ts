@@ -31,6 +31,7 @@ function buildNodeData(nodeType: NodeType): FlowNodeData {
     modelId: agentDefaults.modelId,
     thinkingLevel: agentDefaults.thinkingLevel,
     systemPrompt: agentDefaults.systemPrompt,
+    systemPromptMode: 'auto' as const,
   };
 }
 
@@ -166,7 +167,6 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
                 provider: agentDefaults.provider,
                 modelId: agentDefaults.modelId,
                 thinkingLevel: agentDefaults.thinkingLevel,
-                systemPrompt: agentDefaults.systemPrompt,
               },
             }
           : node,
@@ -220,6 +220,35 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   },
 
   loadGraph: (nodes, edges) => {
+    // Migration: add systemPromptMode to agent nodes that don't have it
+    for (const node of nodes) {
+      if (node.data.type === 'agent' && !('systemPromptMode' in node.data)) {
+        (node.data as any).systemPromptMode =
+          node.data.systemPrompt === 'You are a helpful assistant.' ? 'auto' : 'append';
+      }
+      if (node.data.type === 'contextEngine') {
+        // Migrate systemPromptAdditions to connected agent's append mode
+        const additions = (node.data as any).systemPromptAdditions;
+        if (Array.isArray(additions) && additions.length > 0) {
+          const edge = edges.find(e => e.source === node.id);
+          if (edge) {
+            const agentNode = nodes.find(n => n.id === edge.target && n.data.type === 'agent');
+            if (agentNode && agentNode.data.type === 'agent') {
+              (agentNode.data as any).systemPromptMode = 'append';
+              agentNode.data.systemPrompt += '\n\n' + additions.join('\n\n');
+            }
+          }
+        }
+        delete (node.data as any).systemPromptAdditions;
+        // Add bootstrap defaults
+        if (!('bootstrapMaxChars' in node.data)) {
+          (node.data as any).bootstrapMaxChars = 20000;
+        }
+        if (!('bootstrapTotalMaxChars' in node.data)) {
+          (node.data as any).bootstrapTotalMaxChars = 150000;
+        }
+      }
+    }
     set({ nodes, edges });
   },
 }));
