@@ -40,6 +40,7 @@ describe('DataMaintenanceSection', () => {
         modelId: 'gpt-4o',
         thinkingLevel: 'high',
         systemPrompt: 'Be concise.',
+        safetyGuardrails: 'Be safe.',
       },
     });
   });

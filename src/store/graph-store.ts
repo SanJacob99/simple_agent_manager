@@ -223,8 +223,9 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
     // Migration: add systemPromptMode to agent nodes that don't have it
     for (const node of nodes) {
       if (node.data.type === 'agent' && !('systemPromptMode' in node.data)) {
-        (node.data as any).systemPromptMode =
-          node.data.systemPrompt === 'You are a helpful assistant.' ? 'auto' : 'append';
+        const agentData = node.data as import('../types/nodes').AgentNodeData;
+        (agentData as any).systemPromptMode =
+          agentData.systemPrompt === 'You are a helpful assistant.' ? 'auto' : 'append';
       }
       if (node.data.type === 'contextEngine') {
         // Migrate systemPromptAdditions to connected agent's append mode
