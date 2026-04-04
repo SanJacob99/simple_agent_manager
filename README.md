@@ -5,13 +5,14 @@
 
 A node-based graphical interface for building and managing custom AI agents. Drag-and-drop nodes onto a canvas to visually configure agents with memory, tools, context engines, databases, and more -- then chat with them directly from the dashboard.
 
-Built with React 19, TypeScript, and [@xyflow/react](https://reactflow.dev/) for the graph editor, powered by [pi-agent-core](https://github.com/nicepkg/pi-mono) for the agent runtime.
+Built with React 19, TypeScript, and [@xyflow/react](https://reactflow.dev/) for the graph editor. Features a full-stack architecture with a Node.js/Express/WebSocket backend powered by [pi-agent-core](https://github.com/nicepkg/pi-mono) for the agent runtime.
 
 ## Features
 
 - **Visual Agent Builder** -- Drag agent and peripheral nodes onto a canvas, connect them with edges to define agent capabilities
 - **OpenClaw-Inspired Architecture** -- Memory, tools, and context engine nodes modeled after [OpenClaw](https://docs.openclaw.ai/) concepts
-- **Decoupled Runtime** -- Agent configs are serializable JSON; the runtime layer has no React dependency and can conceptually run headless
+- **Client-Server Architecture** -- Agent configs are serializable JSON sent to a Node.js backend. Agents run securely on the server with full access to files and external APIs.
+- **Session-Based Chat** -- Conversations are strictly isolated into distinct, immutable sessions to prevent context leakage. Automatically manages history limits and prunes old sessions.
 - **Multi-Provider LLM Support** -- Anthropic, OpenAI, OpenRouter, Google, Ollama, Mistral, Groq, xAI
 - **Memory Engine** -- Multiple backends (builtin/external/cloud), compaction strategies (summary/sliding-window/hybrid), memory tools (search/get/save) exposed to agents
 - **Tool System** -- Profiles (full/coding/messaging/minimal), groups (runtime/fs/web/memory/coding/communication), skills (markdown instructions), plugins
@@ -68,30 +69,35 @@ Output is in `dist/`.
 2. **Create an agent** -- Drag an "Agent" node onto the canvas from the left sidebar
 3. **Add peripherals** -- Drag Memory, Tools, Context Engine, or Database nodes and connect them to the agent
 4. **Customize** -- Click any node to open the properties panel on the right and configure it
-5. **Chat** -- Click the "Chat" button on an agent node to open the chat drawer and start a conversation
+5. **Chat** -- Click the "Chat" button on an agent node to open the chat drawer, create a new session or select an existing one, and start a conversation
 6. **Export/Import** -- Use the sidebar action buttons to export your graph, import one, or load the built-in test fixture
 
 ## Architecture
 
 ```
-Graph (React Flow nodes/edges)
+Client (React Flow UI)
+  -> Graph Nodes/Edges
   -> resolveAgentConfig()  -->  AgentConfig (serializable JSON)
-    -> AgentRuntime             (wraps pi-agent-core Agent, no React dependency)
+  -> AgentClient (WebSocket connection & event subscription)
+
+Server (Node.js + Express + WebSockets)
+  -> agent-manager (Manages active runtimes)
+    -> AgentRuntime             (wraps pi-agent-core Agent)
       -> MemoryEngine           (backends, compaction, memory tools)
       -> ContextEngine          (assemble/compact lifecycle, token budget)
       -> ToolFactory            (profiles, groups -> AgentTool instances)
-        -> ChatDrawer           (subscribes to runtime events)
 ```
 
 **Config Layer** -- Node data types and graph traversal produce a serializable `AgentConfig` (pure JSON).
 
-**Runtime Layer** -- `AgentRuntime` takes an `AgentConfig` + API key resolver, creates a real `pi-agent-core` Agent with tools, memory, and context management. No React dependency.
+**Server Layer** -- The backend runs `AgentRuntime` using the provided configuration, executing real `pi-agent-core` agents with their provided tools, memory, and context.
 
-**UI Layer** -- React components subscribe to `AgentRuntime` events for streaming updates, tool call displays, and status indicators.
+**UI Layer** -- React components subscribe to WebSocket events for streaming updates, tool call displays, and status indicators.
 
 ## Tech Stack
 
 - **React 19** + TypeScript + Vite 6
+- **Express 5** + **ws 8** -- Backend and WebSockets
 - **@xyflow/react 12** -- Node-based graph editor
 - **@mariozechner/pi-ai** -- Unified LLM API (stream, getModel, KnownProvider)
 - **@mariozechner/pi-agent-core** -- Agent class with tools, transformContext, event subscription
@@ -103,18 +109,22 @@ Graph (React Flow nodes/edges)
 ## Project Structure
 
 ```
-src/
+server/             Node.js backend, Express, WebSocket handler
+  agents/           Agent execution and runtime management
+  auth/             API key management
+  connections/      WebSocket connection management
+  runtime/          Agent runtime (memory, context, tools)
+shared/             Shared types and agent configs (Client & Server)
+src/                React Frontend
   canvas/          Flow canvas and drag-and-drop
-  chat/            Chat drawer and agent runner hook
+  chat/            Chat drawer, Session Management, and WebSocket Client
   edges/           Custom edge components
   fixtures/        Test graph fixtures
   nodes/           Node components (Agent, Memory, Tools, etc.)
   panels/          Sidebar, properties panel, property editors
-  runtime/         Agent runtime (config, runtime, memory, context, tools)
-  settings/        API key management
-  store/           Zustand stores (graph, runtime, storage)
+  store/           Zustand stores (graph, session, storage)
   types/           TypeScript types (nodes, graph)
-  utils/           Utilities (theme, defaults, export/import, IDs)
+  utils/           Utilities (theme, defaults, export/import)
 ```
 
 ## License
