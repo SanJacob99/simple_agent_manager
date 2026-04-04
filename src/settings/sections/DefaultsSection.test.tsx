@@ -14,6 +14,7 @@ describe('DefaultsSection', () => {
         modelId: 'claude-sonnet-4-20250514',
         thinkingLevel: 'off',
         systemPrompt: 'You are a helpful assistant.',
+        safetyGuardrails: 'Default guardrails.',
       },
     });
     useGraphStore.setState({
@@ -62,7 +63,7 @@ describe('DefaultsSection', () => {
     expect(useSettingsStore.getState().agentDefaults.modelId).toBe('gpt-4o');
   });
 
-  it('requires confirmation before applying defaults to existing agents', () => {
+  it('requires confirmation before applying defaults to existing agents and does not overwrite systemPrompt', () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
 
     render(<DefaultsSection />);
@@ -72,13 +73,13 @@ describe('DefaultsSection', () => {
 
     expect(confirmSpy).toHaveBeenCalledWith(
       expect.stringContaining(
-        'provider, model, thinking level, and system prompt',
+        'provider, model, and thinking level',
       ),
     );
     expect(useGraphStore.getState().nodes[0].data.type).toBe('agent');
     if (useGraphStore.getState().nodes[0].data.type === 'agent') {
       expect(useGraphStore.getState().nodes[0].data.systemPrompt).toBe(
-        'You are a helpful assistant.',
+        'Old prompt',
       );
     }
   });

@@ -1,6 +1,6 @@
 import { useGraphStore } from '../../store/graph-store';
 import type { ContextEngineNodeData, CompactionStrategy } from '../../types/nodes';
-import { Field, Tooltip, inputClass, selectClass, textareaClass } from './shared';
+import { Field, Tooltip, inputClass, selectClass } from './shared';
 
 const COMPACTION_STRATEGIES: CompactionStrategy[] = ['summary', 'sliding-window', 'trim-oldest', 'hybrid'];
 const COMPACTION_TRIGGERS = ['auto', 'manual', 'threshold'] as const;
@@ -15,26 +15,6 @@ interface Props {
 export default function ContextEngineProperties({ nodeId, data }: Props) {
   const update = useGraphStore((s) => s.updateNodeData);
   const { connectedAgent, modelId, modelContextWindow } = useContextEngineSync(nodeId, data);
-
-  // --- System prompt additions ---
-
-  const addSystemPromptAddition = () => {
-    update(nodeId, {
-      systemPromptAdditions: [...data.systemPromptAdditions, ''],
-    });
-  };
-
-  const updateAddition = (index: number, value: string) => {
-    const updated = [...data.systemPromptAdditions];
-    updated[index] = value;
-    update(nodeId, { systemPromptAdditions: updated });
-  };
-
-  const removeAddition = (index: number) => {
-    update(nodeId, {
-      systemPromptAdditions: data.systemPromptAdditions.filter((_, i) => i !== index),
-    });
-  };
 
   return (
     <div className="space-y-1">
@@ -259,37 +239,40 @@ export default function ContextEngineProperties({ nodeId, data }: Props) {
         </div>
       </Field>
 
-      {/* System Prompt Additions */}
-      <Field label="System Prompt Additions">
-        <Tooltip text="Additional text injected into the system prompt at runtime. Use this to add dynamic instructions, persona details, or context-specific rules that augment the agent's base system prompt.">
+      {/* Bootstrap Limits */}
+      <Field label="Bootstrap Limits">
+        <Tooltip text="Controls how much workspace bootstrap file content is injected into the system prompt. Per-file limit truncates individual files; total limit caps cumulative content across all files.">
           <span className="mb-1.5 inline-block text-[10px] text-slate-500 underline decoration-dotted decoration-slate-600 underline-offset-4 cursor-help">
             What are these?
           </span>
         </Tooltip>
         <div className="space-y-2">
-          {data.systemPromptAdditions.map((addition, i) => (
-            <div key={i} className="flex gap-1.5">
-              <textarea
-                className={textareaClass + ' flex-1'}
-                rows={2}
-                value={addition}
-                onChange={(e) => updateAddition(i, e.target.value)}
-                placeholder="Dynamic text to prepend to system prompt..."
-              />
-              <button
-                onClick={() => removeAddition(i)}
-                className="self-start text-xs text-red-400 hover:text-red-300"
-              >
-                X
-              </button>
-            </div>
-          ))}
-          <button
-            onClick={addSystemPromptAddition}
-            className="w-full rounded-md border border-dashed border-slate-700 py-1.5 text-xs text-slate-500 transition hover:border-slate-500 hover:text-slate-300"
-          >
-            + Add system prompt addition
-          </button>
+          <div>
+            <label className="text-[10px] text-slate-500">Max chars per file</label>
+            <input
+              className={inputClass}
+              type="number"
+              min={1000}
+              step={1000}
+              value={data.bootstrapMaxChars}
+              onChange={(e) =>
+                update(nodeId, { bootstrapMaxChars: parseInt(e.target.value) || 20000 })
+              }
+            />
+          </div>
+          <div>
+            <label className="text-[10px] text-slate-500">Max total chars (all files)</label>
+            <input
+              className={inputClass}
+              type="number"
+              min={1000}
+              step={5000}
+              value={data.bootstrapTotalMaxChars}
+              onChange={(e) =>
+                update(nodeId, { bootstrapTotalMaxChars: parseInt(e.target.value) || 150000 })
+              }
+            />
+          </div>
         </div>
       </Field>
     </div>
