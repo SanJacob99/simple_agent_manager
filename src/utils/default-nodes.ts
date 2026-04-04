@@ -1,4 +1,5 @@
 import type { NodeType, FlowNodeData } from '../types/nodes';
+import type { SystemPromptMode } from '../../shared/agent-config';
 
 export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
   switch (nodeType) {
@@ -14,6 +15,7 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         description: '',
         tags: [],
         modelCapabilities: {},
+        systemPromptMode: 'auto' as SystemPromptMode,
       };
     case 'memory':
       return {
@@ -60,11 +62,12 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         compactionStrategy: 'trim-oldest',
         compactionTrigger: 'auto',
         compactionThreshold: 0.8,
-        systemPromptAdditions: [],
         autoFlushBeforeCompact: true,
         ragEnabled: false,
         ragTopK: 5,
         ragMinScore: 0.7,
+        bootstrapMaxChars: 20000,
+        bootstrapTotalMaxChars: 150000,
       };
     case 'agentComm':
       return {
