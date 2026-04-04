@@ -12,8 +12,6 @@ The Context Engine Node controls how an agent manages its conversation context. 
 
 It implements an OpenClaw-inspired lifecycle: **assemble** (gather messages within budget) → **compact** (reduce if over budget) → **afterTurn** (post-turn bookkeeping). This lifecycle is wired into `pi-agent-core`'s `transformContext` hook, which runs before each LLM call.
 
-The Context Engine also supports system prompt additions — extra instructions appended to the agent's system prompt at runtime.
-
 ## Configuration
 
 | Property | Type | Default | Description |
@@ -25,7 +23,8 @@ The Context Engine also supports system prompt additions — extra instructions 
 | `compactionStrategy` | `CompactionStrategy` | `"trim-oldest"` | Strategy: `summary`, `sliding-window`, `trim-oldest`, `hybrid` |
 | `compactionTrigger` | `string` | `"auto"` | When to compact: `auto`, `manual`, `threshold`. Controls what input is shown for the threshold value (see below). |
 | `compactionThreshold` | `number` | `0.8` | Meaning depends on trigger: ratio (0-1) for `threshold`, token count for `manual`, unused for `auto`. |
-| `systemPromptAdditions` | `string[]` | `[]` | Extra text appended to the system prompt |
+| `bootstrapMaxChars` | `number` | `20000` | Maximum characters per bootstrap file before truncation |
+| `bootstrapTotalMaxChars` | `number` | `150000` | Maximum total characters across all bootstrap files |
 | `autoFlushBeforeCompact` | `boolean` | `true` | Flush pending tool results and buffered messages before compacting |
 | `ragEnabled` | `boolean` | `false` | Enable RAG retrieval. Requires a connected Vector Database node. |
 | `ragTopK` | `number` | `5` | Number of RAG results to retrieve |
@@ -47,7 +46,7 @@ At runtime, the configuration creates a `ContextEngine` instance (`src/runtime/c
 
 **`buildTransformContext()`** — Returns a function that plugs into `pi-agent-core`'s `transformContext` option. Before each LLM call, this function runs `assemble()` on the current messages, compacting if the estimated token count exceeds `tokenBudget - reservedForResponse`.
 
-**`assemble(messages)`** — Estimates token usage. If over budget, calls `compact()`. Returns the processed messages, estimated token count, and any system prompt additions.
+**`assemble(messages)`** — Estimates token usage. If over budget, calls `compact()`. Returns `{ messages, estimatedTokens }` — the processed message list and the estimated token count.
 
 **`compact(messages)`** — Applies the configured compaction strategy:
 - `trim-oldest`: Drops oldest messages one by one until within budget (keeps minimum 2)
@@ -56,7 +55,7 @@ At runtime, the configuration creates a `ContextEngine` instance (`src/runtime/c
 
 **`afterTurn(messages)`** — Post-turn hook for future bookkeeping (currently a no-op placeholder).
 
-**`getSystemPromptAddition()`** — Joins all `systemPromptAdditions` with double newlines. This is appended to the agent's system prompt during `AgentRuntime` construction.
+The context engine no longer manages system prompt additions. System prompt construction is now handled by the structured system prompt builder in `AgentRuntime`, which assembles sections (safety, tooling, skills, workspace, time, runtime) based on the agent's `systemPromptMode`.
 
 Token estimation uses a character-based heuristic in `src/runtime/token-estimator.ts`.
 
@@ -78,7 +77,8 @@ Token estimation uses a character-based heuristic in `src/runtime/token-estimato
   "compactionStrategy": "hybrid",
   "compactionTrigger": "auto",
   "compactionThreshold": 0.8,
-  "systemPromptAdditions": ["Always cite your sources."],
+  "bootstrapMaxChars": 20000,
+  "bootstrapTotalMaxChars": 150000,
   "autoFlushBeforeCompact": true,
   "ragEnabled": false,
   "ragTopK": 5,
