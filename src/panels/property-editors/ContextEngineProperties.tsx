@@ -1,27 +1,11 @@
-import { useEffect, useRef } from 'react';
 import { useGraphStore } from '../../store/graph-store';
-import { useModelCatalogStore } from '../../store/model-catalog-store';
-import type { ContextEngineNodeData, CompactionStrategy, AgentNodeData } from '../../types/nodes';
+import type { ContextEngineNodeData, CompactionStrategy } from '../../types/nodes';
 import { Field, Tooltip, inputClass, selectClass, textareaClass } from './shared';
 
 const COMPACTION_STRATEGIES: CompactionStrategy[] = ['summary', 'sliding-window', 'trim-oldest', 'hybrid'];
 const COMPACTION_TRIGGERS = ['auto', 'manual', 'threshold'] as const;
 
-// --- Well-known context windows for non-catalog providers ---
-
-const KNOWN_CONTEXT_WINDOWS: Record<string, number> = {
-  'claude-sonnet-4-20250514': 200000,
-  'claude-haiku-3-5-20241022': 200000,
-  'claude-opus-4-20250514': 200000,
-  'claude-3-5-sonnet-20241022': 200000,
-  'claude-3-5-haiku-20241022': 200000,
-  'claude-3-opus-20240229': 200000,
-  'gpt-4o': 128000,
-  'gpt-4o-mini': 128000,
-  'gpt-4-turbo': 128000,
-  'gpt-4': 8192,
-  'o3-mini': 200000,
-};
+import { useContextEngineSync } from '../../nodes/useContextEngineSync';
 
 interface Props {
   nodeId: string;
@@ -30,38 +14,7 @@ interface Props {
 
 export default function ContextEngineProperties({ nodeId, data }: Props) {
   const update = useGraphStore((s) => s.updateNodeData);
-  const nodes = useGraphStore((s) => s.nodes);
-  const edges = useGraphStore((s) => s.edges);
-  const getModelMetadata = useModelCatalogStore((s) => s.getModelMetadata);
-
-  // --- Find connected agent and inherit token budget ---
-
-  const connectedAgentEdge = edges.find((e) => e.source === nodeId);
-  const connectedAgent = connectedAgentEdge
-    ? nodes.find((n) => n.id === connectedAgentEdge.target && n.data.type === 'agent')
-    : undefined;
-
-  const agentData = connectedAgent?.data as AgentNodeData | undefined;
-  const provider = agentData?.provider;
-  const modelId = agentData?.modelId;
-
-  // Try catalog first, then agent overrides, then well-known defaults
-  const catalogMeta = provider && modelId ? getModelMetadata(provider, modelId) : undefined;
-  const modelContextWindow =
-    catalogMeta?.contextWindow ??
-    agentData?.modelCapabilities?.contextWindow ??
-    (modelId ? KNOWN_CONTEXT_WINDOWS[modelId] : undefined);
-
-  // Auto-sync tokenBudget when model context window is discovered
-  const prevContextWindowRef = useRef<number | undefined>(undefined);
-  useEffect(() => {
-    if (modelContextWindow && modelContextWindow !== prevContextWindowRef.current) {
-      prevContextWindowRef.current = modelContextWindow;
-      if (data.tokenBudget !== modelContextWindow) {
-        update(nodeId, { tokenBudget: modelContextWindow });
-      }
-    }
-  }, [modelContextWindow, nodeId, data.tokenBudget, update]);
+  const { connectedAgent, modelId, modelContextWindow } = useContextEngineSync(nodeId, data);
 
   // --- System prompt additions ---
 
