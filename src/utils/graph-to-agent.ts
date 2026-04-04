@@ -1,12 +1,15 @@
 import type { AppNode } from '../types/nodes';
 import type { Edge } from '@xyflow/react';
 import type { AgentConfig } from '../../shared/agent-config';
+import type { SystemPromptMode } from '../../shared/agent-config';
 import { resolveToolNames } from '../../shared/resolve-tool-names';
+import { buildSystemPrompt } from '../../shared/system-prompt-builder';
 
 export function resolveAgentConfig(
   agentNodeId: string,
   nodes: AppNode[],
   edges: Edge[],
+  options: { safetyGuardrails?: string } = {},
 ): AgentConfig | null {
   const agentNode = nodes.find(
     (n) => n.id === agentNodeId && n.data.type === 'agent',
@@ -93,7 +96,6 @@ export function resolveAgentConfig(
         compactionStrategy: contextNode.data.compactionStrategy,
         compactionTrigger: contextNode.data.compactionTrigger,
         compactionThreshold: contextNode.data.compactionThreshold,
-        systemPromptAdditions: contextNode.data.systemPromptAdditions,
         autoFlushBeforeCompact: contextNode.data.autoFlushBeforeCompact,
         ragEnabled: contextNode.data.ragEnabled,
         ragTopK: contextNode.data.ragTopK,
@@ -151,19 +153,47 @@ export function resolveAgentConfig(
       };
     });
 
-  // --- Build augmented system prompt ---
-  let systemPrompt = data.systemPrompt;
+  // --- Build structured system prompt ---
+  const agentMode = (data as any).systemPromptMode as SystemPromptMode | undefined;
+  const mode: SystemPromptMode = agentMode ?? (
+    data.systemPrompt === 'You are a helpful assistant.' ? 'auto' : 'append'
+  );
 
-  // Inject skills as system prompt additions
-  const systemSkills = allSkills.filter((s) => s.injectAs === 'system-prompt');
-  if (systemSkills.length > 0) {
-    systemPrompt += '\n\n' + systemSkills.map((s) => s.content).join('\n\n');
-  }
+  const toolsSummary = toolsConfig
+    ? toolsConfig.resolvedTools.join(', ')
+    : null;
 
-  // Inject context engine system prompt additions
-  if (contextEngine && contextEngine.systemPromptAdditions.length > 0) {
-    systemPrompt += '\n\n' + contextEngine.systemPromptAdditions.join('\n\n');
-  }
+  const skillsSummary = allSkills.length > 0
+    ? allSkills.map(s => `- ${s.name}`).join('\n')
+    : null;
+
+  const bootstrapMaxChars = contextNode && contextNode.data.type === 'contextEngine'
+    ? ((contextNode.data as any).bootstrapMaxChars ?? 20000)
+    : 20000;
+  const bootstrapTotalMaxChars = contextNode && contextNode.data.type === 'contextEngine'
+    ? ((contextNode.data as any).bootstrapTotalMaxChars ?? 150000)
+    : 150000;
+
+  const workspacePath = storage ? storage.storagePath : null;
+
+  const systemPrompt = buildSystemPrompt({
+    mode,
+    userInstructions: data.systemPrompt,
+    safetyGuardrails: options.safetyGuardrails ?? '',
+    toolsSummary,
+    skillsSummary,
+    workspacePath,
+    bootstrapFiles: null,
+    bootstrapMaxChars,
+    bootstrapTotalMaxChars,
+    timezone: null,
+    runtimeMeta: {
+      host: 'simple-agent-manager',
+      os: typeof navigator !== 'undefined' ? navigator.platform : 'unknown',
+      model: data.modelId,
+      thinkingLevel: data.thinkingLevel,
+    },
+  });
 
   return {
     id: agentNodeId,
