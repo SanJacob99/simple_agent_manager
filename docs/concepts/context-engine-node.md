@@ -3,7 +3,7 @@
 > Manages token budgets, message compaction, and RAG integration to keep conversations within the model's context window.
 
 <!-- source: src/types/nodes.ts#ContextEngineNodeData -->
-<!-- last-verified: 2026-04-03 -->
+<!-- last-verified: 2026-04-04 -->
 <!-- token-budget-inheritance, compaction-trigger-modes, tooltips -->
 
 ## Overview
@@ -21,7 +21,7 @@ The Context Engine also supports system prompt additions — extra instructions 
 | `label` | `string` | `"Context Engine"` | Display label on the canvas |
 | `tokenBudget` | `number` | Inherited from model | Maximum tokens for the full context. Auto-inherited from the connected agent's model context window when available. Falls back to `128000` if model metadata is unavailable. |
 | `reservedForResponse` | `number` | `4096` | Tokens reserved for the model's response |
-| `ownsCompaction` | `boolean` | `false` | Whether this node owns compaction (vs. memory node). When enabled, no other node triggers its own compaction. |
+| `ownsCompaction` | `boolean` | `true` | Whether this node owns compaction (vs. memory node). When enabled, no other node triggers its own compaction. |
 | `compactionStrategy` | `CompactionStrategy` | `"trim-oldest"` | Strategy: `summary`, `sliding-window`, `trim-oldest`, `hybrid` |
 | `compactionTrigger` | `string` | `"auto"` | When to compact: `auto`, `manual`, `threshold`. Controls what input is shown for the threshold value (see below). |
 | `compactionThreshold` | `number` | `0.8` | Meaning depends on trigger: ratio (0-1) for `threshold`, token count for `manual`, unused for `auto`. |

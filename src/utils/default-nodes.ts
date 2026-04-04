@@ -56,7 +56,7 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         label: 'Context Engine',
         tokenBudget: 128000,
         reservedForResponse: 4096,
-        ownsCompaction: false,
+        ownsCompaction: true,
         compactionStrategy: 'trim-oldest',
         compactionTrigger: 'auto',
         compactionThreshold: 0.8,
