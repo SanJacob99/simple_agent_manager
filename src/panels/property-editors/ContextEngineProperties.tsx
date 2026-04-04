@@ -1,36 +1,11 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef } from 'react';
 import { useGraphStore } from '../../store/graph-store';
 import { useModelCatalogStore } from '../../store/model-catalog-store';
 import type { ContextEngineNodeData, CompactionStrategy, AgentNodeData } from '../../types/nodes';
-import { Field, inputClass, selectClass, textareaClass } from './shared';
+import { Field, Tooltip, inputClass, selectClass, textareaClass } from './shared';
 
 const COMPACTION_STRATEGIES: CompactionStrategy[] = ['summary', 'sliding-window', 'trim-oldest', 'hybrid'];
 const COMPACTION_TRIGGERS = ['auto', 'manual', 'threshold'] as const;
-
-// --- Tooltip component ---
-
-function Tooltip({ text, children }: { text: string; children: ReactNode }) {
-  const [visible, setVisible] = useState(false);
-  const wrapperRef = useRef<HTMLDivElement>(null);
-
-  return (
-    <div
-      ref={wrapperRef}
-      className="relative inline-flex"
-      onMouseEnter={() => setVisible(true)}
-      onMouseLeave={() => setVisible(false)}
-    >
-      {children}
-      {visible && (
-        <div className="absolute bottom-full left-1/2 z-50 mb-1.5 -translate-x-1/2 whitespace-normal rounded-md border border-slate-600 bg-slate-800 px-2.5 py-1.5 text-[10px] leading-relaxed text-slate-300 shadow-lg"
-             style={{ width: 220 }}>
-          {text}
-          <div className="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-slate-600" />
-        </div>
-      )}
-    </div>
-  );
-}
 
 // --- Well-known context windows for non-catalog providers ---
 

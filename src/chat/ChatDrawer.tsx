@@ -343,7 +343,35 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
     onClose();
   };
 
-  const hasContextEngine = config?.contextEngine != null;
+  // Determine what's missing for the overlay message
+  const missingPeripherals = useMemo(() => {
+    if (!config) return [];
+    const missing: { key: string; label: string; description: string; hint: string }[] = [];
+
+    if (!config.contextEngine) {
+      missing.push({
+        key: 'contextEngine',
+        label: 'Context Engine Required',
+        description:
+          'A Context Engine manages the conversation\'s token budget, compaction strategy, and memory window. Without it, the agent cannot track how much context is available, when to summarize or trim history, or how to allocate space for tools and system prompts.',
+        hint: 'Drag a Context Engine node onto the canvas and connect it to this agent to enable chat.',
+      });
+    }
+
+    if (!config.tools) {
+      missing.push({
+        key: 'tools',
+        label: 'Tools Node Required',
+        description:
+          'A Tools node defines which tools the agent can use, including built-in tool groups, custom skills, and plugins.',
+        hint: 'Drag a Tools node onto the canvas and connect it to this agent.',
+      });
+    }
+
+    return missing;
+  }, [config]);
+
+  const isBlocked = missingPeripherals.length > 0;
 
   if (!config) return null;
 
@@ -374,7 +402,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
           )}
           <button
             onClick={handleClose}
-            className="rounded p-1 text-slate-500 transition hover:bg-slate-800 hover:text-slate-300"
+            className="relative z-20 rounded p-1 text-slate-500 transition hover:bg-slate-800 hover:text-slate-300"
           >
             <X size={16} />
           </button>
@@ -468,26 +496,30 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
         </div>
       </div>
 
-      {/* No Context Engine Warning Overlay */}
-      {!hasContextEngine && (
-        <div className="absolute inset-0 top-[88px] z-10 flex flex-col items-center justify-center gap-4 bg-slate-900/70 backdrop-blur-sm px-8">
+      {/* Missing Peripherals Overlay */}
+      {isBlocked && (
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-slate-900/80 backdrop-blur-sm px-8">
           <div className="rounded-full bg-amber-500/10 p-4">
             <Unplug size={32} className="text-amber-400" />
           </div>
-          <h4 className="text-sm font-semibold text-slate-100 text-center">
-            Context Engine Required
-          </h4>
-          <p className="text-xs text-slate-400 text-center leading-relaxed max-w-[280px]">
-            A Context Engine manages the conversation's token budget, compaction strategy, and memory window. Without it, the agent cannot track how much context is available, when to summarize or trim history, or how to allocate space for tools and system prompts.
-          </p>
-          <p className="text-[10px] text-slate-500 text-center max-w-[260px]">
-            Drag a <span className="text-amber-400 font-medium">Context Engine</span> node onto the canvas and connect it to this agent to enable chat.
-          </p>
+          {missingPeripherals.map((p) => (
+            <div key={p.key} className="flex flex-col items-center gap-1.5">
+              <h4 className="text-sm font-semibold text-slate-100 text-center">
+                {p.label}
+              </h4>
+              <p className="text-xs text-slate-400 text-center leading-relaxed max-w-[280px]">
+                {p.description}
+              </p>
+              <p className="text-[10px] text-slate-500 text-center max-w-[260px]">
+                {p.hint}
+              </p>
+            </div>
+          ))}
         </div>
       )}
 
       {/* Messages */}
-      <div className={`flex-1 overflow-y-auto p-4 space-y-3 ${!hasContextEngine ? 'pointer-events-none select-none blur-[2px]' : ''}`}>
+      <div className={`flex-1 overflow-y-auto p-4 space-y-3 ${isBlocked ? 'pointer-events-none select-none blur-[2px]' : ''}`}>
         {messages.length === 0 && (
           <div className="flex h-full items-center justify-center">
             <p className="text-xs text-slate-600">
@@ -580,7 +612,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
       </div>
 
       {/* Context Usage Panel — above input */}
-      <div className={!hasContextEngine ? 'pointer-events-none select-none blur-[2px]' : ''}>
+      <div className={isBlocked ? 'pointer-events-none select-none blur-[2px]' : ''}>
         <ContextUsagePanel
           messages={messages}
           contextInfo={contextInfo}
@@ -589,7 +621,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
       </div>
 
       {/* Input */}
-      <div className={`border-t border-slate-800 p-3 ${!hasContextEngine ? 'pointer-events-none select-none blur-[2px]' : ''}`}>
+      <div className={`border-t border-slate-800 p-3 ${isBlocked ? 'pointer-events-none select-none blur-[2px]' : ''}`}>
         <div className="flex gap-2">
           <input
             className="flex-1 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:border-blue-500 focus:outline-none"
@@ -597,7 +629,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
             placeholder="Type a message..."
-            disabled={isStreaming || !hasContextEngine}
+            disabled={isStreaming || isBlocked}
           />
           {isStreaming ? (
             <button
@@ -610,7 +642,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
           ) : (
             <button
               onClick={sendMessage}
-              disabled={!input.trim() || !hasContextEngine}
+              disabled={!input.trim() || isBlocked}
               className="rounded-lg bg-blue-600 p-2 text-white transition hover:bg-blue-500 disabled:opacity-50"
               title="Send Message"
             >

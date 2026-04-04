@@ -11,7 +11,7 @@ import {
   PROVIDERS,
   STATIC_MODELS,
 } from '../../runtime/provider-model-options';
-import { Field, inputClass, selectClass, textareaClass } from './shared';
+import { Field, Tooltip, inputClass, selectClass, textareaClass } from './shared';
 
 function CostInput({ value, onChange, placeholder }: { value: number, onChange: (val: string) => void, placeholder?: string }) {
   const [localVal, setLocalVal] = useState(() => value === 0 ? '' : Number((value * 1e6).toPrecision(6)).toString());
@@ -269,7 +269,7 @@ export default function AgentProperties({ nodeId, data }: Props) {
         </div>
       </Field>
 
-      <Field label="Model Capabilities">
+      <Field label="Model Capabilities" tooltip="Metadata describing what the selected model supports. These values are auto-filled from discovered model info when available, but you can override them per agent.">
         <div className="space-y-3 rounded-md border border-slate-800 bg-slate-900/40 p-3">
           <p className="text-[10px] text-slate-500">
             These fields use discovered/default values until you override them
@@ -288,6 +288,9 @@ export default function AgentProperties({ nodeId, data }: Props) {
                 }
               />
               Supports reasoning
+              <Tooltip text="Whether the model supports chain-of-thought reasoning (e.g. extended thinking). Enables the Thinking Level setting when checked.">
+                <span className="cursor-help text-slate-500 hover:text-slate-300">?</span>
+              </Tooltip>
             </label>
             {data.modelCapabilities.reasoningSupported !== undefined && (
               <button
@@ -302,7 +305,12 @@ export default function AgentProperties({ nodeId, data }: Props) {
 
           <div className="space-y-1">
             <div className="flex items-center justify-between gap-3">
-              <span className="text-xs text-slate-300">Input modalities</span>
+              <span className="flex items-center gap-1 text-xs text-slate-300">
+                Input modalities
+                <Tooltip text="The types of input the model can process. 'text' is always supported. 'image' enables sending images and screenshots in chat.">
+                  <span className="cursor-help text-slate-500 hover:text-slate-300">?</span>
+                </Tooltip>
+              </span>
               {data.modelCapabilities.inputModalities !== undefined && (
                 <button
                   type="button"
@@ -336,7 +344,12 @@ export default function AgentProperties({ nodeId, data }: Props) {
 
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-3">
-              <span className="text-xs text-slate-300">Context window</span>
+              <span className="flex items-center gap-1 text-xs text-slate-300">
+                Context window
+                <Tooltip text="The maximum number of tokens the model can receive as input (prompt + conversation history). Used by the context engine to decide when to compact history.">
+                  <span className="cursor-help text-slate-500 hover:text-slate-300">?</span>
+                </Tooltip>
+              </span>
               {data.modelCapabilities.contextWindow !== undefined && (
                 <button
                   type="button"
@@ -362,7 +375,12 @@ export default function AgentProperties({ nodeId, data }: Props) {
 
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-3">
-              <span className="text-xs text-slate-300">Max tokens</span>
+              <span className="flex items-center gap-1 text-xs text-slate-300">
+                Max tokens
+                <Tooltip text="The maximum number of tokens the model can generate in a single response. Limits output length to control cost and response time.">
+                  <span className="cursor-help text-slate-500 hover:text-slate-300">?</span>
+                </Tooltip>
+              </span>
               {data.modelCapabilities.maxTokens !== undefined && (
                 <button
                   type="button"
@@ -388,7 +406,12 @@ export default function AgentProperties({ nodeId, data }: Props) {
 
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-3">
-              <span className="text-xs text-slate-300">Cost metadata</span>
+              <span className="flex items-center gap-1 text-xs text-slate-300">
+                Cost metadata
+                <Tooltip text="Token pricing used to estimate conversation cost in the chat panel. Values are in dollars per 1 million tokens. Cache pricing applies when prompt caching is supported.">
+                  <span className="cursor-help text-slate-500 hover:text-slate-300">?</span>
+                </Tooltip>
+              </span>
               {data.modelCapabilities.cost !== undefined && (
                 <button
                   type="button"
