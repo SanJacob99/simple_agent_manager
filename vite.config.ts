@@ -22,11 +22,4 @@ export default defineConfig({
     css: true,
     exclude: [...configDefaults.exclude, '.worktrees/**'],
   },
-  optimizeDeps: {
-    include: [
-      '@mariozechner/pi-ai',
-      '@mariozechner/pi-agent-core',
-      '@mariozechner/pi-web-ui',
-    ],
-  },
 });
