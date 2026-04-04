@@ -80,12 +80,15 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         connectorType: 'rest-api',
         config: {},
       };
-    case 'database':
+    case 'storage':
       return {
-        type: 'database',
-        label: 'Database',
-        dbType: 'indexeddb',
-        connectionString: '',
+        type: 'storage',
+        label: 'Storage',
+        backendType: 'filesystem',
+        storagePath: '~/.simple-agent-manager/storage',
+        sessionRetention: 50,
+        memoryEnabled: true,
+        dailyMemoryEnabled: true,
       };
     case 'vectorDatabase':
       return {

@@ -5,7 +5,7 @@ import SkillsNode from './SkillsNode';
 import ContextEngineNode from './ContextEngineNode';
 import AgentCommNode from './AgentCommNode';
 import ConnectorsNode from './ConnectorsNode';
-import DatabaseNode from './DatabaseNode';
+import StorageNode from './StorageNode';
 import VectorDatabaseNode from './VectorDatabaseNode';
 
 export const nodeTypes = {
@@ -16,6 +16,6 @@ export const nodeTypes = {
   contextEngine: ContextEngineNode,
   agentComm: AgentCommNode,
   connectors: ConnectorsNode,
-  database: DatabaseNode,
+  storage: StorageNode,
   vectorDatabase: VectorDatabaseNode,
 } as const;

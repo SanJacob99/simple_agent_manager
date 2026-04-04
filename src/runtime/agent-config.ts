@@ -26,7 +26,7 @@ export interface AgentConfig {
   contextEngine: ResolvedContextEngineConfig | null;
   connectors: ResolvedConnectorConfig[];
   agentComm: ResolvedAgentCommConfig[];
-  databases: ResolvedDatabaseConfig[];
+  storage: ResolvedStorageConfig | null;
   vectorDatabases: ResolvedVectorDatabaseConfig[];
 
   exportedAt: number;
@@ -84,10 +84,13 @@ export interface ResolvedAgentCommConfig {
   protocol: 'direct' | 'broadcast';
 }
 
-export interface ResolvedDatabaseConfig {
+export interface ResolvedStorageConfig {
   label: string;
-  dbType: string;
-  connectionString: string;
+  backendType: 'filesystem';
+  storagePath: string;
+  sessionRetention: number;
+  memoryEnabled: boolean;
+  dailyMemoryEnabled: boolean;
 }
 
 export interface ResolvedVectorDatabaseConfig {

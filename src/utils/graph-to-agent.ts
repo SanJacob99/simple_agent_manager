@@ -2,6 +2,7 @@ import type { AppNode } from '../types/nodes';
 import type { Edge } from '@xyflow/react';
 import type { AgentConfig } from '../runtime/agent-config';
 import { resolveToolNames } from '../runtime/tool-factory';
+import os from 'os';
 
 export function resolveAgentConfig(
   agentNodeId: string,
@@ -125,17 +126,20 @@ export function resolveAgentConfig(
       };
     });
 
-  // --- Databases ---
-  const databases = connectedNodes
-    .filter((n) => n.data.type === 'database')
-    .map((n) => {
-      if (n.data.type !== 'database') throw new Error('unreachable');
-      return {
-        label: n.data.label,
-        dbType: n.data.dbType,
-        connectionString: n.data.connectionString,
-      };
-    });
+  // --- Storage ---
+  const storageNode = connectedNodes.find((n) => n.data.type === 'storage');
+  const storage = storageNode && storageNode.data.type === 'storage'
+    ? {
+        label: storageNode.data.label,
+        backendType: storageNode.data.backendType,
+        storagePath: storageNode.data.storagePath.startsWith('~')
+          ? storageNode.data.storagePath.replace('~', os.homedir())
+          : storageNode.data.storagePath,
+        sessionRetention: storageNode.data.sessionRetention,
+        memoryEnabled: storageNode.data.memoryEnabled,
+        dailyMemoryEnabled: storageNode.data.dailyMemoryEnabled,
+      }
+    : null;
 
   // --- Vector Databases ---
   const vectorDatabases = connectedNodes
@@ -180,7 +184,7 @@ export function resolveAgentConfig(
     contextEngine,
     connectors,
     agentComm,
-    databases,
+    storage,
     vectorDatabases,
     exportedAt: Date.now(),
     sourceGraphId: agentNodeId,

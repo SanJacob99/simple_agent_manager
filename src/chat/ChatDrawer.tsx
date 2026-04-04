@@ -94,8 +94,9 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
 
     if (agentSessions.length === 0) {
       // No sessions at all — create default
-      const id = createSession(agentName, config.provider, config.modelId, true);
-      setActiveSession(agentNodeId, id);
+      createSession(agentName, config.provider, config.modelId, true)
+        .then((id) => setActiveSession(agentNodeId, id))
+        .catch(console.error);
     } else if (!activeSessionId || !sessions[activeSessionId]) {
       // No active session or active session was deleted — pick the most recent
       setActiveSession(agentNodeId, agentSessions[0].id);
@@ -139,11 +140,11 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
     return () => document.removeEventListener('mousedown', handler);
   }, [showSessionDropdown]);
 
-  const handleNewSession = () => {
+  const handleNewSession = async () => {
     if (!config || !agentName) return;
 
     // Enforce limit before creating
-    enforceSessionLimit(agentName, 3);
+    await enforceSessionLimit(agentName, 3);
 
     // Check if we're at the limit after enforcement
     const currentSessions = getSessionsForAgent(agentName);
@@ -151,16 +152,15 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
       // Drop the oldest
       const oldest = currentSessions[currentSessions.length - 1];
       if (oldest.id.endsWith(':default')) {
-        // Don't delete default if it's the only one — delete second oldest
         if (currentSessions.length > 1) {
-          deleteSession(currentSessions[currentSessions.length - 1].id);
+          await deleteSession(currentSessions[currentSessions.length - 1].id);
         }
       } else {
-        deleteSession(oldest.id);
+        await deleteSession(oldest.id);
       }
     }
 
-    const id = createSession(agentName, config.provider, config.modelId, false);
+    const id = await createSession(agentName, config.provider, config.modelId, false);
     setActiveSession(agentNodeId, id);
     setShowSessionDropdown(false);
 
@@ -168,9 +168,9 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
     destroyRuntime(agentNodeId);
   };
 
-  const handleDeleteSession = (sessionId: string) => {
+  const handleDeleteSession = async (sessionId: string) => {
     if (deleteConfirmId === sessionId) {
-      deleteSession(sessionId);
+      await deleteSession(sessionId);
       setDeleteConfirmId(null);
 
       // If we deleted the active session, switch to another
@@ -180,7 +180,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
           setActiveSession(agentNodeId, remaining[0].id);
         } else if (config) {
           // Create a new default session
-          const id = createSession(agentName, config.provider, config.modelId, true);
+          const id = await createSession(agentName, config.provider, config.modelId, true);
           setActiveSession(agentNodeId, id);
         }
       }
@@ -358,13 +358,13 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
       });
     }
 
-    if (!config.tools) {
+    if (!config.storage) {
       missing.push({
-        key: 'tools',
-        label: 'Tools Node Required',
+        key: 'storage',
+        label: 'Storage Required',
         description:
-          'A Tools node defines which tools the agent can use, including built-in tool groups, custom skills, and plugins.',
-        hint: 'Drag a Tools node onto the canvas and connect it to this agent.',
+          'A Storage node defines where sessions, messages, and memory files are persisted. Without it, the agent has nowhere to save conversation history.',
+        hint: 'Drag a Storage node onto the canvas and connect it to this agent.',
       });
     }
 

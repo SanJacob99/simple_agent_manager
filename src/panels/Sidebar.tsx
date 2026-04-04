@@ -32,7 +32,7 @@ const PERIPHERAL_ITEMS: PaletteItem[] = [
   { type: 'contextEngine', icon: <BookOpen size={16} /> },
   { type: 'agentComm', icon: <MessageSquare size={16} /> },
   { type: 'connectors', icon: <Plug size={16} /> },
-  { type: 'database', icon: <Database size={16} /> },
+  { type: 'storage', icon: <Database size={16} /> },
   { type: 'vectorDatabase', icon: <Container size={16} /> },
 ];
 

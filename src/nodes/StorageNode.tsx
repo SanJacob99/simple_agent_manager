@@ -2,24 +2,24 @@ import { memo } from 'react';
 import { type NodeProps, type Node } from '@xyflow/react';
 import { Database } from 'lucide-react';
 import BasePeripheralNode from './BasePeripheralNode';
-import type { DatabaseNodeData } from '../types/nodes';
+import type { StorageNodeData } from '../types/nodes';
 
-type DatabaseNode = Node<DatabaseNodeData>;
+type StorageNode = Node<StorageNodeData>;
 
-function DatabaseNodeComponent({ data, selected }: NodeProps<DatabaseNode>) {
+function StorageNodeComponent({ data, selected }: NodeProps<StorageNode>) {
   return (
     <BasePeripheralNode
-      nodeType="database"
+      nodeType="storage"
       label={data.label}
       icon={<Database size={14} />}
       selected={selected}
     >
-      <div>Type: {data.dbType}</div>
+      <div>Backend: {data.backendType}</div>
       <div className="truncate">
-        {data.connectionString || 'Not configured'}
+        {data.storagePath || 'Not configured'}
       </div>
     </BasePeripheralNode>
   );
 }
 
-export default memo(DatabaseNodeComponent);
+export default memo(StorageNodeComponent);

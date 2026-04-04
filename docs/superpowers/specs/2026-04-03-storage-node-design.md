@@ -102,15 +102,18 @@ The approach is **Hybrid (C)**: direct filesystem implementation now, structured
 
 ### `<session-id>.jsonl` — message log
 
-One JSON object per line. Linear chain via `parentId` (each entry points to previous entry's `id`).
+Transcripts are managed by @mariozechner/pi-coding-agent’s SessionManager.
+The file is JSONL:
+First line: session header (type: "session", includes id, cwd, timestamp, optional parentSession)
+Then: session entries with id + parentId (tree)
+Notable entry types:
+message: user/assistant/toolResult messages
+custom_message: extension-injected messages that do enter model context (can be hidden from UI)
+custom: extension state that does not enter model context
+compaction: persisted compaction summary with firstKeptEntryId and tokensBefore
+branch_summary: persisted summary when navigating a tree branch
+StorageNode intentionally does not “fix up” transcripts; the Gateway uses SessionManager to read/write them.
 
-| Entry type              | Purpose                                           |
-| ----------------------- | ------------------------------------------------- |
-| `session`               | Header — version, session ID, timestamp, cwd      |
-| `model_change`          | Provider/model switch                             |
-| `thinking_level_change` | Thinking level adjustment                         |
-| `custom`                | Extensible events (e.g. `model-snapshot`)          |
-| `message`               | User or assistant message with content blocks, usage, cost |
 
 ### Memory files
 

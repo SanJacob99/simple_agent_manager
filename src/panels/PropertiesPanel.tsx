@@ -8,7 +8,7 @@ import SkillsProperties from './property-editors/SkillsProperties';
 import ContextEngineProperties from './property-editors/ContextEngineProperties';
 import AgentCommProperties from './property-editors/AgentCommProperties';
 import ConnectorsProperties from './property-editors/ConnectorsProperties';
-import DatabaseProperties from './property-editors/DatabaseProperties';
+import StorageProperties from './property-editors/StorageProperties';
 import VectorDatabaseProperties from './property-editors/VectorDatabaseProperties';
 import type { FlowNodeData } from '../types/nodes';
 
@@ -28,8 +28,8 @@ function PropertyEditorForType({ nodeId, data }: { nodeId: string; data: FlowNod
       return <AgentCommProperties nodeId={nodeId} data={data} />;
     case 'connectors':
       return <ConnectorsProperties nodeId={nodeId} data={data} />;
-    case 'database':
-      return <DatabaseProperties nodeId={nodeId} data={data} />;
+    case 'storage':
+      return <StorageProperties nodeId={nodeId} data={data} />;
     case 'vectorDatabase':
       return <VectorDatabaseProperties nodeId={nodeId} data={data} />;
   }
