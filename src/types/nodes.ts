@@ -9,7 +9,7 @@ export type NodeType =
   | 'contextEngine'
   | 'agentComm'
   | 'connectors'
-  | 'database'
+  | 'storage'
   | 'vectorDatabase';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
@@ -135,14 +135,19 @@ export interface ConnectorsNodeData {
   config: Record<string, string>;
 }
 
-// --- Database Node ---
+// --- Storage Node ---
 
-export interface DatabaseNodeData {
+export type StorageBackend = 'filesystem';
+
+export interface StorageNodeData {
   [key: string]: unknown;
-  type: 'database';
+  type: 'storage';
   label: string;
-  dbType: 'postgresql' | 'mysql' | 'sqlite' | 'mongodb' | 'indexeddb' | 'rest-api';
-  connectionString: string;
+  backendType: StorageBackend;
+  storagePath: string;
+  sessionRetention: number;
+  memoryEnabled: boolean;
+  dailyMemoryEnabled: boolean;
 }
 
 // --- Vector Database Node ---
@@ -166,7 +171,7 @@ export type FlowNodeData =
   | ContextEngineNodeData
   | AgentCommNodeData
   | ConnectorsNodeData
-  | DatabaseNodeData
+  | StorageNodeData
   | VectorDatabaseNodeData;
 
 export type AppNode = Node<FlowNodeData>;

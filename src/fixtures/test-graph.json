@@ -88,14 +88,17 @@
           }
         },
         {
-          "id": "database-1",
-          "type": "database",
+          "id": "storage-1",
+          "type": "storage",
           "position": { "x": 100, "y": 530 },
           "data": {
-            "type": "database",
-            "label": "Local Storage",
-            "dbType": "indexeddb",
-            "connectionString": ""
+            "type": "storage",
+            "label": "Storage",
+            "backendType": "filesystem",
+            "storagePath": "~/.simple-agent-manager/storage",
+            "sessionRetention": 50,
+            "memoryEnabled": true,
+            "dailyMemoryEnabled": true
           }
         }
       ],
@@ -122,8 +125,8 @@
           "animated": true
         },
         {
-          "id": "edge_database-1_agent-1",
-          "source": "database-1",
+          "id": "edge_storage-1_agent-1",
+          "source": "storage-1",
           "target": "agent-1",
           "type": "data",
           "animated": true

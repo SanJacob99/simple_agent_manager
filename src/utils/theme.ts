@@ -8,7 +8,7 @@ export const NODE_COLORS: Record<NodeType, string> = {
   contextEngine: '#06b6d4',
   agentComm: '#ec4899',
   connectors: '#eab308',
-  database: '#ef4444',
+  storage: '#ef4444',
   vectorDatabase: '#14b8a6',
 };
 
@@ -20,6 +20,6 @@ export const NODE_LABELS: Record<NodeType, string> = {
   contextEngine: 'Context Engine',
   agentComm: 'Agent Comm',
   connectors: 'Connectors',
-  database: 'Database',
+  storage: 'Storage',
   vectorDatabase: 'Vector DB',
 };

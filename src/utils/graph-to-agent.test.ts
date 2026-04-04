@@ -32,4 +32,121 @@ describe('resolveAgentConfig', () => {
     expect(config?.modelCapabilities?.reasoningSupported).toBe(false);
     expect(config?.modelCapabilities?.contextWindow).toBe(1234);
   });
+
+  it('resolves a connected storage node into config.storage', () => {
+    const config = resolveAgentConfig(
+      'agent-1',
+      [
+        {
+          id: 'agent-1',
+          type: 'agent',
+          position: { x: 0, y: 0 },
+          data: {
+            type: 'agent',
+            name: 'Agent',
+            nameConfirmed: true,
+            systemPrompt: 'Test',
+            provider: 'anthropic',
+            modelId: 'claude-sonnet-4-20250514',
+            thinkingLevel: 'off',
+            description: '',
+            tags: [],
+            modelCapabilities: {},
+          },
+        },
+        {
+          id: 'storage-1',
+          type: 'storage',
+          position: { x: -200, y: 0 },
+          data: {
+            type: 'storage',
+            label: 'Storage',
+            backendType: 'filesystem',
+            storagePath: '/home/user/.simple-agent-manager/storage',
+            sessionRetention: 50,
+            memoryEnabled: true,
+            dailyMemoryEnabled: true,
+          },
+        },
+      ] as any,
+      [{ id: 'e1', source: 'storage-1', target: 'agent-1', type: 'data' }] as any,
+    );
+
+    expect(config?.storage).not.toBeNull();
+    expect(config?.storage?.backendType).toBe('filesystem');
+    expect(config?.storage?.storagePath).toBe('/home/user/.simple-agent-manager/storage');
+    expect(config?.storage?.sessionRetention).toBe(50);
+    expect(config?.storage?.memoryEnabled).toBe(true);
+  });
+
+  it('returns storage as null when no storage node is connected', () => {
+    const config = resolveAgentConfig(
+      'agent-1',
+      [
+        {
+          id: 'agent-1',
+          type: 'agent',
+          position: { x: 0, y: 0 },
+          data: {
+            type: 'agent',
+            name: 'Agent',
+            nameConfirmed: true,
+            systemPrompt: 'Test',
+            provider: 'anthropic',
+            modelId: 'claude-sonnet-4-20250514',
+            thinkingLevel: 'off',
+            description: '',
+            tags: [],
+            modelCapabilities: {},
+          },
+        },
+      ] as any,
+      [],
+    );
+
+    expect(config?.storage).toBeNull();
+  });
+
+  it('passes through storage path without modification', () => {
+    const config = resolveAgentConfig(
+      'agent-1',
+      [
+        {
+          id: 'agent-1',
+          type: 'agent',
+          position: { x: 0, y: 0 },
+          data: {
+            type: 'agent',
+            name: 'Agent',
+            nameConfirmed: true,
+            systemPrompt: 'Test',
+            provider: 'anthropic',
+            modelId: 'claude-sonnet-4-20250514',
+            thinkingLevel: 'off',
+            description: '',
+            tags: [],
+            modelCapabilities: {},
+          },
+        },
+        {
+          id: 'storage-1',
+          type: 'storage',
+          position: { x: -200, y: 0 },
+          data: {
+            type: 'storage',
+            label: 'Storage',
+            backendType: 'filesystem',
+            storagePath: '~/.simple-agent-manager/storage',
+            sessionRetention: 50,
+            memoryEnabled: true,
+            dailyMemoryEnabled: true,
+          },
+        },
+      ] as any,
+      [{ id: 'e1', source: 'storage-1', target: 'agent-1', type: 'data' }] as any,
+    );
+
+    // Tilde expansion happens in StorageEngine, not during resolution
+    expect(config?.storage?.storagePath).toBe('~/.simple-agent-manager/storage');
+  });
 });

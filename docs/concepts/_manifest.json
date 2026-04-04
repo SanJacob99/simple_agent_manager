@@ -37,10 +37,10 @@
       "type": "src/types/nodes.ts#ConnectorsNodeData",
       "runtime": null
     },
-    "database": {
-      "doc": "database-node.md",
-      "type": "src/types/nodes.ts#DatabaseNodeData",
-      "runtime": null
+    "storage": {
+      "doc": "storage-node.md",
+      "type": "src/types/nodes.ts#StorageNodeData",
+      "runtime": "src/runtime/storage-engine.ts"
     },
     "vectorDatabase": {
       "doc": "vector-database-node.md",
