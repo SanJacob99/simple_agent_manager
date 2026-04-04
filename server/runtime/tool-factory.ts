@@ -1,28 +1,8 @@
-import type { ToolProfile, ToolGroup } from '../types/nodes';
-import type { ResolvedToolsConfig } from './agent-config';
 import { Type, type TSchema } from '@sinclair/typebox';
 import type { AgentTool, AgentToolResult } from '@mariozechner/pi-agent-core';
 
-// --- Tool Group Definitions (OpenClaw: group:runtime, group:fs, etc.) ---
-
-export const TOOL_GROUPS: Record<ToolGroup, string[]> = {
-  runtime: ['bash', 'code_interpreter'],
-  fs: ['read_file', 'write_file', 'list_directory'],
-  web: ['web_search', 'web_fetch'],
-  memory: ['memory_search', 'memory_get', 'memory_save'],
-  coding: ['bash', 'read_file', 'write_file', 'code_interpreter'],
-  communication: ['send_message'],
-};
-
-// --- Tool Profile Definitions (OpenClaw: predefined allowlists) ---
-
-export const TOOL_PROFILES: Record<ToolProfile, ToolGroup[]> = {
-  full: ['runtime', 'fs', 'web', 'memory', 'coding', 'communication'],
-  coding: ['runtime', 'fs', 'coding', 'memory'],
-  messaging: ['web', 'communication', 'memory'],
-  minimal: ['web'],
-  custom: [],
-};
+// Re-export resolveToolNames from shared (used by agent-runtime.ts)
+export { resolveToolNames } from '../../shared/resolve-tool-names';
 
 // --- All available tool names ---
 
@@ -43,44 +23,7 @@ export const ALL_TOOL_NAMES = [
   'text_to_speech',
 ];
 
-/**
- * Expand profile + groups + custom enabledTools into a flat deduplicated list.
- */
-export function resolveToolNames(config: ResolvedToolsConfig): string[] {
-  const names = new Set<string>();
-
-  if (config.profile !== 'custom') {
-    const groups = TOOL_PROFILES[config.profile];
-    for (const group of groups) {
-      for (const tool of TOOL_GROUPS[group]) {
-        names.add(tool);
-      }
-    }
-  }
-
-  for (const group of config.enabledGroups) {
-    for (const tool of TOOL_GROUPS[group]) {
-      names.add(tool);
-    }
-  }
-
-  for (const tool of config.resolvedTools) {
-    names.add(tool);
-  }
-
-  // Add tools from enabled plugins
-  for (const plugin of config.plugins) {
-    if (plugin.enabled) {
-      for (const tool of plugin.tools) {
-        names.add(tool);
-      }
-    }
-  }
-
-  return [...names];
-}
-
-// --- Tool implementations (browser-safe stubs/real) ---
+// --- Tool implementations (server-side stubs/real) ---
 
 function textResult(text: string): AgentToolResult<undefined> {
   return { content: [{ type: 'text', text }], details: undefined };
@@ -141,7 +84,7 @@ function createStubTool(name: string, description: string): AgentTool<TSchema> {
       input: Type.Optional(Type.String({ description: 'Input parameter' })),
     }),
     execute: async () => {
-      return textResult(`[${name}] This tool is not yet implemented in the browser runtime.`);
+      return textResult(`[${name}] This tool is not yet implemented.`);
     },
   };
 }

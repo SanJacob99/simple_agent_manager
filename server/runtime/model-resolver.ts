@@ -3,7 +3,7 @@ import type { Api, Model } from '@mariozechner/pi-ai';
 import type {
   DiscoveredModelMetadata,
   ModelCapabilityOverrides,
-} from '../types/model-metadata';
+} from '../../shared/agent-config';
 
 interface ResolveRuntimeModelArgs {
   provider: string;

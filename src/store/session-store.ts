@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { SessionMeta, SessionEntry } from '../runtime/storage-engine';
+import type { SessionMeta, SessionEntry } from '../../shared/storage-types';
 import type { StorageClient } from '../runtime/storage-client';
 
 /** Anything that quacks like StorageBackend or StorageClient */

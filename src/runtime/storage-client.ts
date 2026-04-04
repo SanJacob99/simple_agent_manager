@@ -1,5 +1,5 @@
-import type { ResolvedStorageConfig } from './agent-config';
-import type { SessionMeta, SessionEntry, MemoryFileInfo } from './storage-engine';
+import type { ResolvedStorageConfig } from '../../shared/agent-config';
+import type { SessionMeta, SessionEntry, MemoryFileInfo } from '../../shared/storage-types';
 
 /**
  * Browser-side client that mirrors StorageEngine's interface

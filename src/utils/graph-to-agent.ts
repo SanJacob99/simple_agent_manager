@@ -1,7 +1,7 @@
 import type { AppNode } from '../types/nodes';
 import type { Edge } from '@xyflow/react';
-import type { AgentConfig } from '../runtime/agent-config';
-import { resolveToolNames } from '../runtime/tool-factory';
+import type { AgentConfig } from '../../shared/agent-config';
+import { resolveToolNames } from '../../shared/resolve-tool-names';
 
 export function resolveAgentConfig(
   agentNodeId: string,

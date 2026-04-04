@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useGraphStore } from '../../store/graph-store';
 import type { ToolsNodeData, ToolProfile, ToolGroup } from '../../types/nodes';
 import { Field, inputClass, selectClass, textareaClass } from './shared';
-import { ALL_TOOL_NAMES, TOOL_GROUPS } from '../../runtime/tool-factory';
+import { ALL_TOOL_NAMES, TOOL_GROUPS } from '../../../shared/resolve-tool-names';
 
 const PROFILES: ToolProfile[] = ['full', 'coding', 'messaging', 'minimal', 'custom'];
 const GROUPS: ToolGroup[] = ['runtime', 'fs', 'web', 'memory', 'coding', 'communication'];
