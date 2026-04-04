@@ -41,6 +41,20 @@ describe('StorageEngine', () => {
       expect(memoryStat.isDirectory()).toBe(true);
     });
 
+    it('expands tilde in storage path to home directory', async () => {
+      const tildeConfig = makeTempConfig({
+        storagePath: '~/.sam-tilde-test',
+      });
+      const tildeEngine = new StorageEngine(tildeConfig, 'test-agent');
+      await tildeEngine.init();
+
+      const expectedDir = path.join(os.homedir(), '.sam-tilde-test', 'test-agent', 'sessions');
+      const stat = await fs.stat(expectedDir);
+      expect(stat.isDirectory()).toBe(true);
+
+      await fs.rm(path.join(os.homedir(), '.sam-tilde-test'), { recursive: true, force: true });
+    });
+
     it('skips memory directory when memoryEnabled is false', async () => {
       const noMemConfig = makeTempConfig({ memoryEnabled: false });
       const noMemEngine = new StorageEngine(noMemConfig, 'test-agent');

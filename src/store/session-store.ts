@@ -1,5 +1,9 @@
 import { create } from 'zustand';
-import type { StorageEngine, SessionMeta, SessionEntry } from '../runtime/storage-engine';
+import type { SessionMeta, SessionEntry } from '../runtime/storage-engine';
+import type { StorageClient } from '../runtime/storage-client';
+
+/** Anything that quacks like StorageBackend or StorageClient */
+type StorageBackend = StorageClient;
 
 // ── Message types ──────────────────────────────────────────────────────────
 
@@ -39,10 +43,10 @@ interface SessionStore {
   /** Maps nodeId → active sessionId */
   activeSessionId: Record<string, string>;
   /** Bound storage engine (null until a storage node is connected) */
-  storageEngine: StorageEngine | null;
+  storageEngine: StorageBackend | null;
 
   // Storage binding
-  bindStorage: (engine: StorageEngine) => void;
+  bindStorage: (engine: StorageBackend) => void;
   unbindStorage: () => void;
   loadSessionsFromDisk: () => Promise<void>;
 

@@ -107,7 +107,7 @@ describe('resolveAgentConfig', () => {
     expect(config?.storage).toBeNull();
   });
 
-  it('expands tilde in storage path during resolution', () => {
+  it('passes through storage path without modification', () => {
     const config = resolveAgentConfig(
       'agent-1',
       [
@@ -146,8 +146,7 @@ describe('resolveAgentConfig', () => {
       [{ id: 'e1', source: 'storage-1', target: 'agent-1', type: 'data' }] as any,
     );
 
-    expect(config?.storage?.storagePath).not.toContain('~');
-    // Should be an absolute path (starts with / on unix or drive letter on Windows)
-    expect(config?.storage?.storagePath).toMatch(/^(\/|[A-Z]:\\)/);
+    // Tilde expansion happens in StorageEngine, not during resolution
+    expect(config?.storage?.storagePath).toBe('~/.simple-agent-manager/storage');
   });
 });

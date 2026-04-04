@@ -2,7 +2,6 @@ import type { AppNode } from '../types/nodes';
 import type { Edge } from '@xyflow/react';
 import type { AgentConfig } from '../runtime/agent-config';
 import { resolveToolNames } from '../runtime/tool-factory';
-import os from 'os';
 
 export function resolveAgentConfig(
   agentNodeId: string,
@@ -132,9 +131,7 @@ export function resolveAgentConfig(
     ? {
         label: storageNode.data.label,
         backendType: storageNode.data.backendType,
-        storagePath: storageNode.data.storagePath.startsWith('~')
-          ? storageNode.data.storagePath.replace('~', os.homedir())
-          : storageNode.data.storagePath,
+        storagePath: storageNode.data.storagePath,
         sessionRetention: storageNode.data.sessionRetention,
         memoryEnabled: storageNode.data.memoryEnabled,
         dailyMemoryEnabled: storageNode.data.dailyMemoryEnabled,

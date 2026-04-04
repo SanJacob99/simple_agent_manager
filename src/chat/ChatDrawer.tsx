@@ -8,6 +8,7 @@ import { useSettingsStore } from '../settings/settings-store';
 import { resolveAgentConfig } from '../utils/graph-to-agent';
 import type { RuntimeEvent } from '../runtime/agent-runtime';
 import { useSessionStore, type Message } from '../store/session-store';
+import { StorageClient } from '../runtime/storage-client';
 import { estimateTokens } from '../runtime/token-estimator';
 import { useContextWindow, usePeripheralReservations } from './useContextWindow';
 import ContextUsagePanel from './ContextUsagePanel';
@@ -71,11 +72,37 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
   const clearSessionMessages = useSessionStore((s) => s.clearSessionMessages);
   const getSessionsForAgent = useSessionStore((s) => s.getSessionsForAgent);
   const enforceSessionLimit = useSessionStore((s) => s.enforceSessionLimit);
+  const bindStorage = useSessionStore((s) => s.bindStorage);
+  const unbindStorage = useSessionStore((s) => s.unbindStorage);
+  const loadSessionsFromDisk = useSessionStore((s) => s.loadSessionsFromDisk);
 
   // Find the agent node to get name
   const agentNode = nodes.find((n) => n.id === agentNodeId && n.data.type === 'agent');
   const agentName =
     agentNode?.data.type === 'agent' ? (agentNode.data as { name: string }).name : '';
+
+  // Bind StorageClient when storage config is available
+  const [storageReady, setStorageReady] = useState(false);
+  useEffect(() => {
+    if (!config?.storage || !agentName) {
+      setStorageReady(false);
+      return;
+    }
+
+    const client = new StorageClient(config.storage, agentName);
+    client.init()
+      .then(() => {
+        bindStorage(client);
+        return loadSessionsFromDisk();
+      })
+      .then(() => setStorageReady(true))
+      .catch(console.error);
+
+    return () => {
+      unbindStorage();
+      setStorageReady(false);
+    };
+  }, [config?.storage?.storagePath, agentName]);
 
   // Get sessions for this agent
   const agentSessions = useMemo(
@@ -90,7 +117,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
 
   // Auto-create default session if none exists
   useEffect(() => {
-    if (!config || !agentName) return;
+    if (!config || !agentName || !storageReady) return;
 
     if (agentSessions.length === 0) {
       // No sessions at all — create default
@@ -101,7 +128,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
       // No active session or active session was deleted — pick the most recent
       setActiveSession(agentNodeId, agentSessions[0].id);
     }
-  }, [agentName, config, agentSessions.length, activeSessionId]);
+  }, [agentName, config, agentSessions.length, activeSessionId, storageReady]);
 
   // UI state
   const [showSessionDropdown, setShowSessionDropdown] = useState(false);

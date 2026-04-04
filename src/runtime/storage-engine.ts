@@ -1,5 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
+import os from 'os';
 import type { ResolvedStorageConfig } from './agent-config';
 
 // --- Types ---
@@ -73,7 +74,10 @@ export class StorageEngine {
     private readonly config: ResolvedStorageConfig,
     private readonly agentName: string,
   ) {
-    this.agentDir = path.join(config.storagePath, agentName);
+    const resolvedPath = config.storagePath.startsWith('~')
+      ? config.storagePath.replace('~', os.homedir())
+      : config.storagePath;
+    this.agentDir = path.join(resolvedPath, agentName);
     this.sessionsDir = path.join(this.agentDir, 'sessions');
     this.memoryDir = path.join(this.agentDir, 'memory');
     this.memoryEnabled = config.memoryEnabled;
