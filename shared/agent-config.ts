@@ -5,6 +5,22 @@ export type ToolProfile = 'full' | 'coding' | 'messaging' | 'minimal' | 'custom'
 export type ToolGroup = 'runtime' | 'fs' | 'web' | 'memory' | 'coding' | 'communication';
 export type CompactionStrategy = 'summary' | 'sliding-window' | 'trim-oldest' | 'hybrid';
 
+export type SystemPromptMode = 'auto' | 'append' | 'manual';
+
+export interface SystemPromptSection {
+  key: string;
+  label: string;
+  content: string;
+  tokenEstimate: number;
+}
+
+export interface ResolvedSystemPrompt {
+  mode: SystemPromptMode;
+  sections: SystemPromptSection[];
+  assembled: string;
+  userInstructions: string;
+}
+
 export interface SkillDefinition {
   id: string;
   name: string;
@@ -59,7 +75,7 @@ export interface AgentConfig {
   provider: string;
   modelId: string;
   thinkingLevel: string;
-  systemPrompt: string;
+  systemPrompt: ResolvedSystemPrompt;
   modelCapabilities: ModelCapabilityOverrides;
 
   memory: ResolvedMemoryConfig | null;
@@ -106,7 +122,6 @@ export interface ResolvedContextEngineConfig {
   compactionStrategy: CompactionStrategy;
   compactionTrigger: string;
   compactionThreshold: number;
-  systemPromptAdditions: string[];
   autoFlushBeforeCompact: boolean;
   ragEnabled: boolean;
   ragTopK: number;
