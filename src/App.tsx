@@ -6,7 +6,7 @@ import PropertiesPanel from './panels/PropertiesPanel';
 import ChatDrawer from './chat/ChatDrawer';
 import AgentNameDialog from './nodes/AgentNameDialog';
 import { useGraphStore } from './store/graph-store';
-import { useAgentRuntimeStore } from './store/agent-runtime-store';
+import { useAgentConnectionStore } from './store/agent-connection-store';
 import { useSettingsStore } from './settings/settings-store';
 import { useModelCatalogStore } from './store/model-catalog-store';
 import { useSessionStore } from './store/session-store';
@@ -17,8 +17,8 @@ export default function App() {
   const [appView, setAppView] = useState<AppView>('canvas');
   const [activeSettingsSection, setActiveSettingsSection] =
     useState<SettingsSectionId>('api-keys');
-  const chatAgentId = useAgentRuntimeStore((s) => s.chatAgentNodeId);
-  const closeChatDrawer = useAgentRuntimeStore((s) => s.closeChatDrawer);
+  const chatAgentId = useAgentConnectionStore((s) => s.chatAgentNodeId);
+  const closeChatDrawer = useAgentConnectionStore((s) => s.closeChatDrawer);
   const selectedNodeId = useGraphStore((s) => s.selectedNodeId);
   const openRouterKey = useSettingsStore((s) => s.apiKeys.openrouter);
   const syncOpenRouterKey = useModelCatalogStore((s) => s.syncOpenRouterKey);

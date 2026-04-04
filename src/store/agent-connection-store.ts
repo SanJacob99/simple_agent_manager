@@ -12,6 +12,11 @@ interface AgentState {
 interface AgentConnectionStore {
   agents: Record<string, AgentState>;
 
+  // Chat drawer UI state
+  chatAgentNodeId: string | null;
+  openChatDrawer: (agentId: string) => void;
+  closeChatDrawer: () => void;
+
   // Actions
   startAgent: (agentId: string, config: AgentConfig) => void;
   sendPrompt: (agentId: string, sessionId: string, text: string) => void;
@@ -32,6 +37,10 @@ interface AgentConnectionStore {
 
 export const useAgentConnectionStore = create<AgentConnectionStore>((set, get) => ({
   agents: {},
+
+  chatAgentNodeId: null,
+  openChatDrawer: (agentId) => set({ chatAgentNodeId: agentId }),
+  closeChatDrawer: () => set({ chatAgentNodeId: null }),
 
   startAgent: (agentId, config) => {
     set((state) => ({
@@ -133,7 +142,7 @@ export const useAgentConnectionStore = create<AgentConnectionStore>((set, get) =
   },
 
   reset: () => {
-    set({ agents: {} });
+    set({ agents: {}, chatAgentNodeId: null });
   },
 }));
 

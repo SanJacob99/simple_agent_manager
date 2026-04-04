@@ -3,13 +3,13 @@ import { X, Send, Bot, Loader2, Square, Trash2, Wrench, Plus, ChevronDown, Unplu
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useGraphStore } from '../store/graph-store';
-import { useAgentRuntimeStore } from '../store/agent-runtime-store';
-import { useSettingsStore } from '../settings/settings-store';
+import { useAgentConnectionStore } from '../store/agent-connection-store';
 import { resolveAgentConfig } from '../utils/graph-to-agent';
-import type { RuntimeEvent } from '../runtime/agent-runtime';
+import type { ServerEvent } from '../../shared/protocol';
+import { agentClient } from '../client';
 import { useSessionStore, type Message } from '../store/session-store';
 import { StorageClient } from '../runtime/storage-client';
-import { estimateTokens } from '../runtime/token-estimator';
+import { estimateTokens } from '../../shared/token-estimator';
 import { useContextWindow, usePeripheralReservations } from './useContextWindow';
 import ContextUsagePanel from './ContextUsagePanel';
 
@@ -55,9 +55,10 @@ function formatSessionLabel(llmSlug: string, lastMessageAt: number, isDefault: b
 export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
   const nodes = useGraphStore((s) => s.nodes);
   const edges = useGraphStore((s) => s.edges);
-  const getOrCreateRuntime = useAgentRuntimeStore((s) => s.getOrCreateRuntime);
-  const destroyRuntime = useAgentRuntimeStore((s) => s.destroyRuntime);
-  const getApiKey = useSettingsStore((s) => s.getApiKey);
+  const startAgent = useAgentConnectionStore((s) => s.startAgent);
+  const sendPromptCmd = useAgentConnectionStore((s) => s.sendPrompt);
+  const abortAgent = useAgentConnectionStore((s) => s.abortAgent);
+  const destroyAgent = useAgentConnectionStore((s) => s.destroyAgent);
 
   const config = resolveAgentConfig(agentNodeId, nodes, edges);
 
@@ -191,8 +192,8 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
     setActiveSession(agentNodeId, id);
     setShowSessionDropdown(false);
 
-    // Destroy current runtime so a fresh one is used for the new session
-    destroyRuntime(agentNodeId);
+    // Destroy current agent so a fresh one is used for the new session
+    destroyAgent(agentNodeId);
   };
 
   const handleDeleteSession = async (sessionId: string) => {
@@ -219,8 +220,8 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
   const handleSwitchSession = (sessionId: string) => {
     setActiveSession(agentNodeId, sessionId);
     setShowSessionDropdown(false);
-    // Destroy runtime so it rebuilds with the new session's context
-    destroyRuntime(agentNodeId);
+    // Destroy agent so it rebuilds with the new session's context
+    destroyAgent(agentNodeId);
   };
 
   const sendMessage = useCallback(async () => {
@@ -239,134 +240,82 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
     setInput('');
     setIsStreaming(true);
 
-    try {
-      const runtime = getOrCreateRuntime(agentNodeId, config, (provider) =>
-        Promise.resolve(getApiKey(provider)),
-      );
+    // Ensure agent is started with current config
+    startAgent(agentNodeId, config);
 
-      const assistantMessageId = `msg_${Date.now()}_a`;
-      let assistantContent = '';
+    const assistantMessageId = `msg_${Date.now()}_a`;
+    let assistantContent = '';
 
-      unsubRef.current?.();
+    unsubRef.current?.();
 
-      const unsub = runtime.subscribe((event: RuntimeEvent) => {
-        if (event.type === 'message_start') {
-          const msg = event.message as { role?: string };
-          if (msg.role === 'assistant') {
-            assistantContent = '';
-            addMessage(activeSessionId, {
-              id: assistantMessageId,
-              role: 'assistant',
-              content: '',
-              timestamp: Date.now(),
-            });
-          }
-        } else if (event.type === 'message_update') {
-          const aEvent = event.assistantMessageEvent;
-          if (aEvent.type === 'text_delta') {
-            assistantContent += aEvent.delta;
-            updateMessage(activeSessionId, assistantMessageId, (m) => ({
-              ...m,
-              content: assistantContent,
-            }));
-          } else if (aEvent.type === 'error') {
-            console.error('[pi-ai Error]', aEvent);
-            addMessage(activeSessionId, {
-              id: `err_${Date.now()}`,
-              role: 'assistant',
-              content: `API Error: ${aEvent.error?.errorMessage || 'Unknown provider error'}`,
-              timestamp: Date.now(),
-            });
-            setIsStreaming(false);
-          }
-        } else if (event.type === 'message_end') {
-          const endMsg = event.message as {
-            role?: string;
-            usage?: {
-              input: number;
-              output: number;
-              cacheRead: number;
-              cacheWrite: number;
-              totalTokens: number;
-            };
-            content?: Array<{ type: string; text?: string }>;
-          };
-          if (endMsg.role === 'assistant' && endMsg.usage) {
-            updateMessage(activeSessionId, assistantMessageId, (m) => ({
-              ...m,
-              tokenCount: endMsg.usage!.output,
-              usage: {
-                input: endMsg.usage!.input,
-                output: endMsg.usage!.output,
-                cacheRead: endMsg.usage!.cacheRead,
-                cacheWrite: endMsg.usage!.cacheWrite,
-                totalTokens: endMsg.usage!.totalTokens,
-              },
-            }));
-          }
-        } else if (event.type === 'tool_execution_start') {
-          addMessage(activeSessionId, {
-            id: `tool_${event.toolCallId}`,
-            role: 'tool',
-            content: `Calling tool: ${event.toolName}`,
-            timestamp: Date.now(),
-          });
-        } else if (event.type === 'tool_execution_end') {
-          const resultText =
-            event.result?.content
-              ?.map((c: { type: string; text?: string }) =>
-                c.type === 'text' ? c.text : '',
-              )
-              .join('') || '';
-          const toolContent = `${event.toolName}: ${resultText.slice(0, 500)}${event.isError ? ' (error)' : ''}`;
-          updateMessage(activeSessionId, `tool_${event.toolCallId}`, (m) => ({
+    // Subscribe to events for this agent
+    const unsub = agentClient.onEvent((event: ServerEvent) => {
+      if (!('agentId' in event) || event.agentId !== agentNodeId) return;
+
+      if (event.type === 'message:start') {
+        assistantContent = '';
+        addMessage(activeSessionId, {
+          id: assistantMessageId,
+          role: 'assistant',
+          content: '',
+          timestamp: Date.now(),
+        });
+      } else if (event.type === 'message:delta') {
+        assistantContent += event.delta;
+        updateMessage(activeSessionId, assistantMessageId, (m) => ({
+          ...m,
+          content: assistantContent,
+        }));
+      } else if (event.type === 'message:end') {
+        if (event.message.usage) {
+          updateMessage(activeSessionId, assistantMessageId, (m) => ({
             ...m,
-            content: toolContent,
-            tokenCount: estimateTokens(toolContent),
+            tokenCount: event.message.usage!.output,
+            usage: event.message.usage,
           }));
-        } else if (event.type === 'agent_end') {
-          setIsStreaming(false);
-        } else if (event.type === 'runtime_error') {
-          addMessage(activeSessionId, {
-            id: `err_${Date.now()}`,
-            role: 'assistant',
-            content: `Error: ${event.error}`,
-            timestamp: Date.now(),
-          });
-          setIsStreaming(false);
         }
-      });
+      } else if (event.type === 'tool:start') {
+        addMessage(activeSessionId, {
+          id: `tool_${event.toolCallId}`,
+          role: 'tool',
+          content: `Calling tool: ${event.toolName}`,
+          timestamp: Date.now(),
+        });
+      } else if (event.type === 'tool:end') {
+        const toolContent = `${event.toolName}: ${event.result}${event.isError ? ' (error)' : ''}`;
+        updateMessage(activeSessionId, `tool_${event.toolCallId}`, (m) => ({
+          ...m,
+          content: toolContent,
+          tokenCount: estimateTokens(toolContent),
+        }));
+      } else if (event.type === 'agent:end') {
+        setIsStreaming(false);
+        unsub();
+      } else if (event.type === 'agent:error') {
+        addMessage(activeSessionId, {
+          id: `err_${Date.now()}`,
+          role: 'assistant',
+          content: `Error: ${event.error}`,
+          timestamp: Date.now(),
+        });
+        setIsStreaming(false);
+        unsub();
+      }
+    });
 
-      unsubRef.current = unsub;
+    unsubRef.current = unsub;
 
-      await runtime.prompt(userMessage.content);
-    } catch (error) {
-      addMessage(activeSessionId, {
-        id: `msg_${Date.now()}_err`,
-        role: 'assistant',
-        content: `Error: ${error instanceof Error ? error.message : 'Failed to get response'}. Make sure you have configured your API keys in Settings.`,
-        timestamp: Date.now(),
-      });
-    } finally {
-      setIsStreaming(false);
-    }
-  }, [input, isStreaming, config, agentNodeId, activeSessionId, getOrCreateRuntime, getApiKey]);
+    // Send the prompt to the backend
+    sendPromptCmd(agentNodeId, activeSessionId, trimmedInput);
+  }, [input, isStreaming, config, agentNodeId, activeSessionId, startAgent, sendPromptCmd]);
 
   const handleStop = () => {
-    if (!config) return;
-    try {
-      const runtime = getOrCreateRuntime(agentNodeId, config, (provider) =>
-        Promise.resolve(getApiKey(provider)),
-      );
-      runtime.abort();
-      setIsStreaming(false);
-    } catch (e) {
-      console.error('Failed to abort agent', e);
-    }
+    abortAgent(agentNodeId);
+    setIsStreaming(false);
   };
 
   const handleClose = () => {
-    destroyRuntime(agentNodeId);
+    destroyAgent(agentNodeId);
     onClose();
   };
 

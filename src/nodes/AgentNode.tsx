@@ -3,14 +3,14 @@ import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import { Bot, MessageSquare } from 'lucide-react';
 import type { AgentNodeData } from '../types/nodes';
 import { NODE_COLORS } from '../utils/theme';
-import { useAgentRuntimeStore } from '../store/agent-runtime-store';
+import { useAgentConnectionStore } from '../store/agent-connection-store';
 
 type AgentNode = Node<AgentNodeData>;
 
 function AgentNodeComponent({ id, data, selected }: NodeProps<AgentNode>) {
   const color = NODE_COLORS.agent;
-  const openChat = useAgentRuntimeStore((s) => s.openChatDrawer);
-  const chatAgentId = useAgentRuntimeStore((s) => s.chatAgentNodeId);
+  const openChat = useAgentConnectionStore((s) => s.openChatDrawer);
+  const chatAgentId = useAgentConnectionStore((s) => s.chatAgentNodeId);
   const isActive = chatAgentId === id;
 
   return (
