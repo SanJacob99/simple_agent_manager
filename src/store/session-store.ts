@@ -147,6 +147,7 @@ export const useSessionStore = create<SessionStore>()(
       const now = Date.now();
       const slug = `${provider}/${modelId}`;
       const nowIso = new Date(now).toISOString();
+      const safeId = id.replace(/[^a-zA-Z0-9-]/g, '-');
 
       const meta: SessionMeta = {
         sessionId: id,
@@ -154,7 +155,7 @@ export const useSessionStore = create<SessionStore>()(
         llmSlug: slug,
         startedAt: nowIso,
         updatedAt: nowIso,
-        sessionFile: `sessions/${id}.jsonl`,
+        sessionFile: `sessions/${safeId}.jsonl`,
         contextTokens: 0,
         totalInputTokens: 0,
         totalOutputTokens: 0,
