@@ -12,6 +12,7 @@ import {
   STATIC_MODELS,
 } from '../../runtime/provider-model-options';
 import { Field, Tooltip, inputClass, selectClass, textareaClass } from './shared';
+import SystemPromptPreview from '../SystemPromptPreview';
 
 function CostInput({ value, onChange, placeholder }: { value: number, onChange: (val: string) => void, placeholder?: string }) {
   const [localVal, setLocalVal] = useState(() => value === 0 ? '' : Number((value * 1e6).toPrecision(6)).toString());
@@ -83,6 +84,7 @@ function emptyCost(): ModelCostInfo {
 }
 
 export default function AgentProperties({ nodeId, data }: Props) {
+  const [showPreview, setShowPreview] = useState(false);
   const update = useGraphStore((s) => s.updateNodeData);
   const openRouterModels = useModelCatalogStore((s) => s.models.openrouter);
 
@@ -476,15 +478,94 @@ export default function AgentProperties({ nodeId, data }: Props) {
         </select>
       </Field>
 
-      <Field label="System Prompt">
-        <textarea
-          className={textareaClass}
-          rows={6}
-          value={data.systemPrompt}
-          onChange={(e) => update(nodeId, { systemPrompt: e.target.value })}
-          placeholder="You are a helpful assistant..."
-        />
+      <Field label="System Prompt Mode">
+        <select
+          aria-label="System Prompt Mode"
+          className={selectClass}
+          value={data.systemPromptMode ?? 'auto'}
+          onChange={(e) =>
+            update(nodeId, { systemPromptMode: e.target.value as any })
+          }
+        >
+          <option value="auto">Auto (app-managed)</option>
+          <option value="append">Append (add your instructions)</option>
+          <option value="manual">Manual (full control)</option>
+        </select>
       </Field>
+
+      {/* Auto mode: read-only summary */}
+      {(data.systemPromptMode ?? 'auto') === 'auto' && (
+        <div className="rounded-md border border-slate-800 bg-slate-900/40 p-3">
+          <p className="text-[10px] text-slate-500 italic">
+            System prompt is built automatically from connected nodes and app settings.
+          </p>
+          <button
+            onClick={() => setShowPreview(true)}
+            className="mt-1 text-[10px] text-blue-400 hover:text-blue-300 transition"
+          >
+            View full prompt
+          </button>
+        </div>
+      )}
+
+      {/* Append mode: summary + textarea */}
+      {(data.systemPromptMode ?? 'auto') === 'append' && (
+        <>
+          <div className="rounded-md border border-slate-800 bg-slate-900/40 p-3">
+            <p className="text-[10px] text-slate-500 italic">
+              App-built sections are injected first. Your instructions are appended at the end.
+            </p>
+            <button
+              onClick={() => setShowPreview(true)}
+              className="mt-1 text-[10px] text-blue-400 hover:text-blue-300 transition"
+            >
+              View full prompt
+            </button>
+          </div>
+          <Field label="Your Instructions">
+            <textarea
+              aria-label="Your Instructions"
+              className={textareaClass}
+              rows={6}
+              value={data.systemPrompt}
+              onChange={(e) => update(nodeId, { systemPrompt: e.target.value })}
+              placeholder="Additional instructions appended after app-built sections..."
+            />
+          </Field>
+        </>
+      )}
+
+      {/* Manual mode: warning + full textarea */}
+      {(data.systemPromptMode ?? 'auto') === 'manual' && (
+        <>
+          <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
+            <p className="text-xs text-amber-300/90">
+              You are fully responsible for the system prompt. No safety guardrails, tooling, workspace, or runtime metadata will be injected.
+            </p>
+          </div>
+          <Field label="System Prompt">
+            <textarea
+              aria-label="System Prompt"
+              className={textareaClass}
+              rows={6}
+              value={data.systemPrompt}
+              onChange={(e) => update(nodeId, { systemPrompt: e.target.value })}
+              placeholder="Your complete system prompt..."
+            />
+          </Field>
+        </>
+      )}
+
+      {showPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="h-[80vh] w-[600px] rounded-lg border border-slate-700 bg-slate-900 shadow-xl overflow-hidden">
+            <SystemPromptPreview
+              agentNodeId={nodeId}
+              onClose={() => setShowPreview(false)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
