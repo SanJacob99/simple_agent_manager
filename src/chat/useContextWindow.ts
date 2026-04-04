@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useModelCatalogStore } from '../store/model-catalog-store';
-import type { AgentConfig } from '../runtime/agent-config';
-import { estimateTokens } from '../runtime/token-estimator';
+import type { AgentConfig } from '../../shared/agent-config';
+import { estimateTokens } from '../../shared/token-estimator';
 
 export type ContextSource = 'override' | 'catalog' | 'default';
 

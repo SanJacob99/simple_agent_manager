@@ -3,7 +3,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import { StorageEngine } from './storage-engine';
-import type { ResolvedStorageConfig } from './agent-config';
+import type { ResolvedStorageConfig } from '../../shared/agent-config';
 
 function makeTempConfig(overrides?: Partial<ResolvedStorageConfig>): ResolvedStorageConfig {
   return {

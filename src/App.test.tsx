@@ -3,7 +3,7 @@ import { ReactFlowProvider } from '@xyflow/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 import { useGraphStore } from './store/graph-store';
-import { useAgentRuntimeStore } from './store/agent-runtime-store';
+import { useAgentConnectionStore } from './store/agent-connection-store';
 
 vi.mock('./canvas/FlowCanvas', () => ({
   default: () => <div>Flow Canvas Stub</div>,
@@ -25,10 +25,9 @@ describe('App settings workspace shell', () => {
       selectedNodeId: 'agent-1',
       pendingNameNodeId: null,
     } as any);
-    useAgentRuntimeStore.setState({
+    useAgentConnectionStore.setState({
       chatAgentNodeId: 'agent-1',
-      runningAgentIds: new Set(),
-      runtimes: new Map(),
+      agents: {},
     } as any);
   });
 

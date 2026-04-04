@@ -6,9 +6,13 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     proxy: {
-      '/api/storage': {
+      '/api': {
         target: 'http://localhost:3210',
         changeOrigin: true,
+      },
+      '/ws': {
+        target: 'ws://localhost:3210',
+        ws: true,
       },
     },
   },
@@ -17,12 +21,5 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     css: true,
     exclude: [...configDefaults.exclude, '.worktrees/**'],
-  },
-  optimizeDeps: {
-    include: [
-      '@mariozechner/pi-ai',
-      '@mariozechner/pi-agent-core',
-      '@mariozechner/pi-web-ui',
-    ],
   },
 });

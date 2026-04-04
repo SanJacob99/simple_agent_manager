@@ -1,6 +1,6 @@
-import type { ResolvedContextEngineConfig } from './agent-config';
+import type { ResolvedContextEngineConfig } from '../../shared/agent-config';
 import type { AgentMessage } from '@mariozechner/pi-agent-core';
-import { estimateMessagesTokens } from './token-estimator';
+import { estimateMessagesTokens } from '../../shared/token-estimator';
 
 /**
  * ContextEngine implements the OpenClaw-inspired lifecycle:

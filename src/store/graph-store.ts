@@ -15,7 +15,7 @@ import { createNodeId } from '../utils/id';
 import { getDefaultNodeData } from '../utils/default-nodes';
 import { saveGraph, loadGraph } from './storage';
 import { useSessionStore } from './session-store';
-import { useAgentRuntimeStore } from './agent-runtime-store';
+import { useAgentConnectionStore } from './agent-connection-store';
 import { useSettingsStore } from '../settings/settings-store';
 
 function buildNodeData(nodeType: NodeType): FlowNodeData {
@@ -80,7 +80,7 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
           }
         }
         useSessionStore.getState().clearActiveSession(change.id);
-        useAgentRuntimeStore.getState().destroyRuntime(change.id);
+        useAgentConnectionStore.getState().destroyAgent(change.id);
       }
     }
     set({ nodes: applyNodeChanges(changes, get().nodes) });
@@ -132,7 +132,7 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
       }
     }
     useSessionStore.getState().clearActiveSession(nodeId);
-    useAgentRuntimeStore.getState().destroyRuntime(nodeId);
+    useAgentConnectionStore.getState().destroyAgent(nodeId);
 
     set({
       nodes: get().nodes.filter((n) => n.id !== nodeId),

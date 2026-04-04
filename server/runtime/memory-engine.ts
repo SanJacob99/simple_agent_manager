@@ -1,4 +1,4 @@
-import type { ResolvedMemoryConfig } from './agent-config';
+import type { ResolvedMemoryConfig } from '../../shared/agent-config';
 import type { AgentTool, AgentToolResult } from '@mariozechner/pi-agent-core';
 import { Type, type TSchema } from '@sinclair/typebox';
 

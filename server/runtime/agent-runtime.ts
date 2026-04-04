@@ -1,11 +1,11 @@
 import { Agent, type AgentEvent, type AgentTool } from '@mariozechner/pi-agent-core';
 import type { TSchema } from '@sinclair/typebox';
-import type { AgentConfig } from './agent-config';
+import type { AgentConfig } from '../../shared/agent-config';
+import type { DiscoveredModelMetadata } from '../../shared/agent-config';
 import { MemoryEngine } from './memory-engine';
 import { ContextEngine } from './context-engine';
 import { resolveToolNames, createAgentTools } from './tool-factory';
 import { resolveRuntimeModel } from './model-resolver';
-import { useModelCatalogStore } from '../store/model-catalog-store';
 
 export type RuntimeEvent =
   | AgentEvent
@@ -30,6 +30,7 @@ export class AgentRuntime {
   constructor(
     config: AgentConfig,
     getApiKey: (provider: string) => Promise<string | undefined> | string | undefined,
+    getDiscoveredModel?: (provider: string, modelId: string) => DiscoveredModelMetadata | undefined,
   ) {
     this.config = config;
 
@@ -63,8 +64,7 @@ export class AgentRuntime {
       provider: config.provider,
       modelId: config.modelId,
       modelCapabilities: config.modelCapabilities,
-      getDiscoveredModel: (provider, modelId) =>
-        useModelCatalogStore.getState().getModelMetadata(provider, modelId),
+      getDiscoveredModel: getDiscoveredModel ?? (() => undefined),
     });
 
     // Create Agent
