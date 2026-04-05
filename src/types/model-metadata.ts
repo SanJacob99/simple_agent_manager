@@ -7,12 +7,24 @@ export interface ModelCostInfo {
   cacheWrite: number;
 }
 
+export interface ModelTopProviderInfo {
+  contextLength?: number;
+  maxCompletionTokens?: number;
+  isModerated?: boolean;
+}
+
 export interface ModelCapabilityOverrides {
   reasoningSupported?: boolean;
   inputModalities?: ModelInputModality[];
   contextWindow?: number;
   maxTokens?: number;
   cost?: ModelCostInfo;
+  outputModalities?: string[];
+  tokenizer?: string;
+  supportedParameters?: string[];
+  topProvider?: ModelTopProviderInfo;
+  description?: string;
+  modelName?: string;
 }
 
 export interface DiscoveredModelMetadata {
@@ -25,5 +37,9 @@ export interface DiscoveredModelMetadata {
   contextWindow?: number;
   maxTokens?: number;
   cost?: ModelCostInfo;
+  outputModalities?: string[];
+  tokenizer?: string;
+  supportedParameters?: string[];
+  topProvider?: ModelTopProviderInfo;
   raw?: any;
 }

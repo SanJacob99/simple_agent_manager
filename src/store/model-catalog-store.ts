@@ -50,6 +50,18 @@ function mapOpenRouterModel(entry: any): DiscoveredModelMetadata {
       cacheRead: Number(entry.pricing?.cache_read ?? 0),
       cacheWrite: Number(entry.pricing?.cache_write ?? 0),
     },
+    outputModalities: entry.architecture?.output_modalities ?? ['text'],
+    tokenizer: entry.architecture?.tokenizer ?? undefined,
+    supportedParameters: Array.isArray(entry.supported_parameters)
+      ? entry.supported_parameters
+      : undefined,
+    topProvider: entry.top_provider
+      ? {
+          contextLength: entry.top_provider.context_length,
+          maxCompletionTokens: entry.top_provider.max_completion_tokens,
+          isModerated: entry.top_provider.is_moderated,
+        }
+      : undefined,
     raw: entry,
   };
 }

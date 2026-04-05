@@ -126,7 +126,15 @@ describe('AgentProperties', () => {
 
     render(<AgentProperties nodeId="agent-1" data={data} />);
 
-    const contextWindowInput = screen.getByPlaceholderText('Context window');
+    // The capabilities panel starts collapsed — click the summary bar to expand
+    const summaryBar = screen.getByText(/128K ctx/i).closest('button');
+    expect(summaryBar).toBeInTheDocument();
+    fireEvent.click(summaryBar!);
+
+    // Now the editable inputs should be visible. The context window uses placeholder 'tokens'.
+    const contextWindowInputs = screen.getAllByPlaceholderText('tokens');
+    // First 'tokens' placeholder is Context Window, second is Max Tokens
+    const contextWindowInput = contextWindowInputs[0];
     expect(contextWindowInput).toHaveValue(128000);
 
     fireEvent.change(contextWindowInput, {

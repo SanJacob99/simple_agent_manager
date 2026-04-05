@@ -1,7 +1,7 @@
 export const PROVIDERS = [
+  'openrouter',
   'anthropic',
   'openai',
-  'openrouter',
   'google',
   'ollama',
   'mistral',

@@ -5,6 +5,7 @@ vi.mock('../client', () => ({
   agentClient: {
     send: vi.fn(),
     onEvent: vi.fn(() => vi.fn()),
+    onStatusChange: vi.fn(() => vi.fn()),
     trackAgent: vi.fn(),
     untrackAgent: vi.fn(),
   },

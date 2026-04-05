@@ -120,7 +120,7 @@ export default function ModelDetailsModal({ model, onClose }: ModelDetailsModalP
                 <ValueItem label="Instruct Type" value={rawData?.architecture?.instruct_type} />
               </div>
             </div>
-            
+
             {/* Parameters */}
             <div className="space-y-3">
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-200">
@@ -156,7 +156,7 @@ export default function ModelDetailsModal({ model, onClose }: ModelDetailsModalP
                   {showRaw ? 'Hide' : 'Show Developer Payload'}
                 </span>
               </button>
-              
+
               {showRaw && (
                 <div className="mt-2 rounded-xl border border-slate-800 bg-black/40 p-4 overflow-x-auto">
                   <pre className="text-[10px] text-green-400 font-mono leading-relaxed">

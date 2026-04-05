@@ -1,4 +1,5 @@
 import type { ThinkingLevel } from '../types/nodes';
+import type { SystemPromptMode } from '../../shared/agent-config';
 
 export type AppView = 'canvas' | 'settings';
 
@@ -12,14 +13,16 @@ export interface AgentDefaults {
   provider: string;
   modelId: string;
   thinkingLevel: ThinkingLevel;
+  systemPromptMode: SystemPromptMode;
   systemPrompt: string;
   safetyGuardrails: string;
 }
 
 export const DEFAULT_AGENT_DEFAULTS: AgentDefaults = {
-  provider: 'anthropic',
-  modelId: 'claude-sonnet-4-20250514',
+  provider: 'openrouter',
+  modelId: 'anthropic/claude-sonnet-4-20250514',
   thinkingLevel: 'off',
+  systemPromptMode: 'auto',
   systemPrompt: 'You are a helpful assistant.',
   safetyGuardrails: `## Safety
 
