@@ -3,6 +3,7 @@ import { useGraphStore } from '../../store/graph-store';
 import { useModelCatalogStore } from '../../store/model-catalog-store';
 import type { AgentNodeData, ThinkingLevel } from '../../types/nodes';
 import type {
+  DiscoveredModelMetadata,
   ModelCapabilityOverrides,
   ModelCostInfo,
   ModelInputModality,
@@ -103,6 +104,22 @@ export default function AgentProperties({ nodeId, data }: Props) {
   );
 
   const isCustomModel = !availableModels.includes(data.modelId);
+
+  const resolveCapabilitiesForModel = (provider: string, modelId: string): ModelCapabilityOverrides => {
+    let discovered: DiscoveredModelMetadata | undefined;
+    if (provider === 'openrouter') {
+      discovered = openRouterModels[modelId];
+    }
+    
+    // For non-openrouter or undiscovered models, fall back to what we can guess
+    return {
+      reasoningSupported: discovered?.reasoningSupported ?? false,
+      inputModalities: discovered?.inputModalities ?? ['text'],
+      contextWindow: discovered?.contextWindow,
+      maxTokens: discovered?.maxTokens,
+      cost: discovered?.cost ?? emptyCost()
+    };
+  };
 
   const resolvedCapabilities = {
     reasoningSupported:
@@ -214,10 +231,11 @@ export default function AgentProperties({ nodeId, data }: Props) {
           onChange={(e) => {
             const provider = e.target.value;
             const models = STATIC_MODELS[provider] || [];
+            const newModelId = models[0] || '';
             update(nodeId, {
               provider,
-              modelId: models[0] || '',
-              modelCapabilities: {},
+              modelId: newModelId,
+              modelCapabilities: resolveCapabilitiesForModel(provider, newModelId),
             });
           }}
         >
@@ -240,9 +258,10 @@ export default function AgentProperties({ nodeId, data }: Props) {
                 return;
               }
 
+              const newModelId = e.target.value;
               update(nodeId, {
-                modelId: e.target.value,
-                modelCapabilities: {},
+                modelId: newModelId,
+                modelCapabilities: resolveCapabilitiesForModel(data.provider, newModelId),
               });
             }}
           >
