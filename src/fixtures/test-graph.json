@@ -1,9 +1,9 @@
 {
-  "version": 2,
+  "version": 3,
   "exportedAt": 0,
   "graph": {
     "id": "test-fixture",
-    "version": 2,
+    "version": 3,
     "graph": {
       "nodes": [
         {
@@ -13,7 +13,9 @@
           "data": {
             "type": "agent",
             "name": "Research Assistant",
+            "nameConfirmed": true,
             "systemPrompt": "You are a helpful research assistant. Use your tools to search the web, save important findings to memory, and provide well-researched answers.",
+            "systemPromptMode": "append",
             "provider": "anthropic",
             "modelId": "claude-sonnet-4-20250514",
             "thinkingLevel": "medium",
@@ -78,9 +80,8 @@
             "compactionStrategy": "hybrid",
             "compactionTrigger": "auto",
             "compactionThreshold": 0.8,
-            "systemPromptAdditions": [
-              "Always cite your sources when providing information."
-            ],
+            "bootstrapMaxChars": 20000,
+            "bootstrapTotalMaxChars": 150000,
             "autoFlushBeforeCompact": true,
             "ragEnabled": false,
             "ragTopK": 5,

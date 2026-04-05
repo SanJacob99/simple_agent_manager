@@ -66,11 +66,11 @@ export function usePeripheralReservations(config: AgentConfig | null): Periphera
     const reservations: PeripheralReservation[] = [];
 
     // System prompt
-    if (config.systemPrompt) {
+    if (config.systemPrompt?.assembled) {
       reservations.push({
         label: 'System prompt',
         type: 'system-prompt',
-        tokenEstimate: estimateTokens(config.systemPrompt),
+        tokenEstimate: estimateTokens(config.systemPrompt.assembled),
         isTodo: false, // We can measure this accurately
       });
     }
@@ -103,20 +103,6 @@ export function usePeripheralReservations(config: AgentConfig | null): Periphera
         type: 'skills',
         tokenEstimate: skillTokens,
         isTodo: true, // TODO: measure actual injected content after template expansion
-      });
-    }
-
-    // Context engine system prompt additions
-    if (config.contextEngine?.systemPromptAdditions && config.contextEngine.systemPromptAdditions.length > 0) {
-      const additionTokens = config.contextEngine.systemPromptAdditions.reduce((sum, addition) => {
-        return sum + estimateTokens(addition);
-      }, 0);
-
-      reservations.push({
-        label: 'Context engine additions',
-        type: 'context-engine',
-        tokenEstimate: additionTokens,
-        isTodo: true, // TODO: context engine should report its actual footprint
       });
     }
 

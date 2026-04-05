@@ -10,6 +10,7 @@ function createAgentData(overrides: Record<string, unknown> = {}) {
     name: 'Agent',
     nameConfirmed: true,
     systemPrompt: 'Test',
+    systemPromptMode: 'auto' as const,
     provider: 'openrouter',
     modelId: 'xiaomi/mimo-v2-pro',
     thinkingLevel: 'off' as const,
@@ -79,6 +80,32 @@ describe('AgentProperties', () => {
     if (node?.data.type === 'agent') {
       expect(node.data.modelId).toBe('claude-opus-4-20250514');
     }
+  });
+
+  it('renders a system prompt mode selector', () => {
+    const data = createAgentData({ systemPromptMode: 'auto' });
+    render(<AgentProperties nodeId="agent-1" data={data} />);
+    expect(screen.getByLabelText('System Prompt Mode')).toBeInTheDocument();
+  });
+
+  it('hides textarea in auto mode', () => {
+    const data = createAgentData({ systemPromptMode: 'auto' });
+    render(<AgentProperties nodeId="agent-1" data={data} />);
+    expect(screen.queryByLabelText('System Prompt')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Your Instructions')).not.toBeInTheDocument();
+  });
+
+  it('shows textarea labeled "Your Instructions" in append mode', () => {
+    const data = createAgentData({ systemPromptMode: 'append' });
+    render(<AgentProperties nodeId="agent-1" data={data} />);
+    expect(screen.getByLabelText('Your Instructions')).toBeInTheDocument();
+  });
+
+  it('shows textarea and warning in manual mode', () => {
+    const data = createAgentData({ systemPromptMode: 'manual' });
+    render(<AgentProperties nodeId="agent-1" data={data} />);
+    expect(screen.getByLabelText('System Prompt')).toBeInTheDocument();
+    expect(screen.getByText(/fully responsible/i)).toBeInTheDocument();
   });
 
   it('shows discovered capability defaults and writes overrides back to the graph store', () => {

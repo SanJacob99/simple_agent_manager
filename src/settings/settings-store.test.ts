@@ -18,6 +18,7 @@ describe('settings store', () => {
       modelId: 'gpt-4o',
       thinkingLevel: 'high',
       systemPrompt: 'Be concise.',
+      safetyGuardrails: 'Test guardrails.',
     });
 
     const stored = JSON.parse(
@@ -27,6 +28,7 @@ describe('settings store', () => {
     expect(stored.apiKeys.openrouter).toBe('key-1');
     expect(stored.agentDefaults.provider).toBe('openai');
     expect(stored.agentDefaults.systemPrompt).toBe('Be concise.');
+    expect(stored.agentDefaults.safetyGuardrails).toBe('Test guardrails.');
   });
 
   it('resets settings back to api-key empty state and default agent defaults', () => {
@@ -37,6 +39,7 @@ describe('settings store', () => {
         modelId: 'gpt-4o',
         thinkingLevel: 'high',
         systemPrompt: 'Be concise.',
+        safetyGuardrails: 'Test guardrails.',
       },
     });
 

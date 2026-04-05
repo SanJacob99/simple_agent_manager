@@ -1,27 +1,11 @@
-import { useEffect, useRef } from 'react';
 import { useGraphStore } from '../../store/graph-store';
-import { useModelCatalogStore } from '../../store/model-catalog-store';
-import type { ContextEngineNodeData, CompactionStrategy, AgentNodeData } from '../../types/nodes';
-import { Field, Tooltip, inputClass, selectClass, textareaClass } from './shared';
+import type { ContextEngineNodeData, CompactionStrategy } from '../../types/nodes';
+import { Field, Tooltip, inputClass, selectClass } from './shared';
 
 const COMPACTION_STRATEGIES: CompactionStrategy[] = ['summary', 'sliding-window', 'trim-oldest', 'hybrid'];
 const COMPACTION_TRIGGERS = ['auto', 'manual', 'threshold'] as const;
 
-// --- Well-known context windows for non-catalog providers ---
-
-const KNOWN_CONTEXT_WINDOWS: Record<string, number> = {
-  'claude-sonnet-4-20250514': 200000,
-  'claude-haiku-3-5-20241022': 200000,
-  'claude-opus-4-20250514': 200000,
-  'claude-3-5-sonnet-20241022': 200000,
-  'claude-3-5-haiku-20241022': 200000,
-  'claude-3-opus-20240229': 200000,
-  'gpt-4o': 128000,
-  'gpt-4o-mini': 128000,
-  'gpt-4-turbo': 128000,
-  'gpt-4': 8192,
-  'o3-mini': 200000,
-};
+import { useContextEngineSync } from '../../nodes/useContextEngineSync';
 
 interface Props {
   nodeId: string;
@@ -30,58 +14,7 @@ interface Props {
 
 export default function ContextEngineProperties({ nodeId, data }: Props) {
   const update = useGraphStore((s) => s.updateNodeData);
-  const nodes = useGraphStore((s) => s.nodes);
-  const edges = useGraphStore((s) => s.edges);
-  const getModelMetadata = useModelCatalogStore((s) => s.getModelMetadata);
-
-  // --- Find connected agent and inherit token budget ---
-
-  const connectedAgentEdge = edges.find((e) => e.source === nodeId);
-  const connectedAgent = connectedAgentEdge
-    ? nodes.find((n) => n.id === connectedAgentEdge.target && n.data.type === 'agent')
-    : undefined;
-
-  const agentData = connectedAgent?.data as AgentNodeData | undefined;
-  const provider = agentData?.provider;
-  const modelId = agentData?.modelId;
-
-  // Try catalog first, then agent overrides, then well-known defaults
-  const catalogMeta = provider && modelId ? getModelMetadata(provider, modelId) : undefined;
-  const modelContextWindow =
-    catalogMeta?.contextWindow ??
-    agentData?.modelCapabilities?.contextWindow ??
-    (modelId ? KNOWN_CONTEXT_WINDOWS[modelId] : undefined);
-
-  // Auto-sync tokenBudget when model context window is discovered
-  const prevContextWindowRef = useRef<number | undefined>(undefined);
-  useEffect(() => {
-    if (modelContextWindow && modelContextWindow !== prevContextWindowRef.current) {
-      prevContextWindowRef.current = modelContextWindow;
-      if (data.tokenBudget !== modelContextWindow) {
-        update(nodeId, { tokenBudget: modelContextWindow });
-      }
-    }
-  }, [modelContextWindow, nodeId, data.tokenBudget, update]);
-
-  // --- System prompt additions ---
-
-  const addSystemPromptAddition = () => {
-    update(nodeId, {
-      systemPromptAdditions: [...data.systemPromptAdditions, ''],
-    });
-  };
-
-  const updateAddition = (index: number, value: string) => {
-    const updated = [...data.systemPromptAdditions];
-    updated[index] = value;
-    update(nodeId, { systemPromptAdditions: updated });
-  };
-
-  const removeAddition = (index: number) => {
-    update(nodeId, {
-      systemPromptAdditions: data.systemPromptAdditions.filter((_, i) => i !== index),
-    });
-  };
+  const { connectedAgent, modelId, modelContextWindow } = useContextEngineSync(nodeId, data);
 
   return (
     <div className="space-y-1">
@@ -306,37 +239,40 @@ export default function ContextEngineProperties({ nodeId, data }: Props) {
         </div>
       </Field>
 
-      {/* System Prompt Additions */}
-      <Field label="System Prompt Additions">
-        <Tooltip text="Additional text injected into the system prompt at runtime. Use this to add dynamic instructions, persona details, or context-specific rules that augment the agent's base system prompt.">
+      {/* Bootstrap Limits */}
+      <Field label="Bootstrap Limits">
+        <Tooltip text="Controls how much workspace bootstrap file content is injected into the system prompt. Per-file limit truncates individual files; total limit caps cumulative content across all files.">
           <span className="mb-1.5 inline-block text-[10px] text-slate-500 underline decoration-dotted decoration-slate-600 underline-offset-4 cursor-help">
             What are these?
           </span>
         </Tooltip>
         <div className="space-y-2">
-          {data.systemPromptAdditions.map((addition, i) => (
-            <div key={i} className="flex gap-1.5">
-              <textarea
-                className={textareaClass + ' flex-1'}
-                rows={2}
-                value={addition}
-                onChange={(e) => updateAddition(i, e.target.value)}
-                placeholder="Dynamic text to prepend to system prompt..."
-              />
-              <button
-                onClick={() => removeAddition(i)}
-                className="self-start text-xs text-red-400 hover:text-red-300"
-              >
-                X
-              </button>
-            </div>
-          ))}
-          <button
-            onClick={addSystemPromptAddition}
-            className="w-full rounded-md border border-dashed border-slate-700 py-1.5 text-xs text-slate-500 transition hover:border-slate-500 hover:text-slate-300"
-          >
-            + Add system prompt addition
-          </button>
+          <div>
+            <label className="text-[10px] text-slate-500">Max chars per file</label>
+            <input
+              className={inputClass}
+              type="number"
+              min={1000}
+              step={1000}
+              value={data.bootstrapMaxChars}
+              onChange={(e) =>
+                update(nodeId, { bootstrapMaxChars: parseInt(e.target.value) || 20000 })
+              }
+            />
+          </div>
+          <div>
+            <label className="text-[10px] text-slate-500">Max total chars (all files)</label>
+            <input
+              className={inputClass}
+              type="number"
+              min={1000}
+              step={5000}
+              value={data.bootstrapTotalMaxChars}
+              onChange={(e) =>
+                update(nodeId, { bootstrapTotalMaxChars: parseInt(e.target.value) || 150000 })
+              }
+            />
+          </div>
         </div>
       </Field>
     </div>

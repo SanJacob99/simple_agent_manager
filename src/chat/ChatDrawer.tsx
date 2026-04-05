@@ -59,6 +59,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
   const sendPromptCmd = useAgentConnectionStore((s) => s.sendPrompt);
   const abortAgent = useAgentConnectionStore((s) => s.abortAgent);
   const destroyAgent = useAgentConnectionStore((s) => s.destroyAgent);
+  const connectionStatus = useAgentConnectionStore((s) => s.connectionStatus);
 
   const config = resolveAgentConfig(agentNodeId, nodes, edges);
 
@@ -116,15 +117,26 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
   const activeSession = activeSessionId ? sessions[activeSessionId] : null;
   const messages = activeSession?.messages ?? [];
 
+  const creatingSessionRef = useRef(false);
+
   // Auto-create default session if none exists
   useEffect(() => {
     if (!config || !agentName || !storageReady) return;
 
     if (agentSessions.length === 0) {
+      if (creatingSessionRef.current) return;
+      creatingSessionRef.current = true;
+      
       // No sessions at all — create default
       createSession(agentName, config.provider, config.modelId, true)
-        .then((id) => setActiveSession(agentNodeId, id))
-        .catch(console.error);
+        .then((id) => {
+          setActiveSession(agentNodeId, id);
+          creatingSessionRef.current = false;
+        })
+        .catch((err) => {
+          console.error(err);
+          creatingSessionRef.current = false;
+        });
     } else if (!activeSessionId || !sessions[activeSessionId]) {
       // No active session or active session was deleted — pick the most recent
       setActiveSession(agentNodeId, agentSessions[0].id);
@@ -344,8 +356,17 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
       });
     }
 
+    if (connectionStatus === 'disconnected') {
+      missing.push({
+        key: 'disconnected',
+        label: 'Connection Lost',
+        description: 'The WebSocket connection to the backend has dropped.',
+        hint: 'Please refresh the page to reconnect to the server.',
+      });
+    }
+
     return missing;
-  }, [config]);
+  }, [config, connectionStatus]);
 
   const isBlocked = missingPeripherals.length > 0;
 

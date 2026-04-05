@@ -1,5 +1,6 @@
 import type { Node } from '@xyflow/react';
 import type { ModelCapabilityOverrides } from './model-metadata';
+import type { SystemPromptMode } from '../../shared/agent-config';
 
 export type NodeType =
   | 'agent'
@@ -28,6 +29,7 @@ export interface AgentNodeData {
   description: string;
   tags: string[];
   modelCapabilities: ModelCapabilityOverrides;
+  systemPromptMode: SystemPromptMode;
 }
 
 // --- Memory Node (OpenClaw-inspired) ---
@@ -108,11 +110,12 @@ export interface ContextEngineNodeData {
   compactionStrategy: CompactionStrategy;
   compactionTrigger: 'auto' | 'manual' | 'threshold';
   compactionThreshold: number;
-  systemPromptAdditions: string[];
   autoFlushBeforeCompact: boolean;
   ragEnabled: boolean;
   ragTopK: number;
   ragMinScore: number;
+  bootstrapMaxChars: number;
+  bootstrapTotalMaxChars: number;
 }
 
 // --- Agent Communication Node ---

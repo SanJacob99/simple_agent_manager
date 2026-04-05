@@ -11,6 +11,8 @@ interface AgentState {
 
 interface AgentConnectionStore {
   agents: Record<string, AgentState>;
+  connectionStatus: 'connecting' | 'connected' | 'disconnected';
+  setConnectionStatus: (status: 'connecting' | 'connected' | 'disconnected') => void;
 
   // Chat drawer UI state
   chatAgentNodeId: string | null;
@@ -141,6 +143,9 @@ export const useAgentConnectionStore = create<AgentConnectionStore>((set, get) =
     return get().agents[agentId]?.status ?? 'disconnected';
   },
 
+  connectionStatus: 'disconnected' as const,
+  setConnectionStatus: (status: 'connecting' | 'connected' | 'disconnected') => set({ connectionStatus: status }),
+
   reset: () => {
     set({ agents: {}, chatAgentNodeId: null });
   },
@@ -149,4 +154,8 @@ export const useAgentConnectionStore = create<AgentConnectionStore>((set, get) =
 // Wire up AgentClient events to the store
 agentClient.onEvent((event) => {
   useAgentConnectionStore.getState().handleEvent(event);
+});
+
+agentClient.onStatusChange((status) => {
+  useAgentConnectionStore.getState().setConnectionStatus(status);
 });
