@@ -38,7 +38,7 @@ export function handleConnection(
 
         case 'agent:prompt': {
           manager.addSocket(command.agentId, socket);
-          await manager.prompt(command.agentId, command.sessionId, command.text);
+          await manager.prompt(command.agentId, command.sessionId, command.text, command.attachments);
           break;
         }
 

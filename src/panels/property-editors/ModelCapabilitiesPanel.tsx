@@ -149,6 +149,15 @@ function CapabilitySummaryBar({
               vision
             </span>
           )}
+          {(capabilities.cost.input > 0 || capabilities.cost.output > 0) && (
+            <span
+              className="text-slate-500 text-[9px]"
+              title="Input / Output cost per 1M tokens"
+            >
+              {formatCostPerMillion(capabilities.cost.input)}/
+              {formatCostPerMillion(capabilities.cost.output)}
+            </span>
+          )}
         </div>
       </div>
       <ChevronDown

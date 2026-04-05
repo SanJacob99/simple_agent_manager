@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { agentClient } from '../client';
 import type { AgentConfig } from '../../shared/agent-config';
-import type { ServerEvent } from '../../shared/protocol';
+import type { ImageAttachment, ServerEvent } from '../../shared/protocol';
 
 export type AgentStatus = 'connecting' | 'idle' | 'running' | 'error' | 'disconnected';
 
@@ -21,7 +21,7 @@ interface AgentConnectionStore {
 
   // Actions
   startAgent: (agentId: string, config: AgentConfig) => void;
-  sendPrompt: (agentId: string, sessionId: string, text: string) => void;
+  sendPrompt: (agentId: string, sessionId: string, text: string, attachments?: ImageAttachment[]) => void;
   abortAgent: (agentId: string) => void;
   destroyAgent: (agentId: string) => void;
   syncAgent: (agentId: string) => void;
@@ -55,8 +55,8 @@ export const useAgentConnectionStore = create<AgentConnectionStore>((set, get) =
     agentClient.send({ type: 'agent:start', agentId, config });
   },
 
-  sendPrompt: (agentId, sessionId, text) => {
-    agentClient.send({ type: 'agent:prompt', agentId, sessionId, text });
+  sendPrompt: (agentId, sessionId, text, attachments) => {
+    agentClient.send({ type: 'agent:prompt', agentId, sessionId, text, attachments });
   },
 
   abortAgent: (agentId) => {

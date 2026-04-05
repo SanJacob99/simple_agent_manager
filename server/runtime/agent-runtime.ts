@@ -1,6 +1,7 @@
 import { Agent, type AgentEvent, type AgentTool } from '@mariozechner/pi-agent-core';
 import type { TSchema } from '@sinclair/typebox';
 import type { AgentConfig } from '../../shared/agent-config';
+import type { ImageAttachment } from '../../shared/protocol';
 import type { DiscoveredModelMetadata } from '../../shared/agent-config';
 import { MemoryEngine } from './memory-engine';
 import { ContextEngine } from './context-engine';
@@ -101,9 +102,10 @@ export class AgentRuntime {
     return () => this.listeners.delete(fn);
   }
 
-  async prompt(text: string): Promise<void> {
+  async prompt(text: string, attachments?: ImageAttachment[]): Promise<void> {
     try {
-      await this.agent.prompt(text);
+      const images = attachments?.map((a) => ({ data: a.data, mimeType: a.mimeType }));
+      await this.agent.prompt(text, images?.length ? images : undefined);
 
       // After-turn bookkeeping
       if (this.contextEngine) {
