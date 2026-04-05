@@ -143,6 +143,33 @@ describe('StorageEngine', () => {
       expect(meta?.totalOutputTokens).toBe(1200);
       expect(meta?.totalTokens).toBe(6200);
     });
+
+    it('finds a session by sessionKey', async () => {
+      await engine.createSession({
+        sessionId: 'sess-key-1',
+        sessionKey: 'my-session',
+        agentName: 'test-agent',
+        llmSlug: 'anthropic/claude-sonnet-4-20250514',
+        startedAt: '2026-04-03T10:00:00.000Z',
+        updatedAt: '2026-04-03T10:00:00.000Z',
+        sessionFile: 'sessions/sess-key-1.jsonl',
+        contextTokens: 0,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalEstimatedCostUsd: 0,
+        totalTokens: 0,
+      });
+
+      const found = await engine.getSessionByKey('my-session');
+      expect(found).not.toBeNull();
+      expect(found!.sessionId).toBe('sess-key-1');
+      expect(found!.sessionKey).toBe('my-session');
+
+      const notFound = await engine.getSessionByKey('nonexistent');
+      expect(notFound).toBeNull();
+    });
   });
 
   describe('JSONL entries', () => {

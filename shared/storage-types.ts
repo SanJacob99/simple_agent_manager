@@ -1,5 +1,6 @@
 export interface SessionMeta {
   sessionId: string;
+  sessionKey?: string;
   agentName: string;
   llmSlug: string;
   startedAt: string;
