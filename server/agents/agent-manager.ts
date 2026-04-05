@@ -1,8 +1,15 @@
-import { AgentRuntime, type RuntimeEvent } from '../runtime/agent-runtime';
+import { AgentRuntime } from '../runtime/agent-runtime';
+import { RunCoordinator } from './run-coordinator';
 import { EventBridge } from './event-bridge';
+import { StorageEngine } from '../runtime/storage-engine';
 import type { ApiKeyStore } from '../auth/api-keys';
 import type { AgentConfig } from '../../shared/agent-config';
-import type { ImageAttachment } from '../../shared/protocol';
+import type {
+  DispatchParams,
+  DispatchResult,
+  WaitResult,
+  RunEventListener,
+} from '../../shared/run-types';
 import type WebSocket from 'ws';
 import fs from 'fs/promises';
 import path from 'path';
@@ -10,10 +17,10 @@ import os from 'os';
 
 export interface ManagedAgent {
   runtime: AgentRuntime;
+  coordinator: RunCoordinator;
   config: AgentConfig;
-  status: 'idle' | 'running' | 'error';
   bridge: EventBridge;
-  activeSessionId: string | null;
+  storage: StorageEngine | null;
   lastActivity: number;
   unsubscribe: () => void;
 }
@@ -23,34 +30,40 @@ export class AgentManager {
 
   constructor(private readonly apiKeys: ApiKeyStore) {}
 
-  start(config: AgentConfig): void {
+  async start(config: AgentConfig): Promise<void> {
     // Destroy existing if present
     if (this.agents.has(config.id)) {
       this.destroy(config.id);
     }
 
-    const bridge = new EventBridge(config.id);
+    // Create StorageEngine if storage config exists
+    let storage: StorageEngine | null = null;
+    if (config.storage) {
+      storage = new StorageEngine(config.storage, config.name);
+      await storage.init();
+    }
 
     const runtime = new AgentRuntime(
       config,
       (provider) => Promise.resolve(this.apiKeys.get(provider)),
     );
 
-    const unsubscribe = runtime.subscribe((event: RuntimeEvent) => {
-      bridge.handleRuntimeEvent(event);
+    const coordinator = new RunCoordinator(config.id, runtime, config, storage);
 
-      if (event.type === 'agent_end') {
-        const managed = this.agents.get(config.id);
-        if (managed) managed.status = 'idle';
-      }
+    const bridge = new EventBridge(config.id, coordinator);
+
+    // Subscribe to coordinator lifecycle events for lastActivity tracking
+    const unsubscribe = coordinator.subscribeAll(() => {
+      const managed = this.agents.get(config.id);
+      if (managed) managed.lastActivity = Date.now();
     });
 
     this.agents.set(config.id, {
       runtime,
+      coordinator,
       config,
-      status: 'idle',
       bridge,
-      activeSessionId: null,
+      storage,
       lastActivity: Date.now(),
       unsubscribe,
     });
@@ -59,33 +72,46 @@ export class AgentManager {
     this.persistConfig(config).catch(console.error);
   }
 
-  async prompt(agentId: string, sessionId: string, text: string, attachments?: ImageAttachment[]): Promise<void> {
+  async dispatch(agentId: string, params: DispatchParams): Promise<DispatchResult> {
     const managed = this.agents.get(agentId);
     if (!managed) throw new Error(`Agent ${agentId} not found`);
-
-    managed.status = 'running';
-    managed.activeSessionId = sessionId;
     managed.lastActivity = Date.now();
-
-    try {
-      await managed.runtime.prompt(text, attachments);
-    } catch (error) {
-      managed.status = 'error';
-      throw error;
-    }
+    return managed.coordinator.dispatch(params);
   }
 
-  abort(agentId: string): void {
+  async wait(agentId: string, runId: string, timeoutMs?: number): Promise<WaitResult> {
+    const managed = this.agents.get(agentId);
+    if (!managed) throw new Error(`Agent ${agentId} not found`);
+    return managed.coordinator.wait(runId, timeoutMs);
+  }
+
+  subscribe(agentId: string, runId: string, listener: RunEventListener): () => void {
+    const managed = this.agents.get(agentId);
+    if (!managed) throw new Error(`Agent ${agentId} not found`);
+    return managed.coordinator.subscribe(runId, listener);
+  }
+
+  abortRun(agentId: string, runId: string): void {
     const managed = this.agents.get(agentId);
     if (!managed) return;
-    managed.runtime.abort();
-    managed.status = 'idle';
+    managed.coordinator.abort(runId);
+  }
+
+  /** Abort the most recent active run, or a specific run by ID. */
+  abort(agentId: string, runId?: string): void {
+    const managed = this.agents.get(agentId);
+    if (!managed) return;
+    const targetRunId = runId ?? managed.coordinator.getLatestActiveRunId();
+    if (targetRunId) {
+      managed.coordinator.abort(targetRunId);
+    }
   }
 
   destroy(agentId: string): void {
     const managed = this.agents.get(agentId);
     if (!managed) return;
     managed.unsubscribe();
+    managed.coordinator.destroy();
     managed.runtime.destroy();
     this.agents.delete(agentId);
   }
@@ -94,9 +120,12 @@ export class AgentManager {
     return this.agents.has(agentId);
   }
 
+  /** Returns the agent's overall status based on active runs. */
   getStatus(agentId: string): 'idle' | 'running' | 'error' | 'not_found' {
     const managed = this.agents.get(agentId);
-    return managed?.status ?? 'not_found';
+    if (!managed) return 'not_found';
+    const activeRun = managed.coordinator.getLatestActiveRunId();
+    return activeRun ? 'running' : 'idle';
   }
 
   getBridge(agentId: string): EventBridge | undefined {
@@ -143,7 +172,7 @@ export class AgentManager {
         try {
           const raw = await fs.readFile(configPath, 'utf-8');
           const config = JSON.parse(raw) as AgentConfig;
-          this.start(config);
+          await this.start(config);
           restored++;
         } catch {
           // No config file in this directory — skip
