@@ -19,8 +19,8 @@ export interface AgentDefaults {
 }
 
 export const DEFAULT_AGENT_DEFAULTS: AgentDefaults = {
-  provider: 'anthropic',
-  modelId: 'claude-sonnet-4-20250514',
+  provider: 'openrouter',
+  modelId: 'anthropic/claude-sonnet-4-20250514',
   thinkingLevel: 'off',
   systemPromptMode: 'auto',
   systemPrompt: 'You are a helpful assistant.',

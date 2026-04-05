@@ -70,7 +70,8 @@ describe('model catalog store', () => {
     await store.syncOpenRouterKey('same-key');
     await store.syncOpenRouterKey('same-key');
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // syncOpenRouterKey makes 2 parallel fetches (full + user models)
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('refetches when sync is forced with the same OpenRouter key', async () => {
@@ -82,6 +83,7 @@ describe('model catalog store', () => {
     await store.syncOpenRouterKey('same-key');
     await store.syncOpenRouterKey('same-key', { force: true });
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // Each sync triggers 2 parallel fetches, forced sync re-fetches
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 });

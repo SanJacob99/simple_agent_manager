@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState } from 'react';
 import { useGraphStore } from '../../store/graph-store';
 import { useModelCatalogStore } from '../../store/model-catalog-store';
 import type { AgentNodeData, ThinkingLevel } from '../../types/nodes';
@@ -14,32 +14,7 @@ import {
 } from '../../runtime/provider-model-options';
 import { Field, Tooltip, inputClass, selectClass, textareaClass } from './shared';
 import SystemPromptPreview from '../SystemPromptPreview';
-
-function CostInput({ value, onChange, placeholder }: { value: number, onChange: (val: string) => void, placeholder?: string }) {
-  const [localVal, setLocalVal] = useState(() => value === 0 ? '' : Number((value * 1e6).toPrecision(6)).toString());
-  
-  useEffect(() => {
-    const propsVal = Number((value * 1e6).toPrecision(6));
-    const localNum = Number(localVal) || 0;
-    if (Math.abs(localNum - propsVal) > 1e-9) {
-      setLocalVal(propsVal === 0 ? '' : propsVal.toString());
-    }
-  }, [value]);
-
-  return (
-    <input
-      className={inputClass}
-      type="number"
-      step="any"
-      value={localVal}
-      onChange={(e) => {
-        setLocalVal(e.target.value);
-        onChange(e.target.value);
-      }}
-      placeholder={placeholder}
-    />
-  );
-}
+import ModelCapabilitiesPanel from './ModelCapabilitiesPanel';
 
 const THINKING_LEVELS: ThinkingLevel[] = [
   'off',
@@ -68,19 +43,36 @@ function getCustomModelPlaceholder(provider: string) {
   return 'provider-specific-model-id';
 }
 
-function parseOptionalNumber(value: string): number | undefined {
-  if (!value.trim()) return undefined;
-
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
 function emptyCost(): ModelCostInfo {
   return {
     input: 0,
     output: 0,
     cacheRead: 0,
     cacheWrite: 0,
+  };
+}
+
+/**
+ * Build a full capabilities snapshot from discovered metadata.
+ * This is written to the agent node data on model selection so the backend
+ * can operate independently of the frontend catalog cache.
+ */
+function snapshotCapabilities(
+  discovered: DiscoveredModelMetadata | undefined,
+): ModelCapabilityOverrides {
+  if (!discovered) return {};
+  return {
+    reasoningSupported: discovered.reasoningSupported ?? false,
+    inputModalities: discovered.inputModalities ?? ['text'],
+    contextWindow: discovered.contextWindow,
+    maxTokens: discovered.maxTokens,
+    cost: discovered.cost ?? emptyCost(),
+    outputModalities: discovered.outputModalities ?? ['text'],
+    tokenizer: discovered.tokenizer,
+    supportedParameters: discovered.supportedParameters,
+    topProvider: discovered.topProvider,
+    description: discovered.description,
+    modelName: discovered.name,
   };
 }
 
@@ -105,22 +97,8 @@ export default function AgentProperties({ nodeId, data }: Props) {
 
   const isCustomModel = !availableModels.includes(data.modelId);
 
-  const resolveCapabilitiesForModel = (provider: string, modelId: string): ModelCapabilityOverrides => {
-    let discovered: DiscoveredModelMetadata | undefined;
-    if (provider === 'openrouter') {
-      discovered = openRouterModels[modelId];
-    }
-    
-    // For non-openrouter or undiscovered models, fall back to what we can guess
-    return {
-      reasoningSupported: discovered?.reasoningSupported ?? false,
-      inputModalities: discovered?.inputModalities ?? ['text'],
-      contextWindow: discovered?.contextWindow,
-      maxTokens: discovered?.maxTokens,
-      cost: discovered?.cost ?? emptyCost()
-    };
-  };
-
+  // Resolve capabilities: overrides (persisted in node) take precedence,
+  // falling back to discovered metadata from the live catalog.
   const resolvedCapabilities = {
     reasoningSupported:
       data.modelCapabilities.reasoningSupported ??
@@ -129,11 +107,26 @@ export default function AgentProperties({ nodeId, data }: Props) {
     inputModalities:
       data.modelCapabilities.inputModalities ??
       discoveredModel?.inputModalities ??
-      ['text'],
+      (['text'] as ModelInputModality[]),
     contextWindow:
       data.modelCapabilities.contextWindow ?? discoveredModel?.contextWindow,
     maxTokens: data.modelCapabilities.maxTokens ?? discoveredModel?.maxTokens,
     cost: data.modelCapabilities.cost ?? discoveredModel?.cost ?? emptyCost(),
+    outputModalities:
+      data.modelCapabilities.outputModalities ??
+      discoveredModel?.outputModalities ??
+      ['text'],
+    tokenizer:
+      data.modelCapabilities.tokenizer ?? discoveredModel?.tokenizer,
+    supportedParameters:
+      data.modelCapabilities.supportedParameters ??
+      discoveredModel?.supportedParameters,
+    topProvider:
+      data.modelCapabilities.topProvider ?? discoveredModel?.topProvider,
+    description:
+      data.modelCapabilities.description ?? discoveredModel?.description,
+    modelName:
+      data.modelCapabilities.modelName ?? discoveredModel?.name,
   };
 
   const updateCapabilities = (updates: Partial<ModelCapabilityOverrides>) => {
@@ -232,10 +225,17 @@ export default function AgentProperties({ nodeId, data }: Props) {
             const provider = e.target.value;
             const models = STATIC_MODELS[provider] || [];
             const newModelId = models[0] || '';
+
+            // Snapshot capabilities for the new model
+            let discovered: DiscoveredModelMetadata | undefined;
+            if (provider === 'openrouter') {
+              discovered = openRouterModels[newModelId];
+            }
+
             update(nodeId, {
               provider,
               modelId: newModelId,
-              modelCapabilities: resolveCapabilitiesForModel(provider, newModelId),
+              modelCapabilities: snapshotCapabilities(discovered),
             });
           }}
         >
@@ -259,9 +259,16 @@ export default function AgentProperties({ nodeId, data }: Props) {
               }
 
               const newModelId = e.target.value;
+
+              // Always snapshot full capabilities on model selection
+              let discovered: DiscoveredModelMetadata | undefined;
+              if (data.provider === 'openrouter') {
+                discovered = openRouterModels[newModelId];
+              }
+
               update(nodeId, {
                 modelId: newModelId,
-                modelCapabilities: resolveCapabilitiesForModel(data.provider, newModelId),
+                modelCapabilities: snapshotCapabilities(discovered),
               });
             }}
           >
@@ -290,196 +297,17 @@ export default function AgentProperties({ nodeId, data }: Props) {
         </div>
       </Field>
 
-      <Field label="Model Capabilities" tooltip="Metadata describing what the selected model supports. These values are auto-filled from discovered model info when available, but you can override them per agent.">
-        <div className="space-y-3 rounded-md border border-slate-800 bg-slate-900/40 p-3">
-          <p className="text-[10px] text-slate-500">
-            These fields use discovered/default values until you override them
-            for this agent.
-          </p>
-
-          <div className="flex items-center justify-between gap-3">
-            <label className="flex items-center gap-2 text-xs text-slate-300">
-              <input
-                type="checkbox"
-                checked={resolvedCapabilities.reasoningSupported}
-                onChange={(e) =>
-                  updateCapabilities({
-                    reasoningSupported: e.target.checked,
-                  })
-                }
-              />
-              Supports reasoning
-              <Tooltip text="Whether the model supports chain-of-thought reasoning (e.g. extended thinking). Enables the Thinking Level setting when checked.">
-                <span className="cursor-help text-slate-500 hover:text-slate-300">?</span>
-              </Tooltip>
-            </label>
-            {data.modelCapabilities.reasoningSupported !== undefined && (
-              <button
-                type="button"
-                className="text-[10px] text-slate-500 hover:text-slate-300"
-                onClick={() => clearCapability('reasoningSupported')}
-              >
-                Use default
-              </button>
-            )}
-          </div>
-
-          <div className="space-y-1">
-            <div className="flex items-center justify-between gap-3">
-              <span className="flex items-center gap-1 text-xs text-slate-300">
-                Input modalities
-                <Tooltip text="The types of input the model can process. 'text' is always supported. 'image' enables sending images and screenshots in chat.">
-                  <span className="cursor-help text-slate-500 hover:text-slate-300">?</span>
-                </Tooltip>
-              </span>
-              {data.modelCapabilities.inputModalities !== undefined && (
-                <button
-                  type="button"
-                  className="text-[10px] text-slate-500 hover:text-slate-300"
-                  onClick={() => clearCapability('inputModalities')}
-                >
-                  Use default
-                </button>
-              )}
-            </div>
-            <div className="flex gap-4">
-              {(['text', 'image'] as ModelInputModality[]).map((modality) => (
-                <label
-                  key={modality}
-                  className="flex items-center gap-2 text-xs text-slate-400"
-                >
-                  <input
-                    type="checkbox"
-                    checked={resolvedCapabilities.inputModalities.includes(
-                      modality,
-                    )}
-                    onChange={(e) =>
-                      toggleInputModality(modality, e.target.checked)
-                    }
-                  />
-                  {modality}
-                </label>
-              ))}
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-3">
-              <span className="flex items-center gap-1 text-xs text-slate-300">
-                Context window
-                <Tooltip text="The maximum number of tokens the model can receive as input (prompt + conversation history). Used by the context engine to decide when to compact history.">
-                  <span className="cursor-help text-slate-500 hover:text-slate-300">?</span>
-                </Tooltip>
-              </span>
-              {data.modelCapabilities.contextWindow !== undefined && (
-                <button
-                  type="button"
-                  className="text-[10px] text-slate-500 hover:text-slate-300"
-                  onClick={() => clearCapability('contextWindow')}
-                >
-                  Use default
-                </button>
-              )}
-            </div>
-            <input
-              className={inputClass}
-              type="number"
-              value={resolvedCapabilities.contextWindow ?? ''}
-              onChange={(e) =>
-                updateCapabilities({
-                  contextWindow: parseOptionalNumber(e.target.value),
-                })
-              }
-              placeholder="Context window"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-3">
-              <span className="flex items-center gap-1 text-xs text-slate-300">
-                Max tokens
-                <Tooltip text="The maximum number of tokens the model can generate in a single response. Limits output length to control cost and response time.">
-                  <span className="cursor-help text-slate-500 hover:text-slate-300">?</span>
-                </Tooltip>
-              </span>
-              {data.modelCapabilities.maxTokens !== undefined && (
-                <button
-                  type="button"
-                  className="text-[10px] text-slate-500 hover:text-slate-300"
-                  onClick={() => clearCapability('maxTokens')}
-                >
-                  Use default
-                </button>
-              )}
-            </div>
-            <input
-              className={inputClass}
-              type="number"
-              value={resolvedCapabilities.maxTokens ?? ''}
-              onChange={(e) =>
-                updateCapabilities({
-                  maxTokens: parseOptionalNumber(e.target.value),
-                })
-              }
-              placeholder="Max tokens"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-3">
-              <span className="flex items-center gap-1 text-xs text-slate-300">
-                Cost metadata
-                <Tooltip text="Token pricing used to estimate conversation cost in the chat panel. Values are in dollars per 1 million tokens. Cache pricing applies when prompt caching is supported.">
-                  <span className="cursor-help text-slate-500 hover:text-slate-300">?</span>
-                </Tooltip>
-              </span>
-              {data.modelCapabilities.cost !== undefined && (
-                <button
-                  type="button"
-                  className="text-[10px] text-slate-500 hover:text-slate-300"
-                  onClick={() => clearCapability('cost')}
-                >
-                  Use default
-                </button>
-              )}
-            </div>
-            <div className="grid grid-cols-2 gap-2 mt-1">
-              <div className="space-y-1">
-                <label className="text-[10px] text-slate-400">Input (per 1M)</label>
-                <CostInput
-                  value={resolvedCapabilities.cost.input}
-                  onChange={(val) => updateCost('input', val)}
-                  placeholder="0.00"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] text-slate-400">Output (per 1M)</label>
-                <CostInput
-                  value={resolvedCapabilities.cost.output}
-                  onChange={(val) => updateCost('output', val)}
-                  placeholder="0.00"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] text-slate-400">Cache Read (per 1M)</label>
-                <CostInput
-                  value={resolvedCapabilities.cost.cacheRead}
-                  onChange={(val) => updateCost('cacheRead', val)}
-                  placeholder="0.00"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] text-slate-400">Cache Write (per 1M)</label>
-                <CostInput
-                  value={resolvedCapabilities.cost.cacheWrite}
-                  onChange={(val) => updateCost('cacheWrite', val)}
-                  placeholder="0.00"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      </Field>
+      {/* Collapsible Model Capabilities Panel */}
+      <ModelCapabilitiesPanel
+        nodeId={nodeId}
+        overrides={data.modelCapabilities}
+        discoveredModel={discoveredModel}
+        resolved={resolvedCapabilities}
+        onUpdateCapabilities={updateCapabilities}
+        onClearCapability={clearCapability}
+        onUpdateCost={updateCost}
+        onToggleInputModality={toggleInputModality}
+      />
 
       <Field label="Thinking Level">
         <select

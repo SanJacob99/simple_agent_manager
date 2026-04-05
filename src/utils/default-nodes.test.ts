@@ -6,7 +6,7 @@ describe('getDefaultNodeData', () => {
     const node = getDefaultNodeData('agent');
 
     expect(node.type).toBe('agent');
-    expect(node.provider).toBe('anthropic');
+    expect(node.provider).toBe('openrouter');
   });
 
   it('returns a storage node config with filesystem defaults', () => {

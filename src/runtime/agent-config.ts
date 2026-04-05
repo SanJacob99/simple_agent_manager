@@ -12,6 +12,7 @@ export type {
   PluginDefinition,
   ModelInputModality,
   ModelCostInfo,
+  ModelTopProviderInfo,
   ModelCapabilityOverrides,
   DiscoveredModelMetadata,
   AgentConfig,
