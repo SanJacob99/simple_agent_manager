@@ -60,6 +60,11 @@ interface GraphStore {
   /** Get all agent names currently in the graph */
   getAgentNames: () => string[];
 
+  pendingDeleteAgent: { nodeId: string; agentName: string } | null;
+  requestDeleteAgent: (nodeId: string, agentName: string) => void;
+  confirmDeleteAgent: (deleteData: boolean) => void;
+  cancelDeleteAgent: () => void;
+
   loadGraph: (nodes: AppNode[], edges: Edge[]) => void;
 }
 
@@ -68,8 +73,39 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   edges: [],
   selectedNodeId: null,
   pendingNameNodeId: null,
+  pendingDeleteAgent: null,
+
+  requestDeleteAgent: (nodeId, agentName) => {
+    set({ pendingDeleteAgent: { nodeId, agentName } });
+  },
+
+  cancelDeleteAgent: () => {
+    set({ pendingDeleteAgent: null });
+  },
+
+  confirmDeleteAgent: (deleteData) => {
+    const { pendingDeleteAgent, nodes, edges, selectedNodeId } = get();
+    if (!pendingDeleteAgent) return;
+
+    if (deleteData) {
+      useSessionStore.getState().deleteAllSessionsForAgent(pendingDeleteAgent.agentName);
+    }
+    useSessionStore.getState().clearActiveSession(pendingDeleteAgent.nodeId);
+    useAgentConnectionStore.getState().destroyAgent(pendingDeleteAgent.nodeId);
+
+    set({
+      pendingDeleteAgent: null,
+      nodes: nodes.filter((n) => n.id !== pendingDeleteAgent.nodeId),
+      edges: edges.filter(
+        (e) => e.source !== pendingDeleteAgent.nodeId && e.target !== pendingDeleteAgent.nodeId,
+      ),
+      selectedNodeId: selectedNodeId === pendingDeleteAgent.nodeId ? null : selectedNodeId,
+    });
+  },
 
   onNodesChange: (changes) => {
+    const nextChanges = [];
+    
     for (const change of changes) {
       if (change.type === 'remove') {
         // Find the node being removed to get agent name
@@ -77,14 +113,17 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
         if (removedNode?.data.type === 'agent') {
           const agentName = (removedNode.data as { name: string }).name;
           if (agentName) {
-            useSessionStore.getState().deleteAllSessionsForAgent(agentName);
+            get().requestDeleteAgent(change.id, agentName);
+            continue; // Intercept removal! Don't apply this change to the graph yet
           }
         }
+        
         useSessionStore.getState().clearActiveSession(change.id);
         useAgentConnectionStore.getState().destroyAgent(change.id);
       }
+      nextChanges.push(change);
     }
-    set({ nodes: applyNodeChanges(changes, get().nodes) });
+    set({ nodes: applyNodeChanges(nextChanges, get().nodes) });
   },
 
   onEdgesChange: (changes) => {
@@ -129,7 +168,8 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
     if (node?.data.type === 'agent') {
       const agentName = (node.data as { name: string }).name;
       if (agentName) {
-        useSessionStore.getState().deleteAllSessionsForAgent(agentName);
+        get().requestDeleteAgent(nodeId, agentName);
+        return; // Wait for dialog confirmation
       }
     }
     useSessionStore.getState().clearActiveSession(nodeId);

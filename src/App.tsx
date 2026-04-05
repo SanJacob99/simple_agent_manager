@@ -5,6 +5,7 @@ import Sidebar from './panels/Sidebar';
 import PropertiesPanel from './panels/PropertiesPanel';
 import ChatDrawer from './chat/ChatDrawer';
 import AgentNameDialog from './nodes/AgentNameDialog';
+import AgentDeleteDialog from './nodes/AgentDeleteDialog';
 import { useGraphStore } from './store/graph-store';
 import { useAgentConnectionStore } from './store/agent-connection-store';
 import { useSettingsStore } from './settings/settings-store';
@@ -115,6 +116,9 @@ export default function App() {
           onCancel={handleNameCancel}
         />
       )}
+
+      {/* Agent Delete Confirmation Dialog */}
+      <AgentDeleteDialog />
     </div>
   );
 }
