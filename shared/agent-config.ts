@@ -104,6 +104,7 @@ export interface AgentConfig {
 
   exportedAt: number;
   sourceGraphId: string;
+  runTimeoutMs: number;
 }
 
 export interface ResolvedMemoryConfig {

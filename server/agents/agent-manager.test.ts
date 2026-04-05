@@ -41,6 +41,7 @@ function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
     vectorDatabases: [],
     exportedAt: Date.now(),
     sourceGraphId: 'agent-1',
+    runTimeoutMs: 172800000,
     ...overrides,
   };
 }

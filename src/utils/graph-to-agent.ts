@@ -215,5 +215,6 @@ export function resolveAgentConfig(
     vectorDatabases,
     exportedAt: Date.now(),
     sourceGraphId: agentNodeId,
+    runTimeoutMs: 172800000,
   };
 }
