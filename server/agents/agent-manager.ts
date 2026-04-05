@@ -2,6 +2,7 @@ import { AgentRuntime, type RuntimeEvent } from '../runtime/agent-runtime';
 import { EventBridge } from './event-bridge';
 import type { ApiKeyStore } from '../auth/api-keys';
 import type { AgentConfig } from '../../shared/agent-config';
+import type { ImageAttachment } from '../../shared/protocol';
 import type WebSocket from 'ws';
 import fs from 'fs/promises';
 import path from 'path';
@@ -58,7 +59,7 @@ export class AgentManager {
     this.persistConfig(config).catch(console.error);
   }
 
-  async prompt(agentId: string, sessionId: string, text: string): Promise<void> {
+  async prompt(agentId: string, sessionId: string, text: string, attachments?: ImageAttachment[]): Promise<void> {
     const managed = this.agents.get(agentId);
     if (!managed) throw new Error(`Agent ${agentId} not found`);
 
@@ -67,7 +68,7 @@ export class AgentManager {
     managed.lastActivity = Date.now();
 
     try {
-      await managed.runtime.prompt(text);
+      await managed.runtime.prompt(text, attachments);
     } catch (error) {
       managed.status = 'error';
       throw error;

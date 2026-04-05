@@ -8,11 +8,17 @@ export interface AgentStartCommand {
   config: AgentConfig;
 }
 
+export interface ImageAttachment {
+  data: string;     // base64-encoded image data (no data: URI prefix)
+  mimeType: string; // e.g. 'image/jpeg'
+}
+
 export interface AgentPromptCommand {
   type: 'agent:prompt';
   agentId: string;
   sessionId: string;
   text: string;
+  attachments?: ImageAttachment[];
 }
 
 export interface AgentAbortCommand {

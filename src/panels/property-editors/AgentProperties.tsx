@@ -232,10 +232,12 @@ export default function AgentProperties({ nodeId, data }: Props) {
               discovered = openRouterModels[newModelId];
             }
 
+            const caps = snapshotCapabilities(discovered);
             update(nodeId, {
               provider,
               modelId: newModelId,
-              modelCapabilities: snapshotCapabilities(discovered),
+              modelCapabilities: caps,
+              ...(caps.reasoningSupported === false ? { thinkingLevel: 'off' } : {}),
             });
           }}
         >
@@ -266,9 +268,11 @@ export default function AgentProperties({ nodeId, data }: Props) {
                 discovered = openRouterModels[newModelId];
               }
 
+              const caps = snapshotCapabilities(discovered);
               update(nodeId, {
                 modelId: newModelId,
-                modelCapabilities: snapshotCapabilities(discovered),
+                modelCapabilities: caps,
+                ...(caps.reasoningSupported === false ? { thinkingLevel: 'off' } : {}),
               });
             }}
           >
@@ -313,6 +317,12 @@ export default function AgentProperties({ nodeId, data }: Props) {
         <select
           className={selectClass}
           value={data.thinkingLevel}
+          disabled={!resolvedCapabilities.reasoningSupported}
+          title={
+            !resolvedCapabilities.reasoningSupported
+              ? 'This model does not support extended reasoning'
+              : undefined
+          }
           onChange={(e) =>
             update(nodeId, { thinkingLevel: e.target.value as ThinkingLevel })
           }

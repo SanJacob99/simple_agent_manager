@@ -1,11 +1,11 @@
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
-import { X, Send, Bot, Loader2, Square, Trash2, Wrench, Plus, ChevronDown, Unplug } from 'lucide-react';
+import { X, Send, Bot, Loader2, Square, Trash2, Wrench, Plus, ChevronDown, Unplug, ImagePlus } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useGraphStore } from '../store/graph-store';
 import { useAgentConnectionStore } from '../store/agent-connection-store';
 import { resolveAgentConfig } from '../utils/graph-to-agent';
-import type { ServerEvent } from '../../shared/protocol';
+import type { ImageAttachment, ServerEvent } from '../../shared/protocol';
 import { agentClient } from '../client';
 import { useSessionStore, type Message } from '../store/session-store';
 import { StorageClient } from '../runtime/storage-client';
@@ -154,8 +154,13 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
 
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
+  const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
+  const [attachmentPreviews, setAttachmentPreviews] = useState<string[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const unsubRef = useRef<(() => void) | null>(null);
+
+  const supportsVision = config?.modelCapabilities?.inputModalities?.includes('image') ?? false;
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -237,19 +242,22 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
   };
 
   const sendMessage = useCallback(async () => {
-    if (!input.trim() || isStreaming || !config || !activeSessionId) return;
+    if ((!input.trim() && attachments.length === 0) || isStreaming || !config || !activeSessionId) return;
 
     const trimmedInput = input.trim();
+    const currentAttachments = attachments;
     const userMessage: Message = {
       id: `msg_${Date.now()}`,
       role: 'user',
-      content: trimmedInput,
+      content: trimmedInput || `[${currentAttachments.length} image${currentAttachments.length > 1 ? 's' : ''}]`,
       timestamp: Date.now(),
       tokenCount: estimateTokens(trimmedInput),
     };
 
     addMessage(activeSessionId, userMessage);
     setInput('');
+    setAttachments([]);
+    setAttachmentPreviews([]);
     setIsStreaming(true);
 
     // Ensure agent is started with current config
@@ -318,13 +326,32 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
     unsubRef.current = unsub;
 
     // Send the prompt to the backend
-    sendPromptCmd(agentNodeId, activeSessionId, trimmedInput);
-  }, [input, isStreaming, config, agentNodeId, activeSessionId, startAgent, sendPromptCmd]);
+    sendPromptCmd(agentNodeId, activeSessionId, trimmedInput, currentAttachments.length ? currentAttachments : undefined);
+  }, [input, attachments, isStreaming, config, agentNodeId, activeSessionId, startAgent, sendPromptCmd]);
 
   const handleStop = () => {
     abortAgent(agentNodeId);
     setIsStreaming(false);
   };
+
+  const handleImageSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+    files.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const dataUrl = ev.target?.result as string;
+        // dataUrl format: "data:<mimeType>;base64,<data>"
+        const [header, data] = dataUrl.split(',');
+        const mimeType = header.split(':')[1].split(';')[0];
+        setAttachments((prev) => [...prev, { data, mimeType }]);
+        setAttachmentPreviews((prev) => [...prev, dataUrl]);
+      };
+      reader.readAsDataURL(file);
+    });
+    // Reset file input so the same file can be re-selected
+    e.target.value = '';
+  }, []);
 
   const handleClose = () => {
     destroyAgent(agentNodeId);
@@ -619,7 +646,53 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
 
       {/* Input */}
       <div className={`border-t border-slate-800 p-3 ${isBlocked ? 'pointer-events-none select-none blur-[2px]' : ''}`}>
+        {/* Image attachment thumbnails */}
+        {attachmentPreviews.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-2">
+            {attachmentPreviews.map((preview, i) => (
+              <div key={i} className="relative group">
+                <img
+                  src={preview}
+                  alt={`attachment ${i + 1}`}
+                  className="h-14 w-14 rounded object-cover border border-slate-700"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAttachments((prev) => prev.filter((_, idx) => idx !== i));
+                    setAttachmentPreviews((prev) => prev.filter((_, idx) => idx !== i));
+                  }}
+                  className="absolute -top-1 -right-1 hidden group-hover:flex items-center justify-center w-4 h-4 rounded-full bg-slate-900 border border-slate-600 text-slate-300 hover:text-white text-[10px]"
+                  title="Remove image"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="flex gap-2">
+          {supportsVision && (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={handleImageSelect}
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isStreaming || isBlocked}
+                className="rounded-lg border border-slate-700 bg-slate-800 p-2 text-slate-400 transition hover:text-slate-200 hover:border-slate-600 disabled:opacity-50"
+                title="Attach images"
+              >
+                <ImagePlus size={14} />
+              </button>
+            </>
+          )}
           <input
             className="flex-1 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:border-blue-500 focus:outline-none"
             value={input}
@@ -639,7 +712,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
           ) : (
             <button
               onClick={sendMessage}
-              disabled={!input.trim() || isBlocked}
+              disabled={(!input.trim() && attachments.length === 0) || isBlocked}
               className="rounded-lg bg-blue-600 p-2 text-white transition hover:bg-blue-500 disabled:opacity-50"
               title="Send Message"
             >
