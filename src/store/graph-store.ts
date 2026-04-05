@@ -31,7 +31,7 @@ function buildNodeData(nodeType: NodeType): FlowNodeData {
     modelId: agentDefaults.modelId,
     thinkingLevel: agentDefaults.thinkingLevel,
     systemPrompt: agentDefaults.systemPrompt,
-    systemPromptMode: 'auto' as const,
+    systemPromptMode: agentDefaults.systemPromptMode,
   };
 }
 

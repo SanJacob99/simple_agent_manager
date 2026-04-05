@@ -13,6 +13,7 @@ describe('DefaultsSection', () => {
         provider: 'anthropic',
         modelId: 'claude-sonnet-4-20250514',
         thinkingLevel: 'off',
+        systemPromptMode: 'auto',
         systemPrompt: 'You are a helpful assistant.',
         safetyGuardrails: 'Default guardrails.',
       },
@@ -41,6 +42,10 @@ describe('DefaultsSection', () => {
   });
 
   it('updates stored defaults when the form changes', () => {
+    useSettingsStore.setState((s) => ({
+      ...s,
+      agentDefaults: { ...s.agentDefaults, systemPromptMode: 'manual' },
+    }));
     render(<DefaultsSection />);
 
     fireEvent.change(screen.getByLabelText('System Prompt'), {
@@ -50,6 +55,14 @@ describe('DefaultsSection', () => {
     expect(useSettingsStore.getState().agentDefaults.systemPrompt).toBe(
       'New defaults prompt',
     );
+  });
+
+  it('can change the system prompt mode', () => {
+    render(<DefaultsSection />);
+    fireEvent.change(screen.getByLabelText('System Prompt Mode'), {
+      target: { value: 'append' },
+    });
+    expect(useSettingsStore.getState().agentDefaults.systemPromptMode).toBe('append');
   });
 
   it('resets the default model when the default provider changes', () => {
