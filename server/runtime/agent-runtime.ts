@@ -74,7 +74,7 @@ export class AgentRuntime {
       getApiKey,
       toolExecution: 'parallel',
       onPayload: (payload) => {
-        console.debug('[pi-ai Request Payload]', payload);
+        console.log('[pi-ai Request Payload]', JSON.stringify(payload, null, 2));
       },
     });
 

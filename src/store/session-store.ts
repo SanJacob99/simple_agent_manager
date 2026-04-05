@@ -166,10 +166,8 @@ export const useSessionStore = create<SessionStore>()(
       };
 
       const { storageEngine } = get();
-      if (storageEngine) {
-        await storageEngine.createSession(meta);
-      }
 
+      // Update state optimistically to prevent React effects from triggering concurrent creations
       set((state) => ({
         sessions: {
           ...state.sessions,
@@ -183,6 +181,10 @@ export const useSessionStore = create<SessionStore>()(
           },
         },
       }));
+
+      if (storageEngine) {
+        await storageEngine.createSession(meta);
+      }
 
       return id;
     },
