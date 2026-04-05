@@ -136,4 +136,149 @@ describe('RunCoordinator', () => {
       ).rejects.toThrow(/already active/i);
     });
   });
+
+  describe('lifecycle events', () => {
+    it('emits lifecycle:start on dispatch', async () => {
+      const events: any[] = [];
+      coordinator.subscribeAll((event) => events.push(event));
+
+      await coordinator.dispatch({ sessionKey: 'lifecycle-test', text: 'Hello' });
+
+      // Allow the async execution to start
+      await new Promise((r) => setTimeout(r, 10));
+
+      const startEvent = events.find((e) => e.type === 'lifecycle:start');
+      expect(startEvent).toBeDefined();
+      expect(startEvent.agentId).toBe('agent-1');
+      expect(startEvent.runId).toBeDefined();
+      expect(startEvent.sessionId).toBeDefined();
+      expect(startEvent.startedAt).toBeDefined();
+    });
+
+    it('emits lifecycle:end on successful completion', async () => {
+      const events: any[] = [];
+      coordinator.subscribeAll((event) => events.push(event));
+
+      const { runId } = await coordinator.dispatch({ sessionKey: 'success-test', text: 'Hello' });
+      await coordinator.wait(runId, 5000);
+
+      const endEvent = events.find((e) => e.type === 'lifecycle:end');
+      expect(endEvent).toBeDefined();
+      expect(endEvent.status).toBe('ok');
+      expect(endEvent.runId).toBe(runId);
+      expect(endEvent.startedAt).toBeDefined();
+      expect(endEvent.endedAt).toBeDefined();
+      expect(endEvent.endedAt).toBeGreaterThanOrEqual(endEvent.startedAt);
+    });
+
+    it('emits lifecycle:error when runtime.prompt rejects', async () => {
+      (runtime.prompt as any).mockRejectedValueOnce(new Error('Model failed'));
+
+      const events: any[] = [];
+      coordinator.subscribeAll((event) => events.push(event));
+
+      const { runId } = await coordinator.dispatch({ sessionKey: 'error-test', text: 'Hello' });
+      const result = await coordinator.wait(runId, 5000);
+
+      expect(result.status).toBe('error');
+      expect(result.error?.code).toBe('internal');
+      expect(result.error?.message).toBe('Model failed');
+
+      const errorEvent = events.find((e) => e.type === 'lifecycle:error');
+      expect(errorEvent).toBeDefined();
+      expect(errorEvent.error.code).toBe('internal');
+    });
+  });
+
+  describe('wait', () => {
+    it('resolves immediately if run is already completed', async () => {
+      const { runId } = await coordinator.dispatch({ sessionKey: 'wait-done', text: 'Hello' });
+      await coordinator.wait(runId, 5000);
+
+      const result = await coordinator.wait(runId, 100);
+      expect(result.status).toBe('ok');
+    });
+
+    it('returns timeout status when wait exceeds timeout', async () => {
+      (runtime.prompt as any).mockImplementation(() => new Promise(() => {}));
+
+      const { runId } = await coordinator.dispatch({ sessionKey: 'wait-timeout', text: 'Hello' });
+      const result = await coordinator.wait(runId, 50);
+
+      expect(result.status).toBe('timeout');
+      expect(result.runId).toBe(runId);
+    });
+
+    it('returns error for unknown runId', async () => {
+      const result = await coordinator.wait('nonexistent-run', 100);
+      expect(result.status).toBe('error');
+      expect(result.error?.code).toBe('internal');
+    });
+  });
+
+  describe('timeout', () => {
+    it('aborts the run when run timeout expires', async () => {
+      (runtime.prompt as any).mockImplementation(() => new Promise(() => {}));
+
+      const events: any[] = [];
+      coordinator.subscribeAll((event) => events.push(event));
+
+      const { runId } = await coordinator.dispatch({
+        sessionKey: 'timeout-test',
+        text: 'Hello',
+        timeoutMs: 50,
+      });
+
+      const result = await coordinator.wait(runId, 5000);
+
+      expect(result.status).toBe('error');
+      expect(result.error?.code).toBe('timeout');
+      expect(runtime.abort).toHaveBeenCalled();
+    });
+  });
+
+  describe('abort', () => {
+    it('aborts an active run and emits lifecycle:error', async () => {
+      (runtime.prompt as any).mockImplementation(() => new Promise(() => {}));
+
+      const events: any[] = [];
+      coordinator.subscribeAll((event) => events.push(event));
+
+      const { runId } = await coordinator.dispatch({ sessionKey: 'abort-test', text: 'Hello' });
+
+      await new Promise((r) => setTimeout(r, 10));
+
+      coordinator.abort(runId);
+
+      const result = await coordinator.wait(runId, 1000);
+      expect(result.status).toBe('error');
+      expect(result.error?.code).toBe('aborted');
+      expect(runtime.abort).toHaveBeenCalled();
+    });
+
+    it('does nothing for completed runs', async () => {
+      const { runId } = await coordinator.dispatch({ sessionKey: 'abort-done', text: 'Hello' });
+      await coordinator.wait(runId, 5000);
+
+      coordinator.abort(runId);
+      const record = coordinator.getRunStatus(runId);
+      expect(record?.status).toBe('completed');
+    });
+  });
+
+  describe('subscribe', () => {
+    it('delivers stream events only for the subscribed run', async () => {
+      const events: any[] = [];
+
+      const { runId } = await coordinator.dispatch({ sessionKey: 'sub-test', text: 'Hello' });
+      coordinator.subscribe(runId, (event) => events.push(event));
+
+      await coordinator.wait(runId, 5000);
+
+      const streamEvents = events.filter((e) => e.type === 'stream');
+      for (const e of streamEvents) {
+        expect(e.runId).toBe(runId);
+      }
+    });
+  });
 });
