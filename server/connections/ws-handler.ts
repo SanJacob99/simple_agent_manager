@@ -18,7 +18,7 @@ export function handleConnection(
     let command: Command;
     try {
       command = JSON.parse(data.toString()) as Command;
-      console.log(`[ws] Received command: ${command.type}`, command.type === 'agent:prompt' ? `(Agent: ${command.agentId})` : '');
+      console.log(`[ws] Received command: ${command.type}`, 'agentId' in command ? `(Agent: ${(command as any).agentId})` : '');
     } catch {
       socket.send(JSON.stringify({ type: 'error', error: 'Invalid JSON' }));
       return;
@@ -27,7 +27,7 @@ export function handleConnection(
     try {
       switch (command.type) {
         case 'agent:start': {
-          manager.start(command.config);
+          await manager.start(command.config);
           manager.addSocket(command.agentId, socket);
           socket.send(JSON.stringify({
             type: 'agent:ready',
@@ -36,14 +36,53 @@ export function handleConnection(
           break;
         }
 
-        case 'agent:prompt': {
+        case 'agent:dispatch': {
           manager.addSocket(command.agentId, socket);
-          await manager.prompt(command.agentId, command.sessionId, command.text, command.attachments);
+          const result = await manager.dispatch(command.agentId, {
+            sessionKey: command.sessionKey,
+            text: command.text,
+            attachments: command.attachments,
+          });
+          socket.send(JSON.stringify({
+            type: 'run:accepted',
+            agentId: command.agentId,
+            runId: result.runId,
+            sessionId: result.sessionId,
+            acceptedAt: result.acceptedAt,
+          }));
+          break;
+        }
+
+        case 'agent:prompt': {
+          // Backwards compat: translate to dispatch
+          manager.addSocket(command.agentId, socket);
+          const result = await manager.dispatch(command.agentId, {
+            sessionKey: command.sessionId,
+            text: command.text,
+            attachments: command.attachments,
+          });
+          socket.send(JSON.stringify({
+            type: 'run:accepted',
+            agentId: command.agentId,
+            runId: result.runId,
+            sessionId: result.sessionId,
+            acceptedAt: result.acceptedAt,
+          }));
+          break;
+        }
+
+        case 'run:wait': {
+          const waitResult = await manager.wait(command.agentId, command.runId, command.timeoutMs);
+          socket.send(JSON.stringify({
+            type: waitResult.status === 'ok' ? 'lifecycle:end' : 'lifecycle:error',
+            agentId: command.agentId,
+            ...waitResult,
+          }));
           break;
         }
 
         case 'agent:abort': {
-          manager.abort(command.agentId);
+          manager.abort(command.agentId, command.runId);
           break;
         }
 
@@ -53,14 +92,12 @@ export function handleConnection(
         }
 
         case 'agent:sync': {
-          const status = manager.getStatus(command.agentId);
           manager.addSocket(command.agentId, socket);
-
           const stateEvent: AgentStateEvent = {
             type: 'agent:state',
             agentId: command.agentId,
-            status: status,
-            messages: [], // Messages loaded via existing StorageEngine REST routes
+            status: manager.getStatus(command.agentId),
+            messages: [],
           };
           socket.send(JSON.stringify(stateEvent));
           break;
