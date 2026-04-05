@@ -1,4 +1,5 @@
 import type { AgentConfig } from './agent-config';
+import type { RunPayload, RunUsage, StructuredError } from './run-types';
 
 // --- Commands (frontend → backend) ---
 
@@ -24,6 +25,7 @@ export interface AgentPromptCommand {
 export interface AgentAbortCommand {
   type: 'agent:abort';
   agentId: string;
+  runId?: string;
 }
 
 export interface AgentDestroyCommand {
@@ -36,6 +38,21 @@ export interface AgentSyncCommand {
   agentId: string;
 }
 
+export interface AgentDispatchCommand {
+  type: 'agent:dispatch';
+  agentId: string;
+  sessionKey: string;
+  text: string;
+  attachments?: ImageAttachment[];
+}
+
+export interface RunWaitCommand {
+  type: 'run:wait';
+  agentId: string;
+  runId: string;
+  timeoutMs?: number;
+}
+
 export interface SetApiKeysCommand {
   type: 'config:setApiKeys';
   keys: Record<string, string>;
@@ -44,9 +61,11 @@ export interface SetApiKeysCommand {
 export type Command =
   | AgentStartCommand
   | AgentPromptCommand
+  | AgentDispatchCommand
   | AgentAbortCommand
   | AgentDestroyCommand
   | AgentSyncCommand
+  | RunWaitCommand
   | SetApiKeysCommand;
 
 // --- Events (backend → frontend) ---
@@ -73,24 +92,28 @@ export interface AgentErrorEvent {
 export interface MessageStartEvent {
   type: 'message:start';
   agentId: string;
+  runId?: string;
   message: { role: string };
 }
 
 export interface MessageDeltaEvent {
   type: 'message:delta';
   agentId: string;
+  runId?: string;
   delta: string;
 }
 
 export interface MessageEndEvent {
   type: 'message:end';
   agentId: string;
+  runId?: string;
   message: { role: string; usage?: MessageUsage };
 }
 
 export interface ToolStartEvent {
   type: 'tool:start';
   agentId: string;
+  runId?: string;
   toolCallId: string;
   toolName: string;
 }
@@ -98,6 +121,7 @@ export interface ToolStartEvent {
 export interface ToolEndEvent {
   type: 'tool:end';
   agentId: string;
+  runId?: string;
   toolCallId: string;
   toolName: string;
   result: string;
@@ -107,6 +131,43 @@ export interface ToolEndEvent {
 export interface AgentEndEvent {
   type: 'agent:end';
   agentId: string;
+}
+
+export interface RunAcceptedEvent {
+  type: 'run:accepted';
+  agentId: string;
+  runId: string;
+  sessionId: string;
+  acceptedAt: number;
+}
+
+export interface LifecycleStartEvent {
+  type: 'lifecycle:start';
+  agentId: string;
+  runId: string;
+  sessionId: string;
+  startedAt: number;
+}
+
+export interface LifecycleEndEvent {
+  type: 'lifecycle:end';
+  agentId: string;
+  runId: string;
+  status: 'ok';
+  startedAt: number;
+  endedAt: number;
+  payloads: RunPayload[];
+  usage?: RunUsage;
+}
+
+export interface LifecycleErrorEvent {
+  type: 'lifecycle:error';
+  agentId: string;
+  runId: string;
+  status: 'error';
+  error: StructuredError;
+  startedAt: number;
+  endedAt: number;
 }
 
 export interface AgentStateEvent {
@@ -132,4 +193,8 @@ export type ServerEvent =
   | ToolStartEvent
   | ToolEndEvent
   | AgentEndEvent
-  | AgentStateEvent;
+  | AgentStateEvent
+  | RunAcceptedEvent
+  | LifecycleStartEvent
+  | LifecycleEndEvent
+  | LifecycleErrorEvent;
