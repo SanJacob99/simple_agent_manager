@@ -31,6 +31,7 @@ function buildNodeData(nodeType: NodeType): FlowNodeData {
     modelId: agentDefaults.modelId,
     thinkingLevel: agentDefaults.thinkingLevel,
     systemPrompt: agentDefaults.systemPrompt,
+    systemPromptMode: 'auto' as const,
   };
 }
 
@@ -59,6 +60,11 @@ interface GraphStore {
   /** Get all agent names currently in the graph */
   getAgentNames: () => string[];
 
+  pendingDeleteAgent: { nodeId: string; agentName: string } | null;
+  requestDeleteAgent: (nodeId: string, agentName: string) => void;
+  confirmDeleteAgent: (deleteData: boolean) => void;
+  cancelDeleteAgent: () => void;
+
   loadGraph: (nodes: AppNode[], edges: Edge[]) => void;
 }
 
@@ -67,8 +73,39 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   edges: [],
   selectedNodeId: null,
   pendingNameNodeId: null,
+  pendingDeleteAgent: null,
+
+  requestDeleteAgent: (nodeId, agentName) => {
+    set({ pendingDeleteAgent: { nodeId, agentName } });
+  },
+
+  cancelDeleteAgent: () => {
+    set({ pendingDeleteAgent: null });
+  },
+
+  confirmDeleteAgent: (deleteData) => {
+    const { pendingDeleteAgent, nodes, edges, selectedNodeId } = get();
+    if (!pendingDeleteAgent) return;
+
+    if (deleteData) {
+      useSessionStore.getState().deleteAllSessionsForAgent(pendingDeleteAgent.agentName);
+    }
+    useSessionStore.getState().clearActiveSession(pendingDeleteAgent.nodeId);
+    useAgentConnectionStore.getState().destroyAgent(pendingDeleteAgent.nodeId);
+
+    set({
+      pendingDeleteAgent: null,
+      nodes: nodes.filter((n) => n.id !== pendingDeleteAgent.nodeId),
+      edges: edges.filter(
+        (e) => e.source !== pendingDeleteAgent.nodeId && e.target !== pendingDeleteAgent.nodeId,
+      ),
+      selectedNodeId: selectedNodeId === pendingDeleteAgent.nodeId ? null : selectedNodeId,
+    });
+  },
 
   onNodesChange: (changes) => {
+    const nextChanges = [];
+    
     for (const change of changes) {
       if (change.type === 'remove') {
         // Find the node being removed to get agent name
@@ -76,14 +113,17 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
         if (removedNode?.data.type === 'agent') {
           const agentName = (removedNode.data as { name: string }).name;
           if (agentName) {
-            useSessionStore.getState().deleteAllSessionsForAgent(agentName);
+            get().requestDeleteAgent(change.id, agentName);
+            continue; // Intercept removal! Don't apply this change to the graph yet
           }
         }
+        
         useSessionStore.getState().clearActiveSession(change.id);
         useAgentConnectionStore.getState().destroyAgent(change.id);
       }
+      nextChanges.push(change);
     }
-    set({ nodes: applyNodeChanges(changes, get().nodes) });
+    set({ nodes: applyNodeChanges(nextChanges, get().nodes) });
   },
 
   onEdgesChange: (changes) => {
@@ -128,7 +168,8 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
     if (node?.data.type === 'agent') {
       const agentName = (node.data as { name: string }).name;
       if (agentName) {
-        useSessionStore.getState().deleteAllSessionsForAgent(agentName);
+        get().requestDeleteAgent(nodeId, agentName);
+        return; // Wait for dialog confirmation
       }
     }
     useSessionStore.getState().clearActiveSession(nodeId);
@@ -166,7 +207,6 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
                 provider: agentDefaults.provider,
                 modelId: agentDefaults.modelId,
                 thinkingLevel: agentDefaults.thinkingLevel,
-                systemPrompt: agentDefaults.systemPrompt,
               },
             }
           : node,
@@ -220,6 +260,36 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   },
 
   loadGraph: (nodes, edges) => {
+    // Migration: add systemPromptMode to agent nodes that don't have it
+    for (const node of nodes) {
+      if (node.data.type === 'agent' && !('systemPromptMode' in node.data)) {
+        const agentData = node.data as import('../types/nodes').AgentNodeData;
+        (agentData as any).systemPromptMode =
+          agentData.systemPrompt === 'You are a helpful assistant.' ? 'auto' : 'append';
+      }
+      if (node.data.type === 'contextEngine') {
+        // Migrate systemPromptAdditions to connected agent's append mode
+        const additions = (node.data as any).systemPromptAdditions;
+        if (Array.isArray(additions) && additions.length > 0) {
+          const edge = edges.find(e => e.source === node.id);
+          if (edge) {
+            const agentNode = nodes.find(n => n.id === edge.target && n.data.type === 'agent');
+            if (agentNode && agentNode.data.type === 'agent') {
+              (agentNode.data as any).systemPromptMode = 'append';
+              agentNode.data.systemPrompt += '\n\n' + additions.join('\n\n');
+            }
+          }
+        }
+        delete (node.data as any).systemPromptAdditions;
+        // Add bootstrap defaults
+        if (!('bootstrapMaxChars' in node.data)) {
+          (node.data as any).bootstrapMaxChars = 20000;
+        }
+        if (!('bootstrapTotalMaxChars' in node.data)) {
+          (node.data as any).bootstrapTotalMaxChars = 150000;
+        }
+      }
+    }
     set({ nodes, edges });
   },
 }));

@@ -51,14 +51,8 @@ export class AgentRuntime {
       : [];
     const tools = createAgentTools(toolNames, memoryTools as AgentTool<TSchema>[]);
 
-    // Build system prompt with additions
-    let systemPrompt = config.systemPrompt;
-    if (this.contextEngine) {
-      const addition = this.contextEngine.getSystemPromptAddition();
-      if (addition) {
-        systemPrompt += '\n\n' + addition;
-      }
-    }
+    // Build system prompt
+    const systemPrompt = config.systemPrompt.assembled;
 
     const model = resolveRuntimeModel({
       provider: config.provider,
@@ -80,7 +74,7 @@ export class AgentRuntime {
       getApiKey,
       toolExecution: 'parallel',
       onPayload: (payload) => {
-        console.debug('[pi-ai Request Payload]', payload);
+        console.log('[pi-ai Request Payload]', JSON.stringify(payload, null, 2));
       },
     });
 

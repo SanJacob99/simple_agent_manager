@@ -17,14 +17,13 @@ export class ContextEngine {
 
   /**
    * Assemble context within token budget.
-   * Returns trimmed messages + estimated token count + system prompt addition.
+   * Returns trimmed messages + estimated token count.
    */
   async assemble(
     messages: AgentMessage[],
   ): Promise<{
     messages: AgentMessage[];
     estimatedTokens: number;
-    systemPromptAddition: string;
   }> {
     const budget = this.config.tokenBudget - this.config.reservedForResponse;
     let assembled = [...messages];
@@ -38,7 +37,6 @@ export class ContextEngine {
     return {
       messages: assembled,
       estimatedTokens: estimateMessagesTokens(assembled as Array<{ content?: string | unknown }>),
-      systemPromptAddition: this.getSystemPromptAddition(),
     };
   }
 
@@ -124,10 +122,5 @@ export class ContextEngine {
     };
   }
 
-  /**
-   * Get concatenated system prompt additions.
-   */
-  getSystemPromptAddition(): string {
-    return this.config.systemPromptAdditions.join('\n\n');
-  }
+
 }

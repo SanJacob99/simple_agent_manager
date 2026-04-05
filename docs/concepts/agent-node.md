@@ -3,7 +3,7 @@
 > The central hub node that represents an AI agent — defines which LLM to use, the system prompt, and orchestrates all connected peripheral nodes.
 
 <!-- source: src/types/nodes.ts#AgentNodeData -->
-<!-- last-verified: 2026-04-03 -->
+<!-- last-verified: 2026-04-04 -->
 
 ## Overview
 
@@ -26,6 +26,7 @@ The agent node also supports model capability overrides, allowing users to speci
 | `description` | `string` | `""` | Optional description of the agent's purpose |
 | `tags` | `string[]` | `[]` | Freeform tags for categorization |
 | `modelCapabilities` | `ModelCapabilityOverrides` | `{}` | Optional overrides for context window, max output, vision, thinking support |
+| `systemPromptMode` | `SystemPromptMode` | `"auto"` | How the system prompt is built: `auto` (app-managed, read-only), `append` (app-built + user instructions at the end), `manual` (user-owned, no app injection) |
 
 ## Runtime Behavior
 
@@ -33,7 +34,7 @@ When the chat drawer opens for an agent, the following happens:
 
 1. **Config resolution** (`src/utils/graph-to-agent.ts`): `resolveAgentConfig()` finds all peripheral nodes connected to this agent via edges, extracts their configuration, and builds a flat `AgentConfig` JSON object.
 
-2. **System prompt augmentation**: Skills from connected `SkillsNode`s are injected into the system prompt. Context engine system prompt additions are appended.
+2. **System prompt augmentation**: `resolveAgentConfig` calls `buildSystemPrompt()` to assemble a structured prompt with named sections (safety, tooling, skills, workspace, time, runtime). Behavior depends on `systemPromptMode`: in `auto` mode the prompt is fully app-managed and the user's system prompt field is read-only; in `append` mode the app-built prompt is used and the user's instructions are appended at the end; in `manual` mode only the user's text is used with no app injection.
 
 3. **Runtime creation** (`src/runtime/agent-runtime.ts`): `AgentRuntime` takes the config + an API key resolver and creates:
    - A `MemoryEngine` (if memory node connected)
@@ -64,6 +65,7 @@ When the chat drawer opens for an agent, the following happens:
   "thinkingLevel": "medium",
   "description": "Web research agent with memory",
   "tags": ["research", "web"],
-  "modelCapabilities": {}
+  "modelCapabilities": {},
+  "systemPromptMode": "append"
 }
 ```

@@ -18,6 +18,7 @@ describe('graph store defaults integration', () => {
         modelId: 'gpt-4o',
         thinkingLevel: 'high',
         systemPrompt: 'Be concise.',
+        safetyGuardrails: 'Test guardrails.',
       },
     });
   });
@@ -45,7 +46,7 @@ describe('graph store defaults integration', () => {
     }
   });
 
-  it('applies only the four approved fields to existing agents', () => {
+  it('applies only the three approved fields to existing agents without overwriting systemPrompt', () => {
     useGraphStore.setState({
       nodes: [
         {
@@ -76,7 +77,7 @@ describe('graph store defaults integration', () => {
       expect(node.data.provider).toBe('openai');
       expect(node.data.modelId).toBe('gpt-4o');
       expect(node.data.thinkingLevel).toBe('high');
-      expect(node.data.systemPrompt).toBe('Be concise.');
+      expect(node.data.systemPrompt).toBe('Old prompt');
       expect(node.data.description).toBe('keep me');
       expect(node.data.tags).toEqual(['keep']);
       expect(node.data.modelCapabilities).toEqual({ contextWindow: 5000 });

@@ -21,7 +21,7 @@ export default function DefaultsSection() {
 
   const confirmApply = () => {
     const approved = window.confirm(
-      'Apply provider, model, thinking level, and system prompt to all existing agents? This does not change names, descriptions, tags, capabilities, or peripheral links.',
+      'Apply provider, model, and thinking level to all existing agents? This does not change names, descriptions, tags, system prompts, capabilities, or peripheral links.',
     );
     if (approved) {
       applyAgentDefaultsToExistingAgents();
@@ -109,6 +109,24 @@ export default function DefaultsSection() {
           rows={8}
           className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100"
         />
+      </label>
+
+      <label className="block">
+        <span className="mb-1 block text-sm font-medium text-slate-300">
+          Safety Guardrails
+        </span>
+        <textarea
+          aria-label="Safety Guardrails"
+          value={agentDefaults.safetyGuardrails}
+          onChange={(event) =>
+            setAgentDefaults({ safetyGuardrails: event.target.value })
+          }
+          rows={8}
+          className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100"
+        />
+        <p className="mt-1 text-xs text-slate-500">
+          Injected into every agent's system prompt in auto and append modes.
+        </p>
       </label>
 
       <button

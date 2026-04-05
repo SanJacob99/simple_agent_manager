@@ -18,6 +18,7 @@ export function handleConnection(
     let command: Command;
     try {
       command = JSON.parse(data.toString()) as Command;
+      console.log(`[ws] Received command: ${command.type}`, command.type === 'agent:prompt' ? `(Agent: ${command.agentId})` : '');
     } catch {
       socket.send(JSON.stringify({ type: 'error', error: 'Invalid JSON' }));
       return;

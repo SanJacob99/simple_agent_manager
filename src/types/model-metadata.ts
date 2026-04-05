@@ -18,9 +18,12 @@ export interface ModelCapabilityOverrides {
 export interface DiscoveredModelMetadata {
   id: string;
   provider: string;
+  name?: string;
+  description?: string;
   reasoningSupported?: boolean;
   inputModalities?: ModelInputModality[];
   contextWindow?: number;
   maxTokens?: number;
   cost?: ModelCostInfo;
+  raw?: any;
 }

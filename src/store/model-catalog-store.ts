@@ -8,6 +8,7 @@ interface SyncOptions {
 
 interface ModelCatalogState {
   models: { openrouter: ProviderModelMap };
+  userModels: { openrouter: ProviderModelMap };
   loading: { openrouter: boolean };
   errors: { openrouter: string | null };
   lastSyncedKeys: { openrouter?: string };
@@ -25,6 +26,7 @@ interface ModelCatalogState {
 
 const INITIAL_STATE = {
   models: { openrouter: {} as ProviderModelMap },
+  userModels: { openrouter: {} as ProviderModelMap },
   loading: { openrouter: false },
   errors: { openrouter: null as string | null },
   lastSyncedKeys: {} as { openrouter?: string },
@@ -34,6 +36,8 @@ function mapOpenRouterModel(entry: any): DiscoveredModelMetadata {
   return {
     id: entry.id,
     provider: 'openrouter',
+    name: entry.name,
+    description: entry.description,
     reasoningSupported:
       Array.isArray(entry.supported_parameters) &&
       entry.supported_parameters.includes('reasoning'),
@@ -46,6 +50,7 @@ function mapOpenRouterModel(entry: any): DiscoveredModelMetadata {
       cacheRead: Number(entry.pricing?.cache_read ?? 0),
       cacheWrite: Number(entry.pricing?.cache_write ?? 0),
     },
+    raw: entry,
   };
 }
 
@@ -56,6 +61,7 @@ export const useModelCatalogStore = create<ModelCatalogState>((set, get) => ({
     if (!apiKey) {
       set({
         models: { openrouter: {} },
+        userModels: { openrouter: {} },
         loading: { openrouter: false },
         errors: { openrouter: null },
         lastSyncedKeys: {},
@@ -69,32 +75,49 @@ export const useModelCatalogStore = create<ModelCatalogState>((set, get) => ({
 
     set({
       models: { openrouter: {} },
+      userModels: { openrouter: {} },
       loading: { openrouter: true },
       errors: { openrouter: null },
       lastSyncedKeys: { openrouter: apiKey },
     });
 
     try {
-      const response = await fetch('https://openrouter.ai/api/v1/models', {
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-        },
-      });
+      const [fullResponse, userResponse] = await Promise.all([
+        fetch('https://openrouter.ai/api/v1/models', {
+          headers: { Authorization: `Bearer ${apiKey}` },
+        }),
+        fetch('https://openrouter.ai/api/v1/models/user', {
+          headers: { Authorization: `Bearer ${apiKey}` },
+        }),
+      ]);
 
-      if (!response.ok) {
-        throw new Error(`OpenRouter model fetch failed: ${response.status}`);
+      if (!fullResponse.ok) {
+        throw new Error(`OpenRouter model fetch failed: ${fullResponse.status}`);
       }
 
-      const body = await response.json();
+      const fullBody = await fullResponse.json();
       const models = Object.fromEntries(
-        (body.data ?? []).map((entry: any) => {
+        (fullBody.data ?? []).map((entry: any) => {
           const model = mapOpenRouterModel(entry);
           return [model.id, model];
         }),
       );
 
+      let userModels: ProviderModelMap = {};
+      if (userResponse.ok) {
+        const userBody = await userResponse.json();
+        userModels = Object.fromEntries(
+          (userBody.data ?? []).map((entry: any) => {
+            const fullModel = models[entry.id];
+            const model = fullModel ?? mapOpenRouterModel(entry);
+            return [model.id, model];
+          }),
+        );
+      }
+
       set({
         models: { openrouter: models },
+        userModels: { openrouter: userModels },
         loading: { openrouter: false },
         errors: { openrouter: null },
         lastSyncedKeys: { openrouter: apiKey },
@@ -102,6 +125,7 @@ export const useModelCatalogStore = create<ModelCatalogState>((set, get) => ({
     } catch (error) {
       set({
         models: { openrouter: {} },
+        userModels: { openrouter: {} },
         loading: { openrouter: false },
         errors: {
           openrouter:
