@@ -281,4 +281,50 @@ describe('RunCoordinator', () => {
       }
     });
   });
+
+  describe('integration: full dispatch-wait cycle', () => {
+    it('dispatches, streams events, waits, and returns payloads', async () => {
+      const allEvents: any[] = [];
+      coordinator.subscribeAll((event) => allEvents.push(event));
+
+      const { runId } = await coordinator.dispatch({ sessionKey: 'full-cycle', text: 'Hello' });
+      const result = await coordinator.wait(runId, 5000);
+
+      expect(result.status).toBe('ok');
+      expect(result.runId).toBe(runId);
+
+      const lifecycleStart = allEvents.find((e) => e.type === 'lifecycle:start');
+      expect(lifecycleStart).toBeDefined();
+      expect(lifecycleStart.runId).toBe(runId);
+
+      const lifecycleEnd = allEvents.find((e) => e.type === 'lifecycle:end');
+      expect(lifecycleEnd).toBeDefined();
+      expect(lifecycleEnd.runId).toBe(runId);
+      expect(lifecycleEnd.status).toBe('ok');
+    });
+
+    it('session is reusable after a run completes', async () => {
+      const { runId: run1 } = await coordinator.dispatch({ sessionKey: 'reuse', text: 'First' });
+      await coordinator.wait(run1, 5000);
+
+      const { runId: run2 } = await coordinator.dispatch({ sessionKey: 'reuse', text: 'Second' });
+      await coordinator.wait(run2, 5000);
+
+      expect(run1).not.toBe(run2);
+
+      const result = await coordinator.wait(run2, 100);
+      expect(result.status).toBe('ok');
+    });
+
+    it('classifyError maps rate limit errors correctly', async () => {
+      (runtime.prompt as any).mockRejectedValueOnce(new Error('Rate limit exceeded (429)'));
+
+      const { runId } = await coordinator.dispatch({ sessionKey: 'rate-limit', text: 'Hello' });
+      const result = await coordinator.wait(runId, 5000);
+
+      expect(result.status).toBe('error');
+      expect(result.error?.code).toBe('rate_limited');
+      expect(result.error?.retriable).toBe(true);
+    });
+  });
 });
