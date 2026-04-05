@@ -1,12 +1,17 @@
 export const PROVIDERS = [
   'openrouter',
-  'anthropic',
   'openai',
+  'anthropic',
   'google',
-  'ollama',
+  'google-vertex',
+  'azure-openai-responses',
   'mistral',
   'groq',
   'xai',
+  'cerebras',
+  'minimax',
+  'vercel-ai-gateway',
+  'ollama',
 ] as const;
 
 export const STATIC_MODELS: Record<string, string[]> = {
@@ -27,6 +32,8 @@ export const STATIC_MODELS: Record<string, string[]> = {
     'deepseek/deepseek-chat-v3',
   ],
   google: ['gemini-2.0-flash', 'gemini-2.0-pro', 'gemini-1.5-pro'],
+  'google-vertex': ['gemini-2.0-flash', 'gemini-2.0-pro', 'gemini-1.5-pro'],
+  'azure-openai-responses': ['gpt-4o', 'gpt-4o-mini', 'o3-mini'],
   ollama: ['llama3.1', 'mistral', 'codellama', 'mixtral'],
   mistral: [
     'mistral-large-latest',
@@ -35,4 +42,7 @@ export const STATIC_MODELS: Record<string, string[]> = {
   ],
   groq: ['llama-3.1-70b-versatile', 'mixtral-8x7b-32768'],
   xai: ['grok-2', 'grok-2-mini'],
+  cerebras: ['gpt-oss-120b', 'qwen-3-32b'],
+  minimax: ['MiniMax-M2.7', 'MiniMax-M1'],
+  'vercel-ai-gateway': ['openai/gpt-4o-mini', 'anthropic/claude-3.5-haiku'],
 };
