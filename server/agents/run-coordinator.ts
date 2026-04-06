@@ -176,6 +176,13 @@ export class RunCoordinator {
     return undefined;
   }
 
+  setRunPayloads(runId: string, payloads: RunPayload[], usage?: RunUsage): void {
+    const record = this.runs.get(runId);
+    if (!record) return;
+    record.payloads = payloads;
+    if (usage) record.usage = usage;
+  }
+
   destroy(): void {
     for (const [, record] of this.runs) {
       if (record.status === 'pending' || record.status === 'running') {
@@ -256,60 +263,19 @@ export class RunCoordinator {
       }
     }, timeoutMs);
 
-    // Subscribe to runtime events for this run
-    let textBuffer = '';
+    // Subscribe to runtime events — forward to stream subscribers (StreamProcessor handles shaping)
     const unsubscribe = this.runtime.subscribe((event: RuntimeEvent) => {
-      // Forward stream events
       this.emitForRun(record.runId, { type: 'stream', runId: record.runId, event });
-
-      // Buffer payloads
-      if (event.type === 'message_update') {
-        const aEvent = (event as any).assistantMessageEvent;
-        if (aEvent?.type === 'text_delta') {
-          textBuffer += aEvent.delta;
-        }
-      } else if (event.type === 'message_end') {
-        if (textBuffer) {
-          record.payloads.push({ type: 'text', content: textBuffer });
-          textBuffer = '';
-        }
-        const usage = (event as any).message?.usage;
-        if (usage) {
-          record.usage = {
-            input: usage.input ?? 0,
-            output: usage.output ?? 0,
-            cacheRead: usage.cacheRead ?? 0,
-            cacheWrite: usage.cacheWrite ?? 0,
-            totalTokens: usage.totalTokens ?? 0,
-          };
-        }
-      } else if (event.type === 'tool_execution_end') {
-        const te = event as any;
-        const resultText = te.result?.content
-          ?.map((c: { type: string; text?: string }) => c.type === 'text' ? c.text : '')
-          .join('') || '';
-        record.payloads.push({
-          type: 'tool_summary',
-          content: `${te.toolName}: ${resultText.slice(0, 500)}`,
-        });
-      }
     });
 
     // Run the prompt
     this.runtime.prompt(params.text, params.attachments)
       .then(() => {
         unsubscribe();
-        // Flush remaining text buffer
-        if (textBuffer) {
-          record.payloads.push({ type: 'text', content: textBuffer });
-        }
         this.finalizeRunSuccess(record);
       })
       .catch((error: unknown) => {
         unsubscribe();
-        if (textBuffer) {
-          record.payloads.push({ type: 'text', content: textBuffer });
-        }
         // Don't double-finalize if already handled (timeout/abort)
         if (record.status === 'running') {
           this.finalizeRun(record, classifyError(error));
