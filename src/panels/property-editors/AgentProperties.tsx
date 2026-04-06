@@ -413,6 +413,34 @@ export default function AgentProperties({ nodeId, data }: Props) {
         </>
       )}
 
+      <Field label="Show Reasoning">
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={data.showReasoning ?? false}
+            onChange={(e) => update(nodeId, { showReasoning: e.target.checked })}
+            className="rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500/30"
+          />
+          <span className="text-xs text-slate-400">
+            Forward model thinking/reasoning to the chat stream
+          </span>
+        </label>
+      </Field>
+
+      <Field label="Verbose Tool Output">
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={data.verbose ?? false}
+            onChange={(e) => update(nodeId, { verbose: e.target.checked })}
+            className="rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500/30"
+          />
+          <span className="text-xs text-slate-400">
+            Add tool result summaries to the chat stream
+          </span>
+        </label>
+      </Field>
+
       {showPreview && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="h-[80vh] w-[600px] rounded-lg border border-slate-700 bg-slate-900 shadow-xl overflow-hidden">

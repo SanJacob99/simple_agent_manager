@@ -1,17 +1,17 @@
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
-import { X, Send, Bot, Loader2, Square, Trash2, Wrench, Plus, ChevronDown, Unplug, ImagePlus } from 'lucide-react';
+import { X, Send, Bot, Loader2, Square, Trash2, Wrench, Plus, ChevronDown, Unplug, ImagePlus, Brain, RefreshCw } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useGraphStore } from '../store/graph-store';
 import { useAgentConnectionStore } from '../store/agent-connection-store';
 import { resolveAgentConfig } from '../utils/graph-to-agent';
-import type { ImageAttachment, ServerEvent } from '../../shared/protocol';
-import { agentClient } from '../client';
+import type { ImageAttachment } from '../../shared/protocol';
 import { useSessionStore, type Message } from '../store/session-store';
 import { StorageClient } from '../runtime/storage-client';
 import { estimateTokens } from '../../shared/token-estimator';
 import { useContextWindow, usePeripheralReservations } from './useContextWindow';
 import ContextUsagePanel from './ContextUsagePanel';
+import { useChatStream } from './useChatStream';
 
 interface ChatDrawerProps {
   agentNodeId: string;
@@ -70,7 +70,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
   const deleteSession = useSessionStore((s) => s.deleteSession);
   const setActiveSession = useSessionStore((s) => s.setActiveSession);
   const addMessage = useSessionStore((s) => s.addMessage);
-  const updateMessage = useSessionStore((s) => s.updateMessage);
+
   const clearSessionMessages = useSessionStore((s) => s.clearSessionMessages);
   const getSessionsForAgent = useSessionStore((s) => s.getSessionsForAgent);
   const enforceSessionLimit = useSessionStore((s) => s.enforceSessionLimit);
@@ -152,26 +152,20 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
   const contextInfo = useContextWindow(config);
   const peripheralReservations = usePeripheralReservations(config);
 
+  const chatStream = useChatStream(agentNodeId);
+
   const [input, setInput] = useState('');
-  const [isStreaming, setIsStreaming] = useState(false);
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
   const [attachmentPreviews, setAttachmentPreviews] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const unsubRef = useRef<(() => void) | null>(null);
 
+  const isStreaming = chatStream.isStreaming;
   const supportsVision = config?.modelCapabilities?.inputModalities?.includes('image') ?? false;
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
-
-  // Cleanup runtime subscription on unmount
-  useEffect(() => {
-    return () => {
-      unsubRef.current?.();
-    };
-  }, []);
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -258,80 +252,16 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
     setInput('');
     setAttachments([]);
     setAttachmentPreviews([]);
-    setIsStreaming(true);
 
     // Ensure agent is started with current config
     startAgent(agentNodeId, config);
 
-    const assistantMessageId = `msg_${Date.now()}_a`;
-    let assistantContent = '';
-
-    unsubRef.current?.();
-
-    // Subscribe to events for this agent
-    const unsub = agentClient.onEvent((event: ServerEvent) => {
-      if (!('agentId' in event) || event.agentId !== agentNodeId) return;
-
-      if (event.type === 'message:start') {
-        assistantContent = '';
-        addMessage(activeSessionId, {
-          id: assistantMessageId,
-          role: 'assistant',
-          content: '',
-          timestamp: Date.now(),
-        });
-      } else if (event.type === 'message:delta') {
-        assistantContent += event.delta;
-        updateMessage(activeSessionId, assistantMessageId, (m) => ({
-          ...m,
-          content: assistantContent,
-        }));
-      } else if (event.type === 'message:end') {
-        if (event.message.usage) {
-          updateMessage(activeSessionId, assistantMessageId, (m) => ({
-            ...m,
-            tokenCount: event.message.usage!.output,
-            usage: event.message.usage,
-          }));
-        }
-      } else if (event.type === 'tool:start') {
-        addMessage(activeSessionId, {
-          id: `tool_${event.toolCallId}`,
-          role: 'tool',
-          content: `Calling tool: ${event.toolName}`,
-          timestamp: Date.now(),
-        });
-      } else if (event.type === 'tool:end') {
-        const toolContent = `${event.toolName}: ${event.result}${event.isError ? ' (error)' : ''}`;
-        updateMessage(activeSessionId, `tool_${event.toolCallId}`, (m) => ({
-          ...m,
-          content: toolContent,
-          tokenCount: estimateTokens(toolContent),
-        }));
-      } else if (event.type === 'agent:end') {
-        setIsStreaming(false);
-        unsub();
-      } else if (event.type === 'agent:error') {
-        addMessage(activeSessionId, {
-          id: `err_${Date.now()}`,
-          role: 'assistant',
-          content: `Error: ${event.error}`,
-          timestamp: Date.now(),
-        });
-        setIsStreaming(false);
-        unsub();
-      }
-    });
-
-    unsubRef.current = unsub;
-
-    // Send the prompt to the backend
-    sendPromptCmd(agentNodeId, activeSessionId, trimmedInput, currentAttachments.length ? currentAttachments : undefined);
-  }, [input, attachments, isStreaming, config, agentNodeId, activeSessionId, startAgent, sendPromptCmd]);
+    // Delegate streaming event handling to useChatStream
+    chatStream.sendMessage(trimmedInput, activeSessionId, currentAttachments.length ? currentAttachments : undefined);
+  }, [input, attachments, isStreaming, config, agentNodeId, activeSessionId, startAgent, chatStream]);
 
   const handleStop = () => {
     abortAgent(agentNodeId);
-    setIsStreaming(false);
   };
 
   const handleImageSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -632,6 +562,28 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
             </div>
           </div>
         ))}
+        {/* Reasoning indicator */}
+        {chatStream.isReasoning && (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-purple-500/10 border border-purple-500/20">
+            <Brain size={12} className="text-purple-400 animate-pulse" />
+            <span className="text-[10px] text-purple-300">Thinking...</span>
+          </div>
+        )}
+        {/* Compaction indicator */}
+        {chatStream.compacting && (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-amber-500/10 border border-amber-500/20">
+            <RefreshCw size={12} className="text-amber-400 animate-spin" />
+            <span className="text-[10px] text-amber-300">Compacting context...</span>
+          </div>
+        )}
+        {/* Suppressed reply notice */}
+        {chatStream.suppressedReply && !isStreaming && (
+          <div className="flex justify-start">
+            <div className="rounded-lg px-3 py-2 text-[10px] text-slate-500 italic bg-slate-800/30 border border-slate-700/50">
+              Agent chose not to reply
+            </div>
+          </div>
+        )}
         <div ref={messagesEndRef} />
       </div>
 

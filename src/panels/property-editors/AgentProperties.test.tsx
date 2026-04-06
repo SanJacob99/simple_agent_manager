@@ -17,6 +17,8 @@ function createAgentData(overrides: Record<string, unknown> = {}) {
     description: '',
     tags: [],
     modelCapabilities: {},
+    showReasoning: false,
+    verbose: false,
     ...overrides,
   };
 }

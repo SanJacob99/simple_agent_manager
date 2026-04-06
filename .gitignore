@@ -6,3 +6,5 @@ dist
 *.tsbuildinfo
 .worktrees
 notes/
+.tmp/
+test-results/

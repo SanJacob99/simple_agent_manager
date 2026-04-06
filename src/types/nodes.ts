@@ -30,6 +30,8 @@ export interface AgentNodeData {
   tags: string[];
   modelCapabilities: ModelCapabilityOverrides;
   systemPromptMode: SystemPromptMode;
+  showReasoning: boolean;
+  verbose: boolean;
 }
 
 // --- Memory Node (OpenClaw-inspired) ---
@@ -66,11 +68,19 @@ export interface SkillDefinition {
   injectAs: 'system-prompt' | 'user-context';
 }
 
+export interface PluginHookBinding {
+  hookName: string;
+  handler: string;
+  priority?: number;
+  critical?: boolean;
+}
+
 export interface PluginDefinition {
   id: string;
   name: string;
   tools: string[];
   skills: string[];
+  hooks?: PluginHookBinding[];
   enabled: boolean;
 }
 
