@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import AgentProperties from './AgentProperties';
 import { useGraphStore } from '../../store/graph-store';
@@ -88,6 +88,89 @@ describe('AgentProperties', () => {
     const data = createAgentData({ systemPromptMode: 'auto' });
     render(<AgentProperties nodeId="agent-1" data={data} />);
     expect(screen.getByLabelText('System Prompt Mode')).toBeInTheDocument();
+  });
+
+  it('filters OpenRouter model options to discovered models that support tools', () => {
+    useModelCatalogStore.setState({
+      models: {
+        openrouter: {
+          'openai/gpt-4o': {
+            id: 'openai/gpt-4o',
+            provider: 'openrouter',
+            supportedParameters: ['tools', 'tool_choice'],
+          },
+          'google/lyria-3-pro-preview': {
+            id: 'google/lyria-3-pro-preview',
+            provider: 'openrouter',
+            supportedParameters: ['max_tokens', 'response_format'],
+          },
+        },
+      },
+      loading: { openrouter: false },
+      errors: { openrouter: null },
+      lastSyncedKeys: {},
+    } as any);
+
+    const data = createAgentData({ modelId: 'openai/gpt-4o' });
+    render(<AgentProperties nodeId="agent-1" data={data} />);
+
+    const modelSelect = screen.getAllByRole('combobox')[1];
+    const optionLabels = within(modelSelect)
+      .getAllByRole('option')
+      .map((option) => option.textContent);
+
+    expect(optionLabels).toContain('openai/gpt-4o');
+    expect(optionLabels).not.toContain('google/lyria-3-pro-preview');
+    expect(optionLabels).toContain('Custom model...');
+  });
+
+  it('resets to the first tool-capable discovered OpenRouter model when the provider changes', () => {
+    const data = createAgentData({ provider: 'anthropic', modelId: 'claude-opus-4-20250514' });
+
+    useModelCatalogStore.setState({
+      models: {
+        openrouter: {
+          'google/lyria-3-pro-preview': {
+            id: 'google/lyria-3-pro-preview',
+            provider: 'openrouter',
+            supportedParameters: ['max_tokens', 'response_format'],
+          },
+          'openai/gpt-4o': {
+            id: 'openai/gpt-4o',
+            provider: 'openrouter',
+            supportedParameters: ['tools', 'tool_choice'],
+          },
+        },
+      },
+      loading: { openrouter: false },
+      errors: { openrouter: null },
+      lastSyncedKeys: {},
+    } as any);
+
+    useGraphStore.setState({
+      nodes: [
+        {
+          id: 'agent-1',
+          type: 'agent',
+          position: { x: 0, y: 0 },
+          data,
+        },
+      ] as any,
+      edges: [],
+      selectedNodeId: null,
+    });
+
+    render(<AgentProperties nodeId="agent-1" data={data} />);
+
+    fireEvent.change(screen.getAllByRole('combobox')[0], {
+      target: { value: 'openrouter' },
+    });
+
+    const node = useGraphStore.getState().nodes.find((n) => n.id === 'agent-1');
+    expect(node?.data.type).toBe('agent');
+    if (node?.data.type === 'agent') {
+      expect(node.data.modelId).toBe('openai/gpt-4o');
+    }
   });
 
   it('hides textarea in auto mode', () => {

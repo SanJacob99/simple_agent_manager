@@ -32,8 +32,34 @@ interface Props {
   data: AgentNodeData;
 }
 
-function getModelOptions(provider: string, discovered: string[]) {
+function modelSupportsTools(discovered: DiscoveredModelMetadata | undefined) {
+  return discovered?.supportedParameters?.includes('tools') ?? false;
+}
+
+function getModelOptions(
+  provider: string,
+  discovered: string[],
+  openRouterModels: Record<string, DiscoveredModelMetadata> = {},
+) {
+  if (provider === 'openrouter') {
+    const toolCapableModels = Object.values(openRouterModels)
+      .filter((model) => modelSupportsTools(model))
+      .map((model) => model.id);
+
+    if (toolCapableModels.length > 0) {
+      return toolCapableModels;
+    }
+  }
+
   return [...new Set([...(STATIC_MODELS[provider] || []), ...discovered])];
+}
+
+function getDefaultModelId(
+  provider: string,
+  discovered: string[],
+  openRouterModels: Record<string, DiscoveredModelMetadata> = {},
+) {
+  return getModelOptions(provider, discovered, openRouterModels)[0] ?? '';
 }
 
 function getCustomModelPlaceholder(provider: string) {
@@ -91,8 +117,8 @@ export default function AgentProperties({ nodeId, data }: Props) {
       : undefined;
 
   const availableModels = useMemo(
-    () => getModelOptions(data.provider, discoveredModels),
-    [data.provider, discoveredModels],
+    () => getModelOptions(data.provider, discoveredModels, openRouterModels),
+    [data.provider, discoveredModels, openRouterModels],
   );
 
   const isCustomModel = !availableModels.includes(data.modelId);
@@ -223,8 +249,13 @@ export default function AgentProperties({ nodeId, data }: Props) {
           value={data.provider}
           onChange={(e) => {
             const provider = e.target.value;
-            const models = STATIC_MODELS[provider] || [];
-            const newModelId = models[0] || '';
+            const discoveredIds =
+              provider === 'openrouter' ? Object.keys(openRouterModels) : [];
+            const newModelId = getDefaultModelId(
+              provider,
+              discoveredIds,
+              openRouterModels,
+            );
 
             // Snapshot capabilities for the new model
             let discovered: DiscoveredModelMetadata | undefined;
