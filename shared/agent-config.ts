@@ -105,6 +105,8 @@ export interface AgentConfig {
   exportedAt: number;
   sourceGraphId: string;
   runTimeoutMs: number;
+  showReasoning?: boolean;
+  verbose?: boolean;
 }
 
 export interface ResolvedMemoryConfig {

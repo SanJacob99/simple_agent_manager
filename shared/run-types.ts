@@ -31,7 +31,7 @@ export interface StructuredError {
 }
 
 export interface RunPayload {
-  type: 'text' | 'tool_summary' | 'error';
+  type: 'text' | 'reasoning' | 'tool_summary' | 'error';
   content: string;
 }
 

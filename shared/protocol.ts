@@ -184,6 +184,55 @@ export interface AgentStateEvent {
   }>;
 }
 
+export interface ReasoningStartEvent {
+  type: 'reasoning:start';
+  agentId: string;
+  runId: string;
+}
+
+export interface ReasoningDeltaEvent {
+  type: 'reasoning:delta';
+  agentId: string;
+  runId: string;
+  delta: string;
+}
+
+export interface ReasoningEndEvent {
+  type: 'reasoning:end';
+  agentId: string;
+  runId: string;
+  content: string;
+}
+
+export interface MessageSuppressedEvent {
+  type: 'message:suppressed';
+  agentId: string;
+  runId: string;
+  reason: 'no_reply' | 'messaging_tool_dedup';
+}
+
+export interface CompactionStartEvent {
+  type: 'compaction:start';
+  agentId: string;
+  runId: string;
+}
+
+export interface CompactionEndEvent {
+  type: 'compaction:end';
+  agentId: string;
+  runId: string;
+  retrying: boolean;
+}
+
+export interface ToolSummaryEvent {
+  type: 'tool:summary';
+  agentId: string;
+  runId: string;
+  toolCallId: string;
+  toolName: string;
+  summary: string;
+}
+
 export type ServerEvent =
   | AgentReadyEvent
   | AgentErrorEvent
@@ -197,4 +246,11 @@ export type ServerEvent =
   | RunAcceptedEvent
   | LifecycleStartEvent
   | LifecycleEndEvent
-  | LifecycleErrorEvent;
+  | LifecycleErrorEvent
+  | ReasoningStartEvent
+  | ReasoningDeltaEvent
+  | ReasoningEndEvent
+  | MessageSuppressedEvent
+  | CompactionStartEvent
+  | CompactionEndEvent
+  | ToolSummaryEvent;
