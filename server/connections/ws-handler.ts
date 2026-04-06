@@ -13,6 +13,7 @@ export function handleConnection(
   apiKeys: ApiKeyStore,
 ): void {
   console.log('[ws] Client connected');
+  const pendingStarts = new Map<string, Promise<void>>();
 
   socket.on('message', async (data) => {
     let command: Command;
@@ -27,7 +28,15 @@ export function handleConnection(
     try {
       switch (command.type) {
         case 'agent:start': {
-          await manager.start(command.config);
+          const startPromise = manager.start(command.config);
+          pendingStarts.set(command.agentId, startPromise);
+          try {
+            await startPromise;
+          } finally {
+            if (pendingStarts.get(command.agentId) === startPromise) {
+              pendingStarts.delete(command.agentId);
+            }
+          }
           manager.addSocket(command.agentId, socket);
           socket.send(JSON.stringify({
             type: 'agent:ready',
@@ -37,6 +46,7 @@ export function handleConnection(
         }
 
         case 'agent:dispatch': {
+          await pendingStarts.get(command.agentId);
           manager.addSocket(command.agentId, socket);
           const result = await manager.dispatch(command.agentId, {
             sessionKey: command.sessionKey,
@@ -55,6 +65,7 @@ export function handleConnection(
 
         case 'agent:prompt': {
           // Backwards compat: translate to dispatch
+          await pendingStarts.get(command.agentId);
           manager.addSocket(command.agentId, socket);
           const result = await manager.dispatch(command.agentId, {
             sessionKey: command.sessionId,
