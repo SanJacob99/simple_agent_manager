@@ -249,6 +249,22 @@ export const useSessionStore = create<SessionStore>()(
 
     addMessage: async (sessionId, message) => {
       const { storageEngine } = get();
+
+      set((state) => {
+        const session = state.sessions[sessionId];
+        if (!session) return state;
+        return {
+          sessions: {
+            ...state.sessions,
+            [sessionId]: {
+              ...session,
+              messages: [...session.messages, message],
+              lastMessageAt: Date.now(),
+            },
+          },
+        };
+      });
+
       if (storageEngine) {
         const entry: SessionEntry = {
           type: 'message',
@@ -266,21 +282,6 @@ export const useSessionStore = create<SessionStore>()(
           updatedAt: new Date().toISOString(),
         });
       }
-
-      set((state) => {
-        const session = state.sessions[sessionId];
-        if (!session) return state;
-        return {
-          sessions: {
-            ...state.sessions,
-            [sessionId]: {
-              ...session,
-              messages: [...session.messages, message],
-              lastMessageAt: Date.now(),
-            },
-          },
-        };
-      });
     },
 
     updateMessage: (sessionId, messageId, updater) => {
