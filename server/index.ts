@@ -7,6 +7,7 @@ import { ApiKeyStore } from './auth/api-keys';
 import { handleConnection } from './connections/ws-handler';
 import { getGlobalHookRegistry } from './agents/agent-manager';
 import { HOOK_NAMES, type BackendLifecycleContext } from './hooks/hook-types';
+import { createStartupErrorHandler } from './startup';
 import type { ResolvedStorageConfig } from '../shared/agent-config';
 import type { SessionMeta, SessionEntry } from '../shared/storage-types';
 
@@ -232,12 +233,18 @@ const PORT = parseInt(process.env.STORAGE_PORT ?? '3210', 10);
 const httpServer = createServer(app);
 
 const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
+const handleStartupError = createStartupErrorHandler({ port: PORT });
+
+httpServer.once('error', handleStartupError);
+wss.once('error', handleStartupError);
 
 wss.on('connection', (socket) => {
   handleConnection(socket, agentManager, apiKeys);
 });
 
 httpServer.listen(PORT, () => {
+  httpServer.off('error', handleStartupError);
+  wss.off('error', handleStartupError);
   console.log(`Server listening on http://localhost:${PORT}`);
   console.log(`WebSocket available at ws://localhost:${PORT}/ws`);
 
