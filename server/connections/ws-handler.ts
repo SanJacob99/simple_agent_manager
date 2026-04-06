@@ -74,7 +74,7 @@ export function handleConnection(
         case 'run:wait': {
           const waitResult = await manager.wait(command.agentId, command.runId, command.timeoutMs);
           socket.send(JSON.stringify({
-            type: waitResult.status === 'ok' ? 'lifecycle:end' : 'lifecycle:error',
+            type: 'run:wait:result',
             agentId: command.agentId,
             ...waitResult,
           }));

@@ -54,6 +54,70 @@ describe('EventBridge (coordinator-based)', () => {
     expect(sent.agentId).toBe('agent-1');
   });
 
+  it('maps queue:entered to queue:entered server event', () => {
+    const coordinator = mockCoordinator();
+    const bridge = new EventBridge('agent-1', coordinator);
+    const socket = mockSocket();
+    bridge.addSocket(socket);
+
+    emitCoordinatorEvent(coordinator, {
+      type: 'queue:entered',
+      runId: 'run-1',
+      agentId: 'agent-1',
+      sessionId: 'sess-1',
+      acceptedAt: 1000,
+      sessionPosition: 1,
+      globalPosition: 2,
+    });
+
+    expect(socket.send).toHaveBeenCalledTimes(1);
+    const sent = JSON.parse(socket.send.mock.calls[0][0]);
+    expect(sent.type).toBe('queue:entered');
+    expect(sent.runId).toBe('run-1');
+    expect(sent.globalPosition).toBe(2);
+  });
+
+  it('maps queue:updated to queue:updated server event', () => {
+    const coordinator = mockCoordinator();
+    const bridge = new EventBridge('agent-1', coordinator);
+    const socket = mockSocket();
+    bridge.addSocket(socket);
+
+    emitCoordinatorEvent(coordinator, {
+      type: 'queue:updated',
+      runId: 'run-2',
+      agentId: 'agent-1',
+      sessionId: 'sess-2',
+      updatedAt: 2000,
+      sessionPosition: 1,
+      globalPosition: 1,
+    });
+
+    const sent = JSON.parse(socket.send.mock.calls[0][0]);
+    expect(sent.type).toBe('queue:updated');
+    expect(sent.updatedAt).toBe(2000);
+  });
+
+  it('maps queue:left to queue:left server event', () => {
+    const coordinator = mockCoordinator();
+    const bridge = new EventBridge('agent-1', coordinator);
+    const socket = mockSocket();
+    bridge.addSocket(socket);
+
+    emitCoordinatorEvent(coordinator, {
+      type: 'queue:left',
+      runId: 'run-3',
+      agentId: 'agent-1',
+      sessionId: 'sess-3',
+      leftAt: 3000,
+      reason: 'started',
+    });
+
+    const sent = JSON.parse(socket.send.mock.calls[0][0]);
+    expect(sent.type).toBe('queue:left');
+    expect(sent.reason).toBe('started');
+  });
+
   it('maps lifecycle:end to both lifecycle:end and agent:end (backwards compat)', () => {
     const coordinator = mockCoordinator();
     const bridge = new EventBridge('agent-1', coordinator);
