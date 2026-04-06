@@ -10,7 +10,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "test:openrouter": "vitest run --config vitest.openrouter.config.ts"
   },
   "dependencies": {
     "@mariozechner/pi-agent-core": "^0.64.0",

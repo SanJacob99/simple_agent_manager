@@ -63,6 +63,24 @@ npm run build
 
 Output is in `dist/`.
 
+### Real OpenRouter Test
+
+To run a real end-to-end server integration test against OpenRouter, create a local `.env` file with:
+
+```bash
+OPENROUTER_API_KEY=your_key_here
+# Optional override; defaults to openai/gpt-4o-mini
+OPENROUTER_MODEL=openai/gpt-4o-mini
+```
+
+Then run:
+
+```bash
+npm run test:openrouter
+```
+
+This test is intentionally opt-in because it makes a live API call and may incur cost or fail for network/provider reasons.
+
 ### Usage
 
 1. **Configure API keys** -- Click the gear icon (top-right) to open Settings and enter your provider API keys
