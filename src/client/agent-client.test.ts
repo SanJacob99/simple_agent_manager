@@ -76,4 +76,54 @@ describe('AgentClient', () => {
     mockWsInstance.onmessage?.({ data: JSON.stringify({ type: 'agent:end', agentId: 'a1' }) });
     expect(handler).not.toHaveBeenCalled();
   });
+
+  it('dispatches queue events to listeners', async () => {
+    client.connect();
+    await new Promise((r) => setTimeout(r, 10));
+
+    const handler = vi.fn();
+    client.onEvent(handler);
+
+    mockWsInstance.onmessage?.({
+      data: JSON.stringify({
+        type: 'queue:entered',
+        agentId: 'a1',
+        runId: 'run-1',
+        sessionId: 'sess-1',
+        acceptedAt: 1000,
+        sessionPosition: 1,
+        globalPosition: 2,
+      }),
+    });
+
+    expect(handler).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'queue:entered',
+      runId: 'run-1',
+    }));
+  });
+
+  it('dispatches run:wait:result to listeners', async () => {
+    client.connect();
+    await new Promise((r) => setTimeout(r, 10));
+
+    const handler = vi.fn();
+    client.onEvent(handler);
+
+    mockWsInstance.onmessage?.({
+      data: JSON.stringify({
+        type: 'run:wait:result',
+        agentId: 'a1',
+        runId: 'run-1',
+        status: 'timeout',
+        phase: 'pending',
+        acceptedAt: 1000,
+        payloads: [],
+      }),
+    });
+
+    expect(handler).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'run:wait:result',
+      phase: 'pending',
+    }));
+  });
 });

@@ -5,6 +5,9 @@ import { StorageEngine } from './runtime/storage-engine';
 import { AgentManager } from './agents/agent-manager';
 import { ApiKeyStore } from './auth/api-keys';
 import { handleConnection } from './connections/ws-handler';
+import { getGlobalHookRegistry } from './agents/agent-manager';
+import { HOOK_NAMES, type BackendLifecycleContext } from './hooks/hook-types';
+import { createStartupErrorHandler } from './startup';
 import type { ResolvedStorageConfig } from '../shared/agent-config';
 import type { SessionMeta, SessionEntry } from '../shared/storage-types';
 
@@ -230,20 +233,42 @@ const PORT = parseInt(process.env.STORAGE_PORT ?? '3210', 10);
 const httpServer = createServer(app);
 
 const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
+const handleStartupError = createStartupErrorHandler({ port: PORT });
+
+httpServer.once('error', handleStartupError);
+wss.once('error', handleStartupError);
 
 wss.on('connection', (socket) => {
   handleConnection(socket, agentManager, apiKeys);
 });
 
 httpServer.listen(PORT, () => {
+  httpServer.off('error', handleStartupError);
+  wss.off('error', handleStartupError);
   console.log(`Server listening on http://localhost:${PORT}`);
   console.log(`WebSocket available at ws://localhost:${PORT}/ws`);
+
+  // --- backend_start hook (global) ---
+  const globalRegistry = getGlobalHookRegistry();
+  const startCtx: BackendLifecycleContext = { phase: 'start', timestamp: Date.now() };
+  globalRegistry.invoke(HOOK_NAMES.BACKEND_START, startCtx).catch((err) => {
+    console.error('[Server] backend_start hook error:', err);
+  });
 });
 
 // --- Graceful shutdown ---
 
-function shutdown() {
+async function shutdown() {
   console.log('\nShutting down...');
+
+  // --- backend_stop hook (global) ---
+  try {
+    const globalRegistry = getGlobalHookRegistry();
+    const stopCtx: BackendLifecycleContext = { phase: 'stop', timestamp: Date.now() };
+    await globalRegistry.invoke(HOOK_NAMES.BACKEND_STOP, stopCtx);
+  } catch (err) {
+    console.error('[Server] backend_stop hook error:', err);
+  }
 
   // Close WebSocket connections
   for (const client of wss.clients) {

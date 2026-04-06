@@ -97,6 +97,11 @@ export class StorageEngine {
     return sessions.find((s) => s.sessionId === sessionId) ?? null;
   }
 
+  async getSessionByKey(sessionKey: string): Promise<SessionMeta | null> {
+    const sessions = await this.readIndex();
+    return sessions.find((s) => s.sessionKey === sessionKey) ?? null;
+  }
+
   async updateSessionMeta(sessionId: string, partial: Partial<SessionMeta>): Promise<void> {
     const sessions = await this.readIndex();
     const idx = sessions.findIndex((s) => s.sessionId === sessionId);

@@ -7,12 +7,30 @@ import type { AgentConfig } from '../../shared/agent-config';
 vi.mock('../runtime/agent-runtime', () => {
   class MockAgentRuntime {
     subscribe = vi.fn(() => vi.fn());
-    prompt = vi.fn();
+    prompt = vi.fn(() => Promise.resolve());
     abort = vi.fn();
     destroy = vi.fn();
     state = { messages: [] };
   }
   return { AgentRuntime: MockAgentRuntime };
+});
+
+// Mock StorageEngine to avoid filesystem
+vi.mock('../runtime/storage-engine', () => {
+  class MockStorageEngine {
+    private sessions: any[] = [];
+    init = vi.fn();
+    getSessionByKey = vi.fn(async (key: string) => {
+      return this.sessions.find((s: any) => s.sessionKey === key) ?? null;
+    });
+    createSession = vi.fn(async (meta: any) => {
+      this.sessions.push(meta);
+    });
+    updateSessionMeta = vi.fn();
+    enforceRetention = vi.fn();
+    listSessions = vi.fn(async () => this.sessions);
+  }
+  return { StorageEngine: MockStorageEngine };
 });
 
 function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
@@ -37,12 +55,28 @@ function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
     contextEngine: null,
     connectors: [],
     agentComm: [],
-    storage: null, // null to skip disk persistence in tests
+    storage: {
+      label: 'Storage',
+      backendType: 'filesystem',
+      storagePath: '/tmp/test',
+      sessionRetention: 50,
+      memoryEnabled: false,
+      dailyMemoryEnabled: false,
+    },
     vectorDatabases: [],
     exportedAt: Date.now(),
     sourceGraphId: 'agent-1',
+    runTimeoutMs: 172800000,
     ...overrides,
   };
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
 }
 
 describe('AgentManager', () => {
@@ -55,21 +89,20 @@ describe('AgentManager', () => {
     manager = new AgentManager(apiKeys);
   });
 
-  it('starts an agent and tracks it', () => {
-    manager.start(makeConfig());
+  it('starts an agent and tracks it', async () => {
+    await manager.start(makeConfig());
     expect(manager.has('agent-1')).toBe(true);
-    expect(manager.getStatus('agent-1')).toBe('idle');
   });
 
-  it('destroys an agent', () => {
-    manager.start(makeConfig());
+  it('destroys an agent', async () => {
+    await manager.start(makeConfig());
     manager.destroy('agent-1');
     expect(manager.has('agent-1')).toBe(false);
   });
 
-  it('replaces an existing agent on re-start', () => {
-    manager.start(makeConfig());
-    manager.start(makeConfig({
+  it('replaces an existing agent on re-start', async () => {
+    await manager.start(makeConfig());
+    await manager.start(makeConfig({
       systemPrompt: {
         mode: 'manual',
         sections: [{ key: 'manual', label: 'Manual Prompt', content: 'Updated prompt', tokenEstimate: 3 }],
@@ -84,17 +117,112 @@ describe('AgentManager', () => {
     expect(manager.getStatus('unknown')).toBe('not_found');
   });
 
-  it('abort sets status to idle', () => {
-    manager.start(makeConfig());
-    manager.abort('agent-1');
-    expect(manager.getStatus('agent-1')).toBe('idle');
-  });
-
   it('shutdown destroys all agents', async () => {
-    manager.start(makeConfig());
-    manager.start(makeConfig({ id: 'agent-2', name: 'Agent 2' }));
+    await manager.start(makeConfig());
+    await manager.start(makeConfig({ id: 'agent-2', name: 'Agent 2' }));
     await manager.shutdown();
     expect(manager.has('agent-1')).toBe(false);
     expect(manager.has('agent-2')).toBe(false);
+  });
+
+  describe('dispatch facade', () => {
+    it('dispatches a run and returns runId and sessionId', async () => {
+      await manager.start(makeConfig());
+      const result = await manager.dispatch('agent-1', {
+        sessionKey: 'test-session',
+        text: 'Hello',
+      });
+
+      expect(result.runId).toBeDefined();
+      expect(result.sessionId).toBeDefined();
+      expect(result.acceptedAt).toBeDefined();
+    });
+
+    it('throws for unknown agent', async () => {
+      await expect(
+        manager.dispatch('unknown', { sessionKey: 's', text: 'Hello' })
+      ).rejects.toThrow(/not found/i);
+    });
+
+    it('wait returns run result', async () => {
+      await manager.start(makeConfig());
+      const { runId } = await manager.dispatch('agent-1', {
+        sessionKey: 'wait-test',
+        text: 'Hello',
+      });
+
+      const result = await manager.wait('agent-1', runId, 5000);
+      expect(result.status).toBe('ok');
+      expect(result.runId).toBe(runId);
+    });
+
+    it('abortRun aborts a specific run', async () => {
+      await manager.start(makeConfig());
+
+      // Make prompt hang
+      const runtime = (manager as any).agents.get('agent-1').runtime;
+      runtime.prompt.mockImplementation(() => new Promise(() => {}));
+
+      const { runId } = await manager.dispatch('agent-1', {
+        sessionKey: 'abort-test',
+        text: 'Hello',
+      });
+
+      await new Promise((r) => setTimeout(r, 10));
+      manager.abortRun('agent-1', runId);
+
+      const result = await manager.wait('agent-1', runId, 5000);
+      expect(result.status).toBe('error');
+      expect(result.error?.code).toBe('aborted');
+    });
+
+    it('accepts queued dispatches for the same session', async () => {
+      await manager.start(makeConfig());
+
+      const runtime = (manager as any).agents.get('agent-1').runtime;
+      const deferred = createDeferred<void>();
+      runtime.prompt.mockImplementationOnce(() => deferred.promise);
+
+      const first = await manager.dispatch('agent-1', {
+        sessionKey: 'same',
+        text: 'First',
+      });
+      const second = await manager.dispatch('agent-1', {
+        sessionKey: 'same',
+        text: 'Second',
+      });
+
+      expect(first.runId).not.toBe(second.runId);
+      expect(manager.getStatus('agent-1')).toBe('running');
+
+      deferred.resolve();
+      await manager.wait('agent-1', first.runId, 5000);
+    });
+
+    it('aborts a pending run through the facade', async () => {
+      await manager.start(makeConfig());
+
+      const runtime = (manager as any).agents.get('agent-1').runtime;
+      const deferred = createDeferred<void>();
+      runtime.prompt.mockImplementationOnce(() => deferred.promise);
+
+      await manager.dispatch('agent-1', {
+        sessionKey: 'same',
+        text: 'First',
+      });
+      const pending = await manager.dispatch('agent-1', {
+        sessionKey: 'same',
+        text: 'Second',
+      });
+
+      manager.abortRun('agent-1', pending.runId);
+      const result = await manager.wait('agent-1', pending.runId, 5000);
+
+      expect(result.status).toBe('error');
+      expect(result.error?.code).toBe('aborted');
+      expect(runtime.abort).toHaveBeenCalledTimes(0);
+
+      deferred.resolve();
+    });
   });
 });

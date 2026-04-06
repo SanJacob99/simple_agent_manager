@@ -13,7 +13,7 @@ Built with React 19, TypeScript, and [@xyflow/react](https://reactflow.dev/) for
 - **OpenClaw-Inspired Architecture** -- Memory, tools, and context engine nodes modeled after [OpenClaw](https://docs.openclaw.ai/) concepts
 - **Client-Server Architecture** -- Agent configs are serializable JSON sent to a Node.js backend. Agents run securely on the server with full access to files and external APIs.
 - **Session-Based Chat** -- Conversations are strictly isolated into distinct, immutable sessions to prevent context leakage. Automatically manages history limits and prunes old sessions.
-- **Multi-Provider LLM Support** -- Anthropic, OpenAI, OpenRouter, Google, Ollama, Mistral, Groq, xAI
+- **Multi-Provider LLM Support** -- OpenRouter, OpenAI, Anthropic, Google AI Studio, Google Vertex AI, Azure OpenAI, Mistral, Groq, xAI, Cerebras, MiniMax, Vercel AI Gateway, Ollama
 - **Memory Engine** -- Multiple backends (builtin/external/cloud), compaction strategies (summary/sliding-window/hybrid), memory tools (search/get/save) exposed to agents
 - **Tool System** -- Profiles (full/coding/messaging/minimal), groups (runtime/fs/web/memory/coding/communication), skills (markdown instructions), plugins
 - **Context Engine** -- Token budget management, compaction lifecycle (assemble/compact/afterTurn), RAG integration, system prompt additions
@@ -63,6 +63,25 @@ npm run build
 
 Output is in `dist/`.
 
+### Real OpenRouter Tests
+
+To run the opt-in live OpenRouter tests, create a local `.env` file with:
+
+```bash
+OPENROUTER_API_KEY=your_key_here
+# Optional override; defaults to qwen/qwen3.6-plus:free
+OPENROUTER_MODEL=qwen/qwen3.6-plus:free
+```
+
+Then run:
+
+```bash
+npm run test:openrouter
+npm run test:e2e:openrouter
+```
+
+`npm run test:openrouter` exercises the backend integration path. `npm run test:e2e:openrouter` starts the real client and server, sends a message through the browser UI, and captures a trace of critical fetch and WebSocket milestones. Both are intentionally opt-in because they make live API calls and may incur cost or fail for network/provider reasons. The browser E2E retries automatically because live provider responses, especially free models, can occasionally return an empty turn.
+
 ### Usage
 
 1. **Configure API keys** -- Click the gear icon (top-right) to open Settings and enter your provider API keys
@@ -71,6 +90,13 @@ Output is in `dist/`.
 4. **Customize** -- Click any node to open the properties panel on the right and configure it
 5. **Chat** -- Click the "Chat" button on an agent node to open the chat drawer, create a new session or select an existing one, and start a conversation
 6. **Export/Import** -- Use the sidebar action buttons to export your graph, import one, or load the built-in test fixture
+
+
+### Provider API Key Setup
+
+In **Settings → Providers & API Keys**, each provider row now includes a direct **“Get … key”** link to the provider portal.
+
+Current providers with key setup links: OpenAI, Anthropic, Google AI Studio, Google Vertex AI, OpenRouter, Azure OpenAI, Groq, xAI, Mistral, Cerebras, MiniMax, and Vercel AI Gateway. Ollama runs locally and does not require a cloud key.
 
 ## Architecture
 
