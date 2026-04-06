@@ -8,11 +8,13 @@ import type {
   DispatchResult,
   WaitResult,
   RunPayload,
+  RunQueueSnapshot,
   RunUsage,
   StructuredError,
   CoordinatorEvent,
   RunEventListener,
 } from '../../shared/run-types';
+import { RunConcurrencyController } from './run-concurrency-controller';
 
 export type RunStatus = 'pending' | 'running' | 'completed' | 'error';
 
@@ -21,8 +23,10 @@ export interface RunRecord {
   agentId: string;
   sessionId: string;
   status: RunStatus;
-  startedAt: number;
+  acceptedAt: number;
+  startedAt?: number;
   endedAt?: number;
+  queue?: RunQueueSnapshot;
   payloads: RunPayload[];
   usage?: RunUsage;
   error?: StructuredError;
@@ -30,16 +34,17 @@ export interface RunRecord {
   timeoutTimer: ReturnType<typeof setTimeout> | null;
 }
 
-const RUN_RECORD_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const RUN_RECORD_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_WAIT_TIMEOUT_MS = 30_000;
 
 export class RunCoordinator {
-  private runs = new Map<string, RunRecord>();
-  private waiters = new Map<string, Array<(result: WaitResult) => void>>();
-  private runSubscribers = new Map<string, Set<RunEventListener>>();
-  private allSubscribers = new Set<RunEventListener>();
-  private activeSessionRuns = new Map<string, string>(); // sessionId → runId
-  private cleanupTimers = new Set<ReturnType<typeof setTimeout>>();
+  private readonly runs = new Map<string, RunRecord>();
+  private readonly waiters = new Map<string, Array<(result: WaitResult) => void>>();
+  private readonly runSubscribers = new Map<string, Set<RunEventListener>>();
+  private readonly allSubscribers = new Set<RunEventListener>();
+  private readonly cleanupTimers = new Set<ReturnType<typeof setTimeout>>();
+  private readonly pendingParams = new Map<string, DispatchParams>();
+  private readonly concurrency = new RunConcurrencyController();
 
   constructor(
     private readonly agentId: string,
@@ -53,37 +58,31 @@ export class RunCoordinator {
       throw new Error('Cannot dispatch: no storage configured for this agent');
     }
 
-    // Resolve session
     const sessionId = await this.resolveSession(params.sessionKey);
-
-    // Guard: one run per session
-    if (this.activeSessionRuns.has(sessionId)) {
-      throw new Error(`A run is already active on session ${sessionId}`);
-    }
-
-    // Create run record
     const runId = randomUUID();
-    const startedAt = Date.now();
-    const abortController = new AbortController();
+    const acceptedAt = Date.now();
 
     const record: RunRecord = {
       runId,
       agentId: this.agentId,
       sessionId,
       status: 'pending',
-      startedAt,
+      acceptedAt,
       payloads: [],
-      abortController,
+      abortController: new AbortController(),
       timeoutTimer: null,
     };
 
     this.runs.set(runId, record);
-    this.activeSessionRuns.set(sessionId, runId);
+    this.pendingParams.set(runId, params);
 
-    // Fire-and-forget the execution
-    this.executeRun(record, params);
+    const { snapshot, affectedRunIds } = this.concurrency.enqueue(runId, sessionId);
+    record.queue = snapshot;
+    this.emitQueueEntered(record);
+    this.emitQueueUpdates(affectedRunIds);
+    this.tryStartNextRun();
 
-    return { runId, sessionId, acceptedAt: startedAt };
+    return { runId, sessionId, acceptedAt };
   }
 
   async wait(runId: string, timeoutMs?: number): Promise<WaitResult> {
@@ -92,31 +91,34 @@ export class RunCoordinator {
       return {
         runId,
         status: 'error',
-        startedAt: 0,
+        phase: 'error',
+        acceptedAt: 0,
         payloads: [],
         error: { code: 'internal', message: `Run ${runId} not found`, retriable: false },
       };
     }
 
-    // Already terminal
     if (record.status === 'completed' || record.status === 'error') {
       return this.buildWaitResult(record);
     }
 
-    // Wait for completion or timeout
     const timeout = timeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS;
     return new Promise<WaitResult>((resolve) => {
       const timer = setTimeout(() => {
-        // Remove this waiter
         const waiters = this.waiters.get(runId);
         if (waiters) {
-          const idx = waiters.indexOf(wrappedResolve);
-          if (idx !== -1) waiters.splice(idx, 1);
+          const index = waiters.indexOf(wrappedResolve);
+          if (index !== -1) {
+            waiters.splice(index, 1);
+          }
         }
         resolve({
           runId,
           status: 'timeout',
+          phase: record.status,
+          acceptedAt: record.acceptedAt,
           startedAt: record.startedAt,
+          queue: record.queue,
           payloads: [],
         });
       }, timeout);
@@ -152,15 +154,38 @@ export class RunCoordinator {
 
   abort(runId: string): void {
     const record = this.runs.get(runId);
-    if (!record || record.status === 'completed' || record.status === 'error') return;
+    if (!record || record.status === 'completed' || record.status === 'error') {
+      return;
+    }
 
     record.abortController.abort();
+
+    if (record.status === 'pending') {
+      const result = this.concurrency.abortPending(runId);
+      if (!result.removed) {
+        return;
+      }
+      this.pendingParams.delete(runId);
+      record.queue = undefined;
+      this.emitQueueLeft(record, 'aborted');
+      this.emitQueueUpdates(result.affectedRunIds);
+      this.finalizeRunError(record, {
+        code: 'aborted',
+        message: 'Run aborted by caller',
+        retriable: false,
+      });
+      this.tryStartNextRun();
+      return;
+    }
+
     this.runtime.abort();
-    this.finalizeRun(record, {
+    this.concurrency.release(record.runId, record.sessionId);
+    this.finalizeRunError(record, {
       code: 'aborted',
       message: 'Run aborted by caller',
       retriable: false,
     });
+    this.tryStartNextRun();
   }
 
   getRunStatus(runId: string): RunRecord | undefined {
@@ -168,33 +193,47 @@ export class RunCoordinator {
   }
 
   getLatestActiveRunId(): string | undefined {
-    for (const [, record] of this.runs) {
-      if (record.status === 'pending' || record.status === 'running') {
-        return record.runId;
+    let latest: RunRecord | undefined;
+    for (const record of this.runs.values()) {
+      if (record.status !== 'pending' && record.status !== 'running') {
+        continue;
+      }
+      if (!latest || record.acceptedAt > latest.acceptedAt) {
+        latest = record;
       }
     }
-    return undefined;
+    return latest?.runId;
   }
 
   destroy(): void {
-    for (const [, record] of this.runs) {
-      if (record.status === 'pending' || record.status === 'running') {
-        record.abortController.abort();
-        if (record.timeoutTimer) clearTimeout(record.timeoutTimer);
+    const pendingRunIds = new Set(this.concurrency.destroy());
+
+    for (const record of this.runs.values()) {
+      if (record.status === 'completed' || record.status === 'error') {
+        continue;
+      }
+      record.abortController.abort();
+      if (record.timeoutTimer) {
+        clearTimeout(record.timeoutTimer);
+      }
+      if (pendingRunIds.has(record.runId)) {
+        this.pendingParams.delete(record.runId);
+      } else if (record.status === 'running') {
+        this.runtime.abort();
       }
     }
+
     for (const timer of this.cleanupTimers) {
       clearTimeout(timer);
     }
+
     this.runs.clear();
     this.waiters.clear();
     this.runSubscribers.clear();
     this.allSubscribers.clear();
-    this.activeSessionRuns.clear();
     this.cleanupTimers.clear();
+    this.pendingParams.clear();
   }
-
-  // --- Private ---
 
   private async resolveSession(sessionKey: string): Promise<string> {
     const existing = await this.storage!.getSessionByKey(sessionKey);
@@ -205,7 +244,6 @@ export class RunCoordinator {
       return existing.sessionId;
     }
 
-    // Create new session
     const sessionId = randomUUID();
     const now = new Date().toISOString();
     const meta: SessionMeta = {
@@ -231,11 +269,31 @@ export class RunCoordinator {
     return sessionId;
   }
 
+  private tryStartNextRun(): void {
+    const decision = this.concurrency.drain();
+    if (!decision) {
+      return;
+    }
+
+    const record = this.runs.get(decision.runId);
+    const params = this.pendingParams.get(decision.runId);
+    if (!record || !params) {
+      return;
+    }
+
+    const { affectedRunIds } = this.concurrency.start(decision.runId, decision.sessionId);
+    this.pendingParams.delete(decision.runId);
+    record.queue = undefined;
+    this.emitQueueLeft(record, 'started');
+    this.emitQueueUpdates(affectedRunIds);
+    this.executeRun(record, params);
+  }
+
   private executeRun(record: RunRecord, params: DispatchParams): void {
     record.status = 'running';
+    record.startedAt = Date.now();
 
-    // Emit lifecycle:start
-    this.emit({
+    this.emitForRun(record.runId, {
       type: 'lifecycle:start',
       runId: record.runId,
       agentId: this.agentId,
@@ -243,30 +301,29 @@ export class RunCoordinator {
       startedAt: record.startedAt,
     });
 
-    // Start timeout timer
     const timeoutMs = params.timeoutMs ?? this.config.runTimeoutMs;
     record.timeoutTimer = setTimeout(() => {
-      if (record.status === 'running' || record.status === 'pending') {
-        this.runtime.abort();
-        this.finalizeRun(record, {
-          code: 'timeout',
-          message: `Run timed out after ${timeoutMs}ms`,
-          retriable: false,
-        });
+      if (record.status !== 'running') {
+        return;
       }
+      this.runtime.abort();
+      this.concurrency.release(record.runId, record.sessionId);
+      this.finalizeRunError(record, {
+        code: 'timeout',
+        message: `Run timed out after ${timeoutMs}ms`,
+        retriable: false,
+      });
+      this.tryStartNextRun();
     }, timeoutMs);
 
-    // Subscribe to runtime events for this run
     let textBuffer = '';
     const unsubscribe = this.runtime.subscribe((event: RuntimeEvent) => {
-      // Forward stream events
       this.emitForRun(record.runId, { type: 'stream', runId: record.runId, event });
 
-      // Buffer payloads
       if (event.type === 'message_update') {
-        const aEvent = (event as any).assistantMessageEvent;
-        if (aEvent?.type === 'text_delta') {
-          textBuffer += aEvent.delta;
+        const assistantEvent = (event as any).assistantMessageEvent;
+        if (assistantEvent?.type === 'text_delta') {
+          textBuffer += assistantEvent.delta;
         }
       } else if (event.type === 'message_end') {
         if (textBuffer) {
@@ -284,50 +341,56 @@ export class RunCoordinator {
           };
         }
       } else if (event.type === 'tool_execution_end') {
-        const te = event as any;
-        const resultText = te.result?.content
-          ?.map((c: { type: string; text?: string }) => c.type === 'text' ? c.text : '')
+        const toolEvent = event as any;
+        const resultText = toolEvent.result?.content
+          ?.map((content: { type: string; text?: string }) => content.type === 'text' ? content.text : '')
           .join('') || '';
         record.payloads.push({
           type: 'tool_summary',
-          content: `${te.toolName}: ${resultText.slice(0, 500)}`,
+          content: `${toolEvent.toolName}: ${resultText.slice(0, 500)}`,
         });
       }
     });
 
-    // Run the prompt
     this.runtime.prompt(params.text, params.attachments)
       .then(() => {
         unsubscribe();
-        // Flush remaining text buffer
+        if (record.status !== 'running') {
+          return;
+        }
         if (textBuffer) {
           record.payloads.push({ type: 'text', content: textBuffer });
         }
+        this.concurrency.release(record.runId, record.sessionId);
         this.finalizeRunSuccess(record);
+        this.tryStartNextRun();
       })
       .catch((error: unknown) => {
         unsubscribe();
+        if (record.status !== 'running') {
+          return;
+        }
         if (textBuffer) {
           record.payloads.push({ type: 'text', content: textBuffer });
         }
-        // Don't double-finalize if already handled (timeout/abort)
-        if (record.status === 'running') {
-          this.finalizeRun(record, classifyError(error));
-        }
+        this.concurrency.release(record.runId, record.sessionId);
+        this.finalizeRunError(record, classifyError(error));
+        this.tryStartNextRun();
       });
   }
 
   private finalizeRunSuccess(record: RunRecord): void {
-    if (record.timeoutTimer) clearTimeout(record.timeoutTimer);
+    if (record.timeoutTimer) {
+      clearTimeout(record.timeoutTimer);
+    }
     record.status = 'completed';
     record.endedAt = Date.now();
-    this.activeSessionRuns.delete(record.sessionId);
 
-    this.emit({
+    this.emitForRun(record.runId, {
       type: 'lifecycle:end',
       runId: record.runId,
       status: 'ok',
-      startedAt: record.startedAt,
+      startedAt: record.startedAt ?? record.acceptedAt,
       endedAt: record.endedAt,
       payloads: record.payloads,
       usage: record.usage,
@@ -337,14 +400,15 @@ export class RunCoordinator {
     this.scheduleCleanup(record.runId);
   }
 
-  private finalizeRun(record: RunRecord, error: StructuredError): void {
-    if (record.timeoutTimer) clearTimeout(record.timeoutTimer);
+  private finalizeRunError(record: RunRecord, error: StructuredError): void {
+    if (record.timeoutTimer) {
+      clearTimeout(record.timeoutTimer);
+    }
     record.status = 'error';
     record.error = error;
     record.endedAt = Date.now();
-    this.activeSessionRuns.delete(record.sessionId);
 
-    this.emit({
+    this.emitForRun(record.runId, {
       type: 'lifecycle:error',
       runId: record.runId,
       status: 'error',
@@ -359,21 +423,26 @@ export class RunCoordinator {
 
   private resolveWaiters(record: RunRecord): void {
     const waiters = this.waiters.get(record.runId);
-    if (waiters) {
-      const result = this.buildWaitResult(record);
-      for (const resolve of waiters) {
-        resolve(result);
-      }
-      this.waiters.delete(record.runId);
+    if (!waiters) {
+      return;
     }
+
+    const result = this.buildWaitResult(record);
+    for (const resolve of waiters) {
+      resolve(result);
+    }
+    this.waiters.delete(record.runId);
   }
 
   private buildWaitResult(record: RunRecord): WaitResult {
     return {
       runId: record.runId,
       status: record.status === 'completed' ? 'ok' : 'error',
+      phase: record.status,
+      acceptedAt: record.acceptedAt,
       startedAt: record.startedAt,
       endedAt: record.endedAt,
+      queue: record.queue,
       payloads: record.payloads,
       usage: record.usage,
       error: record.error,
@@ -384,40 +453,109 @@ export class RunCoordinator {
     const timer = setTimeout(() => {
       this.runs.delete(runId);
       this.runSubscribers.delete(runId);
+      this.pendingParams.delete(runId);
       this.cleanupTimers.delete(timer);
     }, RUN_RECORD_TTL_MS);
     this.cleanupTimers.add(timer);
   }
 
+  private emitQueueEntered(record: RunRecord): void {
+    if (!record.queue) {
+      return;
+    }
+
+    this.emitForRun(record.runId, {
+      type: 'queue:entered',
+      runId: record.runId,
+      agentId: this.agentId,
+      sessionId: record.sessionId,
+      acceptedAt: record.acceptedAt,
+      sessionPosition: record.queue.sessionPosition,
+      globalPosition: record.queue.globalPosition,
+    });
+  }
+
+  private emitQueueUpdates(runIds: string[]): void {
+    const updatedAt = Date.now();
+    for (const runId of runIds) {
+      const record = this.runs.get(runId);
+      if (!record) {
+        continue;
+      }
+      const snapshot = this.concurrency.getSnapshot(runId);
+      if (!snapshot) {
+        record.queue = undefined;
+        continue;
+      }
+      if (
+        record.queue &&
+        record.queue.sessionPosition === snapshot.sessionPosition &&
+        record.queue.globalPosition === snapshot.globalPosition
+      ) {
+        continue;
+      }
+
+      record.queue = snapshot;
+      this.emitForRun(runId, {
+        type: 'queue:updated',
+        runId,
+        agentId: this.agentId,
+        sessionId: record.sessionId,
+        updatedAt,
+        sessionPosition: snapshot.sessionPosition,
+        globalPosition: snapshot.globalPosition,
+      });
+    }
+  }
+
+  private emitQueueLeft(record: RunRecord, reason: 'started' | 'aborted' | 'destroyed'): void {
+    this.emitForRun(record.runId, {
+      type: 'queue:left',
+      runId: record.runId,
+      agentId: this.agentId,
+      sessionId: record.sessionId,
+      leftAt: Date.now(),
+      reason,
+    });
+  }
+
   private emit(event: CoordinatorEvent): void {
     for (const listener of this.allSubscribers) {
-      try { listener(event); } catch { /* don't break the loop */ }
+      try {
+        listener(event);
+      } catch {
+        // listener errors should not break runtime delivery
+      }
     }
   }
 
   private emitForRun(runId: string, event: CoordinatorEvent): void {
-    // Emit to run-specific subscribers
-    const subs = this.runSubscribers.get(runId);
-    if (subs) {
-      for (const listener of subs) {
-        try { listener(event); } catch { /* don't break the loop */ }
+    const subscribers = this.runSubscribers.get(runId);
+    if (subscribers) {
+      for (const listener of subscribers) {
+        try {
+          listener(event);
+        } catch {
+          // listener errors should not break runtime delivery
+        }
       }
     }
-    // Also emit to all-subscribers
+
     this.emit(event);
   }
 }
 
 export function classifyError(error: unknown): StructuredError {
   if (error instanceof Error) {
-    const msg = error.message.toLowerCase();
-    if (msg.includes('rate limit') || msg.includes('429')) {
+    const message = error.message.toLowerCase();
+    if (message.includes('rate limit') || message.includes('429')) {
       return { code: 'rate_limited', message: error.message, retriable: true };
     }
-    if (msg.includes('content policy') || msg.includes('refused') || msg.includes('safety')) {
+    if (message.includes('content policy') || message.includes('refused') || message.includes('safety')) {
       return { code: 'model_refused', message: error.message, retriable: false };
     }
   }
+
   const message = error instanceof Error ? error.message : 'Unknown error';
   return { code: 'internal', message, retriable: false };
 }
