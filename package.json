@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest run",
-    "test:openrouter": "vitest run --config vitest.openrouter.config.ts"
+    "test:openrouter": "vitest run --config vitest.openrouter.config.ts",
+    "test:e2e:openrouter": "playwright test --config playwright.openrouter.config.ts"
   },
   "dependencies": {
     "@mariozechner/pi-agent-core": "^0.64.0",
@@ -31,6 +32,7 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@tailwindcss/vite": "^4.0.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
@@ -42,6 +44,7 @@
     "@vitejs/plugin-react": "^4.3.0",
     "concurrently": "^9.2.1",
     "jsdom": "^29.0.1",
+    "playwright": "^1.59.1",
     "tailwindcss": "^4.0.0",
     "tsx": "^4.21.0",
     "typescript": "~5.7.0",

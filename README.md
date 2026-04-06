@@ -63,23 +63,24 @@ npm run build
 
 Output is in `dist/`.
 
-### Real OpenRouter Test
+### Real OpenRouter Tests
 
-To run a real end-to-end server integration test against OpenRouter, create a local `.env` file with:
+To run the opt-in live OpenRouter tests, create a local `.env` file with:
 
 ```bash
 OPENROUTER_API_KEY=your_key_here
-# Optional override; defaults to openai/gpt-4o-mini
-OPENROUTER_MODEL=openai/gpt-4o-mini
+# Optional override; defaults to qwen/qwen3.6-plus:free
+OPENROUTER_MODEL=qwen/qwen3.6-plus:free
 ```
 
 Then run:
 
 ```bash
 npm run test:openrouter
+npm run test:e2e:openrouter
 ```
 
-This test is intentionally opt-in because it makes a live API call and may incur cost or fail for network/provider reasons.
+`npm run test:openrouter` exercises the backend integration path. `npm run test:e2e:openrouter` starts the real client and server, sends a message through the browser UI, and captures a trace of critical fetch and WebSocket milestones. Both are intentionally opt-in because they make live API calls and may incur cost or fail for network/provider reasons. The browser E2E retries automatically because live provider responses, especially free models, can occasionally return an empty turn.
 
 ### Usage
 
