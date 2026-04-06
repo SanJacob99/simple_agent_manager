@@ -1,5 +1,5 @@
 import type { AgentConfig } from './agent-config';
-import type { RunPayload, RunUsage, StructuredError } from './run-types';
+import type { RunPayload, RunUsage, StructuredError, WaitResult } from './run-types';
 
 // --- Commands (frontend → backend) ---
 
