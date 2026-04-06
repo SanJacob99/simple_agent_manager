@@ -30,6 +30,16 @@ function messageEnd(): CoordinatorEvent {
   return streamEvent({ type: 'message_end', message: { role: 'assistant' } });
 }
 
+function messageEndWithText(text: string): CoordinatorEvent {
+  return streamEvent({
+    type: 'message_end',
+    message: {
+      role: 'assistant',
+      content: [{ type: 'text', text }],
+    },
+  });
+}
+
 describe('ReplyFilter', () => {
   it('forwards normal text events after text_end confirms non-NO_REPLY', () => {
     const filter = new ReplyFilter();
@@ -100,5 +110,22 @@ describe('ReplyFilter', () => {
 
     expect(ctx.noReplyDetected).toBe(false);
     expect(emitted.some((e) => e.type === 'message:start')).toBe(true);
+  });
+
+  it('falls back to assistant message_end content when no text deltas were streamed', () => {
+    const filter = new ReplyFilter();
+    const ctx = createRunStreamContext('run-1');
+    const emitted: ServerEvent[] = [];
+    const emit = (e: ServerEvent) => emitted.push(e);
+
+    filter.process(messageStart(), ctx, emit);
+    filter.process(messageEndWithText('Hello from message end'), ctx, emit);
+
+    expect(ctx.textBuffer).toBe('Hello from message end');
+    expect(emitted).toEqual([
+      { type: 'message:start', agentId: '', runId: 'run-1', message: { role: 'assistant' } },
+      { type: 'message:delta', agentId: '', runId: 'run-1', delta: 'Hello from message end' },
+      { type: 'message:end', agentId: '', runId: 'run-1', message: { role: 'assistant', usage: undefined } },
+    ]);
   });
 });

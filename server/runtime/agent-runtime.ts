@@ -249,6 +249,7 @@ export class AgentRuntime {
         type: 'runtime_error',
         error: error instanceof Error ? error.message : 'Unknown error',
       });
+      throw error;
     }
   }
 

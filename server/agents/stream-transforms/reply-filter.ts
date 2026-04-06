@@ -4,6 +4,24 @@ import type { RunStreamContext, EmitFn, StreamTransform } from './types';
 
 const NO_REPLY_PATTERN = /^no_reply$/i;
 
+function extractAssistantText(message: { content?: unknown }): string {
+  const content = message.content;
+
+  if (typeof content === 'string') {
+    return content;
+  }
+
+  if (!Array.isArray(content)) {
+    return '';
+  }
+
+  return content
+    .filter((block): block is { type: string; text?: string } => !!block && typeof block === 'object')
+    .filter((block) => block.type === 'text' && typeof block.text === 'string')
+    .map((block) => block.text ?? '')
+    .join('');
+}
+
 export class ReplyFilter implements StreamTransform {
   private bufferedEvents: ServerEvent[] = [];
   private pendingMessageStarted = false;
@@ -72,8 +90,42 @@ export class ReplyFilter implements StreamTransform {
 
     if (raw.type === 'message_end') {
       if (this.pendingMessageStarted && !context.messageSuppressed) {
-        const endMsg = raw.message as { role?: string; usage?: any };
+        const endMsg = raw.message as { role?: string; usage?: any; content?: unknown };
         if (endMsg.role === 'assistant') {
+          const fallbackText =
+            context.textBuffer.length === 0
+              ? extractAssistantText(endMsg)
+              : '';
+
+          if (fallbackText) {
+            context.textBuffer = fallbackText;
+            this.bufferedEvents.push({
+              type: 'message:delta',
+              agentId: '',
+              runId: context.runId,
+              delta: fallbackText,
+            } as any);
+          }
+
+          if (fallbackText && NO_REPLY_PATTERN.test(fallbackText.trim())) {
+            context.noReplyDetected = true;
+            context.messageSuppressed = true;
+            this.bufferedEvents = [];
+            this.pendingMessageStarted = false;
+            emit({
+              type: 'message:suppressed',
+              agentId: '',
+              runId: context.runId,
+              reason: 'no_reply',
+            } as any);
+            return;
+          }
+
+          for (const buffered of this.bufferedEvents) {
+            emit(buffered);
+          }
+          this.bufferedEvents = [];
+
           emit({
             type: 'message:end',
             agentId: '',
