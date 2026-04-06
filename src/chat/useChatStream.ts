@@ -1,0 +1,204 @@
+import { useEffect, useRef, useCallback, useState } from 'react';
+import { agentClient } from '../client';
+import { useSessionStore } from '../store/session-store';
+import { estimateTokens } from '../../shared/token-estimator';
+import type { ServerEvent } from '../../shared/protocol';
+
+export interface ToolSummaryInfo {
+  toolCallId: string;
+  toolName: string;
+  summary: string;
+}
+
+export interface ChatStreamState {
+  isStreaming: boolean;
+  reasoning: string | null;
+  isReasoning: boolean;
+  suppressedReply: boolean;
+  compacting: boolean;
+  toolSummaries: ToolSummaryInfo[];
+  sendMessage: (text: string, sessionId: string, attachments?: any[]) => void;
+}
+
+export function useChatStream(agentNodeId: string): ChatStreamState {
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [reasoning, setReasoning] = useState<string | null>(null);
+  const [isReasoning, setIsReasoning] = useState(false);
+  const [suppressedReply, setSuppressedReply] = useState(false);
+  const [compacting, setCompacting] = useState(false);
+  const [toolSummaries, setToolSummaries] = useState<ToolSummaryInfo[]>([]);
+
+  const addMessage = useSessionStore((s) => s.addMessage);
+  const updateMessage = useSessionStore((s) => s.updateMessage);
+  const deleteMessage = useSessionStore((s) => s.deleteMessage);
+
+  const unsubRef = useRef<(() => void) | null>(null);
+  const assistantMsgIdRef = useRef<string>('');
+  const assistantContentRef = useRef<string>('');
+  const sessionIdRef = useRef<string>('');
+
+  const cleanup = useCallback(() => {
+    unsubRef.current?.();
+    unsubRef.current = null;
+  }, []);
+
+  // Clean up on unmount
+  useEffect(() => cleanup, [cleanup]);
+
+  const sendMessage = useCallback(
+    (text: string, sessionId: string, attachments?: any[]) => {
+      cleanup();
+
+      const msgId = `msg_${Date.now()}_a`;
+      assistantMsgIdRef.current = msgId;
+      assistantContentRef.current = '';
+      sessionIdRef.current = sessionId;
+
+      setIsStreaming(true);
+      setSuppressedReply(false);
+      setToolSummaries([]);
+      setReasoning(null);
+      setIsReasoning(false);
+
+      const unsub = agentClient.onEvent((event: ServerEvent) => {
+        if (!('agentId' in event) || (event as any).agentId !== agentNodeId) return;
+
+        switch (event.type) {
+          case 'message:start':
+            assistantContentRef.current = '';
+            setReasoning(null);
+            setIsReasoning(false);
+            addMessage(sessionIdRef.current, {
+              id: assistantMsgIdRef.current,
+              role: 'assistant',
+              content: '',
+              timestamp: Date.now(),
+            });
+            break;
+
+          case 'message:delta':
+            assistantContentRef.current += event.delta;
+            updateMessage(sessionIdRef.current, assistantMsgIdRef.current, (m) => ({
+              ...m,
+              content: assistantContentRef.current,
+            }));
+            break;
+
+          case 'message:end':
+            if (event.message.usage) {
+              updateMessage(sessionIdRef.current, assistantMsgIdRef.current, (m) => ({
+                ...m,
+                tokenCount: event.message.usage!.output,
+                usage: event.message.usage,
+              }));
+            }
+            break;
+
+          case 'reasoning:start':
+            setIsReasoning(true);
+            setReasoning('');
+            break;
+
+          case 'reasoning:delta':
+            setReasoning((prev) => (prev ?? '') + (event as any).delta);
+            break;
+
+          case 'reasoning:end':
+            setIsReasoning(false);
+            break;
+
+          case 'message:suppressed':
+            setSuppressedReply(true);
+            if (assistantMsgIdRef.current) {
+              deleteMessage(sessionIdRef.current, assistantMsgIdRef.current);
+            }
+            break;
+
+          case 'tool:start':
+            addMessage(sessionIdRef.current, {
+              id: `tool_${(event as any).toolCallId}`,
+              role: 'tool',
+              content: `Calling tool: ${(event as any).toolName}`,
+              timestamp: Date.now(),
+            });
+            break;
+
+          case 'tool:end': {
+            const te = event as any;
+            const toolContent = `${te.toolName}: ${te.result}${te.isError ? ' (error)' : ''}`;
+            updateMessage(sessionIdRef.current, `tool_${te.toolCallId}`, (m) => ({
+              ...m,
+              content: toolContent,
+              tokenCount: estimateTokens(toolContent),
+            }));
+            break;
+          }
+
+          case 'tool:summary':
+            setToolSummaries((prev) => [
+              ...prev,
+              {
+                toolCallId: (event as any).toolCallId,
+                toolName: (event as any).toolName,
+                summary: (event as any).summary,
+              },
+            ]);
+            break;
+
+          case 'compaction:start':
+            setCompacting(true);
+            break;
+
+          case 'compaction:end':
+            setCompacting(false);
+            break;
+
+          case 'agent:end':
+          case 'lifecycle:end':
+            setIsStreaming(false);
+            setIsReasoning(false);
+            setCompacting(false);
+            unsub();
+            break;
+
+          case 'agent:error':
+          case 'lifecycle:error': {
+            const errorMsg = (event as any).error?.message ?? (event as any).error ?? 'Unknown error';
+            addMessage(sessionIdRef.current, {
+              id: `err_${Date.now()}`,
+              role: 'assistant',
+              content: `Error: ${errorMsg}`,
+              timestamp: Date.now(),
+            });
+            setIsStreaming(false);
+            setIsReasoning(false);
+            setCompacting(false);
+            unsub();
+            break;
+          }
+        }
+      });
+
+      unsubRef.current = unsub;
+
+      agentClient.send({
+        type: 'agent:prompt',
+        agentId: agentNodeId,
+        sessionId: sessionId,
+        text,
+        attachments,
+      });
+    },
+    [agentNodeId, addMessage, updateMessage, deleteMessage, cleanup],
+  );
+
+  return {
+    isStreaming,
+    reasoning,
+    isReasoning,
+    suppressedReply,
+    compacting,
+    toolSummaries,
+    sendMessage,
+  };
+}

@@ -3,6 +3,9 @@ import type { TSchema } from '@sinclair/typebox';
 import type { AgentConfig } from '../../shared/agent-config';
 import type { ImageAttachment } from '../../shared/protocol';
 import type { DiscoveredModelMetadata } from '../../shared/agent-config';
+import type { HookRegistry } from '../hooks/hook-registry';
+import type { BeforeToolCallContext, AfterToolCallContext } from '../hooks/hook-types';
+import { HOOK_NAMES } from '../hooks/hook-types';
 import { MemoryEngine } from './memory-engine';
 import { ContextEngine } from './context-engine';
 import { resolveToolNames, createAgentTools } from './tool-factory';
@@ -27,13 +30,20 @@ export class AgentRuntime {
   private memoryEngine: MemoryEngine | null = null;
   private contextEngine: ContextEngine | null = null;
   private unsubscribeAgent: (() => void) | null = null;
+  private hookRegistry: HookRegistry | null = null;
+  private getApiKeyFn: (provider: string) => Promise<string | undefined> | string | undefined;
+  private getDiscoveredModelFn: (provider: string, modelId: string) => DiscoveredModelMetadata | undefined;
 
   constructor(
     config: AgentConfig,
     getApiKey: (provider: string) => Promise<string | undefined> | string | undefined,
     getDiscoveredModel?: (provider: string, modelId: string) => DiscoveredModelMetadata | undefined,
+    hookRegistry?: HookRegistry,
   ) {
     this.config = config;
+    this.getApiKeyFn = getApiKey;
+    this.getDiscoveredModelFn = getDiscoveredModel ?? (() => undefined);
+    this.hookRegistry = hookRegistry ?? null;
 
     // Build memory engine
     if (config.memory) {
@@ -50,7 +60,12 @@ export class AgentRuntime {
     const toolNames = config.tools
       ? resolveToolNames(config.tools)
       : [];
-    const tools = createAgentTools(toolNames, memoryTools as AgentTool<TSchema>[]);
+    let tools = createAgentTools(toolNames, memoryTools as AgentTool<TSchema>[]);
+
+    // Wrap tools with hook invocation if registry is provided
+    if (this.hookRegistry) {
+      tools = this.wrapToolsWithHooks(tools, config.id);
+    }
 
     // Build system prompt
     const systemPrompt = config.systemPrompt.assembled;
@@ -59,7 +74,7 @@ export class AgentRuntime {
       provider: config.provider,
       modelId: config.modelId,
       modelCapabilities: config.modelCapabilities,
-      getDiscoveredModel: getDiscoveredModel ?? (() => undefined),
+      getDiscoveredModel: this.getDiscoveredModelFn,
     });
 
     // Create Agent
@@ -87,6 +102,124 @@ export class AgentRuntime {
     this.emit({ type: 'runtime_ready', config });
   }
 
+  // ---------------------------------------------------------------------------
+  // Hook-driven runtime mutations
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Swap the model for the next prompt call. Called by RunCoordinator
+   * after before_model_resolve hook fires with overrides.
+   */
+  setModel(provider: string, modelId: string): void {
+    const model = resolveRuntimeModel({
+      provider,
+      modelId,
+      modelCapabilities: this.config.modelCapabilities,
+      getDiscoveredModel: this.getDiscoveredModelFn,
+    });
+
+    this.agent.state.model = model;
+    console.log(`[AgentRuntime] Model swapped to ${provider}/${modelId}`);
+  }
+
+  /**
+   * Override the system prompt for the next prompt call. Called by
+   * RunCoordinator after before_prompt_build hook fires with overrides.
+   */
+  setSystemPrompt(prompt: string): void {
+    this.agent.state.systemPrompt = prompt;
+  }
+
+  /**
+   * Get the current system prompt text. Used by RunCoordinator to
+   * apply prepend/append overrides from before_prompt_build hook.
+   */
+  getSystemPrompt(): string {
+    return this.agent.state.systemPrompt;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Tool hook wrapping
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Wrap each tool's execute function with before_tool_call / after_tool_call
+   * hook invocations. This is done once at creation time.
+   */
+  private wrapToolsWithHooks(
+    tools: AgentTool<TSchema>[],
+    agentId: string,
+  ): AgentTool<TSchema>[] {
+    const registry = this.hookRegistry!;
+
+    return tools.map((tool) => {
+      const originalExecute = tool.execute;
+
+      const wrappedExecute: typeof tool.execute = async (
+        toolCallId: string,
+        params: any,
+        signal?: AbortSignal,
+      ) => {
+        // --- before_tool_call ---
+        const beforeCtx: BeforeToolCallContext = {
+          agentId,
+          runId: '', // runId not available at tool level; set by coordinator if needed
+          toolCallId,
+          toolName: tool.name,
+          params: params ?? {},
+          blocked: false,
+          blockReason: undefined,
+        };
+
+        await registry.invoke(HOOK_NAMES.BEFORE_TOOL_CALL, beforeCtx);
+
+        if (beforeCtx.blocked) {
+          return {
+            content: [{ type: 'text' as const, text: `Blocked: ${beforeCtx.blockReason ?? 'blocked by hook'}` }],
+            details: undefined,
+          };
+        }
+
+        // Execute the original tool
+        const result = await originalExecute(toolCallId, beforeCtx.params, signal);
+
+        // --- after_tool_call ---
+        const resultText = result.content
+          ?.map((c: any) => ('text' in c ? c.text : ''))
+          .join('') ?? '';
+
+        const afterCtx: AfterToolCallContext = {
+          agentId,
+          runId: '',
+          toolCallId,
+          toolName: tool.name,
+          params: beforeCtx.params,
+          result: resultText,
+          isError: false,
+          transformedResult: undefined,
+        };
+
+        await registry.invoke(HOOK_NAMES.AFTER_TOOL_CALL, afterCtx);
+
+        // If transformed, replace the result
+        if (afterCtx.transformedResult !== undefined) {
+          return {
+            content: [{ type: 'text' as const, text: afterCtx.transformedResult }],
+            details: result.details,
+          };
+        }
+
+        return result;
+      };
+
+      return { ...tool, execute: wrappedExecute };
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Core runtime API
+  // ---------------------------------------------------------------------------
+
   private emit(event: RuntimeEvent) {
     for (const listener of this.listeners) {
       try {
@@ -104,7 +237,7 @@ export class AgentRuntime {
 
   async prompt(text: string, attachments?: ImageAttachment[]): Promise<void> {
     try {
-      const images = attachments?.map((a) => ({ data: a.data, mimeType: a.mimeType }));
+      const images = attachments?.map((a) => ({ type: 'image' as const, data: a.data, mimeType: a.mimeType }));
       await this.agent.prompt(text, images?.length ? images : undefined);
 
       // After-turn bookkeeping

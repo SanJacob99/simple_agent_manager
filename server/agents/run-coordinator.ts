@@ -3,6 +3,16 @@ import type { AgentRuntime, RuntimeEvent } from '../runtime/agent-runtime';
 import type { StorageEngine } from '../runtime/storage-engine';
 import type { AgentConfig } from '../../shared/agent-config';
 import type { SessionMeta } from '../../shared/storage-types';
+import type { HookRegistry } from '../hooks/hook-registry';
+import {
+  HOOK_NAMES,
+  type BeforeModelResolveContext,
+  type BeforePromptBuildContext,
+  type BeforeAgentReplyContext,
+  type AgentEndContext,
+  type SessionLifecycleContext,
+  type MessageReceivedContext,
+} from '../hooks/hook-types';
 import type {
   DispatchParams,
   DispatchResult,
@@ -46,6 +56,7 @@ export class RunCoordinator {
     private readonly runtime: AgentRuntime,
     private readonly config: AgentConfig,
     private readonly storage: StorageEngine | null,
+    private readonly hooks: HookRegistry | null = null,
   ) {}
 
   async dispatch(params: DispatchParams): Promise<DispatchResult> {
@@ -79,6 +90,29 @@ export class RunCoordinator {
 
     this.runs.set(runId, record);
     this.activeSessionRuns.set(sessionId, runId);
+
+    // --- message_received hook (scaffolded) ---
+    if (this.hooks) {
+      const msgCtx: MessageReceivedContext = {
+        agentId: this.agentId,
+        runId,
+        sessionId,
+        text: params.text,
+        blocked: false,
+        blockReason: undefined,
+      };
+      await this.hooks.invoke(HOOK_NAMES.MESSAGE_RECEIVED, msgCtx);
+
+      if (msgCtx.blocked) {
+        this.activeSessionRuns.delete(sessionId);
+        this.finalizeRun(record, {
+          code: 'aborted',
+          message: `Message blocked: ${msgCtx.blockReason ?? 'blocked by hook'}`,
+          retriable: false,
+        });
+        return { runId, sessionId, acceptedAt: startedAt };
+      }
+    }
 
     // Fire-and-forget the execution
     this.executeRun(record, params);
@@ -235,11 +269,108 @@ export class RunCoordinator {
     await this.storage!.createSession(meta);
     await this.storage!.enforceRetention(this.config.storage!.sessionRetention);
 
+    // --- session_start hook (scaffolded) ---
+    if (this.hooks) {
+      const sessionCtx: SessionLifecycleContext = {
+        agentId: this.agentId,
+        sessionId,
+        sessionKey,
+        phase: 'start',
+      };
+      await this.hooks.invoke(HOOK_NAMES.SESSION_START, sessionCtx);
+    }
+
     return sessionId;
   }
 
-  private executeRun(record: RunRecord, params: DispatchParams): void {
+  private async executeRun(record: RunRecord, params: DispatchParams): Promise<void> {
     record.status = 'running';
+
+    // --- before_model_resolve hook ---
+    if (this.hooks) {
+      const modelCtx: BeforeModelResolveContext = {
+        agentId: this.agentId,
+        runId: record.runId,
+        sessionId: record.sessionId,
+        config: this.config,
+        overrides: {},
+      };
+
+      await this.hooks.invoke(HOOK_NAMES.BEFORE_MODEL_RESOLVE, modelCtx);
+
+      // Apply model overrides
+      if (modelCtx.overrides.provider || modelCtx.overrides.modelId) {
+        const provider = modelCtx.overrides.provider ?? this.config.provider;
+        const modelId = modelCtx.overrides.modelId ?? this.config.modelId;
+        this.runtime.setModel(provider, modelId);
+      }
+    }
+
+    // --- before_prompt_build hook ---
+    let promptText = params.text;
+
+    if (this.hooks) {
+      const promptCtx: BeforePromptBuildContext = {
+        agentId: this.agentId,
+        runId: record.runId,
+        sessionId: record.sessionId,
+        config: this.config,
+        messages: this.runtime.state.messages,
+        overrides: {},
+      };
+
+      await this.hooks.invoke(HOOK_NAMES.BEFORE_PROMPT_BUILD, promptCtx);
+
+      // Apply prompt overrides
+      if (promptCtx.overrides.systemPrompt) {
+        this.runtime.setSystemPrompt(promptCtx.overrides.systemPrompt);
+      } else if (promptCtx.overrides.prependSystemContext || promptCtx.overrides.appendSystemContext) {
+        // Apply prepend/append to existing system prompt
+        let currentPrompt = this.runtime.getSystemPrompt();
+
+        if (promptCtx.overrides.prependSystemContext) {
+          currentPrompt = promptCtx.overrides.prependSystemContext + '\n\n' + currentPrompt;
+        }
+        if (promptCtx.overrides.appendSystemContext) {
+          currentPrompt = currentPrompt + '\n\n' + promptCtx.overrides.appendSystemContext;
+        }
+
+        this.runtime.setSystemPrompt(currentPrompt);
+      }
+
+      // Apply prepend context to user message
+      if (promptCtx.overrides.prependContext) {
+        promptText = promptCtx.overrides.prependContext + '\n\n' + promptText;
+      }
+    }
+
+    // --- before_agent_reply hook (pre-first-call version) ---
+    if (this.hooks) {
+      const replyCtx: BeforeAgentReplyContext = {
+        agentId: this.agentId,
+        runId: record.runId,
+        sessionId: record.sessionId,
+        messages: this.runtime.state.messages,
+        claimed: false,
+        syntheticReply: undefined,
+        silent: false,
+      };
+
+      await this.hooks.invoke(HOOK_NAMES.BEFORE_AGENT_REPLY, replyCtx);
+
+      if (replyCtx.claimed) {
+        // Plugin claimed the turn — skip model call
+        if (replyCtx.silent) {
+          // Silent turn — no reply
+          record.payloads = [];
+        } else if (replyCtx.syntheticReply) {
+          record.payloads = [{ type: 'text', content: replyCtx.syntheticReply }];
+        }
+
+        this.finalizeRunSuccess(record);
+        return;
+      }
+    }
 
     // Emit lifecycle:start
     this.emit({
@@ -269,18 +400,47 @@ export class RunCoordinator {
     });
 
     // Run the prompt
-    this.runtime.prompt(params.text, params.attachments)
+    this.runtime.prompt(promptText, params.attachments)
       .then(() => {
         unsubscribe();
+        this.invokeAgentEndHook(record, 'completed');
         this.finalizeRunSuccess(record);
       })
       .catch((error: unknown) => {
         unsubscribe();
         // Don't double-finalize if already handled (timeout/abort)
         if (record.status === 'running') {
-          this.finalizeRun(record, classifyError(error));
+          const structuredError = classifyError(error);
+          this.invokeAgentEndHook(record, 'error', structuredError);
+          this.finalizeRun(record, structuredError);
         }
       });
+  }
+
+  /**
+   * Invoke the agent_end hook. Fire-and-forget — errors are logged, not propagated.
+   */
+  private invokeAgentEndHook(
+    record: RunRecord,
+    status: 'completed' | 'error',
+    error?: StructuredError,
+  ): void {
+    if (!this.hooks) return;
+
+    const ctx: AgentEndContext = {
+      agentId: this.agentId,
+      runId: record.runId,
+      sessionId: record.sessionId,
+      status,
+      payloads: record.payloads,
+      usage: record.usage,
+      error,
+    };
+
+    // Fire-and-forget, don't await
+    this.hooks.invoke(HOOK_NAMES.AGENT_END, ctx).catch((err) => {
+      console.error('[RunCoordinator] agent_end hook error:', err);
+    });
   }
 
   private finalizeRunSuccess(record: RunRecord): void {

@@ -72,6 +72,7 @@ interface SessionStore {
     messageId: string,
     updater: (msg: Message) => Message,
   ) => void;
+  deleteMessage: (sessionId: string, messageId: string) => void;
   clearSessionMessages: (sessionId: string) => void;
 
   // Querying
@@ -295,6 +296,22 @@ export const useSessionStore = create<SessionStore>()(
                 m.id === messageId ? updater(m) : m,
               ),
               lastMessageAt: Date.now(),
+            },
+          },
+        };
+      });
+    },
+
+    deleteMessage: (sessionId, messageId) => {
+      set((state) => {
+        const session = state.sessions[sessionId];
+        if (!session) return state;
+        return {
+          sessions: {
+            ...state.sessions,
+            [sessionId]: {
+              ...session,
+              messages: session.messages.filter((m) => m.id !== messageId),
             },
           },
         };

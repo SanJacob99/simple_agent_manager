@@ -28,11 +28,19 @@ export interface SkillDefinition {
   injectAs: 'system-prompt' | 'user-context';
 }
 
+export interface PluginHookBinding {
+  hookName: string;
+  handler: string;       // module path (relative to storage or absolute)
+  priority?: number;     // default: 100
+  critical?: boolean;    // default: false
+}
+
 export interface PluginDefinition {
   id: string;
   name: string;
   tools: string[];
   skills: string[];
+  hooks?: PluginHookBinding[];
   enabled: boolean;
 }
 

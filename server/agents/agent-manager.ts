@@ -3,6 +3,10 @@ import { RunCoordinator } from './run-coordinator';
 import { StreamProcessor } from './stream-processor';
 import { EventBridge } from './event-bridge';
 import { StorageEngine } from '../runtime/storage-engine';
+import { HookRegistry } from '../hooks/hook-registry';
+import { PluginLoader } from '../hooks/plugin-loader';
+import { registerInternalHooks } from '../hooks/internal-hooks';
+import { HOOK_NAMES, type BackendLifecycleContext } from '../hooks/hook-types';
 import type { ApiKeyStore } from '../auth/api-keys';
 import type { AgentConfig } from '../../shared/agent-config';
 import type {
@@ -23,8 +27,22 @@ export interface ManagedAgent {
   config: AgentConfig;
   bridge: EventBridge;
   storage: StorageEngine | null;
+  hooks: HookRegistry;
   lastActivity: number;
   unsubscribe: () => void;
+}
+
+/**
+ * Global hook registry for backend lifecycle events.
+ * Not per-agent — fires on server start/stop.
+ */
+let globalHookRegistry: HookRegistry | null = null;
+
+export function getGlobalHookRegistry(): HookRegistry {
+  if (!globalHookRegistry) {
+    globalHookRegistry = new HookRegistry();
+  }
+  return globalHookRegistry;
 }
 
 export class AgentManager {
@@ -45,12 +63,31 @@ export class AgentManager {
       await storage.init();
     }
 
+    // Create HookRegistry for this agent
+    const hooks = new HookRegistry();
+
+    // Register internal (built-in) hooks
+    registerInternalHooks(hooks, config);
+
+    // Load plugin hooks from config
+    if (config.tools?.plugins) {
+      const basePath = config.storage
+        ? this.resolveStoragePath(config.storage.storagePath)
+        : process.cwd();
+
+      await PluginLoader.loadPlugins(config.tools.plugins, hooks, basePath);
+    }
+
+    // Create runtime with hook registry
     const runtime = new AgentRuntime(
       config,
       (provider) => Promise.resolve(this.apiKeys.get(provider)),
+      undefined, // getDiscoveredModel
+      hooks,
     );
 
-    const coordinator = new RunCoordinator(config.id, runtime, config, storage);
+    // Create coordinator with hook registry
+    const coordinator = new RunCoordinator(config.id, runtime, config, storage, hooks);
 
     const processor = new StreamProcessor(config.id, coordinator, config);
 
@@ -69,6 +106,7 @@ export class AgentManager {
       config,
       bridge,
       storage,
+      hooks,
       lastActivity: Date.now(),
       unsubscribe,
     });
@@ -120,6 +158,7 @@ export class AgentManager {
     managed.processor.destroy();
     managed.coordinator.destroy();
     managed.runtime.destroy();
+    managed.hooks.destroy();
     this.agents.delete(agentId);
   }
 
@@ -149,12 +188,17 @@ export class AgentManager {
     }
   }
 
+  /** Resolve ~ prefix in storage paths. */
+  private resolveStoragePath(storagePath: string): string {
+    return storagePath.startsWith('~')
+      ? storagePath.replace('~', os.homedir())
+      : storagePath;
+  }
+
   /** Persist agent config to disk for restart resilience. */
   private async persistConfig(config: AgentConfig): Promise<void> {
     if (!config.storage) return;
-    const storagePath = config.storage.storagePath.startsWith('~')
-      ? config.storage.storagePath.replace('~', os.homedir())
-      : config.storage.storagePath;
+    const storagePath = this.resolveStoragePath(config.storage.storagePath);
     const agentDir = path.join(storagePath, config.name);
     await fs.mkdir(agentDir, { recursive: true });
     await fs.writeFile(
