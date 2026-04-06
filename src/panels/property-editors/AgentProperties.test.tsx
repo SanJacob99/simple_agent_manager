@@ -90,19 +90,31 @@ describe('AgentProperties', () => {
     expect(screen.getByLabelText('System Prompt Mode')).toBeInTheDocument();
   });
 
-  it('filters OpenRouter model options to discovered models that support tools', () => {
+  it('shows a searchable model popover with free and capability filters', () => {
     useModelCatalogStore.setState({
       models: {
         openrouter: {
+          'qwen/qwen3.6-plus:free': {
+            id: 'qwen/qwen3.6-plus:free',
+            provider: 'openrouter',
+            supportedParameters: ['tools', 'tool_choice', 'reasoning'],
+            reasoningSupported: true,
+            inputModalities: ['text'],
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          },
           'openai/gpt-4o': {
             id: 'openai/gpt-4o',
             provider: 'openrouter',
             supportedParameters: ['tools', 'tool_choice'],
+            inputModalities: ['text'],
+            cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
           },
           'google/lyria-3-pro-preview': {
             id: 'google/lyria-3-pro-preview',
             provider: 'openrouter',
             supportedParameters: ['max_tokens', 'response_format'],
+            inputModalities: ['image'],
+            cost: { input: 0.3, output: 0.4, cacheRead: 0, cacheWrite: 0 },
           },
         },
       },
@@ -114,14 +126,24 @@ describe('AgentProperties', () => {
     const data = createAgentData({ modelId: 'openai/gpt-4o' });
     render(<AgentProperties nodeId="agent-1" data={data} />);
 
-    const modelSelect = screen.getAllByRole('combobox')[1];
-    const optionLabels = within(modelSelect)
-      .getAllByRole('option')
-      .map((option) => option.textContent);
+    fireEvent.click(screen.getByRole('button', { name: /model picker/i }));
+    const results = screen.getByLabelText('Model results');
 
-    expect(optionLabels).toContain('openai/gpt-4o');
-    expect(optionLabels).not.toContain('google/lyria-3-pro-preview');
-    expect(optionLabels).toContain('Custom model...');
+    expect(screen.getByLabelText('Search models')).toBeInTheDocument();
+    expect(within(results).getByText('openai/gpt-4o')).toBeInTheDocument();
+    expect(within(results).getByText('qwen/qwen3.6-plus:free')).toBeInTheDocument();
+    expect(within(results).queryByText('google/lyria-3-pro-preview')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /free only/i }));
+    expect(within(results).getByText('qwen/qwen3.6-plus:free')).toBeInTheDocument();
+    expect(within(results).queryByText('openai/gpt-4o')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /free only/i }));
+    fireEvent.change(screen.getByLabelText('Search models'), {
+      target: { value: 'qwen' },
+    });
+    expect(within(results).getByText('qwen/qwen3.6-plus:free')).toBeInTheDocument();
+    expect(within(results).queryByText('openai/gpt-4o')).not.toBeInTheDocument();
   });
 
   it('resets to the first tool-capable discovered OpenRouter model when the provider changes', () => {
