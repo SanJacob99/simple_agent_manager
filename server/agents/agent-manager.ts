@@ -1,5 +1,6 @@
 import { AgentRuntime } from '../runtime/agent-runtime';
 import { RunCoordinator } from './run-coordinator';
+import { StreamProcessor } from './stream-processor';
 import { EventBridge } from './event-bridge';
 import { StorageEngine } from '../runtime/storage-engine';
 import type { ApiKeyStore } from '../auth/api-keys';
@@ -18,6 +19,7 @@ import os from 'os';
 export interface ManagedAgent {
   runtime: AgentRuntime;
   coordinator: RunCoordinator;
+  processor: StreamProcessor;
   config: AgentConfig;
   bridge: EventBridge;
   storage: StorageEngine | null;
@@ -50,7 +52,9 @@ export class AgentManager {
 
     const coordinator = new RunCoordinator(config.id, runtime, config, storage);
 
-    const bridge = new EventBridge(config.id, coordinator);
+    const processor = new StreamProcessor(config.id, coordinator, config);
+
+    const bridge = new EventBridge(config.id, processor);
 
     // Subscribe to coordinator lifecycle events for lastActivity tracking
     const unsubscribe = coordinator.subscribeAll(() => {
@@ -61,6 +65,7 @@ export class AgentManager {
     this.agents.set(config.id, {
       runtime,
       coordinator,
+      processor,
       config,
       bridge,
       storage,
@@ -111,6 +116,8 @@ export class AgentManager {
     const managed = this.agents.get(agentId);
     if (!managed) return;
     managed.unsubscribe();
+    managed.bridge.destroy();
+    managed.processor.destroy();
     managed.coordinator.destroy();
     managed.runtime.destroy();
     this.agents.delete(agentId);
