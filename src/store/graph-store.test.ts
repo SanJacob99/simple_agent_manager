@@ -17,6 +17,7 @@ describe('graph store defaults integration', () => {
         provider: 'openai',
         modelId: 'gpt-4o',
         thinkingLevel: 'high',
+        systemPromptMode: 'auto',
         systemPrompt: 'Be concise.',
         safetyGuardrails: 'Test guardrails.',
       },

@@ -39,6 +39,41 @@ export class EventBridge {
 
   private handleCoordinatorEvent(event: CoordinatorEvent): void {
     switch (event.type) {
+      case 'queue:entered':
+        this.broadcast({
+          type: 'queue:entered',
+          agentId: this.agentId,
+          runId: event.runId,
+          sessionId: event.sessionId,
+          acceptedAt: event.acceptedAt,
+          sessionPosition: event.sessionPosition,
+          globalPosition: event.globalPosition,
+        } as any);
+        break;
+
+      case 'queue:updated':
+        this.broadcast({
+          type: 'queue:updated',
+          agentId: this.agentId,
+          runId: event.runId,
+          sessionId: event.sessionId,
+          updatedAt: event.updatedAt,
+          sessionPosition: event.sessionPosition,
+          globalPosition: event.globalPosition,
+        } as any);
+        break;
+
+      case 'queue:left':
+        this.broadcast({
+          type: 'queue:left',
+          agentId: this.agentId,
+          runId: event.runId,
+          sessionId: event.sessionId,
+          leftAt: event.leftAt,
+          reason: event.reason,
+        } as any);
+        break;
+
       case 'lifecycle:start':
         this.broadcast({
           type: 'lifecycle:start',

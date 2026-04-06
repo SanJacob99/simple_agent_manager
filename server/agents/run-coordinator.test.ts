@@ -68,6 +68,14 @@ function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
   };
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
 describe('RunCoordinator', () => {
   let runtime: AgentRuntime;
   let storage: StorageEngine;
@@ -125,15 +133,19 @@ describe('RunCoordinator', () => {
       expect(storage.enforceRetention).toHaveBeenCalledWith(50);
     });
 
-    it('rejects dispatch when a run is already active on the same session', async () => {
-      // Make runtime.prompt hang to keep the run active
-      (runtime.prompt as any).mockImplementation(() => new Promise(() => {}));
+    it('accepts a second dispatch on the same session and leaves it pending', async () => {
+      const deferred = createDeferred<void>();
+      (runtime.prompt as any).mockImplementationOnce(() => deferred.promise);
 
-      await coordinator.dispatch({ sessionKey: 'busy-session', text: 'First' });
+      const first = await coordinator.dispatch({ sessionKey: 'same', text: 'First' });
+      const second = await coordinator.dispatch({ sessionKey: 'same', text: 'Second' });
 
-      await expect(
-        coordinator.dispatch({ sessionKey: 'busy-session', text: 'Second' })
-      ).rejects.toThrow(/already active/i);
+      const secondRecord = coordinator.getRunStatus(second.runId)! as any;
+      expect(secondRecord.status).toBe('pending');
+      expect(secondRecord.queue).toEqual({ sessionPosition: 1, globalPosition: 1 });
+
+      deferred.resolve();
+      await coordinator.wait(first.runId, 5000);
     });
   });
 
@@ -209,6 +221,22 @@ describe('RunCoordinator', () => {
       expect(result.runId).toBe(runId);
     });
 
+    it('returns phase pending when wait times out before a queued run starts', async () => {
+      const deferred = createDeferred<void>();
+      (runtime.prompt as any).mockImplementationOnce(() => deferred.promise);
+
+      await coordinator.dispatch({ sessionKey: 'same', text: 'First' });
+      const second = await coordinator.dispatch({ sessionKey: 'same', text: 'Second' });
+
+      const result = await coordinator.wait(second.runId, 25);
+
+      expect(result.status).toBe('timeout');
+      expect((result as any).phase).toBe('pending');
+      expect((result as any).queue).toEqual({ sessionPosition: 1, globalPosition: 1 });
+
+      deferred.resolve();
+    });
+
     it('returns error for unknown runId', async () => {
       const result = await coordinator.wait('nonexistent-run', 100);
       expect(result.status).toBe('error');
@@ -263,6 +291,27 @@ describe('RunCoordinator', () => {
       coordinator.abort(runId);
       const record = coordinator.getRunStatus(runId);
       expect(record?.status).toBe('completed');
+    });
+
+    it('aborts a pending run without calling runtime.abort', async () => {
+      const deferred = createDeferred<void>();
+      (runtime.prompt as any).mockImplementationOnce(() => deferred.promise);
+
+      const events: any[] = [];
+      coordinator.subscribeAll((event) => events.push(event));
+
+      await coordinator.dispatch({ sessionKey: 'same', text: 'First' });
+      const second = await coordinator.dispatch({ sessionKey: 'same', text: 'Second' });
+
+      coordinator.abort(second.runId);
+
+      const result = await coordinator.wait(second.runId, 1000);
+      expect(result.status).toBe('error');
+      expect(result.error?.code).toBe('aborted');
+      expect(runtime.abort).toHaveBeenCalledTimes(0);
+      expect(events.some((e) => e.type === 'queue:left' && e.reason === 'aborted')).toBe(true);
+
+      deferred.resolve();
     });
   });
 
@@ -325,6 +374,28 @@ describe('RunCoordinator', () => {
       expect(result.status).toBe('error');
       expect(result.error?.code).toBe('rate_limited');
       expect(result.error?.retriable).toBe(true);
+    });
+
+    it('starts the next eligible queued run when the active run finishes', async () => {
+      const first = createDeferred<void>();
+      const second = createDeferred<void>();
+
+      (runtime.prompt as any)
+        .mockImplementationOnce(() => first.promise)
+        .mockImplementationOnce(() => second.promise);
+
+      const run1 = await coordinator.dispatch({ sessionKey: 'sess-a', text: 'First' });
+      const run2 = await coordinator.dispatch({ sessionKey: 'sess-b', text: 'Second' });
+
+      expect(coordinator.getRunStatus(run2.runId)?.status).toBe('pending');
+
+      first.resolve();
+      await coordinator.wait(run1.runId, 5000);
+
+      expect(coordinator.getRunStatus(run2.runId)?.status).toBe('running');
+
+      second.resolve();
+      await coordinator.wait(run2.runId, 5000);
     });
   });
 });
