@@ -30,6 +30,8 @@ export interface AgentNodeData {
   tags: string[];
   modelCapabilities: ModelCapabilityOverrides;
   systemPromptMode: SystemPromptMode;
+  showReasoning: boolean;
+  verbose: boolean;
 }
 
 // --- Memory Node (OpenClaw-inspired) ---

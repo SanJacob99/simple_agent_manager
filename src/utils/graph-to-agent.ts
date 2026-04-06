@@ -216,5 +216,7 @@ export function resolveAgentConfig(
     exportedAt: Date.now(),
     sourceGraphId: agentNodeId,
     runTimeoutMs: 172800000,
+    showReasoning: data.showReasoning ?? false,
+    verbose: data.verbose ?? false,
   };
 }

@@ -16,6 +16,8 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         tags: [],
         modelCapabilities: {},
         systemPromptMode: 'auto' as SystemPromptMode,
+        showReasoning: false,
+        verbose: false,
       };
     case 'memory':
       return {
