@@ -1,5 +1,5 @@
 import type { AgentConfig } from './agent-config';
-import type { RunPayload, RunUsage, StructuredError } from './run-types';
+import type { RunPayload, RunUsage, StructuredError, WaitResult } from './run-types';
 
 // --- Commands (frontend → backend) ---
 
@@ -166,8 +166,42 @@ export interface LifecycleErrorEvent {
   runId: string;
   status: 'error';
   error: StructuredError;
-  startedAt: number;
+  startedAt?: number;
   endedAt: number;
+}
+
+export interface QueueEnteredEvent {
+  type: 'queue:entered';
+  agentId: string;
+  runId: string;
+  sessionId: string;
+  acceptedAt: number;
+  sessionPosition: number;
+  globalPosition: number;
+}
+
+export interface QueueUpdatedEvent {
+  type: 'queue:updated';
+  agentId: string;
+  runId: string;
+  sessionId: string;
+  updatedAt: number;
+  sessionPosition: number;
+  globalPosition: number;
+}
+
+export interface QueueLeftEvent {
+  type: 'queue:left';
+  agentId: string;
+  runId: string;
+  sessionId: string;
+  leftAt: number;
+  reason: 'started' | 'aborted' | 'destroyed';
+}
+
+export interface RunWaitResultEvent extends WaitResult {
+  type: 'run:wait:result';
+  agentId: string;
 }
 
 export interface AgentStateEvent {
@@ -244,6 +278,10 @@ export type ServerEvent =
   | AgentEndEvent
   | AgentStateEvent
   | RunAcceptedEvent
+  | QueueEnteredEvent
+  | QueueUpdatedEvent
+  | QueueLeftEvent
+  | RunWaitResultEvent
   | LifecycleStartEvent
   | LifecycleEndEvent
   | LifecycleErrorEvent

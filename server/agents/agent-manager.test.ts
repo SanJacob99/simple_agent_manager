@@ -71,6 +71,14 @@ function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
   };
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
 describe('AgentManager', () => {
   let manager: AgentManager;
   let apiKeys: ApiKeyStore;
@@ -166,6 +174,55 @@ describe('AgentManager', () => {
       const result = await manager.wait('agent-1', runId, 5000);
       expect(result.status).toBe('error');
       expect(result.error?.code).toBe('aborted');
+    });
+
+    it('accepts queued dispatches for the same session', async () => {
+      await manager.start(makeConfig());
+
+      const runtime = (manager as any).agents.get('agent-1').runtime;
+      const deferred = createDeferred<void>();
+      runtime.prompt.mockImplementationOnce(() => deferred.promise);
+
+      const first = await manager.dispatch('agent-1', {
+        sessionKey: 'same',
+        text: 'First',
+      });
+      const second = await manager.dispatch('agent-1', {
+        sessionKey: 'same',
+        text: 'Second',
+      });
+
+      expect(first.runId).not.toBe(second.runId);
+      expect(manager.getStatus('agent-1')).toBe('running');
+
+      deferred.resolve();
+      await manager.wait('agent-1', first.runId, 5000);
+    });
+
+    it('aborts a pending run through the facade', async () => {
+      await manager.start(makeConfig());
+
+      const runtime = (manager as any).agents.get('agent-1').runtime;
+      const deferred = createDeferred<void>();
+      runtime.prompt.mockImplementationOnce(() => deferred.promise);
+
+      await manager.dispatch('agent-1', {
+        sessionKey: 'same',
+        text: 'First',
+      });
+      const pending = await manager.dispatch('agent-1', {
+        sessionKey: 'same',
+        text: 'Second',
+      });
+
+      manager.abortRun('agent-1', pending.runId);
+      const result = await manager.wait('agent-1', pending.runId, 5000);
+
+      expect(result.status).toBe('error');
+      expect(result.error?.code).toBe('aborted');
+      expect(runtime.abort).toHaveBeenCalledTimes(0);
+
+      deferred.resolve();
     });
   });
 });

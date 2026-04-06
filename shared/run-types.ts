@@ -14,11 +14,19 @@ export interface DispatchResult {
   acceptedAt: number;
 }
 
+export interface RunQueueSnapshot {
+  sessionPosition: number;
+  globalPosition: number;
+}
+
 export interface WaitResult {
   runId: string;
   status: 'ok' | 'error' | 'timeout';
-  startedAt: number;
+  phase: 'pending' | 'running' | 'completed' | 'error';
+  acceptedAt: number;
+  startedAt?: number;
   endedAt?: number;
+  queue?: RunQueueSnapshot;
   payloads: RunPayload[];
   usage?: RunUsage;
   error?: StructuredError;
@@ -44,9 +52,35 @@ export interface RunUsage {
 }
 
 export type CoordinatorEvent =
+  | {
+      type: 'queue:entered';
+      runId: string;
+      agentId: string;
+      sessionId: string;
+      acceptedAt: number;
+      sessionPosition: number;
+      globalPosition: number;
+    }
+  | {
+      type: 'queue:updated';
+      runId: string;
+      agentId: string;
+      sessionId: string;
+      updatedAt: number;
+      sessionPosition: number;
+      globalPosition: number;
+    }
+  | {
+      type: 'queue:left';
+      runId: string;
+      agentId: string;
+      sessionId: string;
+      leftAt: number;
+      reason: 'started' | 'aborted' | 'destroyed';
+    }
   | { type: 'lifecycle:start'; runId: string; agentId: string; sessionId: string; startedAt: number }
   | { type: 'lifecycle:end'; runId: string; status: 'ok'; startedAt: number; endedAt: number; payloads: RunPayload[]; usage?: RunUsage }
-  | { type: 'lifecycle:error'; runId: string; status: 'error'; error: StructuredError; startedAt: number; endedAt: number }
+  | { type: 'lifecycle:error'; runId: string; status: 'error'; error: StructuredError; startedAt?: number; endedAt: number }
   | { type: 'stream'; runId: string; event: unknown };
 
 export type RunEventListener = (event: CoordinatorEvent) => void;
