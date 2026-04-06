@@ -224,6 +224,9 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   },
 
   setSelectedNode: (nodeId) => {
+    if (nodeId) {
+      useAgentConnectionStore.getState().closeChatDrawer();
+    }
     set({ selectedNodeId: nodeId });
   },
 

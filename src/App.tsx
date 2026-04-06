@@ -101,7 +101,7 @@ export default function App() {
       </div>
 
       {/* Right Properties Panel */}
-      {appView === 'canvas' && selectedNodeId && <PropertiesPanel />}
+      {appView === 'canvas' && selectedNodeId && !chatAgentId && <PropertiesPanel />}
 
       {/* Chat Drawer */}
       {appView === 'canvas' && chatAgentId && (
