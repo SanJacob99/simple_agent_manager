@@ -420,6 +420,18 @@ export class RunCoordinator {
             record.payloads = [{ type: 'text', content: replyCtx.syntheticReply }];
           }
 
+          this.emitForRun(record.runId, {
+            type: 'lifecycle:start',
+            runId: record.runId,
+            agentId: this.agentId,
+            sessionId: record.sessionId,
+            startedAt: record.startedAt,
+          });
+
+          if (!replyCtx.silent && replyCtx.syntheticReply) {
+            this.emitSyntheticAssistantReply(record, replyCtx.syntheticReply);
+          }
+
           this.concurrency.release(record.runId, record.sessionId);
           this.finalizeRunSuccess(record);
           this.tryStartNextRun();
@@ -503,6 +515,51 @@ export class RunCoordinator {
 
     this.hooks.invoke(HOOK_NAMES.AGENT_END, ctx).catch((hookError) => {
       console.error('[RunCoordinator] agent_end hook error:', hookError);
+    });
+  }
+
+  private emitSyntheticAssistantReply(record: RunRecord, content: string): void {
+    const message = {
+      role: 'assistant',
+      content: [{ type: 'text', text: content }],
+      timestamp: Date.now(),
+    };
+
+    this.emitForRun(record.runId, {
+      type: 'stream',
+      runId: record.runId,
+      event: { type: 'message_start', message },
+    });
+    this.emitForRun(record.runId, {
+      type: 'stream',
+      runId: record.runId,
+      event: {
+        type: 'message_update',
+        message,
+        assistantMessageEvent: {
+          type: 'text_delta',
+          contentIndex: 0,
+          delta: content,
+        },
+      },
+    });
+    this.emitForRun(record.runId, {
+      type: 'stream',
+      runId: record.runId,
+      event: {
+        type: 'message_update',
+        message,
+        assistantMessageEvent: {
+          type: 'text_end',
+          contentIndex: 0,
+          content,
+        },
+      },
+    });
+    this.emitForRun(record.runId, {
+      type: 'stream',
+      runId: record.runId,
+      event: { type: 'message_end', message },
     });
   }
 

@@ -1,9 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { RunCoordinator } from './run-coordinator';
+import { StreamProcessor } from './stream-processor';
 import type { AgentConfig } from '../../shared/agent-config';
 import type { AgentRuntime } from '../runtime/agent-runtime';
 import type { StorageEngine } from '../runtime/storage-engine';
 import type { SessionMeta } from '../../shared/storage-types';
+import { HookRegistry } from '../hooks/hook-registry';
+import { HOOK_NAMES, type BeforeAgentReplyContext } from '../hooks/hook-types';
 
 function mockRuntime(): AgentRuntime {
   return {
@@ -396,6 +399,52 @@ describe('RunCoordinator', () => {
 
       second.resolve();
       await coordinator.wait(run2.runId, 5000);
+    });
+
+    it('streams a synthetic reply when before_agent_reply claims the turn', async () => {
+      const hooks = new HookRegistry();
+      hooks.register<BeforeAgentReplyContext>(HOOK_NAMES.BEFORE_AGENT_REPLY, {
+        pluginId: 'test-plugin',
+        priority: 100,
+        critical: false,
+        handler: (ctx) => {
+          ctx.claimed = true;
+          ctx.syntheticReply = 'Synthetic hello';
+        },
+      });
+
+      const hookedCoordinator = new RunCoordinator(
+        'agent-1',
+        runtime,
+        makeConfig(),
+        storage,
+        hooks,
+      );
+      const processor = new StreamProcessor('agent-1', hookedCoordinator, makeConfig());
+      const emitted: any[] = [];
+      processor.subscribe((event) => emitted.push(event));
+
+      try {
+        const { runId } = await hookedCoordinator.dispatch({
+          sessionKey: 'hook-claim',
+          text: 'Hello',
+        });
+        const result = await hookedCoordinator.wait(runId, 5000);
+
+        expect(result.status).toBe('ok');
+        expect(result.payloads).toEqual([{ type: 'text', content: 'Synthetic hello' }]);
+        expect(runtime.prompt).not.toHaveBeenCalled();
+        expect(emitted.map((event) => event.type)).toEqual(
+          expect.arrayContaining(['message:start', 'message:delta', 'message:end', 'lifecycle:end']),
+        );
+
+        const lifecycleEnd = emitted.find((event) => event.type === 'lifecycle:end');
+        expect(lifecycleEnd?.payloads).toEqual([{ type: 'text', content: 'Synthetic hello' }]);
+      } finally {
+        processor.destroy();
+        hookedCoordinator.destroy();
+        hooks.destroy();
+      }
     });
   });
 });
