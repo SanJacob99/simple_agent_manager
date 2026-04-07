@@ -21,6 +21,8 @@ const openRouterApiKey = process.env.OPENROUTER_API_KEY?.trim();
 const openRouterModel = process.env.OPENROUTER_MODEL?.trim() || 'qwen/qwen3.6-plus:free';
 const expectedReply = 'OPENROUTER_UI_E2E_OK';
 
+import fs from 'fs';
+
 function buildGraph(agentName: string, storagePath: string, modelId: string) {
   return {
     id: 'default',
@@ -80,6 +82,36 @@ function buildGraph(agentName: string, storagePath: string, modelId: string) {
             dailyMemoryEnabled: true,
           },
         },
+        {
+          id: 'tools-e2e',
+          type: 'tools',
+          position: { x: 160, y: 100 },
+          data: {
+            type: 'tools',
+            label: 'E2E Tools',
+            profile: 'minimal',
+            enabledTools: [],
+            enabledGroups: [],
+            skills: [],
+            plugins: [
+              {
+                id: 'e2e-hooks',
+                name: 'E2E Hooks Test Plugin',
+                enabled: true,
+                tools: [],
+                skills: [],
+                hooks: [
+                  { hookName: 'before_model_resolve', handler: 'plugin.js' },
+                  { hookName: 'before_prompt_build', handler: 'plugin.js' },
+                  { hookName: 'before_agent_reply', handler: 'plugin.js' },
+                  { hookName: 'before_tool_call', handler: 'plugin.js' },
+                  { hookName: 'after_tool_call', handler: 'plugin.js' },
+                  { hookName: 'agent_end', handler: 'plugin.js' },
+                ],
+              },
+            ],
+          },
+        },
       ],
       edges: [
         {
@@ -92,6 +124,13 @@ function buildGraph(agentName: string, storagePath: string, modelId: string) {
         {
           id: 'edge_storage-e2e_agent-e2e',
           source: 'storage-e2e',
+          target: 'agent-e2e',
+          type: 'data',
+          animated: true,
+        },
+        {
+          id: 'edge_tools-e2e_agent-e2e',
+          source: 'tools-e2e',
           target: 'agent-e2e',
           type: 'data',
           animated: true,
@@ -127,6 +166,21 @@ test.describe('OpenRouter live browser E2E', () => {
     const runStamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const agentName = `OpenRouter E2E Agent ${runStamp}`;
     const storagePath = `./.tmp/openrouter-e2e-${runStamp}`;
+
+    fs.mkdirSync(storagePath, { recursive: true });
+    fs.writeFileSync(
+      path.join(storagePath, 'plugin.js'),
+      `
+import fs from 'fs';
+import path from 'path';
+
+export default async function(context) {
+  console.log('[E2E_HOOK]', context && typeof context === 'object' && context.agentId ? Object.keys(context).join(',') : 'context_available');
+  // Write to a local file to assert in Playwright tests
+  fs.appendFileSync(path.join('${path.resolve(storagePath)}', 'hooks-fired.log'), 'HOOK_EXECUTED\\n');
+};
+      `.trim()
+    );
 
     page.on('console', (message) => {
       browserConsole.push(`[${message.type()}] ${message.text()}`);
@@ -264,6 +318,13 @@ test.describe('OpenRouter live browser E2E', () => {
       expect(trace.some((entry) => entry.kind === 'ws:receive:event' && entry.detail === 'message:start')).toBe(true);
       expect(trace.some((entry) => entry.kind === 'ws:receive:event' && entry.detail === 'message:delta')).toBe(true);
       expect(trace.some((entry) => entry.kind === 'ws:receive:event' && entry.detail === 'message:end')).toBe(true);
+
+      // Verify that hooks executed. Since playwright can't easily capture the background server's stdout,
+      // we wrote to hooks-fired.log.
+      const hooksLogPath = path.join(storagePath, 'hooks-fired.log');
+      expect(fs.existsSync(hooksLogPath)).toBe(true);
+      const hooksLog = fs.readFileSync(hooksLogPath, 'utf8');
+      expect(hooksLog.trim().split('\\n').length).toBeGreaterThan(0);
     } finally {
       const trace = await page.evaluate(() => window.__samTrace ?? []);
       const normalizedTrace = trace
