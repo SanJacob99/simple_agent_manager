@@ -1,0 +1,3 @@
+## 2024-05-18 - JSONL Parsing Memory Pressure
+**Learning:** Chaining array methods like `.split('\n').filter().map()` for processing massive data strings (like JSONL files) in Node.js creates large intermediate arrays in memory. This leads to heavy garbage collection pauses and high memory pressure.
+**Action:** When iterating over long strings, use `indexOf('\n')` and `substring()` to perform a single-pass extraction, avoiding `split()` entirely for large files, and minimizing intermediate string and array allocations.
