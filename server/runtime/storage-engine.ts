@@ -125,10 +125,22 @@ export class StorageEngine {
     const jsonlPath = path.join(this.agentDir, meta.sessionFile);
     try {
       const raw = await fs.readFile(jsonlPath, 'utf-8');
-      return raw
-        .split('\n')
-        .filter((line) => line.trim())
-        .map((line) => JSON.parse(line) as SessionEntry);
+
+      // OPTIMIZATION: Single-pass parsing over chained array methods
+      // Avoids large intermediate array allocations for massive JSONL files
+      const entries: SessionEntry[] = [];
+      let startIdx = 0;
+      while (startIdx < raw.length) {
+        let endIdx = raw.indexOf('\n', startIdx);
+        if (endIdx === -1) endIdx = raw.length;
+
+        const line = raw.substring(startIdx, endIdx).trim();
+        if (line) {
+            entries.push(JSON.parse(line) as SessionEntry);
+        }
+        startIdx = endIdx + 1;
+      }
+      return entries;
     } catch {
       return [];
     }

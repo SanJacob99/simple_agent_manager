@@ -1,19 +1,25 @@
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it } from 'vitest';
 import { loadEnvFile } from './load-env-file';
 
 describe('loadEnvFile', () => {
   const tempDirs: string[] = [];
+  let originalEnv: NodeJS.ProcessEnv;
+
+  beforeEach(() => {
+    originalEnv = { ...process.env };
+    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.OPENROUTER_MODEL;
+    delete process.env.QUOTED_VALUE;
+  });
 
   afterEach(async () => {
     await Promise.all(
       tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })),
     );
-    delete process.env.OPENROUTER_API_KEY;
-    delete process.env.OPENROUTER_MODEL;
-    delete process.env.QUOTED_VALUE;
+    process.env = originalEnv;
   });
 
   it('loads .env values into process.env without overriding existing variables', async () => {
