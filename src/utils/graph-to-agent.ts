@@ -155,9 +155,7 @@ export function resolveAgentConfig(
 
   // --- Build structured system prompt ---
   const agentMode = (data as any).systemPromptMode as SystemPromptMode | undefined;
-  const mode: SystemPromptMode = agentMode ?? (
-    data.systemPrompt === 'You are a helpful assistant.' ? 'auto' : 'append'
-  );
+  const mode: SystemPromptMode = agentMode === 'manual' ? 'manual' : 'append';
 
   const toolsSummary = toolsConfig
     ? toolsConfig.resolvedTools.join(', ')

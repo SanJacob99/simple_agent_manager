@@ -22,7 +22,7 @@ export const DEFAULT_AGENT_DEFAULTS: AgentDefaults = {
   provider: 'openrouter',
   modelId: 'anthropic/claude-sonnet-4-20250514',
   thinkingLevel: 'off',
-  systemPromptMode: 'auto',
+  systemPromptMode: 'append',
   systemPrompt: 'You are a helpful assistant.',
   safetyGuardrails: `## Safety
 

@@ -127,6 +127,7 @@ export default function AgentProperties({ nodeId, data }: Props) {
 
   const isCustomModel = !availableModels.includes(data.modelId);
   const showManualModelInput = showCustomModelInput || isCustomModel;
+  const systemPromptMode = data.systemPromptMode === 'manual' ? 'manual' : 'append';
 
   const filteredModels = useMemo(() => {
     const search = deferredModelSearch.trim().toLowerCase();
@@ -185,6 +186,12 @@ export default function AgentProperties({ nodeId, data }: Props) {
     setRequireReasoning(false);
     setRequireImageInput(false);
   }, [data.provider]);
+
+  useEffect(() => {
+    if (data.systemPromptMode !== systemPromptMode) {
+      update(nodeId, { systemPromptMode });
+    }
+  }, [data.systemPromptMode, nodeId, systemPromptMode, update]);
 
   useEffect(() => {
     if (!isModelPickerOpen) return;
@@ -614,34 +621,18 @@ export default function AgentProperties({ nodeId, data }: Props) {
         <select
           aria-label="System Prompt Mode"
           className={selectClass}
-          value={data.systemPromptMode ?? 'auto'}
+          value={systemPromptMode}
           onChange={(e) =>
             update(nodeId, { systemPromptMode: e.target.value as any })
           }
         >
-          <option value="auto">Auto (app-managed)</option>
           <option value="append">Append (add your instructions)</option>
           <option value="manual">Manual (full control)</option>
         </select>
       </Field>
 
-      {/* Auto mode: read-only summary */}
-      {(data.systemPromptMode ?? 'auto') === 'auto' && (
-        <div className="rounded-md border border-slate-800 bg-slate-900/40 p-3">
-          <p className="text-[10px] text-slate-500 italic">
-            System prompt is built automatically from connected nodes and app settings.
-          </p>
-          <button
-            onClick={() => setShowPreview(true)}
-            className="mt-1 text-[10px] text-blue-400 hover:text-blue-300 transition"
-          >
-            View full prompt
-          </button>
-        </div>
-      )}
-
       {/* Append mode: summary + textarea */}
-      {(data.systemPromptMode ?? 'auto') === 'append' && (
+      {systemPromptMode === 'append' && (
         <>
           <div className="rounded-md border border-slate-800 bg-slate-900/40 p-3">
             <p className="text-[10px] text-slate-500 italic">
@@ -668,7 +659,7 @@ export default function AgentProperties({ nodeId, data }: Props) {
       )}
 
       {/* Manual mode: warning + full textarea */}
-      {(data.systemPromptMode ?? 'auto') === 'manual' && (
+      {systemPromptMode === 'manual' && (
         <>
           <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
             <p className="text-xs text-amber-300/90">

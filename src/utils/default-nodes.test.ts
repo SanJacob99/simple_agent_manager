@@ -7,6 +7,7 @@ describe('getDefaultNodeData', () => {
 
     expect(node.type).toBe('agent');
     expect(node.provider).toBe('openrouter');
+    expect(node.systemPromptMode).toBe('append');
   });
 
   it('returns a storage node config with filesystem defaults', () => {

@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { PROVIDERS, STATIC_MODELS } from '../../runtime/provider-model-options';
 import { useGraphStore } from '../../store/graph-store';
 import { useSettingsStore } from '../settings-store';
@@ -18,6 +19,14 @@ export default function DefaultsSection() {
   const applyAgentDefaultsToExistingAgents = useGraphStore(
     (state) => state.applyAgentDefaultsToExistingAgents,
   );
+  const systemPromptMode =
+    agentDefaults.systemPromptMode === 'manual' ? 'manual' : 'append';
+
+  useEffect(() => {
+    if (agentDefaults.systemPromptMode !== systemPromptMode) {
+      setAgentDefaults({ systemPromptMode });
+    }
+  }, [agentDefaults.systemPromptMode, setAgentDefaults, systemPromptMode]);
 
   const confirmApply = () => {
     const approved = window.confirm(
@@ -102,29 +111,19 @@ export default function DefaultsSection() {
         </span>
         <select
           aria-label="System Prompt Mode"
-          value={agentDefaults.systemPromptMode ?? 'auto'}
+          value={systemPromptMode}
           onChange={(event) =>
             setAgentDefaults({ systemPromptMode: event.target.value as any })
           }
           className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100"
         >
-          <option value="auto">Auto (app-managed)</option>
           <option value="append">Append (add your instructions)</option>
           <option value="manual">Manual (full control)</option>
         </select>
       </label>
 
-      {/* Auto mode: read-only summary */}
-      {(agentDefaults.systemPromptMode ?? 'auto') === 'auto' && (
-        <div className="rounded-md border border-slate-800 bg-slate-900/40 p-3">
-          <p className="text-[10px] text-slate-500 italic">
-            System prompt is built automatically from connected nodes and app settings.
-          </p>
-        </div>
-      )}
-
       {/* Append mode: summary + textarea */}
-      {(agentDefaults.systemPromptMode ?? 'auto') === 'append' && (
+      {systemPromptMode === 'append' && (
         <div className="space-y-2">
           <div className="rounded-md border border-slate-800 bg-slate-900/40 p-3">
             <p className="text-[10px] text-slate-500 italic">
@@ -150,7 +149,7 @@ export default function DefaultsSection() {
       )}
 
       {/* Manual mode: warning + full textarea */}
-      {(agentDefaults.systemPromptMode ?? 'auto') === 'manual' && (
+      {systemPromptMode === 'manual' && (
         <div className="space-y-2">
           <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
             <p className="text-xs text-amber-300/90">
@@ -189,7 +188,7 @@ export default function DefaultsSection() {
           className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100"
         />
         <p className="mt-1 text-xs text-slate-500">
-          Injected into every agent's system prompt in auto and append modes.
+          Injected into every agent's system prompt in append mode.
         </p>
       </label>
 

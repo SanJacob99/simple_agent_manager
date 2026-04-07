@@ -10,7 +10,7 @@ function createAgentData(overrides: Record<string, unknown> = {}) {
     name: 'Agent',
     nameConfirmed: true,
     systemPrompt: 'Test',
-    systemPromptMode: 'auto' as const,
+    systemPromptMode: 'append' as const,
     provider: 'openrouter',
     modelId: 'xiaomi/mimo-v2-pro',
     thinkingLevel: 'off' as const,
@@ -88,6 +88,7 @@ describe('AgentProperties', () => {
     const data = createAgentData({ systemPromptMode: 'auto' });
     render(<AgentProperties nodeId="agent-1" data={data} />);
     expect(screen.getByLabelText('System Prompt Mode')).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /auto/i })).not.toBeInTheDocument();
   });
 
   it('shows a searchable model popover with free and capability filters', () => {
@@ -195,11 +196,11 @@ describe('AgentProperties', () => {
     }
   });
 
-  it('hides textarea in auto mode', () => {
+  it('treats legacy auto mode as append mode', () => {
     const data = createAgentData({ systemPromptMode: 'auto' });
     render(<AgentProperties nodeId="agent-1" data={data} />);
+    expect(screen.getByLabelText('Your Instructions')).toBeInTheDocument();
     expect(screen.queryByLabelText('System Prompt')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('Your Instructions')).not.toBeInTheDocument();
   });
 
   it('shows textarea labeled "Your Instructions" in append mode', () => {

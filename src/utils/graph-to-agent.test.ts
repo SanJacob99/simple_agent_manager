@@ -154,7 +154,7 @@ describe('resolveAgentConfig', () => {
     expect(config?.storage?.storagePath).toBe('~/.simple-agent-manager/storage');
   });
 
-  it('resolves a structured ResolvedSystemPrompt in auto mode', () => {
+  it('treats legacy auto mode as append mode in the resolved system prompt', () => {
     const config = resolveAgentConfig(
       'agent-1',
       [
@@ -181,9 +181,9 @@ describe('resolveAgentConfig', () => {
       { safetyGuardrails: '## Safety\nBe safe.' },
     );
 
-    expect(config?.systemPrompt.mode).toBe('auto');
+    expect(config?.systemPrompt.mode).toBe('append');
     expect(config?.systemPrompt.assembled).toContain('Be safe.');
-    expect(config?.systemPrompt.assembled).not.toContain('Ignored in auto mode');
+    expect(config?.systemPrompt.assembled).toContain('Ignored in auto mode');
     expect(config?.systemPrompt.sections.find(s => s.key === 'safety')).toBeDefined();
   });
 
