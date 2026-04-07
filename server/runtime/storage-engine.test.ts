@@ -70,6 +70,22 @@ describe('StorageEngine', () => {
   });
 
   describe('session CRUD', () => {
+    it('creates a backend-managed session with matching session id and key by default', async () => {
+      const meta = await engine.createManagedSession('openrouter/model-1');
+
+      expect(meta.sessionId).toBeDefined();
+      expect(meta.sessionKey).toBe(meta.sessionId);
+      expect(meta.llmSlug).toBe('openrouter/model-1');
+
+      const entries = await engine.readEntries(meta.sessionId);
+      expect(entries).toEqual([
+        expect.objectContaining({
+          type: 'session',
+          sessionId: meta.sessionId,
+        }),
+      ]);
+    });
+
     it('creates a session and lists it', async () => {
       await engine.createSession({
         sessionId: 'sess-1',

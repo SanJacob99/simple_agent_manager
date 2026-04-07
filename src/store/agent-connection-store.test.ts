@@ -40,6 +40,33 @@ describe('AgentConnectionStore', () => {
     });
   });
 
+  it('waits for agent readiness before sending a prompt after start', async () => {
+    const store = useAgentConnectionStore.getState();
+    const config = { id: 'a1', name: 'Test' } as any;
+
+    store.startAgent('a1', config);
+    const promptPromise = store.sendPrompt('a1', 'sess-1', 'hello');
+
+    expect(agentClient.send).toHaveBeenCalledTimes(1);
+    expect(agentClient.send).toHaveBeenNthCalledWith(1, {
+      type: 'agent:start',
+      agentId: 'a1',
+      config,
+    });
+
+    store.handleEvent({ type: 'agent:ready', agentId: 'a1' });
+    await promptPromise;
+
+    expect(agentClient.send).toHaveBeenCalledTimes(2);
+    expect(agentClient.send).toHaveBeenNthCalledWith(2, {
+      type: 'agent:prompt',
+      agentId: 'a1',
+      sessionId: 'sess-1',
+      text: 'hello',
+      attachments: undefined,
+    });
+  });
+
   it('tracks agent status from events', () => {
     const store = useAgentConnectionStore.getState();
     store.handleEvent({ type: 'agent:ready', agentId: 'a1' });

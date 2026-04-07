@@ -139,6 +139,22 @@ app.get('/api/storage/sessions/:id/entries', async (req, res) => {
   }
 });
 
+app.post('/api/storage/sessions/draft', async (req, res) => {
+  const { config, agentName, llmSlug, sessionKey } = req.body as {
+    config: ResolvedStorageConfig;
+    agentName: string;
+    llmSlug: string;
+    sessionKey?: string;
+  };
+  try {
+    const engine = getOrCreateEngine(config, agentName);
+    const meta = await engine.createManagedSession(llmSlug, sessionKey);
+    res.json(meta);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 app.put('/api/storage/sessions/:id/entries', async (req, res) => {
   const { config, agentName, entries } = req.body as {
     config: ResolvedStorageConfig;

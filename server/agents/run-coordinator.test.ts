@@ -9,12 +9,21 @@ import { HookRegistry } from '../hooks/hook-registry';
 import { HOOK_NAMES, type BeforeAgentReplyContext } from '../hooks/hook-types';
 
 function mockRuntime(): AgentRuntime {
+  const listeners = new Set<(event: any) => void>();
   return {
     prompt: vi.fn(() => Promise.resolve()),
     abort: vi.fn(),
     destroy: vi.fn(),
-    subscribe: vi.fn(() => vi.fn()),
+    subscribe: vi.fn((listener: (event: any) => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    }),
     state: { messages: [] },
+    emitEvent: (event: any) => {
+      for (const listener of listeners) {
+        listener(event);
+      }
+    },
   } as any;
 }
 
@@ -24,12 +33,37 @@ function mockStorage(): StorageEngine {
     getSessionByKey: vi.fn(async (key: string) => {
       return sessions.find((s) => s.sessionKey === key) ?? null;
     }),
+    getSessionMeta: vi.fn(async (sessionId: string) => {
+      return sessions.find((s) => s.sessionId === sessionId) ?? null;
+    }),
     createSession: vi.fn(async (meta: SessionMeta) => {
       sessions.push(meta);
+    }),
+    createManagedSession: vi.fn(async (llmSlug: string, sessionKey?: string) => {
+      const meta: SessionMeta = {
+        sessionId: `sess-${sessions.length + 1}`,
+        sessionKey: sessionKey ?? `sess-${sessions.length + 1}`,
+        agentName: 'Test Agent',
+        llmSlug,
+        startedAt: '2026-04-06T12:00:00.000Z',
+        updatedAt: '2026-04-06T12:00:00.000Z',
+        sessionFile: `sessions/sess-${sessions.length + 1}.jsonl`,
+        contextTokens: 0,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalEstimatedCostUsd: 0,
+        totalTokens: 0,
+      };
+      sessions.push(meta);
+      return meta;
     }),
     updateSessionMeta: vi.fn(),
     enforceRetention: vi.fn(),
     listSessions: vi.fn(async () => sessions),
+    appendEntry: vi.fn(async () => {}),
+    readEntries: vi.fn(async () => []),
   } as any;
 }
 
@@ -111,10 +145,8 @@ describe('RunCoordinator', () => {
       await coordinator.dispatch({ sessionKey: 'new-session', text: 'Hello' });
 
       expect(storage.getSessionByKey).toHaveBeenCalledWith('new-session');
-      expect(storage.createSession).toHaveBeenCalledTimes(1);
-      const createdMeta = (storage.createSession as any).mock.calls[0][0] as SessionMeta;
-      expect(createdMeta.sessionKey).toBe('new-session');
-      expect(createdMeta.sessionId).toBeDefined();
+      expect(storage.createManagedSession).toHaveBeenCalledTimes(1);
+      expect(storage.createManagedSession).toHaveBeenCalledWith('openai/gpt-4', 'new-session');
     });
 
     it('reuses existing session when sessionKey is found', async () => {
@@ -126,14 +158,116 @@ describe('RunCoordinator', () => {
       // Second dispatch reuses
       await coordinator.dispatch({ sessionKey: 'reuse-session', text: 'Second' });
 
-      // createSession called only once (from the first dispatch)
-      expect(storage.createSession).toHaveBeenCalledTimes(1);
+      // createManagedSession called only once (from the first dispatch)
+      expect(storage.createManagedSession).toHaveBeenCalledTimes(1);
+    });
+
+    it('reuses an existing session when the frontend passes the backend session id', async () => {
+      const first = await coordinator.dispatch({ sessionKey: 'backend-managed', text: 'First' });
+      await coordinator.wait(first.runId, 5000);
+
+      const second = await coordinator.dispatch({ sessionKey: first.sessionId, text: 'Second' });
+      await coordinator.wait(second.runId, 5000);
+
+      expect(storage.createManagedSession).toHaveBeenCalledTimes(1);
+      expect(second.sessionId).toBe(first.sessionId);
     });
 
     it('enforces retention after creating a new session', async () => {
       await coordinator.dispatch({ sessionKey: 'retention-test', text: 'Hello' });
 
       expect(storage.enforceRetention).toHaveBeenCalledWith(50);
+    });
+
+    it('persists the user message from the backend when a run starts', async () => {
+      const result = await coordinator.dispatch({ sessionKey: 'persist-user', text: 'Hello backend' });
+      await coordinator.wait(result.runId, 5000);
+
+      expect(storage.appendEntry).toHaveBeenCalledWith(
+        result.sessionId,
+        expect.objectContaining({
+          type: 'message',
+          message: expect.objectContaining({
+            role: 'user',
+            content: [{ type: 'text', text: 'Hello backend' }],
+          }),
+        }),
+      );
+    });
+
+    it('persists tool and assistant transcript entries from backend runtime events', async () => {
+      (runtime.prompt as any).mockImplementationOnce(async () => {
+        (runtime as any).emitEvent({
+          type: 'tool_execution_start',
+          toolCallId: 'tool-1',
+          toolName: 'search',
+          args: {},
+        });
+        (runtime as any).emitEvent({
+          type: 'tool_execution_end',
+          toolCallId: 'tool-1',
+          toolName: 'search',
+          result: {
+            content: [{ type: 'text', text: 'found 3 results' }],
+          },
+          isError: false,
+        });
+        (runtime as any).emitEvent({
+          type: 'message_start',
+          message: { role: 'assistant' },
+        });
+        (runtime as any).emitEvent({
+          type: 'message_update',
+          assistantMessageEvent: {
+            type: 'text_delta',
+            contentIndex: 0,
+            delta: 'Final',
+            partial: {},
+          },
+        });
+        (runtime as any).emitEvent({
+          type: 'message_update',
+          assistantMessageEvent: {
+            type: 'text_end',
+            contentIndex: 0,
+            content: 'Final reply',
+            partial: {},
+          },
+        });
+        (runtime as any).emitEvent({
+          type: 'message_end',
+          message: {
+            role: 'assistant',
+            usage: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 15 },
+          },
+        });
+      });
+
+      const result = await coordinator.dispatch({ sessionKey: 'persist-stream', text: 'Hello' });
+      await coordinator.wait(result.runId, 5000);
+
+      expect(storage.appendEntry).toHaveBeenCalledWith(
+        result.sessionId,
+        expect.objectContaining({
+          type: 'message',
+          message: expect.objectContaining({
+            role: 'tool',
+            content: [{ type: 'text', text: 'search: found 3 results' }],
+          }),
+        }),
+      );
+      expect(storage.appendEntry).toHaveBeenCalledWith(
+        result.sessionId,
+        expect.objectContaining({
+          type: 'message',
+          tokenCount: 5,
+          usage: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 15 },
+          message: expect.objectContaining({
+            role: 'assistant',
+            content: [{ type: 'text', text: 'Final reply' }],
+          }),
+        }),
+      );
     });
 
     it('accepts a second dispatch on the same session and leaves it pending', async () => {

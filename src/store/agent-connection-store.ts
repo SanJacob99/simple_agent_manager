@@ -20,8 +20,13 @@ interface AgentConnectionStore {
   closeChatDrawer: () => void;
 
   // Actions
-  startAgent: (agentId: string, config: AgentConfig) => void;
-  sendPrompt: (agentId: string, sessionId: string, text: string, attachments?: ImageAttachment[]) => void;
+  startAgent: (agentId: string, config: AgentConfig) => Promise<void>;
+  sendPrompt: (
+    agentId: string,
+    sessionId: string,
+    text: string,
+    attachments?: ImageAttachment[],
+  ) => Promise<void>;
   abortAgent: (agentId: string) => void;
   destroyAgent: (agentId: string) => void;
   syncAgent: (agentId: string) => void;
@@ -37,6 +42,22 @@ interface AgentConnectionStore {
   reset: () => void;
 }
 
+function createDeferred() {
+  let resolve!: () => void;
+  let reject!: (error?: unknown) => void;
+  const rawPromise = new Promise<void>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  const promise = rawPromise.catch(() => undefined);
+  return { rawPromise, promise, resolve, reject };
+}
+
+const pendingStarts = new Map<
+  string,
+  ReturnType<typeof createDeferred>
+>();
+
 export const useAgentConnectionStore = create<AgentConnectionStore>((set, get) => ({
   agents: {},
 
@@ -44,7 +65,15 @@ export const useAgentConnectionStore = create<AgentConnectionStore>((set, get) =
   openChatDrawer: (agentId) => set({ chatAgentNodeId: agentId }),
   closeChatDrawer: () => set({ chatAgentNodeId: null }),
 
-  startAgent: (agentId, config) => {
+  startAgent: async (agentId, config) => {
+    const existing = pendingStarts.get(agentId);
+    if (existing) {
+      return existing.promise;
+    }
+
+    const deferred = createDeferred();
+    pendingStarts.set(agentId, deferred);
+
     set((state) => ({
       agents: {
         ...state.agents,
@@ -53,9 +82,14 @@ export const useAgentConnectionStore = create<AgentConnectionStore>((set, get) =
     }));
     agentClient.trackAgent(agentId);
     agentClient.send({ type: 'agent:start', agentId, config });
+    return deferred.promise;
   },
 
-  sendPrompt: (agentId, sessionId, text, attachments) => {
+  sendPrompt: async (agentId, sessionId, text, attachments) => {
+    const pendingStart = pendingStarts.get(agentId);
+    if (pendingStart) {
+      await pendingStart.rawPromise;
+    }
     agentClient.send({ type: 'agent:prompt', agentId, sessionId, text, attachments });
   },
 
@@ -70,6 +104,8 @@ export const useAgentConnectionStore = create<AgentConnectionStore>((set, get) =
   },
 
   destroyAgent: (agentId) => {
+    pendingStarts.get(agentId)?.reject(new Error(`Agent ${agentId} destroyed before ready`));
+    pendingStarts.delete(agentId);
     agentClient.send({ type: 'agent:destroy', agentId });
     agentClient.untrackAgent(agentId);
     set((state) => {
@@ -93,6 +129,8 @@ export const useAgentConnectionStore = create<AgentConnectionStore>((set, get) =
 
     switch (event.type) {
       case 'agent:ready':
+        pendingStarts.get(agentId)?.resolve();
+        pendingStarts.delete(agentId);
         set((state) => ({
           agents: {
             ...state.agents,
@@ -102,6 +140,8 @@ export const useAgentConnectionStore = create<AgentConnectionStore>((set, get) =
         break;
 
       case 'agent:error':
+        pendingStarts.get(agentId)?.reject(new Error(event.error));
+        pendingStarts.delete(agentId);
         set((state) => ({
           agents: {
             ...state.agents,
@@ -147,6 +187,10 @@ export const useAgentConnectionStore = create<AgentConnectionStore>((set, get) =
   setConnectionStatus: (status: 'connecting' | 'connected' | 'disconnected') => set({ connectionStatus: status }),
 
   reset: () => {
+    for (const pending of pendingStarts.values()) {
+      pending.reject(new Error('Agent connection store reset'));
+    }
+    pendingStarts.clear();
     set({ agents: {}, chatAgentNodeId: null });
   },
 }));

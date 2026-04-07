@@ -54,20 +54,6 @@ function extractMessageContent(content: unknown): string {
   return '';
 }
 
-function toSessionEntry(message: Message): SessionEntry {
-  return {
-    type: 'message',
-    id: message.id,
-    parentId: null,
-    timestamp: new Date(message.timestamp).toISOString(),
-    message: {
-      role: message.role,
-      content: [{ type: 'text', text: message.content }],
-      timestamp: message.timestamp,
-    },
-  };
-}
-
 function isTranscriptMessageEntry(entry: SessionEntry): boolean {
   return entry.type === 'message';
 }
@@ -83,25 +69,15 @@ function toStoredMessage(entry: SessionEntry): Message | null {
     role: raw.role as 'user' | 'assistant' | 'tool',
     content: extractMessageContent(raw.content),
     timestamp: raw.timestamp ?? new Date(entry.timestamp).getTime(),
+    tokenCount:
+      typeof (entry as any).tokenCount === 'number'
+        ? (entry as any).tokenCount
+        : undefined,
+    usage:
+      (entry as any).usage && typeof (entry as any).usage === 'object'
+        ? (entry as any).usage as MessageUsage
+        : undefined,
   };
-}
-
-const persistenceQueue = new Map<string, Promise<void>>();
-
-function enqueueSessionPersistence(sessionId: string, task: () => Promise<void>): Promise<void> {
-  const previous = persistenceQueue.get(sessionId) ?? Promise.resolve();
-  const next = previous.catch(() => undefined).then(task);
-
-  persistenceQueue.set(
-    sessionId,
-    next.finally(() => {
-      if (persistenceQueue.get(sessionId) === next) {
-        persistenceQueue.delete(sessionId);
-      }
-    }),
-  );
-
-  return next;
 }
 
 // ── Store ──────────────────────────────────────────────────────────────────
@@ -154,12 +130,6 @@ interface SessionStore {
   resetAllSessions: () => void;
 }
 
-function buildSessionId(agentName: string, provider: string, modelId: string): string {
-  const slug = `${provider}/${modelId}`;
-  const hash = Math.random().toString(36).slice(2, 10);
-  return `${agentName}:${slug}:${hash}`;
-}
-
 export const useSessionStore = create<SessionStore>()(
   (set, get) => ({
     sessions: {},
@@ -202,50 +172,30 @@ export const useSessionStore = create<SessionStore>()(
     },
 
     createSession: async (agentName, provider, modelId, _isDefault = false) => {
-      const id = buildSessionId(agentName, provider, modelId);
-      const now = Date.now();
       const slug = `${provider}/${modelId}`;
-      const nowIso = new Date(now).toISOString();
-      const safeId = id.replace(/[^a-zA-Z0-9-]/g, '-');
-
-      const meta: SessionMeta = {
-        sessionId: id,
-        agentName,
-        llmSlug: slug,
-        startedAt: nowIso,
-        updatedAt: nowIso,
-        sessionFile: `sessions/${safeId}.jsonl`,
-        contextTokens: 0,
-        totalInputTokens: 0,
-        totalOutputTokens: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-        totalEstimatedCostUsd: 0,
-        totalTokens: 0,
-      };
-
       const { storageEngine } = get();
+      if (!storageEngine) {
+        throw new Error('Cannot create session without a bound storage backend');
+      }
+      const meta = await storageEngine.createManagedSession(slug);
+      const createdAt = new Date(meta.startedAt).getTime();
+      const updatedAt = new Date(meta.updatedAt).getTime();
 
-      // Update state optimistically to prevent React effects from triggering concurrent creations
       set((state) => ({
         sessions: {
           ...state.sessions,
-          [id]: {
-            id,
-            agentName,
+          [meta.sessionId]: {
+            id: meta.sessionId,
+            agentName: meta.agentName,
             llmSlug: slug,
-            createdAt: now,
-            lastMessageAt: now,
+            createdAt,
+            lastMessageAt: updatedAt,
             messages: [],
           },
         },
       }));
 
-      if (storageEngine) {
-        await storageEngine.createSession(meta);
-      }
-
-      return id;
+      return meta.sessionId;
     },
 
     deleteSession: async (sessionId) => {
@@ -306,8 +256,6 @@ export const useSessionStore = create<SessionStore>()(
     },
 
     addMessage: async (sessionId, message) => {
-      const { storageEngine } = get();
-
       set((state) => {
         const session = state.sessions[sessionId];
         if (!session) return state;
@@ -322,15 +270,6 @@ export const useSessionStore = create<SessionStore>()(
           },
         };
       });
-
-      if (storageEngine) {
-        await enqueueSessionPersistence(sessionId, async () => {
-          await storageEngine.appendEntry(sessionId, toSessionEntry(message));
-          await storageEngine.updateSessionMeta(sessionId, {
-            updatedAt: new Date().toISOString(),
-          });
-        });
-      }
     },
 
     updateMessage: (sessionId, messageId, updater) => {
@@ -369,6 +308,7 @@ export const useSessionStore = create<SessionStore>()(
     },
 
     clearSessionMessages: (sessionId) => {
+      const { storageEngine } = get();
       set((state) => {
         const session = state.sessions[sessionId];
         if (!session) return state;
@@ -384,29 +324,42 @@ export const useSessionStore = create<SessionStore>()(
         };
       });
 
-      void get().flushSession(sessionId);
+      if (storageEngine) {
+        void (async () => {
+          const existingEntries = await storageEngine.readEntries(sessionId);
+          const preservedEntries = existingEntries.filter((entry) => !isTranscriptMessageEntry(entry));
+          await storageEngine.replaceEntries(sessionId, preservedEntries);
+          await storageEngine.updateSessionMeta(sessionId, {
+            updatedAt: new Date().toISOString(),
+          });
+        })();
+      }
     },
 
     flushSession: async (sessionId) => {
       const { storageEngine } = get();
       if (!storageEngine) return;
+      const session = get().sessions[sessionId];
+      if (!session) return;
 
-      await enqueueSessionPersistence(sessionId, async () => {
-        const session = get().sessions[sessionId];
-        if (!session) return;
+      const entries = await storageEngine.readEntries(sessionId);
+      const messages = entries
+        .filter((entry) => isTranscriptMessageEntry(entry) && entry.message)
+        .map((entry) => toStoredMessage(entry))
+        .filter((message): message is Message => message !== null);
 
-        const existingEntries = await storageEngine.readEntries(sessionId);
-        const preservedEntries = existingEntries.filter((entry) => !isTranscriptMessageEntry(entry));
-        const rewrittenEntries = [
-          ...preservedEntries,
-          ...session.messages.map((message) => toSessionEntry(message)),
-        ];
+      const meta = await storageEngine.getSessionMeta(sessionId);
 
-        await storageEngine.replaceEntries(sessionId, rewrittenEntries);
-        await storageEngine.updateSessionMeta(sessionId, {
-          updatedAt: new Date().toISOString(),
-        });
-      });
+      set((state) => ({
+        sessions: {
+          ...state.sessions,
+          [sessionId]: {
+            ...state.sessions[sessionId],
+            lastMessageAt: meta ? new Date(meta.updatedAt).getTime() : state.sessions[sessionId].lastMessageAt,
+            messages,
+          },
+        },
+      }));
     },
 
     getSessionsForAgent: (agentName) => {
