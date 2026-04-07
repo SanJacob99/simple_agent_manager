@@ -46,15 +46,15 @@ export default function PropertiesPanel() {
   const storedWidth = useUILayoutStore((s) => s.propertiesPanelWidth);
   const setPropertiesPanelWidth = useUILayoutStore((s) => s.setPropertiesPanelWidth);
 
-  const node = nodes.find((n) => n.id === selectedNodeId);
-  if (!node) return null;
-
   const { width, onResizeStart } = useRightAnchoredResize({
     width: storedWidth,
     minWidth: 280,
     maxWidth: 720,
     onWidthChange: setPropertiesPanelWidth,
   });
+
+  const node = nodes.find((n) => n.id === selectedNodeId);
+  if (!node) return null;
 
   const color = NODE_COLORS[node.data.type];
   const label = NODE_LABELS[node.data.type];
