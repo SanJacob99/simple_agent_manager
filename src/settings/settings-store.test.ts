@@ -17,7 +17,7 @@ describe('settings store', () => {
       provider: 'openai',
       modelId: 'gpt-4o',
       thinkingLevel: 'high',
-      systemPromptMode: 'auto',
+      systemPromptMode: 'append',
       systemPrompt: 'Be concise.',
       safetyGuardrails: 'Test guardrails.',
     });
@@ -39,7 +39,7 @@ describe('settings store', () => {
         provider: 'openai',
         modelId: 'gpt-4o',
         thinkingLevel: 'high',
-        systemPromptMode: 'auto',
+        systemPromptMode: 'append',
         systemPrompt: 'Be concise.',
         safetyGuardrails: 'Test guardrails.',
       },

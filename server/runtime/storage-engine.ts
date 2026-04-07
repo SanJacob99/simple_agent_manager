@@ -1,6 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
+import { randomUUID } from 'crypto';
 import type { ResolvedStorageConfig } from '../../shared/agent-config';
 import type { SessionMeta, SessionEntry, MemoryFileInfo } from '../../shared/storage-types';
 export type { SessionMeta, SessionEntry, MemoryFileInfo };
@@ -76,6 +77,39 @@ export class StorageEngine {
     await fs.writeFile(jsonlPath, '', 'utf-8');
   }
 
+  async createManagedSession(llmSlug: string, sessionKey?: string): Promise<SessionMeta> {
+    const sessionId = randomUUID();
+    const now = new Date().toISOString();
+    const meta: SessionMeta = {
+      sessionId,
+      sessionKey: sessionKey ?? sessionId,
+      agentName: this.agentName,
+      llmSlug,
+      startedAt: now,
+      updatedAt: now,
+      sessionFile: `sessions/${sessionId}.jsonl`,
+      contextTokens: 0,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalEstimatedCostUsd: 0,
+      totalTokens: 0,
+    };
+
+    await this.createSession(meta);
+    await this.appendEntry(sessionId, {
+      type: 'session',
+      id: randomUUID(),
+      parentId: null,
+      timestamp: now,
+      version: 3,
+      sessionId,
+    });
+
+    return meta;
+  }
+
   async deleteSession(sessionId: string): Promise<void> {
     const sessions = await this.readIndex();
     const session = sessions.find((s) => s.sessionId === sessionId);
@@ -144,6 +178,14 @@ export class StorageEngine {
     } catch {
       return [];
     }
+  }
+
+  async replaceEntries(sessionId: string, entries: SessionEntry[]): Promise<void> {
+    const meta = await this.getSessionMeta(sessionId);
+    if (!meta) return;
+    const jsonlPath = path.join(this.agentDir, meta.sessionFile);
+    const serialized = entries.map((entry) => JSON.stringify(entry)).join('\n');
+    await fs.writeFile(jsonlPath, serialized ? `${serialized}\n` : '', 'utf-8');
   }
 
   // --- Retention ---

@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useGraphStore } from '../store/graph-store';
 import { useAgentConnectionStore } from '../store/agent-connection-store';
+import { useUILayoutStore } from '../store/ui-layout-store';
 import { resolveAgentConfig } from '../utils/graph-to-agent';
 import type { ImageAttachment } from '../../shared/protocol';
 import { useSessionStore, type Message } from '../store/session-store';
@@ -12,6 +13,8 @@ import { estimateTokens } from '../../shared/token-estimator';
 import { useContextWindow, usePeripheralReservations } from './useContextWindow';
 import ContextUsagePanel from './ContextUsagePanel';
 import { useChatStream } from './useChatStream';
+import { useRightAnchoredResize } from '../panels/useRightAnchoredResize';
+import PanelResizeHandle from '../panels/PanelResizeHandle';
 
 interface ChatDrawerProps {
   agentNodeId: string;
@@ -60,8 +63,16 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
   const abortAgent = useAgentConnectionStore((s) => s.abortAgent);
   const destroyAgent = useAgentConnectionStore((s) => s.destroyAgent);
   const connectionStatus = useAgentConnectionStore((s) => s.connectionStatus);
+  const storedWidth = useUILayoutStore((s) => s.chatDrawerWidth);
+  const setChatDrawerWidth = useUILayoutStore((s) => s.setChatDrawerWidth);
 
   const config = resolveAgentConfig(agentNodeId, nodes, edges);
+  const { width, onResizeStart } = useRightAnchoredResize({
+    width: storedWidth,
+    minWidth: 360,
+    maxWidth: 960,
+    onWidthChange: setChatDrawerWidth,
+  });
 
   // Session store
   const sessions = useSessionStore((s) => s.sessions);
@@ -330,7 +341,14 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
   if (!config) return null;
 
   return (
-    <div className="fixed inset-y-0 right-0 z-50 flex w-[420px] flex-col border-l border-slate-700 bg-slate-900 shadow-2xl relative">
+    <div
+      className="fixed inset-y-0 right-0 z-50 flex flex-col border-l border-slate-700 bg-slate-900 shadow-2xl relative"
+      style={{ width }}
+    >
+      <PanelResizeHandle
+        title="Resize chat drawer"
+        onMouseDown={onResizeStart}
+      />
       {/* Header */}
       <div className="flex flex-col border-b border-slate-800">
         {/* Top row: agent name + controls */}

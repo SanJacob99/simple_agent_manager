@@ -46,6 +46,28 @@ export interface RunRecord {
 
 const RUN_RECORD_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_WAIT_TIMEOUT_MS = 30_000;
+const NO_REPLY_PATTERN = /^no_reply$/i;
+
+interface TranscriptState {
+  assistantText: string;
+  assistantSuppressed: boolean;
+}
+
+function extractTextContent(content: unknown): string {
+  if (typeof content === 'string') {
+    return content;
+  }
+
+  if (!Array.isArray(content)) {
+    return '';
+  }
+
+  return content
+    .filter((block): block is { type?: string; text?: string } => !!block && typeof block === 'object')
+    .filter((block) => block.type === 'text' && typeof block.text === 'string')
+    .map((block) => block.text ?? '')
+    .join('');
+}
 
 export class RunCoordinator {
   private readonly runs = new Map<string, RunRecord>();
@@ -288,39 +310,31 @@ export class RunCoordinator {
       return existing.sessionId;
     }
 
-    const sessionId = randomUUID();
-    const now = new Date().toISOString();
-    const meta: SessionMeta = {
-      sessionId,
-      sessionKey,
-      agentName: this.config.name,
-      llmSlug: `${this.config.provider}/${this.config.modelId}`,
-      startedAt: now,
-      updatedAt: now,
-      sessionFile: `sessions/${sessionId}.jsonl`,
-      contextTokens: 0,
-      totalInputTokens: 0,
-      totalOutputTokens: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-      totalEstimatedCostUsd: 0,
-      totalTokens: 0,
-    };
+    const existingById = await this.storage!.getSessionMeta(sessionKey);
+    if (existingById) {
+      await this.storage!.updateSessionMeta(existingById.sessionId, {
+        updatedAt: new Date().toISOString(),
+      });
+      return existingById.sessionId;
+    }
 
-    await this.storage!.createSession(meta);
+    const meta = await this.storage!.createManagedSession(
+      `${this.config.provider}/${this.config.modelId}`,
+      sessionKey,
+    );
     await this.storage!.enforceRetention(this.config.storage!.sessionRetention);
 
     if (this.hooks) {
       const sessionCtx: SessionLifecycleContext = {
         agentId: this.agentId,
-        sessionId,
+        sessionId: meta.sessionId,
         sessionKey,
         phase: 'start',
       };
       await this.hooks.invoke(HOOK_NAMES.SESSION_START, sessionCtx);
     }
 
-    return sessionId;
+    return meta.sessionId;
   }
 
   private tryStartNextRun(): void {
@@ -348,8 +362,22 @@ export class RunCoordinator {
     record.startedAt = Date.now();
 
     let promptText = params.text;
+    const transcriptState: TranscriptState = {
+      assistantText: '',
+      assistantSuppressed: false,
+    };
+    let transcriptWrites = Promise.resolve();
+    const queueTranscriptWrite = (task: () => Promise<void>) => {
+      transcriptWrites = transcriptWrites
+        .then(task)
+        .catch((error) => {
+          console.error('[RunCoordinator] transcript persistence failed:', error);
+        });
+    };
 
     try {
+      await this.persistUserMessage(record.sessionId, params);
+
       if (this.hooks) {
         const modelCtx: BeforeModelResolveContext = {
           agentId: this.agentId,
@@ -429,6 +457,11 @@ export class RunCoordinator {
           });
 
           if (!replyCtx.silent && replyCtx.syntheticReply) {
+            await this.appendTranscriptMessage(record.sessionId, {
+              role: 'assistant',
+              content: replyCtx.syntheticReply,
+              timestamp: Date.now(),
+            });
             this.emitSyntheticAssistantReply(record, replyCtx.syntheticReply);
           }
 
@@ -462,15 +495,18 @@ export class RunCoordinator {
       }
       this.runtime.abort();
       this.concurrency.release(record.runId, record.sessionId);
-      this.finalizeRunError(record, {
-        code: 'timeout',
-        message: `Run timed out after ${timeoutMs}ms`,
-        retriable: false,
+      transcriptWrites.finally(() => {
+        this.finalizeRunError(record, {
+          code: 'timeout',
+          message: `Run timed out after ${timeoutMs}ms`,
+          retriable: false,
+        });
+        this.tryStartNextRun();
       });
-      this.tryStartNextRun();
     }, timeoutMs);
 
     const unsubscribe = this.runtime.subscribe((event: RuntimeEvent) => {
+      queueTranscriptWrite(() => this.persistRuntimeEvent(record.sessionId, event, transcriptState));
       this.emitForRun(record.runId, { type: 'stream', runId: record.runId, event });
     });
 
@@ -479,6 +515,7 @@ export class RunCoordinator {
       if (record.status !== 'running') {
         return;
       }
+      await transcriptWrites;
       this.concurrency.release(record.runId, record.sessionId);
       this.finalizeRunSuccess(record);
       this.tryStartNextRun();
@@ -486,12 +523,160 @@ export class RunCoordinator {
       if (record.status !== 'running') {
         return;
       }
+      await transcriptWrites;
       this.concurrency.release(record.runId, record.sessionId);
       this.finalizeRunError(record, classifyError(error));
       this.tryStartNextRun();
     } finally {
       unsubscribe();
+      await transcriptWrites;
     }
+  }
+
+  private async persistUserMessage(sessionId: string, params: DispatchParams): Promise<void> {
+    const content = params.text.trim()
+      || (params.attachments?.length
+        ? `[${params.attachments.length} image${params.attachments.length === 1 ? '' : 's'}]`
+        : '');
+
+    if (!content) {
+      return;
+    }
+
+    await this.appendTranscriptMessage(sessionId, {
+      role: 'user',
+      content,
+      timestamp: Date.now(),
+    });
+  }
+
+  private async persistRuntimeEvent(
+    sessionId: string,
+    event: RuntimeEvent,
+    transcriptState: TranscriptState,
+  ): Promise<void> {
+    const raw = event as any;
+
+    if (raw.type === 'message_start' && raw.message?.role === 'assistant') {
+      transcriptState.assistantText = '';
+      transcriptState.assistantSuppressed = false;
+      return;
+    }
+
+    if (raw.type === 'message_update') {
+      const assistantEvent = raw.assistantMessageEvent;
+      if (!assistantEvent) {
+        return;
+      }
+
+      if (assistantEvent.type === 'text_delta') {
+        transcriptState.assistantText += assistantEvent.delta ?? '';
+        return;
+      }
+
+      if (assistantEvent.type === 'text_end') {
+        const content = typeof assistantEvent.content === 'string'
+          ? assistantEvent.content
+          : transcriptState.assistantText;
+        transcriptState.assistantText = content;
+        transcriptState.assistantSuppressed = NO_REPLY_PATTERN.test(content.trim());
+      }
+      return;
+    }
+
+    if (raw.type === 'message_end' && raw.message?.role === 'assistant') {
+      const fallbackText =
+        transcriptState.assistantText || extractTextContent(raw.message.content);
+
+      if (
+        !fallbackText
+        || transcriptState.assistantSuppressed
+        || NO_REPLY_PATTERN.test(fallbackText.trim())
+      ) {
+        transcriptState.assistantText = '';
+        transcriptState.assistantSuppressed = false;
+        return;
+      }
+
+      const usage = raw.message.usage
+        ? {
+            input: raw.message.usage.input ?? 0,
+            output: raw.message.usage.output ?? 0,
+            cacheRead: raw.message.usage.cacheRead ?? 0,
+            cacheWrite: raw.message.usage.cacheWrite ?? 0,
+            totalTokens: raw.message.usage.totalTokens ?? 0,
+          }
+        : undefined;
+
+      await this.appendTranscriptMessage(sessionId, {
+        role: 'assistant',
+        content: fallbackText,
+        timestamp: Date.now(),
+        tokenCount: usage?.output,
+        usage,
+      });
+
+      transcriptState.assistantText = '';
+      transcriptState.assistantSuppressed = false;
+      return;
+    }
+
+    if (raw.type === 'tool_execution_end') {
+      const resultText = extractTextContent(raw.result?.content);
+      const content = `${raw.toolName}: ${resultText}${raw.isError ? ' (error)' : ''}`;
+      await this.appendTranscriptMessage(sessionId, {
+        role: 'tool',
+        content,
+        timestamp: Date.now(),
+      });
+    }
+  }
+
+  private async appendTranscriptMessage(
+    sessionId: string,
+    message: {
+      role: 'user' | 'assistant' | 'tool';
+      content: string;
+      timestamp: number;
+      tokenCount?: number;
+      usage?: RunUsage;
+    },
+  ): Promise<void> {
+    if (!this.storage) {
+      return;
+    }
+
+    const timestampIso = new Date(message.timestamp).toISOString();
+    await this.storage.appendEntry(sessionId, {
+      type: 'message',
+      id: randomUUID(),
+      parentId: null,
+      timestamp: timestampIso,
+      ...(typeof message.tokenCount === 'number' ? { tokenCount: message.tokenCount } : {}),
+      ...(message.usage ? { usage: message.usage } : {}),
+      message: {
+        role: message.role,
+        content: [{ type: 'text', text: message.content }],
+        timestamp: message.timestamp,
+      },
+    } as any);
+
+    const partial: Partial<SessionMeta> = {
+      updatedAt: timestampIso,
+    };
+
+    if (message.usage) {
+      const meta = await this.storage.getSessionMeta(sessionId);
+      if (meta) {
+        partial.totalInputTokens = meta.totalInputTokens + message.usage.input;
+        partial.totalOutputTokens = meta.totalOutputTokens + message.usage.output;
+        partial.cacheRead = meta.cacheRead + message.usage.cacheRead;
+        partial.cacheWrite = meta.cacheWrite + message.usage.cacheWrite;
+        partial.totalTokens = meta.totalTokens + message.usage.totalTokens;
+      }
+    }
+
+    await this.storage.updateSessionMeta(sessionId, partial);
   }
 
   private invokeAgentEndHook(

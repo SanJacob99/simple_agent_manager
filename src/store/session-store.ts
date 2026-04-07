@@ -35,6 +35,51 @@ export interface ChatSession {
   messages: Message[];
 }
 
+function extractMessageContent(content: unknown): string {
+  if (typeof content === 'string') {
+    return content;
+  }
+
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (part && typeof part === 'object' && 'text' in part) {
+          return typeof part.text === 'string' ? part.text : '';
+        }
+        return '';
+      })
+      .join('');
+  }
+
+  return '';
+}
+
+function isTranscriptMessageEntry(entry: SessionEntry): boolean {
+  return entry.type === 'message';
+}
+
+function toStoredMessage(entry: SessionEntry): Message | null {
+  const raw = entry.message as { role?: string; content?: unknown; timestamp?: number } | undefined;
+  if (!raw?.role) {
+    return null;
+  }
+
+  return {
+    id: entry.id,
+    role: raw.role as 'user' | 'assistant' | 'tool',
+    content: extractMessageContent(raw.content),
+    timestamp: raw.timestamp ?? new Date(entry.timestamp).getTime(),
+    tokenCount:
+      typeof (entry as any).tokenCount === 'number'
+        ? (entry as any).tokenCount
+        : undefined,
+    usage:
+      (entry as any).usage && typeof (entry as any).usage === 'object'
+        ? (entry as any).usage as MessageUsage
+        : undefined,
+  };
+}
+
 // ── Store ──────────────────────────────────────────────────────────────────
 
 interface SessionStore {
@@ -74,6 +119,7 @@ interface SessionStore {
   ) => void;
   deleteMessage: (sessionId: string, messageId: string) => void;
   clearSessionMessages: (sessionId: string) => void;
+  flushSession: (sessionId: string) => Promise<void>;
 
   // Querying
   getSessionsForAgent: (agentName: string) => ChatSession[];
@@ -82,12 +128,6 @@ interface SessionStore {
   pruneOrphanSessions: (validAgentNames: string[]) => Promise<void>;
   enforceSessionLimit: (agentName: string, maxSessions?: number) => Promise<void>;
   resetAllSessions: () => void;
-}
-
-function buildSessionId(agentName: string, provider: string, modelId: string): string {
-  const slug = `${provider}/${modelId}`;
-  const hash = Math.random().toString(36).slice(2, 10);
-  return `${agentName}:${slug}:${hash}`;
 }
 
 export const useSessionStore = create<SessionStore>()(
@@ -114,21 +154,9 @@ export const useSessionStore = create<SessionStore>()(
       for (const meta of metas) {
         const entries = await storageEngine.readEntries(meta.sessionId);
         const messages: Message[] = entries
-          .filter((e) => e.type === 'message' && e.message)
-          .map((e) => {
-            const msg = e.message as { role: string; content: unknown; timestamp?: number };
-            const content = typeof msg.content === 'string'
-              ? msg.content
-              : Array.isArray(msg.content)
-                ? msg.content.map((c: { text?: string }) => c.text ?? '').join('')
-                : '';
-            return {
-              id: e.id,
-              role: msg.role as 'user' | 'assistant' | 'tool',
-              content,
-              timestamp: msg.timestamp ?? new Date(e.timestamp).getTime(),
-            };
-          });
+          .filter((entry) => isTranscriptMessageEntry(entry) && entry.message)
+          .map((entry) => toStoredMessage(entry))
+          .filter((message): message is Message => message !== null);
 
         sessions[meta.sessionId] = {
           id: meta.sessionId,
@@ -144,50 +172,30 @@ export const useSessionStore = create<SessionStore>()(
     },
 
     createSession: async (agentName, provider, modelId, _isDefault = false) => {
-      const id = buildSessionId(agentName, provider, modelId);
-      const now = Date.now();
       const slug = `${provider}/${modelId}`;
-      const nowIso = new Date(now).toISOString();
-      const safeId = id.replace(/[^a-zA-Z0-9-]/g, '-');
-
-      const meta: SessionMeta = {
-        sessionId: id,
-        agentName,
-        llmSlug: slug,
-        startedAt: nowIso,
-        updatedAt: nowIso,
-        sessionFile: `sessions/${safeId}.jsonl`,
-        contextTokens: 0,
-        totalInputTokens: 0,
-        totalOutputTokens: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-        totalEstimatedCostUsd: 0,
-        totalTokens: 0,
-      };
-
       const { storageEngine } = get();
+      if (!storageEngine) {
+        throw new Error('Cannot create session without a bound storage backend');
+      }
+      const meta = await storageEngine.createManagedSession(slug);
+      const createdAt = new Date(meta.startedAt).getTime();
+      const updatedAt = new Date(meta.updatedAt).getTime();
 
-      // Update state optimistically to prevent React effects from triggering concurrent creations
       set((state) => ({
         sessions: {
           ...state.sessions,
-          [id]: {
-            id,
-            agentName,
+          [meta.sessionId]: {
+            id: meta.sessionId,
+            agentName: meta.agentName,
             llmSlug: slug,
-            createdAt: now,
-            lastMessageAt: now,
+            createdAt,
+            lastMessageAt: updatedAt,
             messages: [],
           },
         },
       }));
 
-      if (storageEngine) {
-        await storageEngine.createSession(meta);
-      }
-
-      return id;
+      return meta.sessionId;
     },
 
     deleteSession: async (sessionId) => {
@@ -248,8 +256,6 @@ export const useSessionStore = create<SessionStore>()(
     },
 
     addMessage: async (sessionId, message) => {
-      const { storageEngine } = get();
-
       set((state) => {
         const session = state.sessions[sessionId];
         if (!session) return state;
@@ -264,24 +270,6 @@ export const useSessionStore = create<SessionStore>()(
           },
         };
       });
-
-      if (storageEngine) {
-        const entry: SessionEntry = {
-          type: 'message',
-          id: message.id,
-          parentId: null,
-          timestamp: new Date(message.timestamp).toISOString(),
-          message: {
-            role: message.role,
-            content: [{ type: 'text', text: message.content }],
-            timestamp: message.timestamp,
-          },
-        };
-        await storageEngine.appendEntry(sessionId, entry);
-        await storageEngine.updateSessionMeta(sessionId, {
-          updatedAt: new Date().toISOString(),
-        });
-      }
     },
 
     updateMessage: (sessionId, messageId, updater) => {
@@ -320,6 +308,7 @@ export const useSessionStore = create<SessionStore>()(
     },
 
     clearSessionMessages: (sessionId) => {
+      const { storageEngine } = get();
       set((state) => {
         const session = state.sessions[sessionId];
         if (!session) return state;
@@ -334,6 +323,43 @@ export const useSessionStore = create<SessionStore>()(
           },
         };
       });
+
+      if (storageEngine) {
+        void (async () => {
+          const existingEntries = await storageEngine.readEntries(sessionId);
+          const preservedEntries = existingEntries.filter((entry) => !isTranscriptMessageEntry(entry));
+          await storageEngine.replaceEntries(sessionId, preservedEntries);
+          await storageEngine.updateSessionMeta(sessionId, {
+            updatedAt: new Date().toISOString(),
+          });
+        })();
+      }
+    },
+
+    flushSession: async (sessionId) => {
+      const { storageEngine } = get();
+      if (!storageEngine) return;
+      const session = get().sessions[sessionId];
+      if (!session) return;
+
+      const entries = await storageEngine.readEntries(sessionId);
+      const messages = entries
+        .filter((entry) => isTranscriptMessageEntry(entry) && entry.message)
+        .map((entry) => toStoredMessage(entry))
+        .filter((message): message is Message => message !== null);
+
+      const meta = await storageEngine.getSessionMeta(sessionId);
+
+      set((state) => ({
+        sessions: {
+          ...state.sessions,
+          [sessionId]: {
+            ...state.sessions[sessionId],
+            lastMessageAt: meta ? new Date(meta.updatedAt).getTime() : state.sessions[sessionId].lastMessageAt,
+            messages,
+          },
+        },
+      }));
     },
 
     getSessionsForAgent: (agentName) => {

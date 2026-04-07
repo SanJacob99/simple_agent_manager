@@ -1,8 +1,9 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
-import { agentClient } from '../client';
 import { useSessionStore } from '../store/session-store';
+import { useAgentConnectionStore } from '../store/agent-connection-store';
 import { estimateTokens } from '../../shared/token-estimator';
 import type { ServerEvent } from '../../shared/protocol';
+import { agentClient } from '../client';
 
 export interface ToolSummaryInfo {
   toolCallId: string;
@@ -31,6 +32,8 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
   const addMessage = useSessionStore((s) => s.addMessage);
   const updateMessage = useSessionStore((s) => s.updateMessage);
   const deleteMessage = useSessionStore((s) => s.deleteMessage);
+  const flushSession = useSessionStore((s) => s.flushSession);
+  const sendPrompt = useAgentConnectionStore((s) => s.sendPrompt);
 
   const unsubRef = useRef<(() => void) | null>(null);
   const assistantMsgIdRef = useRef<string>('');
@@ -92,6 +95,7 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
                 usage: event.message.usage,
               }));
             }
+            void flushSession(sessionIdRef.current);
             break;
 
           case 'reasoning:start':
@@ -111,6 +115,7 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
             setSuppressedReply(true);
             if (assistantMsgIdRef.current) {
               deleteMessage(sessionIdRef.current, assistantMsgIdRef.current);
+              void flushSession(sessionIdRef.current);
             }
             break;
 
@@ -131,6 +136,7 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
               content: toolContent,
               tokenCount: estimateTokens(toolContent),
             }));
+            void flushSession(sessionIdRef.current);
             break;
           }
 
@@ -158,6 +164,7 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
             setIsStreaming(false);
             setIsReasoning(false);
             setCompacting(false);
+            void flushSession(sessionIdRef.current);
             unsub();
             break;
 
@@ -173,6 +180,7 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
             setIsStreaming(false);
             setIsReasoning(false);
             setCompacting(false);
+            void flushSession(sessionIdRef.current);
             unsub();
             break;
           }
@@ -181,15 +189,9 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
 
       unsubRef.current = unsub;
 
-      agentClient.send({
-        type: 'agent:prompt',
-        agentId: agentNodeId,
-        sessionId: sessionId,
-        text,
-        attachments,
-      });
+      void sendPrompt(agentNodeId, sessionId, text, attachments).catch(() => undefined);
     },
-    [agentNodeId, addMessage, updateMessage, deleteMessage, cleanup],
+    [agentNodeId, addMessage, updateMessage, deleteMessage, flushSession, sendPrompt, cleanup],
   );
 
   return {

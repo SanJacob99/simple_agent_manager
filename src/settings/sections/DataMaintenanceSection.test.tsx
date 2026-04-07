@@ -39,7 +39,7 @@ describe('DataMaintenanceSection', () => {
         provider: 'openai',
         modelId: 'gpt-4o',
         thinkingLevel: 'high',
-        systemPromptMode: 'auto',
+        systemPromptMode: 'append',
         systemPrompt: 'Be concise.',
         safetyGuardrails: 'Be safe.',
       },

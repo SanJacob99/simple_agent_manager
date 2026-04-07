@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import AgentProperties from './AgentProperties';
 import { useGraphStore } from '../../store/graph-store';
@@ -10,7 +10,7 @@ function createAgentData(overrides: Record<string, unknown> = {}) {
     name: 'Agent',
     nameConfirmed: true,
     systemPrompt: 'Test',
-    systemPromptMode: 'auto' as const,
+    systemPromptMode: 'append' as const,
     provider: 'openrouter',
     modelId: 'xiaomi/mimo-v2-pro',
     thinkingLevel: 'off' as const,
@@ -88,13 +88,119 @@ describe('AgentProperties', () => {
     const data = createAgentData({ systemPromptMode: 'auto' });
     render(<AgentProperties nodeId="agent-1" data={data} />);
     expect(screen.getByLabelText('System Prompt Mode')).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /auto/i })).not.toBeInTheDocument();
   });
 
-  it('hides textarea in auto mode', () => {
+  it('shows a searchable model popover with free and capability filters', () => {
+    useModelCatalogStore.setState({
+      models: {
+        openrouter: {
+          'qwen/qwen3.6-plus:free': {
+            id: 'qwen/qwen3.6-plus:free',
+            provider: 'openrouter',
+            supportedParameters: ['tools', 'tool_choice', 'reasoning'],
+            reasoningSupported: true,
+            inputModalities: ['text'],
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          },
+          'openai/gpt-4o': {
+            id: 'openai/gpt-4o',
+            provider: 'openrouter',
+            supportedParameters: ['tools', 'tool_choice'],
+            inputModalities: ['text'],
+            cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0 },
+          },
+          'google/lyria-3-pro-preview': {
+            id: 'google/lyria-3-pro-preview',
+            provider: 'openrouter',
+            supportedParameters: ['max_tokens', 'response_format'],
+            inputModalities: ['image'],
+            cost: { input: 0.3, output: 0.4, cacheRead: 0, cacheWrite: 0 },
+          },
+        },
+      },
+      loading: { openrouter: false },
+      errors: { openrouter: null },
+      lastSyncedKeys: {},
+    } as any);
+
+    const data = createAgentData({ modelId: 'openai/gpt-4o' });
+    render(<AgentProperties nodeId="agent-1" data={data} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /model picker/i }));
+    const results = screen.getByLabelText('Model results');
+
+    expect(screen.getByLabelText('Search models')).toBeInTheDocument();
+    expect(within(results).getByText('openai/gpt-4o')).toBeInTheDocument();
+    expect(within(results).getByText('qwen/qwen3.6-plus:free')).toBeInTheDocument();
+    expect(within(results).queryByText('google/lyria-3-pro-preview')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /free only/i }));
+    expect(within(results).getByText('qwen/qwen3.6-plus:free')).toBeInTheDocument();
+    expect(within(results).queryByText('openai/gpt-4o')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /free only/i }));
+    fireEvent.change(screen.getByLabelText('Search models'), {
+      target: { value: 'qwen' },
+    });
+    expect(within(results).getByText('qwen/qwen3.6-plus:free')).toBeInTheDocument();
+    expect(within(results).queryByText('openai/gpt-4o')).not.toBeInTheDocument();
+  });
+
+  it('resets to the first tool-capable discovered OpenRouter model when the provider changes', () => {
+    const data = createAgentData({ provider: 'anthropic', modelId: 'claude-opus-4-20250514' });
+
+    useModelCatalogStore.setState({
+      models: {
+        openrouter: {
+          'google/lyria-3-pro-preview': {
+            id: 'google/lyria-3-pro-preview',
+            provider: 'openrouter',
+            supportedParameters: ['max_tokens', 'response_format'],
+          },
+          'openai/gpt-4o': {
+            id: 'openai/gpt-4o',
+            provider: 'openrouter',
+            supportedParameters: ['tools', 'tool_choice'],
+          },
+        },
+      },
+      loading: { openrouter: false },
+      errors: { openrouter: null },
+      lastSyncedKeys: {},
+    } as any);
+
+    useGraphStore.setState({
+      nodes: [
+        {
+          id: 'agent-1',
+          type: 'agent',
+          position: { x: 0, y: 0 },
+          data,
+        },
+      ] as any,
+      edges: [],
+      selectedNodeId: null,
+    });
+
+    render(<AgentProperties nodeId="agent-1" data={data} />);
+
+    fireEvent.change(screen.getAllByRole('combobox')[0], {
+      target: { value: 'openrouter' },
+    });
+
+    const node = useGraphStore.getState().nodes.find((n) => n.id === 'agent-1');
+    expect(node?.data.type).toBe('agent');
+    if (node?.data.type === 'agent') {
+      expect(node.data.modelId).toBe('openai/gpt-4o');
+    }
+  });
+
+  it('treats legacy auto mode as append mode', () => {
     const data = createAgentData({ systemPromptMode: 'auto' });
     render(<AgentProperties nodeId="agent-1" data={data} />);
+    expect(screen.getByLabelText('Your Instructions')).toBeInTheDocument();
     expect(screen.queryByLabelText('System Prompt')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('Your Instructions')).not.toBeInTheDocument();
   });
 
   it('shows textarea labeled "Your Instructions" in append mode', () => {

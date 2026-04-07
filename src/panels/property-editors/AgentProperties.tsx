@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useGraphStore } from '../../store/graph-store';
 import { useModelCatalogStore } from '../../store/model-catalog-store';
 import type { AgentNodeData, ThinkingLevel } from '../../types/nodes';
@@ -25,15 +25,35 @@ const THINKING_LEVELS: ThinkingLevel[] = [
   'xhigh',
 ];
 
-const CUSTOM_MODEL_VALUE = '__custom__';
-
 interface Props {
   nodeId: string;
   data: AgentNodeData;
 }
 
-function getModelOptions(provider: string, discovered: string[]) {
+function modelSupportsTools(discovered: DiscoveredModelMetadata | undefined) {
+  return discovered?.supportedParameters?.includes('tools') ?? false;
+}
+
+function getModelOptions(
+  provider: string,
+  discovered: string[],
+): string[] {
   return [...new Set([...(STATIC_MODELS[provider] || []), ...discovered])];
+}
+
+function getDefaultModelId(
+  provider: string,
+  discovered: string[],
+  openRouterModels: Record<string, DiscoveredModelMetadata> = {},
+) {
+  if (provider === 'openrouter') {
+    const firstToolCapableModel = discovered.find((modelId) =>
+      modelSupportsTools(openRouterModels[modelId]),
+    );
+    if (firstToolCapableModel) return firstToolCapableModel;
+  }
+
+  return getModelOptions(provider, discovered)[0] ?? '';
 }
 
 function getCustomModelPlaceholder(provider: string) {
@@ -78,8 +98,18 @@ function snapshotCapabilities(
 
 export default function AgentProperties({ nodeId, data }: Props) {
   const [showPreview, setShowPreview] = useState(false);
+  const [isModelPickerOpen, setIsModelPickerOpen] = useState(false);
+  const [modelSearch, setModelSearch] = useState('');
+  const [showCustomModelInput, setShowCustomModelInput] = useState(false);
+  const [showFreeOnly, setShowFreeOnly] = useState(false);
+  const [requireTools, setRequireTools] = useState(data.provider === 'openrouter');
+  const [requireReasoning, setRequireReasoning] = useState(false);
+  const [requireImageInput, setRequireImageInput] = useState(false);
   const update = useGraphStore((s) => s.updateNodeData);
   const openRouterModels = useModelCatalogStore((s) => s.models.openrouter);
+  const modelPickerRef = useRef<HTMLDivElement>(null);
+  const deferredModelSearch = useDeferredValue(modelSearch);
+  const hasOpenRouterCatalog = Object.keys(openRouterModels).length > 0;
 
   const discoveredModels = useMemo(
     () => (data.provider === 'openrouter' ? Object.keys(openRouterModels) : []),
@@ -96,6 +126,85 @@ export default function AgentProperties({ nodeId, data }: Props) {
   );
 
   const isCustomModel = !availableModels.includes(data.modelId);
+  const showManualModelInput = showCustomModelInput || isCustomModel;
+  const systemPromptMode = data.systemPromptMode === 'manual' ? 'manual' : 'append';
+
+  const filteredModels = useMemo(() => {
+    const search = deferredModelSearch.trim().toLowerCase();
+    return availableModels.filter((modelId) => {
+      const model = data.provider === 'openrouter' ? openRouterModels[modelId] : undefined;
+      const matchesSearch =
+        search.length === 0 ||
+        modelId.toLowerCase().includes(search) ||
+        model?.name?.toLowerCase().includes(search) ||
+        model?.description?.toLowerCase().includes(search);
+
+      if (!matchesSearch) return false;
+
+      if (showFreeOnly) {
+        if (!model?.cost) return false;
+        const isFree =
+          model.cost.input === 0 &&
+          model.cost.output === 0 &&
+          model.cost.cacheRead === 0 &&
+          model.cost.cacheWrite === 0;
+        if (!isFree) return false;
+      }
+
+      if (requireTools && hasOpenRouterCatalog && model && !modelSupportsTools(model)) {
+        return false;
+      }
+
+      if (requireReasoning && !model?.reasoningSupported) {
+        return false;
+      }
+
+      if (requireImageInput && !model?.inputModalities?.includes('image')) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [
+    availableModels,
+    data.provider,
+    deferredModelSearch,
+    hasOpenRouterCatalog,
+    openRouterModels,
+    requireImageInput,
+    requireReasoning,
+    requireTools,
+    showFreeOnly,
+  ]);
+
+  useEffect(() => {
+    setIsModelPickerOpen(false);
+    setModelSearch('');
+    setShowCustomModelInput(false);
+    setShowFreeOnly(false);
+    setRequireTools(data.provider === 'openrouter');
+    setRequireReasoning(false);
+    setRequireImageInput(false);
+  }, [data.provider]);
+
+  useEffect(() => {
+    if (data.systemPromptMode !== systemPromptMode) {
+      update(nodeId, { systemPromptMode });
+    }
+  }, [data.systemPromptMode, nodeId, systemPromptMode, update]);
+
+  useEffect(() => {
+    if (!isModelPickerOpen) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!modelPickerRef.current?.contains(event.target as Node)) {
+        setIsModelPickerOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [isModelPickerOpen]);
 
   // Resolve capabilities: overrides (persisted in node) take precedence,
   // falling back to discovered metadata from the live catalog.
@@ -168,6 +277,34 @@ export default function AgentProperties({ nodeId, data }: Props) {
     });
   };
 
+  const applyModelSelection = (newModelId: string) => {
+    let discovered: DiscoveredModelMetadata | undefined;
+    if (data.provider === 'openrouter') {
+      discovered = openRouterModels[newModelId];
+    }
+
+    const caps = snapshotCapabilities(discovered);
+    update(nodeId, {
+      modelId: newModelId,
+      modelCapabilities: caps,
+      ...(caps.reasoningSupported === false ? { thinkingLevel: 'off' } : {}),
+    });
+    setShowCustomModelInput(false);
+    setIsModelPickerOpen(false);
+    setModelSearch('');
+  };
+
+  const commitManualModelId = () => {
+    const trimmedModelId = data.modelId.trim();
+    if (!trimmedModelId) return;
+    if (
+      data.provider === 'openrouter' &&
+      openRouterModels[trimmedModelId]
+    ) {
+      applyModelSelection(trimmedModelId);
+    }
+  };
+
   return (
     <div className="space-y-1">
       <Field label="Agent Name">
@@ -223,8 +360,13 @@ export default function AgentProperties({ nodeId, data }: Props) {
           value={data.provider}
           onChange={(e) => {
             const provider = e.target.value;
-            const models = STATIC_MODELS[provider] || [];
-            const newModelId = models[0] || '';
+            const discoveredIds =
+              provider === 'openrouter' ? Object.keys(openRouterModels) : [];
+            const newModelId = getDefaultModelId(
+              provider,
+              discoveredIds,
+              openRouterModels,
+            );
 
             // Snapshot capabilities for the new model
             let discovered: DiscoveredModelMetadata | undefined;
@@ -250,46 +392,186 @@ export default function AgentProperties({ nodeId, data }: Props) {
       </Field>
 
       <Field label="Model">
-        <div className="space-y-2">
-          <select
-            className={selectClass}
-            value={isCustomModel ? CUSTOM_MODEL_VALUE : data.modelId}
-            onChange={(e) => {
-              if (e.target.value === CUSTOM_MODEL_VALUE) {
-                update(nodeId, { modelId: '' });
-                return;
-              }
-
-              const newModelId = e.target.value;
-
-              // Always snapshot full capabilities on model selection
-              let discovered: DiscoveredModelMetadata | undefined;
-              if (data.provider === 'openrouter') {
-                discovered = openRouterModels[newModelId];
-              }
-
-              const caps = snapshotCapabilities(discovered);
-              update(nodeId, {
-                modelId: newModelId,
-                modelCapabilities: caps,
-                ...(caps.reasoningSupported === false ? { thinkingLevel: 'off' } : {}),
-              });
+        <div ref={modelPickerRef} className="space-y-2">
+          <button
+            type="button"
+            aria-label="Model Picker"
+            aria-expanded={isModelPickerOpen}
+            className={`${inputClass} flex items-center justify-between gap-3 text-left`}
+            onClick={() => {
+              setIsModelPickerOpen((open) => !open);
+              setModelSearch('');
             }}
           >
-            {availableModels.map((modelId) => (
-              <option key={modelId} value={modelId}>
-                {modelId}
-              </option>
-            ))}
-            <option value={CUSTOM_MODEL_VALUE}>Custom model...</option>
-          </select>
+            <span className="truncate">{data.modelId || 'Select a model'}</span>
+            <span className="shrink-0 text-[10px] text-slate-500">
+              {filteredModels.length}/{availableModels.length}
+            </span>
+          </button>
 
-          {isCustomModel && (
+          {isModelPickerOpen && (
+            <div className="rounded-md border border-slate-700 bg-slate-900/95 p-2 shadow-lg">
+              <div className="space-y-2">
+                <input
+                  aria-label="Search models"
+                  className={inputClass}
+                  value={modelSearch}
+                  onChange={(e) => setModelSearch(e.target.value)}
+                  placeholder="Search model IDs"
+                  autoFocus
+                />
+
+                {data.provider === 'openrouter' && (
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      aria-pressed={requireTools}
+                      className={`rounded-full border px-2 py-1 text-[10px] transition ${
+                        requireTools
+                          ? 'border-blue-500 bg-blue-500/15 text-blue-200'
+                          : 'border-slate-700 bg-slate-800 text-slate-300'
+                      }`}
+                      onClick={() => setRequireTools((value) => !value)}
+                    >
+                      Tools
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Free only"
+                      aria-pressed={showFreeOnly}
+                      className={`rounded-full border px-2 py-1 text-[10px] transition ${
+                        showFreeOnly
+                          ? 'border-blue-500 bg-blue-500/15 text-blue-200'
+                          : 'border-slate-700 bg-slate-800 text-slate-300'
+                      }`}
+                      onClick={() => setShowFreeOnly((value) => !value)}
+                    >
+                      Free only
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={requireReasoning}
+                      className={`rounded-full border px-2 py-1 text-[10px] transition ${
+                        requireReasoning
+                          ? 'border-blue-500 bg-blue-500/15 text-blue-200'
+                          : 'border-slate-700 bg-slate-800 text-slate-300'
+                      }`}
+                      onClick={() => setRequireReasoning((value) => !value)}
+                    >
+                      Reasoning
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={requireImageInput}
+                      className={`rounded-full border px-2 py-1 text-[10px] transition ${
+                        requireImageInput
+                          ? 'border-blue-500 bg-blue-500/15 text-blue-200'
+                          : 'border-slate-700 bg-slate-800 text-slate-300'
+                      }`}
+                      onClick={() => setRequireImageInput((value) => !value)}
+                    >
+                      Image input
+                    </button>
+                  </div>
+                )}
+
+                <div
+                  aria-label="Model results"
+                  className="max-h-64 overflow-y-auto rounded-md border border-slate-800 bg-slate-950/60"
+                >
+                  {filteredModels.length > 0 ? (
+                    filteredModels.map((modelId) => {
+                      const model =
+                        data.provider === 'openrouter'
+                          ? openRouterModels[modelId]
+                          : undefined;
+                      const isSelected = modelId === data.modelId;
+                      const isFree =
+                        !!model?.cost &&
+                        model.cost.input === 0 &&
+                        model.cost.output === 0 &&
+                        model.cost.cacheRead === 0 &&
+                        model.cost.cacheWrite === 0;
+
+                      return (
+                        <button
+                          key={modelId}
+                          type="button"
+                          className={`flex w-full items-start justify-between gap-3 border-b border-slate-800 px-3 py-2 text-left last:border-b-0 ${
+                            isSelected
+                              ? 'bg-slate-800/80 text-slate-100'
+                              : 'text-slate-300 hover:bg-slate-800/50'
+                          }`}
+                          onClick={() => applyModelSelection(modelId)}
+                        >
+                          <div className="min-w-0">
+                            <div className="truncate text-xs">{modelId}</div>
+                            {model?.name && model.name !== modelId && (
+                              <div className="truncate text-[10px] text-slate-500">
+                                {model.name}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex shrink-0 flex-wrap justify-end gap-1">
+                            {isFree && (
+                              <span className="rounded-full border border-emerald-600/40 bg-emerald-500/10 px-2 py-0.5 text-[9px] text-emerald-200">
+                                Free
+                              </span>
+                            )}
+                            {modelSupportsTools(model) && (
+                              <span className="rounded-full border border-blue-600/40 bg-blue-500/10 px-2 py-0.5 text-[9px] text-blue-200">
+                                Tools
+                              </span>
+                            )}
+                            {model?.reasoningSupported && (
+                              <span className="rounded-full border border-violet-600/40 bg-violet-500/10 px-2 py-0.5 text-[9px] text-violet-200">
+                                Reasoning
+                              </span>
+                            )}
+                            {model?.inputModalities?.includes('image') && (
+                              <span className="rounded-full border border-amber-600/40 bg-amber-500/10 px-2 py-0.5 text-[9px] text-amber-200">
+                                Image
+                              </span>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <div className="px-3 py-4 text-[10px] text-slate-500">
+                      No models match the current search and filters.
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  className="text-[10px] text-blue-400 hover:text-blue-300 transition"
+                  onClick={() => {
+                    setShowCustomModelInput(true);
+                    setIsModelPickerOpen(false);
+                    setModelSearch('');
+                  }}
+                >
+                  Use custom model ID
+                </button>
+              </div>
+            </div>
+          )}
+
+          {showManualModelInput && (
             <>
               <input
+                aria-label="Custom model ID"
                 className={inputClass}
                 value={data.modelId}
                 onChange={(e) => update(nodeId, { modelId: e.target.value })}
+                onBlur={commitManualModelId}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    commitManualModelId();
+                  }
+                }}
                 placeholder={getCustomModelPlaceholder(data.provider)}
               />
               <p className="text-[10px] text-slate-500">
@@ -339,34 +621,18 @@ export default function AgentProperties({ nodeId, data }: Props) {
         <select
           aria-label="System Prompt Mode"
           className={selectClass}
-          value={data.systemPromptMode ?? 'auto'}
+          value={systemPromptMode}
           onChange={(e) =>
             update(nodeId, { systemPromptMode: e.target.value as any })
           }
         >
-          <option value="auto">Auto (app-managed)</option>
           <option value="append">Append (add your instructions)</option>
           <option value="manual">Manual (full control)</option>
         </select>
       </Field>
 
-      {/* Auto mode: read-only summary */}
-      {(data.systemPromptMode ?? 'auto') === 'auto' && (
-        <div className="rounded-md border border-slate-800 bg-slate-900/40 p-3">
-          <p className="text-[10px] text-slate-500 italic">
-            System prompt is built automatically from connected nodes and app settings.
-          </p>
-          <button
-            onClick={() => setShowPreview(true)}
-            className="mt-1 text-[10px] text-blue-400 hover:text-blue-300 transition"
-          >
-            View full prompt
-          </button>
-        </div>
-      )}
-
       {/* Append mode: summary + textarea */}
-      {(data.systemPromptMode ?? 'auto') === 'append' && (
+      {systemPromptMode === 'append' && (
         <>
           <div className="rounded-md border border-slate-800 bg-slate-900/40 p-3">
             <p className="text-[10px] text-slate-500 italic">
@@ -393,7 +659,7 @@ export default function AgentProperties({ nodeId, data }: Props) {
       )}
 
       {/* Manual mode: warning + full textarea */}
-      {(data.systemPromptMode ?? 'auto') === 'manual' && (
+      {systemPromptMode === 'manual' && (
         <>
           <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
             <p className="text-xs text-amber-300/90">

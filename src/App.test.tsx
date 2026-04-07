@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { ReactFlowProvider } from '@xyflow/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
@@ -29,6 +29,34 @@ describe('App settings workspace shell', () => {
       chatAgentNodeId: 'agent-1',
       agents: {},
     } as any);
+  });
+
+  it('shows only the chat drawer when chat and selected node are both present', () => {
+    render(
+      <ReactFlowProvider>
+        <App />
+      </ReactFlowProvider>,
+    );
+
+    expect(screen.getByText('Chat Drawer Stub')).toBeInTheDocument();
+    expect(screen.queryByText('Properties Panel Stub')).not.toBeInTheDocument();
+    expect(useGraphStore.getState().selectedNodeId).toBe('agent-1');
+  });
+
+  it('closes chat and shows properties when a node is selected', () => {
+    render(
+      <ReactFlowProvider>
+        <App />
+      </ReactFlowProvider>,
+    );
+
+    act(() => {
+      useGraphStore.getState().setSelectedNode('agent-2');
+    });
+
+    expect(screen.queryByText('Chat Drawer Stub')).not.toBeInTheDocument();
+    expect(screen.getByText('Properties Panel Stub')).toBeInTheDocument();
+    expect(useGraphStore.getState().selectedNodeId).toBe('agent-2');
   });
 
   it('switches to settings mode without clearing selected node state', () => {

@@ -15,7 +15,7 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         description: '',
         tags: [],
         modelCapabilities: {},
-        systemPromptMode: 'auto' as SystemPromptMode,
+        systemPromptMode: 'append' as SystemPromptMode,
         showReasoning: false,
         verbose: false,
       };

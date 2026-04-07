@@ -11,6 +11,9 @@ import ConnectorsProperties from './property-editors/ConnectorsProperties';
 import StorageProperties from './property-editors/StorageProperties';
 import VectorDatabaseProperties from './property-editors/VectorDatabaseProperties';
 import type { FlowNodeData } from '../types/nodes';
+import { useUILayoutStore } from '../store/ui-layout-store';
+import { useRightAnchoredResize } from './useRightAnchoredResize';
+import PanelResizeHandle from './PanelResizeHandle';
 
 function PropertyEditorForType({ nodeId, data }: { nodeId: string; data: FlowNodeData }) {
   switch (data.type) {
@@ -40,6 +43,15 @@ export default function PropertiesPanel() {
   const nodes = useGraphStore((s) => s.nodes);
   const setSelectedNode = useGraphStore((s) => s.setSelectedNode);
   const removeNode = useGraphStore((s) => s.removeNode);
+  const storedWidth = useUILayoutStore((s) => s.propertiesPanelWidth);
+  const setPropertiesPanelWidth = useUILayoutStore((s) => s.setPropertiesPanelWidth);
+
+  const { width, onResizeStart } = useRightAnchoredResize({
+    width: storedWidth,
+    minWidth: 280,
+    maxWidth: 720,
+    onWidthChange: setPropertiesPanelWidth,
+  });
 
   const node = nodes.find((n) => n.id === selectedNodeId);
   if (!node) return null;
@@ -48,7 +60,14 @@ export default function PropertiesPanel() {
   const label = NODE_LABELS[node.data.type];
 
   return (
-    <aside className="flex w-72 shrink-0 flex-col border-l border-slate-800 bg-slate-925">
+    <aside
+      className="relative flex shrink-0 flex-col border-l border-slate-800 bg-slate-925"
+      style={{ width }}
+    >
+      <PanelResizeHandle
+        title="Resize properties panel"
+        onMouseDown={onResizeStart}
+      />
       {/* Header */}
       <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
         <div className="flex items-center gap-2">
