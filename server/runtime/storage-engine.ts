@@ -134,6 +134,14 @@ export class StorageEngine {
     }
   }
 
+  async replaceEntries(sessionId: string, entries: SessionEntry[]): Promise<void> {
+    const meta = await this.getSessionMeta(sessionId);
+    if (!meta) return;
+    const jsonlPath = path.join(this.agentDir, meta.sessionFile);
+    const serialized = entries.map((entry) => JSON.stringify(entry)).join('\n');
+    await fs.writeFile(jsonlPath, serialized ? `${serialized}\n` : '', 'utf-8');
+  }
+
   // --- Retention ---
 
   async enforceRetention(maxSessions: number): Promise<void> {

@@ -85,6 +85,15 @@ export class StorageClient {
     return res.json();
   }
 
+  async replaceEntries(sessionId: string, entries: SessionEntry[]): Promise<void> {
+    const res = await fetch(`/api/storage/sessions/${encodeURIComponent(sessionId)}/entries`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config: this.config, agentName: this.agentName, entries }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+  }
+
   async enforceRetention(maxSessions: number): Promise<void> {
     const res = await fetch('/api/storage/sessions/enforce-retention', {
       method: 'POST',

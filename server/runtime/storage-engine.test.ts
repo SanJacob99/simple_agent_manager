@@ -213,6 +213,49 @@ describe('StorageEngine', () => {
       expect(entries[1].type).toBe('message');
       expect(entries[1].parentId).toBe('entry-1');
     });
+
+    it('replaces existing session entries with a rewritten transcript', async () => {
+      await engine.createSession({
+        sessionId: 'sess-rewrite',
+        agentName: 'test-agent',
+        llmSlug: 'anthropic/claude-sonnet-4-20250514',
+        startedAt: '2026-04-03T10:00:00.000Z',
+        updatedAt: '2026-04-03T10:00:00.000Z',
+        sessionFile: 'sessions/sess-rewrite.jsonl',
+        contextTokens: 0,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalEstimatedCostUsd: 0,
+        totalTokens: 0,
+      });
+
+      await engine.appendEntry('sess-rewrite', {
+        type: 'message',
+        id: 'msg-1',
+        parentId: null,
+        timestamp: '2026-04-03T10:01:00.000Z',
+        message: { role: 'assistant', content: [{ type: 'text', text: '' }] },
+      });
+
+      await engine.replaceEntries('sess-rewrite', [
+        {
+          type: 'message',
+          id: 'msg-1',
+          parentId: null,
+          timestamp: '2026-04-03T10:02:00.000Z',
+          message: { role: 'assistant', content: [{ type: 'text', text: 'Final reply' }] },
+        },
+      ]);
+
+      const entries = await engine.readEntries('sess-rewrite');
+      expect(entries).toHaveLength(1);
+      expect(entries[0].id).toBe('msg-1');
+      expect((entries[0].message as { content: Array<{ text: string }> }).content[0].text).toBe(
+        'Final reply',
+      );
+    });
   });
 
   describe('session retention', () => {

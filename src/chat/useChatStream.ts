@@ -31,6 +31,7 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
   const addMessage = useSessionStore((s) => s.addMessage);
   const updateMessage = useSessionStore((s) => s.updateMessage);
   const deleteMessage = useSessionStore((s) => s.deleteMessage);
+  const flushSession = useSessionStore((s) => s.flushSession);
 
   const unsubRef = useRef<(() => void) | null>(null);
   const assistantMsgIdRef = useRef<string>('');
@@ -92,6 +93,7 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
                 usage: event.message.usage,
               }));
             }
+            void flushSession(sessionIdRef.current);
             break;
 
           case 'reasoning:start':
@@ -111,6 +113,7 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
             setSuppressedReply(true);
             if (assistantMsgIdRef.current) {
               deleteMessage(sessionIdRef.current, assistantMsgIdRef.current);
+              void flushSession(sessionIdRef.current);
             }
             break;
 
@@ -131,6 +134,7 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
               content: toolContent,
               tokenCount: estimateTokens(toolContent),
             }));
+            void flushSession(sessionIdRef.current);
             break;
           }
 
@@ -158,6 +162,7 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
             setIsStreaming(false);
             setIsReasoning(false);
             setCompacting(false);
+            void flushSession(sessionIdRef.current);
             unsub();
             break;
 
@@ -173,6 +178,7 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
             setIsStreaming(false);
             setIsReasoning(false);
             setCompacting(false);
+            void flushSession(sessionIdRef.current);
             unsub();
             break;
           }
@@ -189,7 +195,7 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
         attachments,
       });
     },
-    [agentNodeId, addMessage, updateMessage, deleteMessage, cleanup],
+    [agentNodeId, addMessage, updateMessage, deleteMessage, flushSession, cleanup],
   );
 
   return {

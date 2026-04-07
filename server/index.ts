@@ -139,6 +139,21 @@ app.get('/api/storage/sessions/:id/entries', async (req, res) => {
   }
 });
 
+app.put('/api/storage/sessions/:id/entries', async (req, res) => {
+  const { config, agentName, entries } = req.body as {
+    config: ResolvedStorageConfig;
+    agentName: string;
+    entries: SessionEntry[];
+  };
+  try {
+    const engine = getOrCreateEngine(config, agentName);
+    await engine.replaceEntries(req.params.id, entries);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 app.post('/api/storage/sessions/enforce-retention', async (req, res) => {
   const { config, agentName, maxSessions } = req.body as {
     config: ResolvedStorageConfig;

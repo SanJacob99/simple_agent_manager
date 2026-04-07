@@ -35,6 +35,75 @@ export interface ChatSession {
   messages: Message[];
 }
 
+function extractMessageContent(content: unknown): string {
+  if (typeof content === 'string') {
+    return content;
+  }
+
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (part && typeof part === 'object' && 'text' in part) {
+          return typeof part.text === 'string' ? part.text : '';
+        }
+        return '';
+      })
+      .join('');
+  }
+
+  return '';
+}
+
+function toSessionEntry(message: Message): SessionEntry {
+  return {
+    type: 'message',
+    id: message.id,
+    parentId: null,
+    timestamp: new Date(message.timestamp).toISOString(),
+    message: {
+      role: message.role,
+      content: [{ type: 'text', text: message.content }],
+      timestamp: message.timestamp,
+    },
+  };
+}
+
+function isTranscriptMessageEntry(entry: SessionEntry): boolean {
+  return entry.type === 'message';
+}
+
+function toStoredMessage(entry: SessionEntry): Message | null {
+  const raw = entry.message as { role?: string; content?: unknown; timestamp?: number } | undefined;
+  if (!raw?.role) {
+    return null;
+  }
+
+  return {
+    id: entry.id,
+    role: raw.role as 'user' | 'assistant' | 'tool',
+    content: extractMessageContent(raw.content),
+    timestamp: raw.timestamp ?? new Date(entry.timestamp).getTime(),
+  };
+}
+
+const persistenceQueue = new Map<string, Promise<void>>();
+
+function enqueueSessionPersistence(sessionId: string, task: () => Promise<void>): Promise<void> {
+  const previous = persistenceQueue.get(sessionId) ?? Promise.resolve();
+  const next = previous.catch(() => undefined).then(task);
+
+  persistenceQueue.set(
+    sessionId,
+    next.finally(() => {
+      if (persistenceQueue.get(sessionId) === next) {
+        persistenceQueue.delete(sessionId);
+      }
+    }),
+  );
+
+  return next;
+}
+
 // ── Store ──────────────────────────────────────────────────────────────────
 
 interface SessionStore {
@@ -74,6 +143,7 @@ interface SessionStore {
   ) => void;
   deleteMessage: (sessionId: string, messageId: string) => void;
   clearSessionMessages: (sessionId: string) => void;
+  flushSession: (sessionId: string) => Promise<void>;
 
   // Querying
   getSessionsForAgent: (agentName: string) => ChatSession[];
@@ -114,21 +184,9 @@ export const useSessionStore = create<SessionStore>()(
       for (const meta of metas) {
         const entries = await storageEngine.readEntries(meta.sessionId);
         const messages: Message[] = entries
-          .filter((e) => e.type === 'message' && e.message)
-          .map((e) => {
-            const msg = e.message as { role: string; content: unknown; timestamp?: number };
-            const content = typeof msg.content === 'string'
-              ? msg.content
-              : Array.isArray(msg.content)
-                ? msg.content.map((c: { text?: string }) => c.text ?? '').join('')
-                : '';
-            return {
-              id: e.id,
-              role: msg.role as 'user' | 'assistant' | 'tool',
-              content,
-              timestamp: msg.timestamp ?? new Date(e.timestamp).getTime(),
-            };
-          });
+          .filter((entry) => isTranscriptMessageEntry(entry) && entry.message)
+          .map((entry) => toStoredMessage(entry))
+          .filter((message): message is Message => message !== null);
 
         sessions[meta.sessionId] = {
           id: meta.sessionId,
@@ -266,20 +324,11 @@ export const useSessionStore = create<SessionStore>()(
       });
 
       if (storageEngine) {
-        const entry: SessionEntry = {
-          type: 'message',
-          id: message.id,
-          parentId: null,
-          timestamp: new Date(message.timestamp).toISOString(),
-          message: {
-            role: message.role,
-            content: [{ type: 'text', text: message.content }],
-            timestamp: message.timestamp,
-          },
-        };
-        await storageEngine.appendEntry(sessionId, entry);
-        await storageEngine.updateSessionMeta(sessionId, {
-          updatedAt: new Date().toISOString(),
+        await enqueueSessionPersistence(sessionId, async () => {
+          await storageEngine.appendEntry(sessionId, toSessionEntry(message));
+          await storageEngine.updateSessionMeta(sessionId, {
+            updatedAt: new Date().toISOString(),
+          });
         });
       }
     },
@@ -333,6 +382,30 @@ export const useSessionStore = create<SessionStore>()(
             },
           },
         };
+      });
+
+      void get().flushSession(sessionId);
+    },
+
+    flushSession: async (sessionId) => {
+      const { storageEngine } = get();
+      if (!storageEngine) return;
+
+      await enqueueSessionPersistence(sessionId, async () => {
+        const session = get().sessions[sessionId];
+        if (!session) return;
+
+        const existingEntries = await storageEngine.readEntries(sessionId);
+        const preservedEntries = existingEntries.filter((entry) => !isTranscriptMessageEntry(entry));
+        const rewrittenEntries = [
+          ...preservedEntries,
+          ...session.messages.map((message) => toSessionEntry(message)),
+        ];
+
+        await storageEngine.replaceEntries(sessionId, rewrittenEntries);
+        await storageEngine.updateSessionMeta(sessionId, {
+          updatedAt: new Date().toISOString(),
+        });
       });
     },
 
