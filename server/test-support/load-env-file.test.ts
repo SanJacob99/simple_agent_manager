@@ -17,6 +17,10 @@ describe('loadEnvFile', () => {
   });
 
   it('loads .env values into process.env without overriding existing variables', async () => {
+    // Unset the process env variable that is passed externally in some environments
+    const originalModel = process.env.OPENROUTER_MODEL;
+    delete process.env.OPENROUTER_MODEL;
+
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'sam-env-test-'));
     tempDirs.push(dir);
 
@@ -43,6 +47,11 @@ describe('loadEnvFile', () => {
     expect(process.env.OPENROUTER_API_KEY).toBe('from-process');
     expect(process.env.OPENROUTER_MODEL).toBe('openai/gpt-4o-mini');
     expect(process.env.QUOTED_VALUE).toBe('quoted text');
+
+    // Restore the process env variable
+    if (originalModel) {
+      process.env.OPENROUTER_MODEL = originalModel;
+    }
   });
 
   it('returns an empty object when the file does not exist', () => {
