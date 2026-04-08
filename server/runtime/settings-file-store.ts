@@ -1,8 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
-import os from 'os';
 
-const DEFAULT_DIR = path.join(os.homedir(), '.simple-agent-manager');
+const DEFAULT_DIR = process.cwd();
 const SETTINGS_FILE = 'settings.json';
 
 export interface PersistedSettings {

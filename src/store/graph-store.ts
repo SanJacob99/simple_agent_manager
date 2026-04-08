@@ -40,6 +40,47 @@ function buildNodeData(nodeType: NodeType): FlowNodeData {
     return {
       ...defaults,
       storagePath: storageDefaults.storagePath,
+      sessionRetention: storageDefaults.sessionRetention,
+      memoryEnabled: storageDefaults.memoryEnabled,
+      maintenanceMode: storageDefaults.maintenanceMode,
+      pruneAfterDays: storageDefaults.pruneAfterDays,
+    };
+  }
+
+  if (nodeType === 'contextEngine' && defaults.type === 'contextEngine') {
+    const ceDefaults = useSettingsStore.getState().contextEngineDefaults;
+    return {
+      ...defaults,
+      tokenBudget: ceDefaults.tokenBudget,
+      reservedForResponse: ceDefaults.reservedForResponse,
+      compactionStrategy: ceDefaults.compactionStrategy,
+      compactionThreshold: ceDefaults.compactionThreshold,
+      ragEnabled: ceDefaults.ragEnabled,
+      ragTopK: ceDefaults.ragTopK,
+      ragMinScore: ceDefaults.ragMinScore,
+    };
+  }
+
+  if (nodeType === 'memory' && defaults.type === 'memory') {
+    const memDefaults = useSettingsStore.getState().memoryDefaults;
+    return {
+      ...defaults,
+      backend: memDefaults.backend,
+      maxSessionMessages: memDefaults.maxSessionMessages,
+      persistAcrossSessions: memDefaults.persistAcrossSessions,
+      compactionEnabled: memDefaults.compactionEnabled,
+    };
+  }
+
+  if (nodeType === 'cron' && defaults.type === 'cron') {
+    const cronDefaults = useSettingsStore.getState().cronDefaults;
+    return {
+      ...defaults,
+      schedule: cronDefaults.schedule,
+      sessionMode: cronDefaults.sessionMode,
+      timezone: cronDefaults.timezone,
+      maxRunDurationMs: cronDefaults.maxRunDurationMs,
+      retentionDays: cronDefaults.retentionDays,
     };
   }
 

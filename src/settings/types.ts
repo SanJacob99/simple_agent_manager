@@ -1,4 +1,4 @@
-import type { ThinkingLevel } from '../types/nodes';
+import type { ThinkingLevel, CompactionStrategy, MemoryBackend } from '../types/nodes';
 import type { SystemPromptMode } from '../../shared/agent-config';
 
 export type AppView = 'canvas' | 'settings';
@@ -8,6 +8,8 @@ export type SettingsSectionId =
   | 'model-catalog'
   | 'defaults'
   | 'data-maintenance';
+
+// --- Per-node-type defaults ---
 
 export interface AgentDefaults {
   provider: string;
@@ -20,7 +22,40 @@ export interface AgentDefaults {
 
 export interface StorageDefaults {
   storagePath: string;
+  sessionRetention: number;
+  memoryEnabled: boolean;
+  maintenanceMode: 'warn' | 'enforce';
+  pruneAfterDays: number;
 }
+
+export interface ContextEngineDefaults {
+  tokenBudget: number;
+  reservedForResponse: number;
+  compactionStrategy: CompactionStrategy;
+  compactionThreshold: number;
+  ragEnabled: boolean;
+  ragTopK: number;
+  ragMinScore: number;
+}
+
+export interface MemoryDefaults {
+  backend: MemoryBackend;
+  maxSessionMessages: number;
+  persistAcrossSessions: boolean;
+  compactionEnabled: boolean;
+}
+
+export interface CronDefaults {
+  schedule: string;
+  sessionMode: 'persistent' | 'ephemeral';
+  timezone: string;
+  maxRunDurationMs: number;
+  retentionDays: number;
+}
+
+export type DefaultsSubTab = 'agent' | 'storage' | 'contextEngine' | 'memory' | 'cron';
+
+// --- Default values ---
 
 export const DEFAULT_AGENT_DEFAULTS: AgentDefaults = {
   provider: 'openrouter',
@@ -45,6 +80,35 @@ unless explicitly requested.`,
 
 export const DEFAULT_STORAGE_DEFAULTS: StorageDefaults = {
   storagePath: '~/.simple-agent-manager/storage',
+  sessionRetention: 50,
+  memoryEnabled: true,
+  maintenanceMode: 'warn',
+  pruneAfterDays: 30,
+};
+
+export const DEFAULT_CONTEXT_ENGINE_DEFAULTS: ContextEngineDefaults = {
+  tokenBudget: 128000,
+  reservedForResponse: 4096,
+  compactionStrategy: 'trim-oldest',
+  compactionThreshold: 0.8,
+  ragEnabled: false,
+  ragTopK: 5,
+  ragMinScore: 0.7,
+};
+
+export const DEFAULT_MEMORY_DEFAULTS: MemoryDefaults = {
+  backend: 'builtin',
+  maxSessionMessages: 100,
+  persistAcrossSessions: false,
+  compactionEnabled: false,
+};
+
+export const DEFAULT_CRON_DEFAULTS: CronDefaults = {
+  schedule: '0 9 * * *',
+  sessionMode: 'persistent',
+  timezone: 'local',
+  maxRunDurationMs: 300000,
+  retentionDays: 7,
 };
 
 export const SETTINGS_SECTIONS: Array<{
@@ -65,7 +129,7 @@ export const SETTINGS_SECTIONS: Array<{
   {
     id: 'defaults',
     label: 'Defaults',
-    description: 'Choose the defaults applied to newly created agents.',
+    description: 'Choose the defaults applied to newly created nodes.',
   },
   {
     id: 'data-maintenance',
