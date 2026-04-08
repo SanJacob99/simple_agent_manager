@@ -99,6 +99,14 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         idleResetEnabled: false,
         idleResetMinutes: 60,
         parentForkMaxTokens: 100000,
+        maintenanceMode: 'warn',
+        pruneAfterDays: 30,
+        maxEntries: 500,
+        rotateBytes: 10_485_760,
+        resetArchiveRetentionDays: 30,
+        maxDiskBytes: 0,
+        highWaterPercent: 80,
+        maintenanceIntervalMinutes: 60,
       };
     case 'vectorDatabase':
       return {

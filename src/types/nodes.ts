@@ -166,6 +166,15 @@ export interface StorageNodeData {
   idleResetEnabled: boolean;
   idleResetMinutes: number;
   parentForkMaxTokens: number;
+  // Maintenance
+  maintenanceMode: 'warn' | 'enforce';
+  pruneAfterDays: number;
+  maxEntries: number;
+  rotateBytes: number;
+  resetArchiveRetentionDays: number;
+  maxDiskBytes: number;
+  highWaterPercent: number;
+  maintenanceIntervalMinutes: number;
 }
 
 // --- Vector Database Node ---

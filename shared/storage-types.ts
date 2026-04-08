@@ -79,3 +79,14 @@ export interface MemoryFileInfo {
   isEvergreen: boolean;
   date: string | null;
 }
+
+export interface MaintenanceReport {
+  mode: 'warn' | 'enforce';
+  prunedEntries: string[];
+  orphanTranscripts: string[];
+  archivedResets: string[];
+  storeRotated: boolean;
+  diskBefore: number;
+  diskAfter: number;
+  evictedForBudget: string[];
+}

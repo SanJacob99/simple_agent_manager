@@ -142,6 +142,14 @@ export function resolveAgentConfig(
         idleResetEnabled: storageNode.data.idleResetEnabled,
         idleResetMinutes: storageNode.data.idleResetMinutes,
         parentForkMaxTokens: storageNode.data.parentForkMaxTokens,
+        maintenanceMode: storageNode.data.maintenanceMode,
+        pruneAfterDays: storageNode.data.pruneAfterDays,
+        maxEntries: storageNode.data.maxEntries,
+        rotateBytes: storageNode.data.rotateBytes,
+        resetArchiveRetentionDays: storageNode.data.resetArchiveRetentionDays,
+        maxDiskBytes: storageNode.data.maxDiskBytes,
+        highWaterPercent: storageNode.data.highWaterPercent,
+        maintenanceIntervalMinutes: storageNode.data.maintenanceIntervalMinutes,
       }
     : null;
 

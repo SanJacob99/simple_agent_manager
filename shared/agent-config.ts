@@ -179,6 +179,15 @@ export interface ResolvedStorageConfig {
   idleResetEnabled: boolean;
   idleResetMinutes: number;
   parentForkMaxTokens: number;
+  // Maintenance
+  maintenanceMode: 'warn' | 'enforce';
+  pruneAfterDays: number;
+  maxEntries: number;
+  rotateBytes: number;
+  resetArchiveRetentionDays: number;
+  maxDiskBytes: number;
+  highWaterPercent: number;
+  maintenanceIntervalMinutes: number;
 }
 
 export interface ResolvedVectorDatabaseConfig {
