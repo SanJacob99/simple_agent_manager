@@ -191,6 +191,11 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         activeSessionKey: nextActive,
       };
     });
+
+    const activeSessionKey = get().activeSessionKey[storageEngine.agentId];
+    if (activeSessionKey && get().sessions[activeSessionKey]) {
+      await get().flushSession(activeSessionKey).catch(console.error);
+    }
   },
 
   createSession: async (agentId, provider, modelId, isDefault = false) => {
@@ -269,6 +274,10 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     set((state) => ({
       activeSessionKey: { ...state.activeSessionKey, [nodeId]: sessionKey },
     }));
+
+    if (get().sessions[sessionKey]) {
+      void get().flushSession(sessionKey).catch(console.error);
+    }
   },
 
   getActiveSessionKey: (nodeId) => get().activeSessionKey[nodeId] ?? null,

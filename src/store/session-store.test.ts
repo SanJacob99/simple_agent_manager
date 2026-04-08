@@ -1,3 +1,4 @@
+import { waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useSessionStore, type Message } from './session-store';
 import type { SessionStoreEntry } from '../../shared/storage-types';
@@ -28,17 +29,20 @@ describe('session-store', () => {
   beforeEach(() => {
     useSessionStore.getState().unbindStorage();
     useSessionStore.getState().resetAllSessions();
+    useSessionStore.setState({ storageEngine: null, storageEngines: {} } as any);
   });
 
   afterEach(() => {
     useSessionStore.getState().unbindStorage();
     useSessionStore.getState().resetAllSessions();
+    useSessionStore.setState({ storageEngine: null, storageEngines: {} } as any);
     vi.restoreAllMocks();
   });
 
   it('creates sessions from routed backend metadata and keys them by sessionKey', async () => {
     const meta = makeMeta();
     const storage = {
+      agentId: meta.agentId,
       routeSession: vi.fn(async () => ({
         sessionKey: meta.sessionKey,
         sessionId: meta.sessionId,
@@ -75,6 +79,7 @@ describe('session-store', () => {
   it('adds messages to local state without persisting transcript writes from the frontend', async () => {
     const meta = makeMeta();
     const storage = {
+      agentId: meta.agentId,
       routeSession: vi.fn(async () => ({
         sessionKey: meta.sessionKey,
         sessionId: meta.sessionId,
@@ -116,6 +121,7 @@ describe('session-store', () => {
   it('loads session metadata first and refreshes transcript entries on flush', async () => {
     const meta = makeMeta();
     const storage = {
+      agentId: meta.agentId,
       listSessions: vi.fn(async () => [meta]),
       getSession: vi.fn(async () => meta),
       getTranscript: vi.fn(async () => ({
@@ -157,6 +163,114 @@ describe('session-store', () => {
     ]);
   });
 
+  it('hydrates transcript messages when selecting an existing session', async () => {
+    const meta = makeMeta();
+    const storage = {
+      agentId: meta.agentId,
+      listSessions: vi.fn(async () => [meta]),
+      getSession: vi.fn(async () => meta),
+      getTranscript: vi.fn(async () => ({
+        sessionKey: meta.sessionKey,
+        sessionId: meta.sessionId,
+        transcriptPath: 'C:/tmp/sess-1.jsonl',
+        entries: [
+          {
+            type: 'message',
+            id: 'user-1',
+            parentId: null,
+            timestamp: '2026-04-07T12:00:00.000Z',
+            message: {
+              role: 'user',
+              content: 'Hello again',
+              timestamp: Date.parse('2026-04-07T12:00:00.000Z'),
+            },
+          },
+          {
+            type: 'message',
+            id: 'assistant-1',
+            parentId: 'user-1',
+            timestamp: '2026-04-07T12:00:01.000Z',
+            message: {
+              role: 'assistant',
+              content: [{ type: 'text', text: 'Welcome back' }],
+              usage: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 15 },
+              timestamp: Date.parse('2026-04-07T12:00:01.000Z'),
+            },
+          },
+        ],
+      })),
+      deleteAllSessions: vi.fn(async () => {}),
+    } as any;
+
+    const store = useSessionStore.getState();
+    store.bindStorage(storage);
+    await store.loadSessionsFromDisk();
+
+    store.setActiveSession(meta.agentId, meta.sessionKey);
+
+    await waitFor(() => {
+      expect(useSessionStore.getState().sessions[meta.sessionKey]?.messages).toEqual([
+        expect.objectContaining({
+          id: 'user-1',
+          role: 'user',
+          content: 'Hello again',
+        }),
+        expect.objectContaining({
+          id: 'assistant-1',
+          role: 'assistant',
+          content: 'Welcome back',
+        }),
+      ]);
+    });
+  });
+
+  it('rehydrates transcript messages for the already-active session when sessions reload from disk', async () => {
+    const meta = makeMeta();
+    const storage = {
+      agentId: meta.agentId,
+      listSessions: vi.fn(async () => [meta]),
+      getSession: vi.fn(async () => meta),
+      getTranscript: vi.fn(async () => ({
+        sessionKey: meta.sessionKey,
+        sessionId: meta.sessionId,
+        transcriptPath: 'C:/tmp/sess-1.jsonl',
+        entries: [
+          {
+            type: 'message',
+            id: 'assistant-1',
+            parentId: null,
+            timestamp: '2026-04-07T12:00:01.000Z',
+            message: {
+              role: 'assistant',
+              content: [{ type: 'text', text: 'Persisted reply' }],
+              usage: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 15 },
+              timestamp: Date.parse('2026-04-07T12:00:01.000Z'),
+            },
+          },
+        ],
+      })),
+      deleteAllSessions: vi.fn(async () => {}),
+    } as any;
+
+    useSessionStore.setState({
+      activeSessionKey: { [meta.agentId]: meta.sessionKey },
+    } as any);
+
+    const store = useSessionStore.getState();
+    store.bindStorage(storage);
+    await store.loadSessionsFromDisk();
+
+    await waitFor(() => {
+      expect(useSessionStore.getState().sessions[meta.sessionKey]?.messages).toEqual([
+        expect.objectContaining({
+          id: 'assistant-1',
+          role: 'assistant',
+          content: 'Persisted reply',
+        }),
+      ]);
+    });
+  });
+
   it('resets the active transcript via the backend when clearing messages', async () => {
     const initialMeta = makeMeta();
     const resetMeta = makeMeta({
@@ -166,6 +280,7 @@ describe('session-store', () => {
     });
 
     const storage = {
+      agentId: initialMeta.agentId,
       resetSession: vi.fn(async () => ({
         sessionKey: initialMeta.sessionKey,
         sessionId: resetMeta.sessionId,
