@@ -46,6 +46,7 @@ function mockRuntime(): AgentRuntime {
     setSessionContext: vi.fn((messages: any[]) => {
       runtime.state.messages = [...messages];
     }),
+    addTools: vi.fn(),
     state: {
       messages: [],
       model: { api: 'openai-completions' },

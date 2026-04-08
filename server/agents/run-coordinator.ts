@@ -30,6 +30,8 @@ import type {
   RunEventListener,
 } from '../../shared/run-types';
 import { RunConcurrencyController } from './run-concurrency-controller';
+import { SubAgentRegistry } from '../runtime/sub-agent-registry';
+import { createSessionTools, type SessionToolContext } from '../runtime/session-tools';
 
 export type RunStatus = 'pending' | 'running' | 'completed' | 'error';
 
@@ -92,6 +94,7 @@ export class RunCoordinator {
   private readonly concurrency = new RunConcurrencyController();
   private readonly transcriptStore: SessionTranscriptStore | null;
   private readonly sessionRouter: SessionRouter | null;
+  private readonly subAgentRegistry: SubAgentRegistry;
 
   constructor(
     private readonly agentId: string,
@@ -111,6 +114,8 @@ export class RunCoordinator {
       ?? (storage && config.storage && this.transcriptStore
         ? new SessionRouter(storage, this.transcriptStore, config.storage, agentId)
         : null);
+
+    this.subAgentRegistry = new SubAgentRegistry();
   }
 
   async dispatch(params: DispatchParams): Promise<DispatchResult> {
@@ -406,6 +411,24 @@ export class RunCoordinator {
         transcriptManager.buildSessionContext().messages as AgentMessage[],
       );
       this.runtime.setActiveSession(transcriptManager);
+
+      // Inject session tools if storage is available
+      if (this.storage && this.sessionRouter && this.transcriptStore) {
+        const sessionToolCtx: SessionToolContext = {
+          callerSessionKey: record.sessionKey,
+          callerAgentId: this.agentId,
+          callerRunId: record.runId,
+          sessionRouter: this.sessionRouter,
+          storageEngine: this.storage,
+          transcriptStore: this.transcriptStore,
+          coordinator: this,
+          subAgentRegistry: this.subAgentRegistry,
+          coordinatorLookup: () => null, // Cross-agent lookup wired at server level later
+          subAgentSpawning: this.config.tools?.subAgentSpawning ?? false,
+        };
+        const sessionTools = createSessionTools(sessionToolCtx);
+        this.runtime.addTools(sessionTools);
+      }
 
       await this.persistUserMessage(record, params, transcriptManager);
 
@@ -916,6 +939,16 @@ export class RunCoordinator {
     });
 
     this.invokeAgentEndHook(record, 'completed');
+
+    // Notify SubAgentRegistry if this was a sub-agent run
+    if (record.sessionKey.startsWith('sub:')) {
+      const assistantText = record.payloads
+        .filter((p) => p.type === 'text')
+        .map((p) => p.content)
+        .join('');
+      this.subAgentRegistry.onComplete(record.runId, assistantText);
+    }
+
     this.resolveWaiters(record);
     this.scheduleCleanup(record.runId);
   }
