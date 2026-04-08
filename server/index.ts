@@ -302,6 +302,66 @@ app.post('/api/storage/maintenance/dry-run', async (req, res) => {
   }
 });
 
+app.get('/api/sessions/:agentId/:sessionKey/branches', async (req, res) => {
+  const { config, agentName } = req.query as { config: string; agentName: string };
+  try {
+    const parsedConfig = JSON.parse(config) as ResolvedStorageConfig;
+    const router = getOrCreateSessionRouter(parsedConfig, agentName, req.params.agentId);
+    const status = await router.getStatus(req.params.sessionKey);
+
+    if (!status) {
+      res.status(404).json({ error: `Session ${req.params.sessionKey} not found` });
+      return;
+    }
+
+    const engine = getOrCreateEngine(parsedConfig, agentName);
+    const transcriptStore = getOrCreateTranscriptStore(parsedConfig, agentName);
+    const transcriptPath = engine.resolveTranscriptPath(status);
+    const branchTree = transcriptStore.buildBranchTree(transcriptPath);
+    res.json(branchTree);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.get('/api/sessions/:agentId/:sessionKey/lineage', async (req, res) => {
+  const { config, agentName } = req.query as { config: string; agentName: string };
+  try {
+    const parsedConfig = JSON.parse(config) as ResolvedStorageConfig;
+    const router = getOrCreateSessionRouter(parsedConfig, agentName, req.params.agentId);
+    const engine = getOrCreateEngine(parsedConfig, agentName);
+    const status = await router.getStatus(req.params.sessionKey);
+
+    if (!status) {
+      res.status(404).json({ error: `Session ${req.params.sessionKey} not found` });
+      return;
+    }
+
+    const current = {
+      sessionId: status.sessionId,
+      sessionKey: status.sessionKey,
+      createdAt: status.createdAt,
+    };
+
+    const ancestors: Array<{ sessionId: string; sessionKey: string; createdAt: string }> = [];
+    let parentId = status.parentSessionId;
+    while (parentId) {
+      const parent = await engine.getSessionById(parentId);
+      if (!parent) break;
+      ancestors.push({
+        sessionId: parent.sessionId,
+        sessionKey: parent.sessionKey,
+        createdAt: parent.createdAt,
+      });
+      parentId = parent.parentSessionId;
+    }
+
+    res.json({ current, ancestors });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 // --- Health check ---
 
 app.get('/api/health', (_req, res) => {

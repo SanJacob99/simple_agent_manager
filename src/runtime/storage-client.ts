@@ -1,5 +1,5 @@
 import type { ResolvedStorageConfig } from '../../shared/agent-config';
-import type { SessionStoreEntry, MemoryFileInfo, MaintenanceReport } from '../../shared/storage-types';
+import type { SessionStoreEntry, MemoryFileInfo, MaintenanceReport, BranchTree, SessionLineage } from '../../shared/storage-types';
 import type {
   SessionRouteRequest,
   SessionRouteResponse,
@@ -157,6 +157,22 @@ export class StorageClient {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ config: this.config, agentName: this.agentName }),
     });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  }
+
+  async fetchBranchTree(sessionKey: string): Promise<BranchTree> {
+    const res = await fetch(
+      `/api/sessions/${encodeURIComponent(this.agentId)}/${encodeURIComponent(sessionKey)}/branches?${this.queryStr()}`,
+    );
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  }
+
+  async fetchLineage(sessionKey: string): Promise<SessionLineage> {
+    const res = await fetch(
+      `/api/sessions/${encodeURIComponent(this.agentId)}/${encodeURIComponent(sessionKey)}/lineage?${this.queryStr()}`,
+    );
     if (!res.ok) throw new Error(await res.text());
     return res.json();
   }

@@ -64,6 +64,7 @@ export interface SessionStoreEntry {
   compactionCount: number;
   memoryFlushAt?: string;
   memoryFlushCompactionCount?: number;
+  parentSessionId?: string;
 }
 
 export interface SessionEntry {
@@ -89,4 +90,29 @@ export interface MaintenanceReport {
   diskBefore: number;
   diskAfter: number;
   evictedForBudget: string[];
+}
+
+export interface ForkPoint {
+  entryId: string;
+  timestamp: string;
+  branches: BranchInfo[];
+}
+
+export interface BranchInfo {
+  branchId: string;
+  label: string;
+  preview: string;
+  timestamp: string;
+  entryCount: number;
+}
+
+export interface BranchTree {
+  forkPoints: ForkPoint[];
+  defaultPath: string[];
+  totalEntries: number;
+}
+
+export interface SessionLineage {
+  current: { sessionId: string; sessionKey: string; createdAt: string };
+  ancestors: Array<{ sessionId: string; sessionKey: string; createdAt: string }>;
 }

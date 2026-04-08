@@ -70,6 +70,7 @@ export class SessionRouter {
       sessionFile: this.toStoredSessionFile(created.sessionFile),
       createdAt: timestamp,
       updatedAt: timestamp,
+      parentSessionId: existing.sessionId,
       providerOverride: newModel ? existing.providerOverride : existing.providerOverride,
       modelOverride: newModel ?? existing.modelOverride,
       inputTokens: 0,
