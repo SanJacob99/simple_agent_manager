@@ -115,6 +115,27 @@ function toChatSession(meta: SessionStoreEntry, messages: Message[] = []): ChatS
   };
 }
 
+const NUMBERED_SESSION_LABEL = /^Session (\d+)$/;
+
+function getNextSessionDisplayName(
+  sessions: Record<string, ChatSession>,
+  agentId: string,
+): string {
+  const highestNumber = Object.values(sessions)
+    .filter((session) => session.agentId === agentId)
+    .reduce((maxNumber, session) => {
+      const match = NUMBERED_SESSION_LABEL.exec(session.displayName);
+      if (!match) {
+        return maxNumber;
+      }
+
+      const sessionNumber = Number.parseInt(match[1], 10);
+      return Number.isNaN(sessionNumber) ? maxNumber : Math.max(maxNumber, sessionNumber);
+    }, 0);
+
+  return `Session ${highestNumber + 1}`;
+}
+
 interface SessionStore {
   sessions: Record<string, ChatSession>;
   activeSessionKey: Record<string, string>;
@@ -228,11 +249,14 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     }
 
     const subKey = isDefault ? 'main' : `session-${Date.now()}`;
+    const displayName = isDefault
+      ? 'Main session'
+      : getNextSessionDisplayName(get().sessions, agentId);
     const routed = await storageEngine.routeSession({
       subKey,
       chatType: 'direct',
       provider,
-      displayName: isDefault ? 'Main session' : `${provider}/${modelId}`,
+      displayName,
     });
     const meta = await storageEngine.getSession(routed.sessionKey);
 

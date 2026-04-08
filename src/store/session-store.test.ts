@@ -78,6 +78,147 @@ describe('session-store', () => {
     );
   });
 
+  it('uses Session 1 as the first non-default session label', async () => {
+    const meta = makeMeta({
+      sessionKey: 'agent:agent-1:session-1',
+      displayName: 'Session 1',
+    });
+    const storage = {
+      agentId: meta.agentId,
+      routeSession: vi.fn(async () => ({
+        sessionKey: meta.sessionKey,
+        sessionId: meta.sessionId,
+        transcriptPath: 'C:/tmp/sess-1.jsonl',
+        created: true,
+        reset: false,
+      })),
+      getSession: vi.fn(async () => meta),
+      deleteSession: vi.fn(async () => {}),
+      listSessions: vi.fn(async () => []),
+      deleteAllSessions: vi.fn(async () => {}),
+    } as any;
+
+    const store = useSessionStore.getState();
+    store.bindStorage(storage);
+
+    await store.createSession('agent-1', 'openrouter', 'model-1');
+
+    expect(storage.routeSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        displayName: 'Session 1',
+      }),
+    );
+  });
+
+  it('increments numbered session labels per agent from the highest existing session number', async () => {
+    const meta = makeMeta({
+      sessionKey: 'agent:agent-1:session-4',
+      displayName: 'Session 4',
+    });
+    const storage = {
+      agentId: meta.agentId,
+      routeSession: vi.fn(async () => ({
+        sessionKey: meta.sessionKey,
+        sessionId: meta.sessionId,
+        transcriptPath: 'C:/tmp/sess-4.jsonl',
+        created: true,
+        reset: false,
+      })),
+      getSession: vi.fn(async () => meta),
+      deleteSession: vi.fn(async () => {}),
+      listSessions: vi.fn(async () => []),
+      deleteAllSessions: vi.fn(async () => {}),
+    } as any;
+
+    useSessionStore.setState({
+      sessions: {
+        'agent:agent-1:main': {
+          id: 'agent:agent-1:main',
+          sessionKey: 'agent:agent-1:main',
+          sessionId: 'sess-main',
+          agentId: 'agent-1',
+          createdAt: Date.parse('2026-04-07T12:00:00.000Z'),
+          lastMessageAt: Date.parse('2026-04-07T12:00:00.000Z'),
+          displayName: 'Main session',
+          messages: [],
+          meta: makeMeta(),
+        },
+        'agent:agent-1:session-1': {
+          id: 'agent:agent-1:session-1',
+          sessionKey: 'agent:agent-1:session-1',
+          sessionId: 'sess-1',
+          agentId: 'agent-1',
+          createdAt: Date.parse('2026-04-07T12:01:00.000Z'),
+          lastMessageAt: Date.parse('2026-04-07T12:01:00.000Z'),
+          displayName: 'Session 1',
+          messages: [],
+          meta: makeMeta({
+            sessionKey: 'agent:agent-1:session-1',
+            sessionId: 'sess-1',
+            displayName: 'Session 1',
+          }),
+        },
+        'agent:agent-1:session-3': {
+          id: 'agent:agent-1:session-3',
+          sessionKey: 'agent:agent-1:session-3',
+          sessionId: 'sess-3',
+          agentId: 'agent-1',
+          createdAt: Date.parse('2026-04-07T12:03:00.000Z'),
+          lastMessageAt: Date.parse('2026-04-07T12:03:00.000Z'),
+          displayName: 'Session 3',
+          messages: [],
+          meta: makeMeta({
+            sessionKey: 'agent:agent-1:session-3',
+            sessionId: 'sess-3',
+            displayName: 'Session 3',
+          }),
+        },
+        'agent:agent-2:session-9': {
+          id: 'agent:agent-2:session-9',
+          sessionKey: 'agent:agent-2:session-9',
+          sessionId: 'sess-other',
+          agentId: 'agent-2',
+          createdAt: Date.parse('2026-04-07T12:09:00.000Z'),
+          lastMessageAt: Date.parse('2026-04-07T12:09:00.000Z'),
+          displayName: 'Session 9',
+          messages: [],
+          meta: makeMeta({
+            sessionKey: 'agent:agent-2:session-9',
+            sessionId: 'sess-other',
+            agentId: 'agent-2',
+            displayName: 'Session 9',
+          }),
+        },
+        'agent:agent-1:legacy': {
+          id: 'agent:agent-1:legacy',
+          sessionKey: 'agent:agent-1:legacy',
+          sessionId: 'sess-legacy',
+          agentId: 'agent-1',
+          createdAt: Date.parse('2026-04-07T12:05:00.000Z'),
+          lastMessageAt: Date.parse('2026-04-07T12:05:00.000Z'),
+          displayName: 'openrouter/model-1',
+          messages: [],
+          meta: makeMeta({
+            sessionKey: 'agent:agent-1:legacy',
+            sessionId: 'sess-legacy',
+            displayName: 'openrouter/model-1',
+          }),
+        },
+      },
+    } as any);
+
+    const store = useSessionStore.getState();
+    store.bindStorage(storage);
+
+    await store.createSession('agent-1', 'openrouter', 'model-1');
+
+    expect(storage.routeSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        displayName: 'Session 4',
+      }),
+    );
+  });
+
   it('adds messages to local state without persisting transcript writes from the frontend', async () => {
     const meta = makeMeta();
     const storage = {
