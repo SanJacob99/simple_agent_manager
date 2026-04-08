@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useSessionStore, type Message } from './session-store';
 import type { SessionStoreEntry } from '../../shared/storage-types';
 
+const RUN_DIAGNOSTIC_CUSTOM_TYPE = 'sam.run_diagnostic';
+
 function makeMeta(overrides?: Partial<SessionStoreEntry>): SessionStoreEntry {
   return {
     sessionKey: 'agent:agent-1:main',
@@ -159,6 +161,54 @@ describe('session-store', () => {
         id: 'assistant-1',
         role: 'assistant',
         content: 'Final reply',
+      }),
+    ]);
+  });
+
+  it('hydrates persisted run diagnostics from custom transcript entries', async () => {
+    const meta = makeMeta();
+    const storage = {
+      agentId: meta.agentId,
+      listSessions: vi.fn(async () => [meta]),
+      getSession: vi.fn(async () => meta),
+      getTranscript: vi.fn(async () => ({
+        sessionKey: meta.sessionKey,
+        sessionId: meta.sessionId,
+        transcriptPath: 'C:/tmp/sess-1.jsonl',
+        entries: [
+          {
+            type: 'custom',
+            id: 'diag-1',
+            parentId: null,
+            timestamp: '2026-04-07T12:00:02.000Z',
+            customType: RUN_DIAGNOSTIC_CUSTOM_TYPE,
+            data: {
+              kind: 'run_error',
+              runId: 'run-1',
+              sessionId: meta.sessionId,
+              code: 'internal',
+              message: 'Model failed',
+              phase: 'running',
+              retriable: false,
+              createdAt: Date.parse('2026-04-07T12:00:02.000Z'),
+            },
+          },
+        ],
+      })),
+      deleteAllSessions: vi.fn(async () => {}),
+    } as any;
+
+    const store = useSessionStore.getState();
+    store.bindStorage(storage);
+    await store.loadSessionsFromDisk();
+    await store.flushSession(meta.sessionKey);
+
+    expect(useSessionStore.getState().sessions[meta.sessionKey]?.messages).toEqual([
+      expect.objectContaining({
+        id: 'diag-1',
+        role: 'assistant',
+        kind: 'diagnostic',
+        content: 'Diagnostic (running/internal): Model failed',
       }),
     ]);
   });

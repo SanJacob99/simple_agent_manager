@@ -1,6 +1,11 @@
 import { create } from 'zustand';
 import type { SessionEntry } from '@mariozechner/pi-coding-agent';
 import type { SessionStoreEntry, BranchTree, SessionLineage } from '../../shared/storage-types';
+import {
+  RUN_DIAGNOSTIC_CUSTOM_TYPE,
+  formatRunDiagnostic,
+  isRunDiagnosticData,
+} from '../../shared/session-diagnostics';
 import type { StorageClient } from '../runtime/storage-client';
 
 type StorageBackend = StorageClient;
@@ -20,6 +25,7 @@ export interface Message {
   timestamp: number;
   tokenCount?: number;
   usage?: MessageUsage;
+  kind?: 'diagnostic';
 }
 
 export interface ChatSession {
@@ -54,6 +60,23 @@ function extractMessageContent(content: unknown): string {
 }
 
 function toStoredMessage(entry: SessionEntry): Message | null {
+  if (entry.type === 'custom') {
+    const customEntry = entry as SessionEntry & { customType?: unknown; data?: unknown };
+    if (
+      customEntry.customType === RUN_DIAGNOSTIC_CUSTOM_TYPE
+      && isRunDiagnosticData(customEntry.data)
+    ) {
+      return {
+        id: entry.id,
+        role: 'assistant',
+        content: formatRunDiagnostic(customEntry.data),
+        timestamp: customEntry.data.createdAt ?? new Date(entry.timestamp).getTime(),
+        kind: 'diagnostic',
+      };
+    }
+    return null;
+  }
+
   if (entry.type !== 'message') {
     return null;
   }

@@ -29,6 +29,10 @@ import type {
   CoordinatorEvent,
   RunEventListener,
 } from '../../shared/run-types';
+import {
+  RUN_DIAGNOSTIC_CUSTOM_TYPE,
+  type RunDiagnosticData,
+} from '../../shared/session-diagnostics';
 import { RunConcurrencyController } from './run-concurrency-controller';
 import { SubAgentRegistry } from '../runtime/sub-agent-registry';
 import { createSessionTools, type SessionToolContext } from '../runtime/session-tools';
@@ -52,6 +56,8 @@ export interface RunRecord {
   error?: StructuredError;
   abortController: AbortController;
   timeoutTimer: ReturnType<typeof setTimeout> | null;
+  pendingDiagnostic?: RunDiagnosticData;
+  diagnosticPersisted?: boolean;
 }
 
 const RUN_RECORD_TTL_MS = 5 * 60 * 1000;
@@ -158,11 +164,16 @@ export class RunCoordinator {
 
       if (msgCtx.blocked) {
         this.pendingParams.delete(runId);
-        this.finalizeRunError(record, {
+        const error = {
           code: 'aborted',
           message: `Message blocked: ${msgCtx.blockReason ?? 'blocked by hook'}`,
           retriable: false,
+        } satisfies StructuredError;
+        record.pendingDiagnostic = this.buildRunDiagnostic(record, error);
+        await this.persistDiagnosticEntry(record).catch((persistError) => {
+          console.error('[RunCoordinator] failed to persist run diagnostic:', persistError);
         });
+        this.finalizeRunError(record, error);
         return { runId, sessionId: routed.sessionId, acceptedAt };
       }
     }
@@ -256,26 +267,33 @@ export class RunCoordinator {
       if (!result.removed) {
         return;
       }
-      this.pendingParams.delete(runId);
-      record.queue = undefined;
-      this.emitQueueLeft(record, 'aborted');
-      this.emitQueueUpdates(result.affectedRunIds);
-      this.finalizeRunError(record, {
+      const error = {
         code: 'aborted',
         message: 'Run aborted by caller',
         retriable: false,
+      } satisfies StructuredError;
+      this.pendingParams.delete(runId);
+      record.queue = undefined;
+      record.pendingDiagnostic = this.buildRunDiagnostic(record, error);
+      this.emitQueueLeft(record, 'aborted');
+      this.emitQueueUpdates(result.affectedRunIds);
+      void this.persistDiagnosticEntry(record).catch((persistError) => {
+        console.error('[RunCoordinator] failed to persist run diagnostic:', persistError);
       });
+      this.finalizeRunError(record, error);
       this.tryStartNextRun();
       return;
     }
 
-    this.runtime.abort();
-    this.concurrency.release(record.runId, record.sessionId);
-    this.finalizeRunError(record, {
+    const error = {
       code: 'aborted',
       message: 'Run aborted by caller',
       retriable: false,
-    });
+    } satisfies StructuredError;
+    record.pendingDiagnostic ??= this.buildRunDiagnostic(record, error);
+    this.runtime.abort();
+    this.concurrency.release(record.runId, record.sessionId);
+    this.finalizeRunError(record, error);
     this.tryStartNextRun();
   }
 
@@ -404,6 +422,7 @@ export class RunCoordinator {
       }
       transcriptFinalized = true;
       await transcriptWrites;
+      this.appendPendingDiagnostic(record, transcriptManager);
       transcriptManager = await this.finishTranscript(record, transcriptManager, transcriptState);
       record.transcriptPath = transcriptManager.getSessionFile() ?? record.transcriptPath;
     };
@@ -550,6 +569,7 @@ export class RunCoordinator {
       }
     } catch (error) {
       if (record.status === 'running') {
+        record.pendingDiagnostic ??= this.buildRunDiagnostic(record, classifyError(error));
         await finalizeTranscript();
         this.concurrency.release(record.runId, record.sessionId);
         this.finalizeRunError(record, classifyError(error));
@@ -571,6 +591,11 @@ export class RunCoordinator {
       if (record.status !== 'running') {
         return;
       }
+      record.pendingDiagnostic ??= this.buildRunDiagnostic(record, {
+        code: 'timeout',
+        message: `Run timed out after ${timeoutMs}ms`,
+        retriable: false,
+      });
       this.runtime.abort();
       this.concurrency.release(record.runId, record.sessionId);
       void finalizeTranscript().finally(() => {
@@ -601,6 +626,7 @@ export class RunCoordinator {
       if (record.status !== 'running') {
         return;
       }
+      record.pendingDiagnostic ??= this.buildRunDiagnostic(record, classifyError(error));
       await finalizeTranscript();
       this.concurrency.release(record.runId, record.sessionId);
       this.finalizeRunError(record, classifyError(error));
@@ -864,6 +890,40 @@ export class RunCoordinator {
     }
 
     return reopened;
+  }
+
+  private buildRunDiagnostic(record: RunRecord, error: StructuredError): RunDiagnosticData {
+    return {
+      kind: 'run_error',
+      runId: record.runId,
+      sessionId: record.sessionId,
+      code: error.code,
+      message: error.message,
+      phase: record.startedAt ? 'running' : 'pending',
+      retriable: error.retriable,
+      createdAt: Date.now(),
+    };
+  }
+
+  private appendPendingDiagnostic(record: RunRecord, transcriptManager: SessionManager): void {
+    if (!record.pendingDiagnostic || record.diagnosticPersisted) {
+      return;
+    }
+
+    transcriptManager.appendCustomEntry(RUN_DIAGNOSTIC_CUSTOM_TYPE, record.pendingDiagnostic);
+    record.diagnosticPersisted = true;
+  }
+
+  private async persistDiagnosticEntry(record: RunRecord): Promise<void> {
+    if (!this.transcriptStore || !record.pendingDiagnostic || record.diagnosticPersisted) {
+      return;
+    }
+
+    const transcriptManager = this.transcriptStore.openSession(record.transcriptPath);
+    transcriptManager.appendCustomEntry(RUN_DIAGNOSTIC_CUSTOM_TYPE, record.pendingDiagnostic);
+    await this.transcriptStore.snapshot(transcriptManager);
+    record.transcriptPath = transcriptManager.getSessionFile() ?? record.transcriptPath;
+    record.diagnosticPersisted = true;
   }
 
   private invokeAgentEndHook(

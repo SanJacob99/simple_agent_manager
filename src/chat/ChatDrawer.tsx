@@ -500,11 +500,13 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
                     ? 'bg-blue-600 text-white'
                     : msg.role === 'tool'
                       ? 'border border-slate-700 bg-slate-800/50 text-slate-400 italic'
-                      : 'bg-slate-800 text-slate-200'
+                      : msg.kind === 'diagnostic'
+                        ? 'border border-amber-500/30 bg-amber-500/10 text-amber-50'
+                        : 'bg-slate-800 text-slate-200'
                 }`}
               >
                 {msg.role === 'assistant' ? (
-                  <div className="prose-sm max-w-none text-slate-200 break-words">
+                  <div className={`prose-sm max-w-none break-words ${msg.kind === 'diagnostic' ? 'text-amber-50' : 'text-slate-200'}`}>
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm]}
                       components={{

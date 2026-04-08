@@ -11,6 +11,8 @@ import type { AgentConfig } from '../../shared/agent-config';
 import { HookRegistry } from '../hooks/hook-registry';
 import { HOOK_NAMES, type BeforeAgentReplyContext } from '../hooks/hook-types';
 
+const RUN_DIAGNOSTIC_CUSTOM_TYPE = 'sam.run_diagnostic';
+
 function makeUsage() {
   return {
     input: 10,
@@ -297,7 +299,7 @@ describe('RunCoordinator', () => {
       expect(status?.totalTokens).toBe(15);
     });
 
-    it('snapshots user-only transcripts when the run fails before an assistant reply', async () => {
+    it('persists a durable diagnostic when the run fails before an assistant reply', async () => {
       (runtime.prompt as any).mockRejectedValueOnce(new Error('Model failed'));
 
       const result = await coordinator.dispatch({ sessionKey: 'user-only', text: 'Hello' });
@@ -306,8 +308,23 @@ describe('RunCoordinator', () => {
       expect(wait.status).toBe('error');
 
       const entries = await readTranscript('user-only');
-      expect(entries).toHaveLength(1);
+      expect(entries).toHaveLength(2);
       expect((entries[0] as any).message.role).toBe('user');
+      expect(entries[1]).toEqual(
+        expect.objectContaining({
+          type: 'custom',
+          customType: RUN_DIAGNOSTIC_CUSTOM_TYPE,
+          data: expect.objectContaining({
+            kind: 'run_error',
+            runId: result.runId,
+            sessionId: result.sessionId,
+            code: 'internal',
+            message: 'Model failed',
+            phase: 'running',
+            retriable: false,
+          }),
+        }),
+      );
     });
 
     it('accepts a second dispatch on the same session and leaves it pending', async () => {
