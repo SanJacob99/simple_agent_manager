@@ -2,3 +2,8 @@
 **Vulnerability:** The calculator tool evaluated arbitrary mathematical expressions using `new Function()` without validating the input, leading to a critical Remote Code Execution (RCE) vulnerability.
 **Learning:** Hardcoded evaluations or use of `eval`/`new Function` must strictly validate inputs using whitelisting. Otherwise they open up server-side code execution vulnerabilities. The unescaped `/` in a regex string caused syntax errors; proper escaping `\/` is required inside character classes in regex strings.
 **Prevention:** Always validate all user input prior to evaluating them.
+
+## 2026-04-08 - [CRITICAL] Fix SSRF vulnerability in web_fetch tool
+**Vulnerability:** The `web_fetch` tool passed user-provided URLs directly to the `fetch` function without validating the protocol or hostname, exposing a Server-Side Request Forgery (SSRF) vulnerability. This allowed agents or malicious inputs to access internal services and restricted metadata endpoints like `169.254.169.254`.
+**Learning:** Tools that make external network requests on behalf of the user must explicitly block local, internal, and reserved IP addresses, as well as enforcing standard protocols (HTTP/HTTPS) to avoid probing internal infrastructure.
+**Prevention:** Always parse and validate target URLs before sending server-side requests. Apply explicit deny-lists for sensitive domains and IPs.
