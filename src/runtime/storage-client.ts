@@ -1,5 +1,5 @@
 import type { ResolvedStorageConfig } from '../../shared/agent-config';
-import type { SessionStoreEntry, MemoryFileInfo } from '../../shared/storage-types';
+import type { SessionStoreEntry, MemoryFileInfo, MaintenanceReport } from '../../shared/storage-types';
 import type {
   SessionRouteRequest,
   SessionRouteResponse,
@@ -137,6 +137,26 @@ export class StorageClient {
 
   async listMemoryFiles(): Promise<MemoryFileInfo[]> {
     const res = await fetch(`/api/storage/memory/files?${this.queryStr()}`);
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  }
+
+  async runMaintenance(): Promise<MaintenanceReport> {
+    const res = await fetch('/api/storage/maintenance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config: this.config, agentName: this.agentName }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  }
+
+  async runMaintenanceDryRun(): Promise<MaintenanceReport> {
+    const res = await fetch('/api/storage/maintenance/dry-run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config: this.config, agentName: this.agentName }),
+    });
     if (!res.ok) throw new Error(await res.text());
     return res.json();
   }

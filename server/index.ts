@@ -274,6 +274,34 @@ app.get('/api/storage/memory/files', async (req, res) => {
   }
 });
 
+app.post('/api/storage/maintenance', async (req, res) => {
+  const { config, agentName } = req.body as {
+    config: ResolvedStorageConfig;
+    agentName: string;
+  };
+  try {
+    const engine = getOrCreateEngine(config, agentName);
+    const report = await engine.runMaintenance();
+    res.json(report);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.post('/api/storage/maintenance/dry-run', async (req, res) => {
+  const { config, agentName } = req.body as {
+    config: ResolvedStorageConfig;
+    agentName: string;
+  };
+  try {
+    const engine = getOrCreateEngine(config, agentName);
+    const report = await engine.runMaintenance('warn');
+    res.json(report);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 // --- Health check ---
 
 app.get('/api/health', (_req, res) => {
