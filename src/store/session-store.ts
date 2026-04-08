@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { SessionEntry } from '@mariozechner/pi-coding-agent';
-import type { SessionStoreEntry } from '../../shared/storage-types';
+import type { SessionStoreEntry, BranchTree, SessionLineage } from '../../shared/storage-types';
 import type { StorageClient } from '../runtime/storage-client';
 
 type StorageBackend = StorageClient;
@@ -130,6 +130,11 @@ interface SessionStore {
   pruneOrphanSessions: (validAgentIds: string[]) => Promise<void>;
   enforceSessionLimit: (agentId: string, maxSessions?: number) => Promise<void>;
   resetAllSessions: () => void;
+
+  activeBranch: Record<string, string[]>;
+  fetchBranchTree: (sessionKey: string) => Promise<BranchTree | null>;
+  selectBranch: (sessionKey: string, branchPath: string[]) => void;
+  fetchLineage: (sessionKey: string) => Promise<SessionLineage | null>;
 }
 
 export const useSessionStore = create<SessionStore>()((set, get) => ({
@@ -445,5 +450,29 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       void storage.deleteAllSessions().catch(console.error);
     }
     set({ sessions: {}, activeSessionKey: {} });
+  },
+
+  activeBranch: {},
+
+  fetchBranchTree: async (sessionKey) => {
+    const session = get().sessions[sessionKey];
+    if (!session) return null;
+    const storageEngine = get().storageEngines[session.agentId] ?? get().storageEngine;
+    if (!storageEngine) return null;
+    return storageEngine.fetchBranchTree(sessionKey);
+  },
+
+  selectBranch: (sessionKey, branchPath) => {
+    set((state) => ({
+      activeBranch: { ...state.activeBranch, [sessionKey]: branchPath },
+    }));
+  },
+
+  fetchLineage: async (sessionKey) => {
+    const session = get().sessions[sessionKey];
+    if (!session) return null;
+    const storageEngine = get().storageEngines[session.agentId] ?? get().storageEngine;
+    if (!storageEngine) return null;
+    return storageEngine.fetchLineage(sessionKey);
   },
 }));
