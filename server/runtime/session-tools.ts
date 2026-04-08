@@ -1,0 +1,361 @@
+import { randomUUID } from 'crypto';
+import { Type, type TSchema } from '@sinclair/typebox';
+import type { AgentTool, AgentToolResult } from '@mariozechner/pi-agent-core';
+import type { SessionRouter } from './session-router';
+import type { StorageEngine } from './storage-engine';
+import type { SessionTranscriptStore } from './session-transcript-store';
+import type { SubAgentRegistry } from './sub-agent-registry';
+import type { RunCoordinator } from '../agents/run-coordinator';
+
+export interface SessionToolContext {
+  callerSessionKey: string;
+  callerAgentId: string;
+  callerRunId: string;
+  sessionRouter: SessionRouter;
+  storageEngine: StorageEngine;
+  transcriptStore: SessionTranscriptStore;
+  coordinator: RunCoordinator;
+  subAgentRegistry: SubAgentRegistry;
+  coordinatorLookup: (agentId: string) => RunCoordinator | null;
+  subAgentSpawning: boolean;
+}
+
+function textResult(text: string): AgentToolResult<undefined> {
+  return { content: [{ type: 'text', text }], details: undefined };
+}
+
+function truncate(str: string, max: number): string {
+  if (str.length <= max) return str;
+  return str.slice(0, max) + '...(truncated)';
+}
+
+// --- Tool creators ---
+
+function createSessionsListTool(ctx: SessionToolContext): AgentTool<TSchema> {
+  return {
+    name: 'sessions_list',
+    description: 'List active sessions for this agent. Optionally filter by kind or recency.',
+    label: 'Sessions List',
+    parameters: Type.Object({
+      kind: Type.Optional(
+        Type.Union([
+          Type.Literal('all'),
+          Type.Literal('agent'),
+          Type.Literal('cron'),
+        ], { description: 'Filter sessions by kind (default: all)' }),
+      ),
+      recency: Type.Optional(
+        Type.Number({ description: 'Only return sessions updated within this many minutes' }),
+      ),
+    }),
+    execute: async (_id, params: any) => {
+      try {
+        let sessions = await ctx.sessionRouter.listSessions();
+
+        const kind = (params.kind as string | undefined) ?? 'all';
+        if (kind === 'agent') {
+          sessions = sessions.filter((s) => s.sessionKey.startsWith('agent:'));
+        } else if (kind === 'cron') {
+          sessions = sessions.filter((s) => s.sessionKey.startsWith('cron:'));
+        }
+
+        if (params.recency != null) {
+          const cutoff = Date.now() - (params.recency as number) * 60 * 1000;
+          sessions = sessions.filter((s) => new Date(s.updatedAt).getTime() >= cutoff);
+        }
+
+        const summary = sessions.map((s) => ({
+          sessionKey: s.sessionKey,
+          sessionId: s.sessionId,
+          chatType: s.chatType,
+          updatedAt: s.updatedAt,
+          totalTokens: s.totalTokens,
+          displayName: s.displayName,
+        }));
+
+        return textResult(JSON.stringify(summary, null, 2));
+      } catch (e) {
+        return textResult(`Error listing sessions: ${e instanceof Error ? e.message : 'Unknown error'}`);
+      }
+    },
+  };
+}
+
+function createSessionsHistoryTool(ctx: SessionToolContext): AgentTool<TSchema> {
+  return {
+    name: 'sessions_history',
+    description: 'Read the transcript history of a session. Messages are truncated at 500 chars.',
+    label: 'Sessions History',
+    parameters: Type.Object({
+      sessionKey: Type.String({ description: 'The session key to read history from' }),
+    }),
+    execute: async (_id, params: any) => {
+      try {
+        const sessionKey = params.sessionKey as string;
+        const session = await ctx.sessionRouter.getStatus(sessionKey);
+        if (!session) {
+          return textResult(`Session not found: ${sessionKey}`);
+        }
+
+        const transcriptPath = ctx.storageEngine.resolveTranscriptPath(session);
+        const entries = ctx.transcriptStore.readTranscript(transcriptPath);
+
+        const formatted = entries.map((entry) => {
+          const content = typeof entry.content === 'string'
+            ? entry.content
+            : JSON.stringify(entry.content ?? '');
+          return `[${entry.type}] ${truncate(content, 500)}`;
+        }).join('\n\n');
+
+        return textResult(formatted || '(empty transcript)');
+      } catch (e) {
+        return textResult(`Error reading history: ${e instanceof Error ? e.message : 'Unknown error'}`);
+      }
+    },
+  };
+}
+
+function createSessionsSendTool(ctx: SessionToolContext): AgentTool<TSchema> {
+  return {
+    name: 'sessions_send',
+    description: 'Send a message to a session. Optionally wait for the agent reply.',
+    label: 'Sessions Send',
+    parameters: Type.Object({
+      sessionKey: Type.String({ description: 'Target session key' }),
+      message: Type.String({ description: 'Message text to send' }),
+      wait: Type.Optional(Type.Boolean({ description: 'Wait for the agent reply (default: false)' })),
+      timeoutMs: Type.Optional(Type.Number({ description: 'Timeout in ms when waiting (default: 30000)' })),
+    }),
+    execute: async (_id, params: any) => {
+      try {
+        const sessionKey = params.sessionKey as string;
+        const message = params.message as string;
+        const shouldWait = params.wait === true;
+        const timeoutMs = params.timeoutMs as number | undefined;
+
+        const dispatchResult = await ctx.coordinator.dispatch({
+          sessionKey,
+          text: message,
+        });
+
+        if (!shouldWait) {
+          return textResult(JSON.stringify({
+            dispatched: true,
+            runId: dispatchResult.runId,
+            sessionId: dispatchResult.sessionId,
+          }));
+        }
+
+        const waitResult = await ctx.coordinator.wait(dispatchResult.runId, timeoutMs);
+        const replyText = waitResult.payloads
+          .filter((p) => p.type === 'text')
+          .map((p) => p.content)
+          .join('\n');
+
+        return textResult(replyText || `(no text reply, status: ${waitResult.status})`);
+      } catch (e) {
+        return textResult(`Error sending message: ${e instanceof Error ? e.message : 'Unknown error'}`);
+      }
+    },
+  };
+}
+
+function createSessionsSpawnTool(ctx: SessionToolContext): AgentTool<TSchema> {
+  return {
+    name: 'sessions_spawn',
+    description: 'Spawn a sub-agent session. Creates a new sub-session and dispatches a message to it.',
+    label: 'Sessions Spawn',
+    parameters: Type.Object({
+      targetAgentId: Type.Optional(
+        Type.String({ description: 'Agent ID to spawn (defaults to self)' }),
+      ),
+      message: Type.String({ description: 'Initial message for the sub-agent' }),
+      wait: Type.Optional(Type.Boolean({ description: 'Wait for the sub-agent reply (default: false)' })),
+      timeoutMs: Type.Optional(Type.Number({ description: 'Timeout in ms when waiting' })),
+    }),
+    execute: async (_id, params: any) => {
+      try {
+        const targetAgentId = (params.targetAgentId as string | undefined) ?? ctx.callerAgentId;
+        const message = params.message as string;
+        const shouldWait = params.wait === true;
+        const timeoutMs = params.timeoutMs as number | undefined;
+
+        const subSessionKey = `sub:${ctx.callerSessionKey}:${randomUUID()}`;
+
+        // Resolve the coordinator for the target agent
+        let targetCoordinator: RunCoordinator | null;
+        if (targetAgentId === ctx.callerAgentId) {
+          targetCoordinator = ctx.coordinator;
+        } else {
+          targetCoordinator = ctx.coordinatorLookup(targetAgentId);
+        }
+
+        if (!targetCoordinator) {
+          return textResult(`Error: no coordinator found for agent "${targetAgentId}"`);
+        }
+
+        const dispatchResult = await targetCoordinator.dispatch({
+          sessionKey: subSessionKey,
+          text: message,
+        });
+
+        const record = ctx.subAgentRegistry.spawn(
+          { sessionKey: ctx.callerSessionKey, runId: ctx.callerRunId },
+          { agentId: targetAgentId, sessionKey: subSessionKey, runId: dispatchResult.runId },
+        );
+
+        if (!shouldWait) {
+          return textResult(JSON.stringify({
+            spawned: true,
+            subAgentId: record.subAgentId,
+            sessionKey: subSessionKey,
+            runId: dispatchResult.runId,
+          }));
+        }
+
+        const waitResult = await targetCoordinator.wait(dispatchResult.runId, timeoutMs);
+        const replyText = waitResult.payloads
+          .filter((p) => p.type === 'text')
+          .map((p) => p.content)
+          .join('\n');
+
+        return textResult(replyText || `(no text reply, status: ${waitResult.status})`);
+      } catch (e) {
+        return textResult(`Error spawning sub-agent: ${e instanceof Error ? e.message : 'Unknown error'}`);
+      }
+    },
+  };
+}
+
+function createSessionsYieldTool(ctx: SessionToolContext): AgentTool<TSchema> {
+  return {
+    name: 'sessions_yield',
+    description: 'Signal that you are yielding execution until all sub-agents complete.',
+    label: 'Sessions Yield',
+    parameters: Type.Object({}),
+    execute: async () => {
+      try {
+        ctx.subAgentRegistry.setYieldPending(ctx.callerSessionKey);
+        return textResult('Yield pending — execution will pause until all sub-agents complete.');
+      } catch (e) {
+        return textResult(`Error yielding: ${e instanceof Error ? e.message : 'Unknown error'}`);
+      }
+    },
+  };
+}
+
+function createSubagentsTool(ctx: SessionToolContext): AgentTool<TSchema> {
+  return {
+    name: 'subagents',
+    description: 'Manage sub-agents: list, get status, or kill a sub-agent.',
+    label: 'Sub-Agents',
+    parameters: Type.Object({
+      action: Type.Union([
+        Type.Literal('list'),
+        Type.Literal('status'),
+        Type.Literal('kill'),
+      ], { description: 'Action to perform' }),
+      subAgentId: Type.Optional(
+        Type.String({ description: 'Sub-agent ID (required for status and kill)' }),
+      ),
+    }),
+    execute: async (_id, params: any) => {
+      try {
+        const action = params.action as string;
+
+        if (action === 'list') {
+          const records = ctx.subAgentRegistry.listForParent(ctx.callerSessionKey);
+          const summary = records.map((r) => ({
+            subAgentId: r.subAgentId,
+            targetAgentId: r.targetAgentId,
+            sessionKey: r.sessionKey,
+            status: r.status,
+            startedAt: r.startedAt,
+            endedAt: r.endedAt,
+          }));
+          return textResult(JSON.stringify(summary, null, 2));
+        }
+
+        const subAgentId = params.subAgentId as string | undefined;
+        if (!subAgentId) {
+          return textResult('Error: subAgentId is required for status and kill actions.');
+        }
+
+        if (action === 'status') {
+          const record = ctx.subAgentRegistry.get(subAgentId);
+          if (!record) {
+            return textResult(`Sub-agent not found: ${subAgentId}`);
+          }
+          return textResult(JSON.stringify(record, null, 2));
+        }
+
+        if (action === 'kill') {
+          const killed = ctx.subAgentRegistry.kill(subAgentId);
+          return textResult(killed
+            ? `Sub-agent ${subAgentId} killed.`
+            : `Could not kill sub-agent ${subAgentId} (not found or already stopped).`);
+        }
+
+        return textResult(`Unknown action: ${action}`);
+      } catch (e) {
+        return textResult(`Error managing sub-agents: ${e instanceof Error ? e.message : 'Unknown error'}`);
+      }
+    },
+  };
+}
+
+function createSessionStatusTool(ctx: SessionToolContext): AgentTool<TSchema> {
+  return {
+    name: 'session_status',
+    description: 'Get status metadata for a session. Optionally set a model override.',
+    label: 'Session Status',
+    parameters: Type.Object({
+      sessionKey: Type.String({ description: 'Session key to query' }),
+      modelOverride: Type.Optional(
+        Type.String({ description: 'If provided, set a new model override for the session' }),
+      ),
+    }),
+    execute: async (_id, params: any) => {
+      try {
+        const sessionKey = params.sessionKey as string;
+        const modelOverride = params.modelOverride as string | undefined;
+
+        if (modelOverride) {
+          await ctx.sessionRouter.updateAfterTurn(sessionKey, { modelOverride });
+        }
+
+        const session = await ctx.sessionRouter.getStatus(sessionKey);
+        if (!session) {
+          return textResult(`Session not found: ${sessionKey}`);
+        }
+
+        return textResult(JSON.stringify(session, null, 2));
+      } catch (e) {
+        return textResult(`Error getting session status: ${e instanceof Error ? e.message : 'Unknown error'}`);
+      }
+    },
+  };
+}
+
+/**
+ * Create all session tools for the given context.
+ * When subAgentSpawning is false, spawn/yield/subagents tools are excluded.
+ */
+export function createSessionTools(ctx: SessionToolContext): AgentTool<TSchema>[] {
+  const tools: AgentTool<TSchema>[] = [
+    createSessionsListTool(ctx),
+    createSessionsHistoryTool(ctx),
+    createSessionsSendTool(ctx),
+    createSessionStatusTool(ctx),
+  ];
+
+  if (ctx.subAgentSpawning) {
+    tools.push(
+      createSessionsSpawnTool(ctx),
+      createSessionsYieldTool(ctx),
+      createSubagentsTool(ctx),
+    );
+  }
+
+  return tools;
+}

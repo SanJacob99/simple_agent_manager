@@ -21,6 +21,13 @@ export const ALL_TOOL_NAMES = [
   'send_message',
   'image_generation',
   'text_to_speech',
+  'sessions_list',
+  'sessions_history',
+  'sessions_send',
+  'sessions_spawn',
+  'sessions_yield',
+  'subagents',
+  'session_status',
 ];
 
 // --- Tool implementations (server-side stubs/real) ---
@@ -110,6 +117,11 @@ const TOOL_CREATORS: Record<string, () => AgentTool<TSchema>> = {
   text_to_speech: () => createStubTool('text_to_speech', 'Convert text to speech'),
 };
 
+const SESSION_TOOL_NAMES = [
+  'sessions_list', 'sessions_history', 'sessions_send',
+  'sessions_spawn', 'sessions_yield', 'subagents', 'session_status',
+];
+
 /**
  * Create AgentTool instances from a list of tool names.
  * Additional tools (e.g. memory tools) can be appended.
@@ -121,8 +133,9 @@ export function createAgentTools(
   const tools: AgentTool<TSchema>[] = [];
 
   for (const name of names) {
-    // Skip memory tools here - they're provided by MemoryEngine
+    // Skip memory and session tools - provided separately
     if (['memory_search', 'memory_get', 'memory_save'].includes(name)) continue;
+    if (SESSION_TOOL_NAMES.includes(name)) continue;
 
     const creator = TOOL_CREATORS[name];
     if (creator) {

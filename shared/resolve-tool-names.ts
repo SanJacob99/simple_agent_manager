@@ -8,6 +8,15 @@ export const TOOL_GROUPS: Record<string, string[]> = {
   memory: ['memory_search', 'memory_get', 'memory_save'],
   coding: ['bash', 'read_file', 'write_file', 'code_interpreter'],
   communication: ['send_message'],
+  sessions: [
+    'sessions_list',
+    'sessions_history',
+    'sessions_send',
+    'sessions_spawn',
+    'sessions_yield',
+    'subagents',
+    'session_status',
+  ],
 };
 
 export const TOOL_PROFILES: Record<string, string[]> = {
@@ -33,6 +42,13 @@ export const ALL_TOOL_NAMES = [
   'send_message',
   'image_generation',
   'text_to_speech',
+  'sessions_list',
+  'sessions_history',
+  'sessions_send',
+  'sessions_spawn',
+  'sessions_yield',
+  'subagents',
+  'session_status',
 ];
 
 /**
