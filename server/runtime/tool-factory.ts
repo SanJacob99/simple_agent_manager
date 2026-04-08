@@ -68,6 +68,28 @@ function createWebFetchTool(): AgentTool<TSchema> {
     }),
     execute: async (_id, params: any, signal) => {
       try {
+        // SECURITY: Prevent Server-Side Request Forgery (SSRF)
+        const parsedUrl = new URL(params.url);
+
+        // Enforce valid protocols
+        if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+          return textResult('Error: Invalid URL protocol. Only http and https are allowed.');
+        }
+
+        // Block internal and reserved IP addresses/hostnames
+        const hostname = parsedUrl.hostname.toLowerCase();
+        if (
+          hostname === 'localhost' ||
+          hostname === '127.0.0.1' ||
+          hostname === '0.0.0.0' ||
+          hostname === '::1' ||
+          hostname === '169.254.169.254' ||
+          hostname.endsWith('.internal') ||
+          hostname.endsWith('.local')
+        ) {
+          return textResult('Error: Access to internal or restricted hosts is not permitted.');
+        }
+
         const resp = await fetch(params.url, {
           method: params.method || 'GET',
           signal,
