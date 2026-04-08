@@ -19,6 +19,16 @@ export const TOOL_GROUPS: Record<string, string[]> = {
   ],
 };
 
+export const SESSION_TOOL_NAMES = [
+  'sessions_list',
+  'sessions_history',
+  'sessions_send',
+  'sessions_spawn',
+  'sessions_yield',
+  'subagents',
+  'session_status',
+] as const;
+
 export const TOOL_PROFILES: Record<string, string[]> = {
   full: ['runtime', 'fs', 'web', 'memory', 'coding', 'communication'],
   coding: ['runtime', 'fs', 'coding', 'memory'],
@@ -42,13 +52,7 @@ export const ALL_TOOL_NAMES = [
   'send_message',
   'image_generation',
   'text_to_speech',
-  'sessions_list',
-  'sessions_history',
-  'sessions_send',
-  'sessions_spawn',
-  'sessions_yield',
-  'subagents',
-  'session_status',
+  ...SESSION_TOOL_NAMES,
 ];
 
 /**

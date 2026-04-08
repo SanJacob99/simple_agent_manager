@@ -1,5 +1,6 @@
 import { Type, type TSchema } from '@sinclair/typebox';
 import type { AgentTool, AgentToolResult } from '@mariozechner/pi-agent-core';
+import { SESSION_TOOL_NAMES } from '../../shared/resolve-tool-names';
 
 // Re-export resolveToolNames from shared (used by agent-runtime.ts)
 export { resolveToolNames } from '../../shared/resolve-tool-names';
@@ -21,13 +22,7 @@ export const ALL_TOOL_NAMES = [
   'send_message',
   'image_generation',
   'text_to_speech',
-  'sessions_list',
-  'sessions_history',
-  'sessions_send',
-  'sessions_spawn',
-  'sessions_yield',
-  'subagents',
-  'session_status',
+  ...SESSION_TOOL_NAMES,
 ];
 
 // --- Tool implementations (server-side stubs/real) ---
@@ -139,10 +134,7 @@ const TOOL_CREATORS: Record<string, () => AgentTool<TSchema>> = {
   text_to_speech: () => createStubTool('text_to_speech', 'Convert text to speech'),
 };
 
-const SESSION_TOOL_NAMES = [
-  'sessions_list', 'sessions_history', 'sessions_send',
-  'sessions_spawn', 'sessions_yield', 'subagents', 'session_status',
-];
+const SESSION_TOOL_NAME_SET = new Set<string>(SESSION_TOOL_NAMES);
 
 /**
  * Create AgentTool instances from a list of tool names.
@@ -157,7 +149,7 @@ export function createAgentTools(
   for (const name of names) {
     // Skip memory and session tools - provided separately
     if (['memory_search', 'memory_get', 'memory_save'].includes(name)) continue;
-    if (SESSION_TOOL_NAMES.includes(name)) continue;
+    if (SESSION_TOOL_NAME_SET.has(name)) continue;
 
     const creator = TOOL_CREATORS[name];
     if (creator) {

@@ -204,6 +204,37 @@ describe('RunCoordinator', () => {
       );
     });
 
+    it('does not inject session tools when no tools are resolved for the agent', async () => {
+      const result = await coordinator.dispatch({ sessionKey: 'no-session-tools', text: 'Hello' });
+      await coordinator.wait(result.runId, 5000);
+
+      expect(runtime.addTools).not.toHaveBeenCalled();
+    });
+
+    it('injects only the resolved session tools for the agent', async () => {
+      coordinator.destroy();
+      config = makeConfig(storagePath, {
+        tools: {
+          profile: 'custom',
+          resolvedTools: ['sessions_list'],
+          enabledGroups: [],
+          skills: [],
+          plugins: [],
+          subAgentSpawning: false,
+          maxSubAgents: 3,
+        },
+      });
+      runtime = mockRuntime();
+      coordinator = new RunCoordinator('agent-1', runtime, config, storage);
+
+      const result = await coordinator.dispatch({ sessionKey: 'selected-session-tools', text: 'Hello' });
+      await coordinator.wait(result.runId, 5000);
+
+      expect(runtime.addTools).toHaveBeenCalledTimes(1);
+      const [tools] = (runtime.addTools as any).mock.calls[0];
+      expect(tools.map((tool: any) => tool.name)).toEqual(['sessions_list']);
+    });
+
     it('persists tool and assistant transcript entries and updates usage counters', async () => {
       (runtime.prompt as any).mockImplementationOnce(async () => {
         (runtime as any).emitEvent({

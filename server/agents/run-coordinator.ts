@@ -32,6 +32,7 @@ import type {
 import { RunConcurrencyController } from './run-concurrency-controller';
 import { SubAgentRegistry } from '../runtime/sub-agent-registry';
 import { createSessionTools, type SessionToolContext } from '../runtime/session-tools';
+import { SESSION_TOOL_NAMES } from '../../shared/resolve-tool-names';
 
 export type RunStatus = 'pending' | 'running' | 'completed' | 'error';
 
@@ -56,6 +57,7 @@ export interface RunRecord {
 const RUN_RECORD_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_WAIT_TIMEOUT_MS = 30_000;
 const NO_REPLY_PATTERN = /^no_reply$/i;
+const SESSION_TOOL_NAME_SET = new Set<string>(SESSION_TOOL_NAMES);
 
 interface TranscriptState {
   assistantText: string;
@@ -412,8 +414,17 @@ export class RunCoordinator {
       );
       this.runtime.setActiveSession(transcriptManager);
 
-      // Inject session tools if storage is available
-      if (this.storage && this.sessionRouter && this.transcriptStore) {
+      const enabledSessionToolNames = this.config.tools?.resolvedTools.filter((toolName) =>
+        SESSION_TOOL_NAME_SET.has(toolName),
+      ) ?? [];
+
+      // Inject session tools only when explicitly resolved from the tool node.
+      if (
+        this.storage
+        && this.sessionRouter
+        && this.transcriptStore
+        && enabledSessionToolNames.length > 0
+      ) {
         const sessionToolCtx: SessionToolContext = {
           callerSessionKey: record.sessionKey,
           callerAgentId: this.agentId,
@@ -425,9 +436,12 @@ export class RunCoordinator {
           subAgentRegistry: this.subAgentRegistry,
           coordinatorLookup: () => null, // Cross-agent lookup wired at server level later
           subAgentSpawning: this.config.tools?.subAgentSpawning ?? false,
+          enabledToolNames: enabledSessionToolNames,
         };
         const sessionTools = createSessionTools(sessionToolCtx);
-        this.runtime.addTools(sessionTools);
+        if (sessionTools.length > 0) {
+          this.runtime.addTools(sessionTools);
+        }
       }
 
       await this.persistUserMessage(record, params, transcriptManager);

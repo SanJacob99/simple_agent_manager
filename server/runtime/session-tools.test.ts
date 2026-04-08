@@ -71,6 +71,15 @@ function createMockContext(overrides: Partial<SessionToolContext> = {}): Session
     } as any,
     coordinatorLookup: vi.fn().mockReturnValue(null),
     subAgentSpawning: true,
+    enabledToolNames: [
+      'sessions_list',
+      'sessions_history',
+      'sessions_send',
+      'sessions_spawn',
+      'sessions_yield',
+      'subagents',
+      'session_status',
+    ],
     ...overrides,
   };
 }
@@ -104,6 +113,31 @@ describe('createSessionTools', () => {
     expect(names).not.toContain('sessions_spawn');
     expect(names).not.toContain('sessions_yield');
     expect(names).not.toContain('subagents');
+  });
+
+  it('returns only the explicitly enabled session tools', () => {
+    const ctx = createMockContext({
+      enabledToolNames: ['sessions_list', 'session_status'],
+      subAgentSpawning: true,
+    });
+    const tools = createSessionTools(ctx);
+
+    expect(tools.map((tool) => tool.name)).toEqual([
+      'sessions_list',
+      'session_status',
+    ]);
+  });
+
+  it('does not return sub-agent tools unless they are explicitly enabled', () => {
+    const ctx = createMockContext({
+      enabledToolNames: ['sessions_list', 'session_status'],
+      subAgentSpawning: true,
+    });
+    const tools = createSessionTools(ctx);
+
+    expect(tools.map((tool) => tool.name)).not.toContain('sessions_spawn');
+    expect(tools.map((tool) => tool.name)).not.toContain('sessions_yield');
+    expect(tools.map((tool) => tool.name)).not.toContain('subagents');
   });
 });
 

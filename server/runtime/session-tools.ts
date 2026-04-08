@@ -6,6 +6,7 @@ import type { StorageEngine } from './storage-engine';
 import type { SessionTranscriptStore } from './session-transcript-store';
 import type { SubAgentRegistry } from './sub-agent-registry';
 import type { RunCoordinator } from '../agents/run-coordinator';
+import { SESSION_TOOL_NAMES } from '../../shared/resolve-tool-names';
 
 export interface SessionToolContext {
   callerSessionKey: string;
@@ -18,6 +19,7 @@ export interface SessionToolContext {
   subAgentRegistry: SubAgentRegistry;
   coordinatorLookup: (agentId: string) => RunCoordinator | null;
   subAgentSpawning: boolean;
+  enabledToolNames: string[];
 }
 
 function textResult(text: string): AgentToolResult<undefined> {
@@ -342,19 +344,36 @@ function createSessionStatusTool(ctx: SessionToolContext): AgentTool<TSchema> {
  * When subAgentSpawning is false, spawn/yield/subagents tools are excluded.
  */
 export function createSessionTools(ctx: SessionToolContext): AgentTool<TSchema>[] {
-  const tools: AgentTool<TSchema>[] = [
-    createSessionsListTool(ctx),
-    createSessionsHistoryTool(ctx),
-    createSessionsSendTool(ctx),
-    createSessionStatusTool(ctx),
-  ];
+  const enabledToolNames = new Set<string>(ctx.enabledToolNames);
+  const sessionToolSet = new Set<string>(SESSION_TOOL_NAMES);
+  const isEnabled = (toolName: string) =>
+    sessionToolSet.has(toolName) && enabledToolNames.has(toolName);
+
+  const tools: AgentTool<TSchema>[] = [];
+
+  if (isEnabled('sessions_list')) {
+    tools.push(createSessionsListTool(ctx));
+  }
+  if (isEnabled('sessions_history')) {
+    tools.push(createSessionsHistoryTool(ctx));
+  }
+  if (isEnabled('sessions_send')) {
+    tools.push(createSessionsSendTool(ctx));
+  }
+  if (isEnabled('session_status')) {
+    tools.push(createSessionStatusTool(ctx));
+  }
 
   if (ctx.subAgentSpawning) {
-    tools.push(
-      createSessionsSpawnTool(ctx),
-      createSessionsYieldTool(ctx),
-      createSubagentsTool(ctx),
-    );
+    if (isEnabled('sessions_spawn')) {
+      tools.push(createSessionsSpawnTool(ctx));
+    }
+    if (isEnabled('sessions_yield')) {
+      tools.push(createSessionsYieldTool(ctx));
+    }
+    if (isEnabled('subagents')) {
+      tools.push(createSubagentsTool(ctx));
+    }
   }
 
   return tools;
