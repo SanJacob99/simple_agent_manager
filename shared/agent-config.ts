@@ -76,6 +76,8 @@ export interface ModelCapabilityOverrides {
 export interface DiscoveredModelMetadata {
   id: string;
   provider: string;
+  name?: string;
+  description?: string;
   reasoningSupported?: boolean;
   inputModalities?: ModelInputModality[];
   contextWindow?: number;
@@ -85,6 +87,7 @@ export interface DiscoveredModelMetadata {
   tokenizer?: string;
   supportedParameters?: string[];
   topProvider?: ModelTopProviderInfo;
+  raw?: unknown;
 }
 
 // --- Agent Config interfaces ---

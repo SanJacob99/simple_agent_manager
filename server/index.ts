@@ -10,6 +10,7 @@ import { handleConnection } from './connections/ws-handler';
 import { getGlobalHookRegistry } from './agents/agent-manager';
 import { HOOK_NAMES, type BackendLifecycleContext } from './hooks/hook-types';
 import { createStartupErrorHandler } from './startup';
+import { OpenRouterModelCatalogStore } from './runtime/openrouter-model-catalog-store';
 import { SettingsFileStore } from './runtime/settings-file-store';
 import type { ResolvedStorageConfig } from '../shared/agent-config';
 import type { SessionRouteRequest, SessionTranscriptResponse } from '../shared/session-routes';
@@ -22,6 +23,7 @@ app.use(express.json({ limit: '10mb' }));
 const apiKeys = new ApiKeyStore();
 const agentManager = new AgentManager(apiKeys);
 const settingsFile = new SettingsFileStore();
+const modelCatalogStore = new OpenRouterModelCatalogStore();
 
 // --- Storage engine instances ---
 
@@ -385,6 +387,40 @@ app.put('/api/settings', async (req, res) => {
     await settingsFile.save(settings);
     // Keep in-memory API key store in sync
     apiKeys.setAll(settings.apiKeys ?? {});
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// --- Model catalog cache ---
+
+app.get('/api/model-catalog/openrouter', async (_req, res) => {
+  try {
+    const apiKey = apiKeys.get('openrouter');
+    res.json(await modelCatalogStore.loadForClient(apiKey));
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.post('/api/model-catalog/openrouter/refresh', async (_req, res) => {
+  try {
+    const apiKey = apiKeys.get('openrouter');
+    if (!apiKey) {
+      res.status(400).json({ error: 'OpenRouter API key is required' });
+      return;
+    }
+
+    res.json(await modelCatalogStore.refresh(apiKey));
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.delete('/api/model-catalog/openrouter', async (_req, res) => {
+  try {
+    await modelCatalogStore.clear();
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });

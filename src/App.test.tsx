@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 import { useGraphStore } from './store/graph-store';
 import { useAgentConnectionStore } from './store/agent-connection-store';
+import { useSettingsStore } from './settings/settings-store';
+import { useModelCatalogStore } from './store/model-catalog-store';
 
 vi.mock('./canvas/FlowCanvas', () => ({
   default: () => <div>Flow Canvas Stub</div>,
@@ -28,6 +30,14 @@ describe('App settings workspace shell', () => {
     useAgentConnectionStore.setState({
       chatAgentNodeId: 'agent-1',
       agents: {},
+    } as any);
+    useSettingsStore.setState({
+      apiKeys: {},
+      loaded: true,
+      loadFromServer: vi.fn(async () => undefined),
+    } as any);
+    useModelCatalogStore.setState({
+      loadOpenRouterCatalog: vi.fn(async () => undefined),
     } as any);
   });
 
@@ -75,5 +85,15 @@ describe('App settings workspace shell', () => {
     expect(
       screen.getByRole('heading', { name: 'Providers & API Keys' }),
     ).toBeInTheDocument();
+  });
+
+  it('loads the cached OpenRouter catalog after settings load completes', () => {
+    render(
+      <ReactFlowProvider>
+        <App />
+      </ReactFlowProvider>,
+    );
+
+    expect(useModelCatalogStore.getState().loadOpenRouterCatalog).toHaveBeenCalled();
   });
 });

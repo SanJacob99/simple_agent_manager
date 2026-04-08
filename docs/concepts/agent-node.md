@@ -3,7 +3,7 @@
 > The central hub node that represents an AI agent — defines which LLM to use, the system prompt, and orchestrates all connected peripheral nodes.
 
 <!-- source: src/types/nodes.ts#AgentNodeData -->
-<!-- last-verified: 2026-04-04 -->
+<!-- last-verified: 2026-04-08 -->
 
 ## Overview
 
@@ -12,6 +12,8 @@ The Agent Node is the core building block of every graph. Each agent node repres
 When a user opens the chat drawer for an agent, the system traverses all edges pointing to that agent node, collects the connected peripheral configurations, and resolves them into an `AgentConfig` via `resolveAgentConfig()` in `src/utils/graph-to-agent.ts`. This config is then used to instantiate an `AgentRuntime` which wraps a `pi-agent-core` Agent with integrated memory, tools, and context management.
 
 The agent node stores a **full model capabilities snapshot** so the backend can operate independently of the frontend's live model catalog. When a user selects a model, all discovered API capabilities are snapshotted into `modelCapabilities`. Users can then override individual fields. This ensures connected nodes (like Context Engine) can always read capabilities even when the frontend is detached.
+
+Both the canvas Agent properties panel and the Settings Defaults workspace use the same searchable model-picker behavior. For OpenRouter, the picker merges built-in static models with a backend-persisted cached catalog when available, but it still allows manual provider-supported model IDs that are not present in the cached file yet.
 
 OpenRouter is the default LLM provider. Direct Anthropic, Google, and OpenAI integrations are planned for future releases.
 
@@ -60,9 +62,11 @@ When the chat drawer opens for an agent, the following happens:
    - Tool instances via `resolveToolNames()` + `createAgentTools()`
    - A `pi-agent-core` Agent with the assembled system prompt, model, tools, and `transformContext`
 
-4. **Model resolution** (`src/runtime/model-resolver.ts`): The provider + modelId are resolved to a concrete model object. Capability overrides (from the agent node's snapshotted capabilities) are applied on top of built-in model metadata. Since capabilities are always snapshotted, the backend can resolve the model without needing the frontend's live catalog.
+4. **Model resolution** (`src/runtime/model-resolver.ts`): The provider + modelId are resolved to a concrete model object. Capability overrides (from the agent node's snapshotted capabilities) are applied on top of built-in model metadata. Since capabilities are always snapshotted, the backend can resolve the model without needing the frontend's live catalog or cached discovery data.
 
-5. **Event streaming**: The runtime forwards `pi-agent-core` agent events to listeners. The ChatDrawer subscribes to these for streaming text, tool calls, and status updates.
+5. **Catalog-assisted selection**: On the frontend, OpenRouter discovery is loaded from a backend-owned persisted cache file and only refreshed on demand. This improves picker search and model metadata display, but it is not required for runtime execution because manual model IDs and snapshotted capabilities remain first-class.
+
+6. **Event streaming**: The runtime forwards `pi-agent-core` agent events to listeners. The ChatDrawer subscribes to these for streaming text, tool calls, and status updates.
 
 ## Connections
 

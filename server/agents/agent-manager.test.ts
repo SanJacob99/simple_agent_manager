@@ -22,43 +22,43 @@ vi.mock('../runtime/agent-runtime', () => {
       this.state.messages = [...messages];
     });
     addTools = vi.fn();
-    state = { messages: [], model: { api: 'openai-completions' } };
-    state = { messages: [] };
+    state: any = { messages: [], model: { api: 'openai-completions' } };
   }
   return { AgentRuntime: MockAgentRuntime };
 });
 
 // Mock StorageEngine to avoid filesystem
 vi.mock('../runtime/storage-engine', () => {
+  const os = require('os');
   class MockStorageEngine {
-    private sessions: any[] = [];
+    private sessions: Map<string, any> = new Map();
     init = vi.fn();
-    getSessionByKey = vi.fn(async (key: string) => {
-      return this.sessions.find((s: any) => s.sessionKey === key) ?? null;
+    getAgentDir = vi.fn(() => os.tmpdir());
+    getSessionsDir = vi.fn(() => os.tmpdir());
+    getSession = vi.fn(async (key: string) => {
+      return this.sessions.get(key) ?? null;
     });
-    getSessionMeta = vi.fn(async (id: string) => {
-      return this.sessions.find((s: any) => s.sessionId === id) ?? null;
-    });
-    createSession = vi.fn(async (meta: any) => {
-      this.sessions.push(meta);
-    });
-    createManagedSession = vi.fn(async (llmSlug: string, sessionKey?: string) => {
-      const sessionId = `test-session-id-${Math.random()}`;
-      const meta = { sessionId, sessionKey: sessionKey ?? sessionId, llmSlug };
-      this.sessions.push(meta);
-      return meta;
-    });
-    updateSessionMeta = vi.fn(async (sessionId: string, partial: any) => {
-      const session = this.sessions.find((s: any) => s.sessionId === sessionId);
-      if (session) {
-        Object.assign(session, partial);
+    getSessionById = vi.fn(async (id: string) => {
+      for (const s of this.sessions.values()) {
+        if (s.sessionId === id) return s;
       }
+      return null;
     });
+    createSession = vi.fn(async (entry: any) => {
+      this.sessions.set(entry.sessionKey, entry);
+    });
+    updateSession = vi.fn(async (key: string, partial: any) => {
+      const s = this.sessions.get(key);
+      if (s) this.sessions.set(key, { ...s, ...partial });
+    });
+    deleteSession = vi.fn();
     enforceRetention = vi.fn();
-    listSessions = vi.fn(async () => this.sessions);
-    appendEntry = vi.fn();
+    listSessions = vi.fn(async () => [...this.sessions.values()]);
+    resolveTranscriptPath = vi.fn((entry: any) =>
+      require('path').join(os.tmpdir(), `${entry.sessionId}.jsonl`),
+    );
   }
-  return { AgentRuntime: MockAgentRuntime };
+  return { StorageEngine: MockStorageEngine };
 });
 
 function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
@@ -99,8 +99,17 @@ function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
       idleResetEnabled: false,
       idleResetMinutes: 60,
       parentForkMaxTokens: 100000,
+      maintenanceMode: 'warn',
+      pruneAfterDays: 30,
+      maxEntries: 100,
+      rotateBytes: 1048576,
+      resetArchiveRetentionDays: 7,
+      maxDiskBytes: 104857600,
+      highWaterPercent: 80,
+      maintenanceIntervalMinutes: 60,
     },
     vectorDatabases: [],
+    crons: [],
     exportedAt: Date.now(),
     sourceGraphId: 'agent-1',
     runTimeoutMs: 172800000,

@@ -24,7 +24,7 @@ export default function DataMaintenanceSection() {
   const clearGraph = useGraphStore((state) => state.clearGraph);
   const resetAllSessions = useSessionStore((state) => state.resetAllSessions);
   const resetSettings = useSettingsStore((state) => state.resetSettings);
-  const resetModelCatalog = useModelCatalogStore((state) => state.reset);
+  const clearOpenRouterCatalog = useModelCatalogStore((state) => state.clearOpenRouterCatalog);
 
   const handleImport = async () => {
     try {
@@ -151,7 +151,7 @@ export default function DataMaintenanceSection() {
           onClick={() =>
             confirmAndRun('Reset API keys and agent defaults?', () => {
               resetSettings();
-              resetModelCatalog();
+              void clearOpenRouterCatalog().catch(console.error);
             })
           }
           className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-200 transition hover:border-red-400/60 hover:bg-red-500/15"
@@ -170,7 +170,7 @@ export default function DataMaintenanceSection() {
                     clearGraph();
                     resetAllSessions();
                     resetSettings();
-                    resetModelCatalog();
+                    void clearOpenRouterCatalog().catch(console.error);
                   });
               },
             )

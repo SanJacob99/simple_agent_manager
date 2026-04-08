@@ -96,8 +96,17 @@ function makeConfig(storagePath: string, overrides: Partial<AgentConfig> = {}): 
       idleResetEnabled: false,
       idleResetMinutes: 60,
       parentForkMaxTokens: 100000,
+      maintenanceMode: 'warn',
+      pruneAfterDays: 30,
+      maxEntries: 100,
+      rotateBytes: 1048576,
+      resetArchiveRetentionDays: 7,
+      maxDiskBytes: 104857600,
+      highWaterPercent: 80,
+      maintenanceIntervalMinutes: 60,
     },
     vectorDatabases: [],
+    crons: [],
     exportedAt: Date.now(),
     sourceGraphId: 'agent-1',
     runTimeoutMs: 172800000,
@@ -348,8 +357,8 @@ describe('RunCoordinator', () => {
       const events: any[] = [];
       coordinator.subscribeAll((event) => events.push(event));
 
-      await coordinator.dispatch({ sessionKey: 'lifecycle-test', text: 'Hello' });
-      await new Promise((r) => setTimeout(r, 10));
+      const { runId } = await coordinator.dispatch({ sessionKey: 'lifecycle-test', text: 'Hello' });
+      await coordinator.wait(runId, 5000);
 
       const startEvent = events.find((e) => e.type === 'lifecycle:start');
       expect(startEvent).toBeDefined();
