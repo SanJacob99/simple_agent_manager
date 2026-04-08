@@ -151,6 +151,114 @@ export default function StorageProperties({ nodeId, data }: Props) {
           />
         </Field>
       </div>
+
+      <div className="mt-3 border-t border-slate-800/80 pt-3">
+        <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+          Maintenance
+        </div>
+
+        <Field label="Mode">
+          <select
+            className={selectClass}
+            value={data.maintenanceMode}
+            onChange={(e) =>
+              update(nodeId, { maintenanceMode: e.target.value as 'warn' | 'enforce' })
+            }
+          >
+            <option value="warn">Warn (dry run)</option>
+            <option value="enforce">Enforce (auto cleanup)</option>
+          </select>
+        </Field>
+
+        <Field label="Prune After (days)">
+          <input
+            className={inputClass}
+            type="number"
+            min={1}
+            value={data.pruneAfterDays}
+            onChange={(e) =>
+              update(nodeId, { pruneAfterDays: parseInt(e.target.value, 10) || 30 })
+            }
+          />
+        </Field>
+
+        <Field label="Max Entries">
+          <input
+            className={inputClass}
+            type="number"
+            min={1}
+            value={data.maxEntries}
+            onChange={(e) =>
+              update(nodeId, { maxEntries: parseInt(e.target.value, 10) || 500 })
+            }
+          />
+        </Field>
+
+        <Field label="Rotate Store (bytes)">
+          <input
+            className={inputClass}
+            type="number"
+            min={0}
+            value={data.rotateBytes}
+            onChange={(e) =>
+              update(nodeId, { rotateBytes: parseInt(e.target.value, 10) || 10_485_760 })
+            }
+          />
+        </Field>
+
+        <Field label="Archive Retention (days)">
+          <input
+            className={inputClass}
+            type="number"
+            min={0}
+            value={data.resetArchiveRetentionDays}
+            onChange={(e) =>
+              update(nodeId, { resetArchiveRetentionDays: parseInt(e.target.value, 10) || 30 })
+            }
+          />
+        </Field>
+
+        <Field label="Max Disk (bytes, 0=disabled)">
+          <input
+            className={inputClass}
+            type="number"
+            min={0}
+            value={data.maxDiskBytes}
+            onChange={(e) =>
+              update(nodeId, { maxDiskBytes: parseInt(e.target.value, 10) || 0 })
+            }
+          />
+        </Field>
+
+        {data.maxDiskBytes > 0 && (
+          <Field label="High Water (%)">
+            <input
+              className={inputClass}
+              type="number"
+              min={1}
+              max={100}
+              value={data.highWaterPercent}
+              onChange={(e) =>
+                update(nodeId, {
+                  highWaterPercent: Math.min(100, Math.max(1, parseInt(e.target.value, 10) || 80)),
+                })
+              }
+            />
+          </Field>
+        )}
+
+        <Field label="Interval (minutes)">
+          <input
+            className={inputClass}
+            type="number"
+            min={1}
+            value={data.maintenanceIntervalMinutes}
+            onChange={(e) =>
+              update(nodeId, { maintenanceIntervalMinutes: parseInt(e.target.value, 10) || 60 })
+            }
+          />
+        </Field>
+      </div>
     </div>
   );
 }
