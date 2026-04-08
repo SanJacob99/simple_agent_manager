@@ -23,12 +23,37 @@ vi.mock('../runtime/storage-engine', () => {
     getSessionByKey = vi.fn(async (key: string) => {
       return this.sessions.find((s: any) => s.sessionKey === key) ?? null;
     });
+    getSessionMeta = vi.fn(async (sessionId: string) => {
+      return this.sessions.find((s: any) => s.sessionId === sessionId) ?? null;
+    });
     createSession = vi.fn(async (meta: any) => {
       this.sessions.push(meta);
+    });
+    createManagedSession = vi.fn(async (llmSlug: string, sessionKey?: string) => {
+      const meta = {
+        sessionId: sessionKey || 'test-session-id',
+        sessionKey: sessionKey || 'test-session-id',
+        agentName: 'Test Agent',
+        llmSlug,
+        startedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        sessionFile: 'test.jsonl',
+        contextTokens: 0,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalEstimatedCostUsd: 0,
+        totalTokens: 0,
+      };
+      this.sessions.push(meta);
+      return meta;
     });
     updateSessionMeta = vi.fn();
     enforceRetention = vi.fn();
     listSessions = vi.fn(async () => this.sessions);
+    appendEntry = vi.fn(async () => {});
+    readEntries = vi.fn(async () => []);
   }
   return { StorageEngine: MockStorageEngine };
 });

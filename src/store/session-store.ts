@@ -35,20 +35,22 @@ export interface ChatSession {
   messages: Message[];
 }
 
+// OPTIMIZATION: Single-pass iteration to avoid large intermediate array allocations
+// when loading massive JSONL session files into memory
 function extractMessageContent(content: unknown): string {
   if (typeof content === 'string') {
     return content;
   }
 
   if (Array.isArray(content)) {
-    return content
-      .map((part) => {
-        if (part && typeof part === 'object' && 'text' in part) {
-          return typeof part.text === 'string' ? part.text : '';
-        }
-        return '';
-      })
-      .join('');
+    let result = '';
+    for (let i = 0; i < content.length; i++) {
+      const part = content[i];
+      if (part && typeof part === 'object' && 'text' in part && typeof (part as any).text === 'string') {
+        result += (part as any).text;
+      }
+    }
+    return result;
   }
 
   return '';

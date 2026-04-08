@@ -1,3 +1,7 @@
 ## 2024-05-18 - JSONL Parsing Memory Pressure
 **Learning:** Chaining array methods like `.split('\n').filter().map()` for processing massive data strings (like JSONL files) in Node.js creates large intermediate arrays in memory. This leads to heavy garbage collection pauses and high memory pressure.
 **Action:** When iterating over long strings, use `indexOf('\n')` and `substring()` to perform a single-pass extraction, avoiding `split()` entirely for large files, and minimizing intermediate string and array allocations.
+
+## 2024-06-03 - Chained Array Methods in Hot Paths
+**Learning:** Functions that parse content formats (like arrays of blocks in LLM responses) using chained array methods (e.g., `.filter().filter().map().join('')`) allocate multiple intermediate arrays per invocation. In hot paths, such as during high-frequency LLM streaming events or bulk loading large JSONL session histories, these allocations compound rapidly, leading to significant memory churn and garbage collection pressure.
+**Action:** In data extraction routines used in loops or streams (like `extractTextContent` and `extractMessageContent`), replace chained `.map()` and `.filter()` methods with a single-pass `for` loop that concatenates string results directly.

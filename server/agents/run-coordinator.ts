@@ -53,6 +53,8 @@ interface TranscriptState {
   assistantSuppressed: boolean;
 }
 
+// OPTIMIZATION: Single-pass iteration to avoid large intermediate array allocations
+// during high-frequency streaming events
 function extractTextContent(content: unknown): string {
   if (typeof content === 'string') {
     return content;
@@ -62,11 +64,15 @@ function extractTextContent(content: unknown): string {
     return '';
   }
 
-  return content
-    .filter((block): block is { type?: string; text?: string } => !!block && typeof block === 'object')
-    .filter((block) => block.type === 'text' && typeof block.text === 'string')
-    .map((block) => block.text ?? '')
-    .join('');
+  let result = '';
+  for (let i = 0; i < content.length; i++) {
+    const block = content[i];
+    if (block && typeof block === 'object' && block.type === 'text' && typeof block.text === 'string') {
+      result += block.text;
+    }
+  }
+
+  return result;
 }
 
 export class RunCoordinator {
