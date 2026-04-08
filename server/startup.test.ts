@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { createStartupErrorHandler } from './startup';
 
 function makePortInUseError(port: number) {
-  const error = new Error(`listen EADDRINUSE: address already in use :::${port}`) as NodeJS.ErrnoException;
+  const error = new Error(
+    `listen EADDRINUSE: address already in use :::${port}`,
+  ) as NodeJS.ErrnoException & { port: number; address: string };
   error.code = 'EADDRINUSE';
   error.port = port;
   error.address = '::';

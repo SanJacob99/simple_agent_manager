@@ -13,6 +13,8 @@ import {
 import type { AppNode, FlowNodeData, NodeType } from '../types/nodes';
 import { createNodeId } from '../utils/id';
 import { getDefaultNodeData } from '../utils/default-nodes';
+import { resolveAgentConfig } from '../utils/graph-to-agent';
+import { StorageClient } from '../runtime/storage-client';
 import { saveGraph, loadGraph } from './storage';
 import { useSessionStore } from './session-store';
 import { useAgentConnectionStore } from './agent-connection-store';
@@ -20,19 +22,69 @@ import { useSettingsStore } from '../settings/settings-store';
 
 function buildNodeData(nodeType: NodeType): FlowNodeData {
   const defaults = getDefaultNodeData(nodeType);
-  if (nodeType !== 'agent' || defaults.type !== 'agent') {
-    return defaults;
+
+  if (nodeType === 'agent' && defaults.type === 'agent') {
+    const agentDefaults = useSettingsStore.getState().agentDefaults;
+    return {
+      ...defaults,
+      provider: agentDefaults.provider,
+      modelId: agentDefaults.modelId,
+      thinkingLevel: agentDefaults.thinkingLevel,
+      systemPrompt: agentDefaults.systemPrompt,
+      systemPromptMode: agentDefaults.systemPromptMode,
+    };
   }
 
-  const agentDefaults = useSettingsStore.getState().agentDefaults;
-  return {
-    ...defaults,
-    provider: agentDefaults.provider,
-    modelId: agentDefaults.modelId,
-    thinkingLevel: agentDefaults.thinkingLevel,
-    systemPrompt: agentDefaults.systemPrompt,
-    systemPromptMode: agentDefaults.systemPromptMode,
-  };
+  if (nodeType === 'storage' && defaults.type === 'storage') {
+    const storageDefaults = useSettingsStore.getState().storageDefaults;
+    return {
+      ...defaults,
+      storagePath: storageDefaults.storagePath,
+      sessionRetention: storageDefaults.sessionRetention,
+      memoryEnabled: storageDefaults.memoryEnabled,
+      maintenanceMode: storageDefaults.maintenanceMode,
+      pruneAfterDays: storageDefaults.pruneAfterDays,
+    };
+  }
+
+  if (nodeType === 'contextEngine' && defaults.type === 'contextEngine') {
+    const ceDefaults = useSettingsStore.getState().contextEngineDefaults;
+    return {
+      ...defaults,
+      tokenBudget: ceDefaults.tokenBudget,
+      reservedForResponse: ceDefaults.reservedForResponse,
+      compactionStrategy: ceDefaults.compactionStrategy,
+      compactionThreshold: ceDefaults.compactionThreshold,
+      ragEnabled: ceDefaults.ragEnabled,
+      ragTopK: ceDefaults.ragTopK,
+      ragMinScore: ceDefaults.ragMinScore,
+    };
+  }
+
+  if (nodeType === 'memory' && defaults.type === 'memory') {
+    const memDefaults = useSettingsStore.getState().memoryDefaults;
+    return {
+      ...defaults,
+      backend: memDefaults.backend,
+      maxSessionMessages: memDefaults.maxSessionMessages,
+      persistAcrossSessions: memDefaults.persistAcrossSessions,
+      compactionEnabled: memDefaults.compactionEnabled,
+    };
+  }
+
+  if (nodeType === 'cron' && defaults.type === 'cron') {
+    const cronDefaults = useSettingsStore.getState().cronDefaults;
+    return {
+      ...defaults,
+      schedule: cronDefaults.schedule,
+      sessionMode: cronDefaults.sessionMode,
+      timezone: cronDefaults.timezone,
+      maxRunDurationMs: cronDefaults.maxRunDurationMs,
+      retentionDays: cronDefaults.retentionDays,
+    };
+  }
+
+  return defaults;
 }
 
 interface GraphStore {
@@ -50,6 +102,7 @@ interface GraphStore {
   removeNode: (nodeId: string) => void;
   updateNodeData: (nodeId: string, data: Partial<FlowNodeData>) => void;
   applyAgentDefaultsToExistingAgents: () => void;
+  applyStorageDefaultsToExistingNodes: () => void;
   clearGraph: () => void;
   setSelectedNode: (nodeId: string | null) => void;
   getSelectedNode: () => AppNode | undefined;
@@ -88,7 +141,18 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
     if (!pendingDeleteAgent) return;
 
     if (deleteData) {
-      useSessionStore.getState().deleteAllSessionsForAgent(pendingDeleteAgent.agentName);
+      const config = resolveAgentConfig(pendingDeleteAgent.nodeId, nodes, edges);
+      if (config?.storage) {
+        const client = new StorageClient(
+          config.storage,
+          pendingDeleteAgent.agentName,
+          pendingDeleteAgent.nodeId,
+        );
+        void client.init()
+          .then(() => client.deleteAllSessions())
+          .catch(console.error);
+      }
+      useSessionStore.getState().deleteAllSessionsForAgent(pendingDeleteAgent.nodeId);
     }
     useSessionStore.getState().clearActiveSession(pendingDeleteAgent.nodeId);
     useAgentConnectionStore.getState().destroyAgent(pendingDeleteAgent.nodeId);
@@ -207,6 +271,23 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
                 provider: agentDefaults.provider,
                 modelId: agentDefaults.modelId,
                 thinkingLevel: agentDefaults.thinkingLevel,
+              },
+            }
+          : node,
+      ),
+    });
+  },
+
+  applyStorageDefaultsToExistingNodes: () => {
+    const storageDefaults = useSettingsStore.getState().storageDefaults;
+    set({
+      nodes: get().nodes.map((node) =>
+        node.data.type === 'storage'
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                storagePath: storageDefaults.storagePath,
               },
             }
           : node,

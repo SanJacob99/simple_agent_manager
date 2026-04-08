@@ -1,10 +1,42 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useGraphStore } from './graph-store';
 import { useSettingsStore } from '../settings/settings-store';
 import { useAgentConnectionStore } from './agent-connection-store';
 
+const storageClientMocks = vi.hoisted(() => ({
+  construct: vi.fn(),
+  init: vi.fn(async () => undefined),
+  deleteAllSessions: vi.fn(async () => undefined),
+}));
+
+const resolveAgentConfigMock = vi.hoisted(() => vi.fn());
+
+vi.mock('../runtime/storage-client', () => ({
+  StorageClient: class MockStorageClient {
+    agentId: string;
+
+    constructor(config: unknown, agentName: string, agentId: string) {
+      storageClientMocks.construct(config, agentName, agentId);
+      this.agentId = agentId;
+    }
+
+    init = storageClientMocks.init;
+    deleteAllSessions = storageClientMocks.deleteAllSessions;
+  },
+}));
+
+vi.mock('../utils/graph-to-agent', () => ({
+  resolveAgentConfig: resolveAgentConfigMock,
+}));
+
 describe('graph store defaults integration', () => {
   beforeEach(() => {
+    resolveAgentConfigMock.mockReset();
+    resolveAgentConfigMock.mockReturnValue({ storage: { baseDir: 'sessions' } });
+    storageClientMocks.construct.mockClear();
+    storageClientMocks.init.mockClear();
+    storageClientMocks.deleteAllSessions.mockClear();
+
     localStorage.clear();
     useGraphStore.setState({
       nodes: [],
@@ -111,5 +143,41 @@ describe('graph store defaults integration', () => {
 
     expect(useGraphStore.getState().selectedNodeId).toBe('agent-2');
     expect(useAgentConnectionStore.getState().chatAgentNodeId).toBeNull();
+  });
+
+  it('deletes persisted sessions when removing an agent with deleteData enabled', async () => {
+    useGraphStore.setState({
+      nodes: [
+        {
+          id: 'agent-1',
+          type: 'agent',
+          position: { x: 0, y: 0 },
+          data: {
+            type: 'agent',
+            name: 'Alpha',
+            nameConfirmed: true,
+          },
+        },
+      ],
+      edges: [],
+      selectedNodeId: 'agent-1',
+      pendingDeleteAgent: { nodeId: 'agent-1', agentName: 'Alpha' },
+    } as any);
+
+    useGraphStore.getState().confirmDeleteAgent(true);
+
+    expect(useGraphStore.getState().nodes).toEqual([]);
+    expect(useGraphStore.getState().selectedNodeId).toBeNull();
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(storageClientMocks.construct).toHaveBeenCalledWith(
+      { baseDir: 'sessions' },
+      'Alpha',
+      'agent-1',
+    );
+    expect(storageClientMocks.init).toHaveBeenCalledOnce();
+    expect(storageClientMocks.deleteAllSessions).toHaveBeenCalledOnce();
   });
 });

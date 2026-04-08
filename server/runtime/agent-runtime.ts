@@ -1,5 +1,6 @@
-import { Agent, type AgentEvent, type AgentTool } from '@mariozechner/pi-agent-core';
+import { Agent, type AgentEvent, type AgentMessage, type AgentTool } from '@mariozechner/pi-agent-core';
 import type { TSchema } from '@sinclair/typebox';
+import type { SessionManager } from '@mariozechner/pi-coding-agent';
 import type { AgentConfig } from '../../shared/agent-config';
 import type { ImageAttachment } from '../../shared/protocol';
 import type { DiscoveredModelMetadata } from '../../shared/agent-config';
@@ -31,6 +32,7 @@ export class AgentRuntime {
   private contextEngine: ContextEngine | null = null;
   private unsubscribeAgent: (() => void) | null = null;
   private hookRegistry: HookRegistry | null = null;
+  private baseTools: AgentTool<TSchema>[] = [];
   private getApiKeyFn: (provider: string) => Promise<string | undefined> | string | undefined;
   private getDiscoveredModelFn: (provider: string, modelId: string) => DiscoveredModelMetadata | undefined;
 
@@ -76,6 +78,9 @@ export class AgentRuntime {
       modelCapabilities: config.modelCapabilities,
       getDiscoveredModel: this.getDiscoveredModelFn,
     });
+
+    // Snapshot base tools so addTools can reset per-run injections
+    this.baseTools = tools;
 
     // Create Agent
     this.agent = new Agent({
@@ -136,6 +141,28 @@ export class AgentRuntime {
    */
   getSystemPrompt(): string {
     return this.agent.state.systemPrompt;
+  }
+
+  setSessionContext(messages: AgentMessage[]): void {
+    this.agent.state.messages = [...messages];
+  }
+
+  /**
+   * Replace per-run tools on the agent (e.g. session tools). Resets to
+   * base tools first so repeated calls don't accumulate duplicates.
+   */
+  addTools(tools: AgentTool<TSchema>[]): void {
+    this.agent.state.tools = [...this.baseTools, ...tools];
+  }
+
+  setActiveSession(sessionManager: SessionManager | null): void {
+    this.contextEngine?.setActiveSession(sessionManager, (summary) => {
+      this.emit({ type: 'memory_compaction', summary });
+    });
+  }
+
+  clearActiveSession(): void {
+    this.contextEngine?.clearActiveSession();
   }
 
   // ---------------------------------------------------------------------------
@@ -259,6 +286,7 @@ export class AgentRuntime {
 
   destroy() {
     this.abort();
+    this.clearActiveSession();
     this.unsubscribeAgent?.();
     this.listeners.clear();
   }

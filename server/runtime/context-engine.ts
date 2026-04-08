@@ -1,5 +1,6 @@
 import type { ResolvedContextEngineConfig } from '../../shared/agent-config';
 import type { AgentMessage } from '@mariozechner/pi-agent-core';
+import type { SessionManager, SessionEntry } from '@mariozechner/pi-coding-agent';
 import { estimateMessagesTokens } from '../../shared/token-estimator';
 
 /**
@@ -10,9 +11,26 @@ import { estimateMessagesTokens } from '../../shared/token-estimator';
  */
 export class ContextEngine {
   private config: ResolvedContextEngineConfig;
+  private activeSession: {
+    sessionManager: SessionManager;
+    onCompaction?: (summary: string) => void;
+  } | null = null;
 
   constructor(config: ResolvedContextEngineConfig) {
     this.config = config;
+  }
+
+  setActiveSession(
+    sessionManager: SessionManager | null,
+    onCompaction?: (summary: string) => void,
+  ): void {
+    this.activeSession = sessionManager
+      ? { sessionManager, onCompaction }
+      : null;
+  }
+
+  clearActiveSession(): void {
+    this.activeSession = null;
   }
 
   /**
@@ -57,6 +75,13 @@ export class ContextEngine {
       ) {
         result = result.slice(1);
       }
+      if (result.length < messages.length) {
+        this.persistCompaction(
+          `[Compaction trimmed ${messages.length - result.length} older messages to stay within the token budget.]`,
+          result.length,
+          messages,
+        );
+      }
       return result;
     }
 
@@ -68,6 +93,13 @@ export class ContextEngine {
         estimateMessagesTokens(result as Array<{ content?: string | unknown }>) > budget
       ) {
         result = result.slice(1);
+      }
+      if (result.length < messages.length) {
+        this.persistCompaction(
+          `[Compaction kept the newest ${result.length} messages and trimmed ${messages.length - result.length} older messages.]`,
+          result.length,
+          messages,
+        );
       }
       return result;
     }
@@ -96,6 +128,8 @@ export class ContextEngine {
         timestamp: Date.now(),
       } as AgentMessage;
 
+      this.persistCompaction(summaryText, kept.length, messages);
+
       return [summaryMsg, ...kept];
     }
 
@@ -120,6 +154,45 @@ export class ContextEngine {
       const result = await this.assemble(messages);
       return result.messages;
     };
+  }
+
+  private getFirstKeptEntryId(keptCount: number): string | undefined {
+    const branch = this.activeSession?.sessionManager.getBranch() ?? [];
+    const messageEntries = branch.filter((entry) => this.isContextBearingEntry(entry));
+
+    if (messageEntries.length === 0) {
+      return undefined;
+    }
+
+    const startIndex = Math.max(0, messageEntries.length - keptCount);
+    return messageEntries[startIndex]?.id ?? messageEntries[0]?.id;
+  }
+
+  private isContextBearingEntry(entry: SessionEntry): boolean {
+    return entry.type === 'message'
+      || entry.type === 'custom_message'
+      || entry.type === 'branch_summary';
+  }
+
+  private persistCompaction(
+    summary: string,
+    keptCount: number,
+    originalMessages: AgentMessage[],
+  ): void {
+    const firstKeptEntryId = this.getFirstKeptEntryId(keptCount);
+    if (!this.activeSession || !firstKeptEntryId) {
+      return;
+    }
+
+    const tokensBefore = estimateMessagesTokens(
+      originalMessages as Array<{ content?: string | unknown }>,
+    );
+    this.activeSession.sessionManager.appendCompaction(
+      summary,
+      firstKeptEntryId,
+      tokensBefore,
+    );
+    this.activeSession.onCompaction?.(summary);
   }
 
 

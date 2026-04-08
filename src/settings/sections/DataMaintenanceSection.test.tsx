@@ -5,6 +5,14 @@ import { useGraphStore } from '../../store/graph-store';
 import { useSessionStore } from '../../store/session-store';
 import { useSettingsStore } from '../settings-store';
 
+const storageClientMocks = vi.hoisted(() => ({
+  construct: vi.fn(),
+  init: vi.fn(async () => undefined),
+  deleteAllSessions: vi.fn(async () => undefined),
+}));
+
+const resolveAgentConfigMock = vi.hoisted(() => vi.fn());
+
 vi.mock('../../utils/export-import', () => ({
   exportGraph: vi.fn(() => ({ version: 2, exportedAt: 1, graph: {} })),
   importGraph: vi.fn(() => null),
@@ -12,10 +20,40 @@ vi.mock('../../utils/export-import', () => ({
   uploadJson: vi.fn(async () => ({ invalid: true })),
 }));
 
+vi.mock('../../runtime/storage-client', () => ({
+  StorageClient: class MockStorageClient {
+    agentId: string;
+
+    constructor(config: unknown, agentName: string, agentId: string) {
+      storageClientMocks.construct(config, agentName, agentId);
+      this.agentId = agentId;
+    }
+
+    init = storageClientMocks.init;
+    deleteAllSessions = storageClientMocks.deleteAllSessions;
+  },
+}));
+
+vi.mock('../../utils/graph-to-agent', () => ({
+  resolveAgentConfig: resolveAgentConfigMock,
+}));
+
 describe('DataMaintenanceSection', () => {
   beforeEach(() => {
+    resolveAgentConfigMock.mockReset();
+    resolveAgentConfigMock.mockReturnValue({ storage: { baseDir: 'sessions' } });
+    storageClientMocks.construct.mockClear();
+    storageClientMocks.init.mockClear();
+    storageClientMocks.deleteAllSessions.mockClear();
+
     useGraphStore.setState({
-      nodes: [{ id: 'agent-1', type: 'agent' }] as any,
+      nodes: [
+        {
+          id: 'agent-1',
+          type: 'agent',
+          data: { type: 'agent', name: 'Alpha' },
+        },
+      ] as any,
       edges: [],
       selectedNodeId: 'agent-1',
       pendingNameNodeId: null,
@@ -24,14 +62,32 @@ describe('DataMaintenanceSection', () => {
       sessions: {
         s1: {
           id: 's1',
-          agentName: 'Agent',
-          llmSlug: 'openai/gpt-4o',
+          sessionKey: 's1',
+          sessionId: 'sess-1',
+          agentId: 'agent-1',
           createdAt: 1,
           lastMessageAt: 1,
+          displayName: 'Main session',
           messages: [],
+          meta: {
+            sessionKey: 's1',
+            sessionId: 'sess-1',
+            agentId: 'agent-1',
+            createdAt: '2026-04-07T12:00:00.000Z',
+            updatedAt: '2026-04-07T12:00:00.000Z',
+            chatType: 'direct',
+            inputTokens: 0,
+            outputTokens: 0,
+            totalTokens: 0,
+            contextTokens: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalEstimatedCostUsd: 0,
+            compactionCount: 0,
+          },
         },
       },
-      activeSessionId: { 'agent-1': 's1' },
+      activeSessionKey: { 'agent-1': 's1' },
     } as any);
     useSettingsStore.setState({
       apiKeys: { openrouter: 'key-1' },
@@ -56,13 +112,35 @@ describe('DataMaintenanceSection', () => {
     });
   });
 
-  it('clears sessions only after confirmation', () => {
+  it('clears sessions only after confirmation', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     render(<DataMaintenanceSection />);
 
     fireEvent.click(screen.getByRole('button', { name: /Clear Chat Sessions/i }));
 
+    await waitFor(() => {
+      expect(useSessionStore.getState().sessions).toEqual({});
+      expect(useSessionStore.getState().activeSessionKey).toEqual({});
+    });
+  });
+
+  it('deletes persisted sessions for configured agents before clearing local state', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    render(<DataMaintenanceSection />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Clear Chat Sessions/i }));
+
+    await waitFor(() => {
+      expect(storageClientMocks.construct).toHaveBeenCalledWith(
+        { baseDir: 'sessions' },
+        'Alpha',
+        'agent-1',
+      );
+      expect(storageClientMocks.init).toHaveBeenCalledOnce();
+      expect(storageClientMocks.deleteAllSessions).toHaveBeenCalledOnce();
+    });
+
     expect(useSessionStore.getState().sessions).toEqual({});
-    expect(useSessionStore.getState().activeSessionId).toEqual({});
+    expect(useSessionStore.getState().activeSessionKey).toEqual({});
   });
 });

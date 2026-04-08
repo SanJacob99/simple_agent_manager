@@ -8,3 +8,5 @@ dist
 notes/
 .tmp/
 test-results/
+storage/
+settings.json

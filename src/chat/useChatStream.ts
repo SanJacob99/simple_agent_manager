@@ -18,7 +18,7 @@ export interface ChatStreamState {
   suppressedReply: boolean;
   compacting: boolean;
   toolSummaries: ToolSummaryInfo[];
-  sendMessage: (text: string, sessionId: string, attachments?: any[]) => void;
+  sendMessage: (text: string, sessionKey: string, attachments?: any[]) => void;
 }
 
 export function useChatStream(agentNodeId: string): ChatStreamState {
@@ -38,7 +38,7 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
   const unsubRef = useRef<(() => void) | null>(null);
   const assistantMsgIdRef = useRef<string>('');
   const assistantContentRef = useRef<string>('');
-  const sessionIdRef = useRef<string>('');
+  const sessionKeyRef = useRef<string>('');
 
   const cleanup = useCallback(() => {
     unsubRef.current?.();
@@ -49,13 +49,13 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
   useEffect(() => cleanup, [cleanup]);
 
   const sendMessage = useCallback(
-    (text: string, sessionId: string, attachments?: any[]) => {
+    (text: string, sessionKey: string, attachments?: any[]) => {
       cleanup();
 
       const msgId = `msg_${Date.now()}_a`;
       assistantMsgIdRef.current = msgId;
       assistantContentRef.current = '';
-      sessionIdRef.current = sessionId;
+      sessionKeyRef.current = sessionKey;
 
       setIsStreaming(true);
       setSuppressedReply(false);
@@ -71,7 +71,7 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
             assistantContentRef.current = '';
             setReasoning(null);
             setIsReasoning(false);
-            addMessage(sessionIdRef.current, {
+            addMessage(sessionKeyRef.current, {
               id: assistantMsgIdRef.current,
               role: 'assistant',
               content: '',
@@ -81,7 +81,7 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
 
           case 'message:delta':
             assistantContentRef.current += event.delta;
-            updateMessage(sessionIdRef.current, assistantMsgIdRef.current, (m) => ({
+            updateMessage(sessionKeyRef.current, assistantMsgIdRef.current, (m) => ({
               ...m,
               content: assistantContentRef.current,
             }));
@@ -89,13 +89,13 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
 
           case 'message:end':
             if (event.message.usage) {
-              updateMessage(sessionIdRef.current, assistantMsgIdRef.current, (m) => ({
+              updateMessage(sessionKeyRef.current, assistantMsgIdRef.current, (m) => ({
                 ...m,
                 tokenCount: event.message.usage!.output,
                 usage: event.message.usage,
               }));
             }
-            void flushSession(sessionIdRef.current);
+            void flushSession(sessionKeyRef.current);
             break;
 
           case 'reasoning:start':
@@ -114,13 +114,13 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
           case 'message:suppressed':
             setSuppressedReply(true);
             if (assistantMsgIdRef.current) {
-              deleteMessage(sessionIdRef.current, assistantMsgIdRef.current);
-              void flushSession(sessionIdRef.current);
+              deleteMessage(sessionKeyRef.current, assistantMsgIdRef.current);
+              void flushSession(sessionKeyRef.current);
             }
             break;
 
           case 'tool:start':
-            addMessage(sessionIdRef.current, {
+            addMessage(sessionKeyRef.current, {
               id: `tool_${(event as any).toolCallId}`,
               role: 'tool',
               content: `Calling tool: ${(event as any).toolName}`,
@@ -131,12 +131,12 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
           case 'tool:end': {
             const te = event as any;
             const toolContent = `${te.toolName}: ${te.result}${te.isError ? ' (error)' : ''}`;
-            updateMessage(sessionIdRef.current, `tool_${te.toolCallId}`, (m) => ({
+            updateMessage(sessionKeyRef.current, `tool_${te.toolCallId}`, (m) => ({
               ...m,
               content: toolContent,
               tokenCount: estimateTokens(toolContent),
             }));
-            void flushSession(sessionIdRef.current);
+            void flushSession(sessionKeyRef.current);
             break;
           }
 
@@ -164,14 +164,14 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
             setIsStreaming(false);
             setIsReasoning(false);
             setCompacting(false);
-            void flushSession(sessionIdRef.current);
+            void flushSession(sessionKeyRef.current);
             unsub();
             break;
 
           case 'agent:error':
           case 'lifecycle:error': {
             const errorMsg = (event as any).error?.message ?? (event as any).error ?? 'Unknown error';
-            addMessage(sessionIdRef.current, {
+            addMessage(sessionKeyRef.current, {
               id: `err_${Date.now()}`,
               role: 'assistant',
               content: `Error: ${errorMsg}`,
@@ -180,7 +180,7 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
             setIsStreaming(false);
             setIsReasoning(false);
             setCompacting(false);
-            void flushSession(sessionIdRef.current);
+            void flushSession(sessionKeyRef.current);
             unsub();
             break;
           }
@@ -189,7 +189,7 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
 
       unsubRef.current = unsub;
 
-      void sendPrompt(agentNodeId, sessionId, text, attachments).catch(() => undefined);
+      void sendPrompt(agentNodeId, sessionKey, text, attachments).catch(() => undefined);
     },
     [agentNodeId, addMessage, updateMessage, deleteMessage, flushSession, sendPrompt, cleanup],
   );

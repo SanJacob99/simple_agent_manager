@@ -137,6 +137,19 @@ export function resolveAgentConfig(
         sessionRetention: storageNode.data.sessionRetention,
         memoryEnabled: storageNode.data.memoryEnabled,
         dailyMemoryEnabled: storageNode.data.dailyMemoryEnabled,
+        dailyResetEnabled: storageNode.data.dailyResetEnabled,
+        dailyResetHour: storageNode.data.dailyResetHour,
+        idleResetEnabled: storageNode.data.idleResetEnabled,
+        idleResetMinutes: storageNode.data.idleResetMinutes,
+        parentForkMaxTokens: storageNode.data.parentForkMaxTokens,
+        maintenanceMode: storageNode.data.maintenanceMode,
+        pruneAfterDays: storageNode.data.pruneAfterDays,
+        maxEntries: storageNode.data.maxEntries,
+        rotateBytes: storageNode.data.rotateBytes,
+        resetArchiveRetentionDays: storageNode.data.resetArchiveRetentionDays,
+        maxDiskBytes: storageNode.data.maxDiskBytes,
+        highWaterPercent: storageNode.data.highWaterPercent,
+        maintenanceIntervalMinutes: storageNode.data.maintenanceIntervalMinutes,
       }
     : null;
 
@@ -150,6 +163,24 @@ export function resolveAgentConfig(
         provider: n.data.provider,
         collectionName: n.data.collectionName,
         connectionString: n.data.connectionString,
+      };
+    });
+
+  // --- Cron Jobs ---
+  const crons = connectedNodes
+    .filter((n) => n.data.type === 'cron')
+    .map((n) => {
+      if (n.data.type !== 'cron') throw new Error('unreachable');
+      return {
+        cronNodeId: n.id,
+        label: n.data.label,
+        schedule: n.data.schedule,
+        prompt: n.data.prompt,
+        enabled: n.data.enabled,
+        sessionMode: n.data.sessionMode,
+        timezone: n.data.timezone,
+        maxRunDurationMs: n.data.maxRunDurationMs,
+        retentionDays: n.data.retentionDays,
       };
     });
 
@@ -211,6 +242,7 @@ export function resolveAgentConfig(
     agentComm,
     storage,
     vectorDatabases,
+    crons,
     exportedAt: Date.now(),
     sourceGraphId: agentNodeId,
     runTimeoutMs: 172800000,

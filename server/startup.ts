@@ -19,7 +19,8 @@ export function createStartupErrorHandler({
     }
     handled = true;
 
-    if (error.code === 'EADDRINUSE') {
+    const code = 'code' in error ? error.code : undefined;
+    if (code === 'EADDRINUSE') {
       logger.error(`[Server] Port ${port} is already in use.`);
       logger.error('[Server] Stop the existing process or restart this backend with STORAGE_PORT=<open-port>.');
       onFatal(1);

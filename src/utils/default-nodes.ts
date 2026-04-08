@@ -94,6 +94,19 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         sessionRetention: 50,
         memoryEnabled: true,
         dailyMemoryEnabled: true,
+        dailyResetEnabled: true,
+        dailyResetHour: 4,
+        idleResetEnabled: false,
+        idleResetMinutes: 60,
+        parentForkMaxTokens: 100000,
+        maintenanceMode: 'warn',
+        pruneAfterDays: 30,
+        maxEntries: 500,
+        rotateBytes: 10_485_760,
+        resetArchiveRetentionDays: 30,
+        maxDiskBytes: 0,
+        highWaterPercent: 80,
+        maintenanceIntervalMinutes: 60,
       };
     case 'vectorDatabase':
       return {
@@ -102,6 +115,18 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         provider: 'chromadb',
         collectionName: 'default',
         connectionString: '',
+      };
+    case 'cron':
+      return {
+        type: 'cron',
+        label: 'Cron Job',
+        schedule: '0 9 * * *',
+        prompt: '',
+        enabled: true,
+        sessionMode: 'persistent',
+        timezone: 'local',
+        maxRunDurationMs: 300000,
+        retentionDays: 7,
       };
   }
 }

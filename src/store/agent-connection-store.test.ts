@@ -30,12 +30,12 @@ describe('AgentConnectionStore', () => {
     });
   });
 
-  it('sendPrompt sends agent:prompt command', () => {
+  it('sendPrompt sends agent:dispatch command', () => {
     useAgentConnectionStore.getState().sendPrompt('a1', 'sess-1', 'hello');
     expect(agentClient.send).toHaveBeenCalledWith({
-      type: 'agent:prompt',
+      type: 'agent:dispatch',
       agentId: 'a1',
-      sessionId: 'sess-1',
+      sessionKey: 'sess-1',
       text: 'hello',
     });
   });
@@ -59,9 +59,9 @@ describe('AgentConnectionStore', () => {
 
     expect(agentClient.send).toHaveBeenCalledTimes(2);
     expect(agentClient.send).toHaveBeenNthCalledWith(2, {
-      type: 'agent:prompt',
+      type: 'agent:dispatch',
       agentId: 'a1',
-      sessionId: 'sess-1',
+      sessionKey: 'sess-1',
       text: 'hello',
       attachments: undefined,
     });

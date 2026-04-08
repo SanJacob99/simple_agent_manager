@@ -1,46 +1,64 @@
 # Storage Node
 
-> Provides filesystem-based persistence for agent sessions, messages, and memory files.
+> Provides filesystem-based persistence for agent sessions, routed transcripts, and memory files.
 
 <!-- source: src/types/nodes.ts#StorageNodeData -->
-<!-- last-verified: 2026-04-04 -->
+<!-- last-verified: 2026-04-08 -->
 
 ## Overview
 
-The Storage Node is a required peripheral that defines where an agent's data is persisted. Without a connected Storage Node, the agent chat is blocked (blurred overlay). It replaces the previous Database Node with a fully functional persistence layer.
+The Storage Node defines where an agent's session metadata, transcript files, and memory documents live on disk. Without a connected Storage Node, the chat drawer is blocked because the backend has nowhere to persist routed sessions.
 
-The default backend is filesystem-based: sessions are stored as JSONL files, session metadata lives in a `_index.json` manifest, and memory files are plain Markdown. This design works cross-platform (Linux, Windows, macOS), requires zero external dependencies, and produces human-readable files.
+The default `storagePath` can be configured globally in **Settings -> Defaults** so that new storage nodes use a custom path automatically.
 
-Only one Storage Node can be connected per agent (singular, like Context Engine). For vector/embedding storage, use the Vector Database Node instead.
+The filesystem backend keeps metadata and transcript history separate:
+
+- `sessions.json` stores the current `sessionKey -> SessionStoreEntry` map for the agent
+- transcript `.jsonl` files store the append-only conversation tree for each routed session
+- Markdown files under `memory/` store evergreen and daily memory content
+
+Only one Storage Node can be connected per agent. For embedding or semantic retrieval storage, use a Vector Database Node instead.
 
 ## Configuration
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
 | `label` | `string` | `"Storage"` | Display label on the canvas |
-| `backendType` | `StorageBackend` | `"filesystem"` | Storage backend (only `filesystem` for now) |
-| `storagePath` | `string` | `"~/.simple-agent-manager/storage"` | Root directory for all files. `~` is expanded to home dir during config resolution. |
-| `sessionRetention` | `number` | `50` | Max sessions per agent before oldest are pruned |
+| `backendType` | `StorageBackend` | `"filesystem"` | Storage backend (currently filesystem only) |
+| `storagePath` | `string` | `"~/.simple-agent-manager/storage"` | Root directory for agent data. `~` expands during config resolution. |
+| `sessionRetention` | `number` | `50` | Max routed sessions to retain before pruning older metadata entries |
 | `memoryEnabled` | `boolean` | `true` | Whether to create and manage memory `.md` files |
 | `dailyMemoryEnabled` | `boolean` | `true` | Whether to maintain `YYYY-MM-DD.md` daily log files |
+| `dailyResetEnabled` | `boolean` | `true` | Whether routed sessions should reset after the daily cutoff |
+| `dailyResetHour` | `number` | `4` | Hour of day (0-23) used for daily reset checks |
+| `idleResetEnabled` | `boolean` | `false` | Whether inactive sessions should auto-reset |
+| `idleResetMinutes` | `number` | `60` | Idle timeout in minutes before an automatic reset |
+| `parentForkMaxTokens` | `number` | `100000` | Max token count for carrying the prior transcript forward as `parentSession` on reset |
 
 ## Runtime Behavior
 
-During config resolution (`src/utils/graph-to-agent.ts`), the Storage Node is resolved into a `ResolvedStorageConfig` on `AgentConfig.storage`. The `~` in `storagePath` is expanded to the user's home directory using `os.homedir()`.
+During config resolution (`src/utils/graph-to-agent.ts`), the Storage Node becomes `AgentConfig.storage`.
 
-At runtime, the `StorageEngine` class (`src/runtime/storage-engine.ts`) handles all filesystem I/O:
+At runtime, three pieces work together:
 
-- **Directory structure**: `<storagePath>/<agent-name>/sessions/` and `<storagePath>/<agent-name>/memory/`
-- **Session index**: `_index.json` — array of session metadata (IDs, timestamps, token counts, cost, skills snapshot)
-- **Session transcripts**: `<session-id>.jsonl` — append-only JSONL files with typed entries (session header, model changes, messages, etc.). Managed by the Gateway via SessionManager; StorageEngine does raw read/write only.
-- **Memory files**: `MEMORY.md` (long-term, evergreen), `YYYY-MM-DD.md` (daily, append-only), and other `.md` files (evergreen topics)
+- `StorageEngine` manages `sessions.json`, transcript path resolution, retention, and memory-file I/O.
+- `SessionRouter` maps inbound chat traffic onto stable `sessionKey` values such as `agent:<agent-id>:main`, applies daily/idle reset rules, and updates token/cost metadata.
+- `SessionTranscriptStore` provisions transcript files immediately and snapshots `SessionManager` state so empty or user-only sessions still exist on disk.
 
-The Zustand session store (`src/store/session-store.ts`) acts as a thin in-memory cache that delegates all persistence to the `StorageEngine`.
+The resulting directory layout is:
+
+- `<storagePath>/<agent-name>/sessions/sessions.json`
+- `<storagePath>/<agent-name>/sessions/<timestamp>_<session-id>.jsonl`
+- `<storagePath>/<agent-name>/memory/MEMORY.md`
+- `<storagePath>/<agent-name>/memory/YYYY-MM-DD.md`
+
+The frontend session store caches metadata and transcript messages by `sessionKey`. It keeps optimistic messages locally during streaming, then refreshes transcript state from the backend when a run settles.
 
 ## Connections
 
-- **Sends to**: Agent Node (singular — one Storage Node per agent)
+- **Sends to**: Agent Node
 - **Receives from**: None
+- One Storage Node per agent
 
 ## Example
 
@@ -52,6 +70,11 @@ The Zustand session store (`src/store/session-store.ts`) acts as a thin in-memor
   "storagePath": "~/.simple-agent-manager/storage",
   "sessionRetention": 50,
   "memoryEnabled": true,
-  "dailyMemoryEnabled": true
+  "dailyMemoryEnabled": true,
+  "dailyResetEnabled": true,
+  "dailyResetHour": 4,
+  "idleResetEnabled": false,
+  "idleResetMinutes": 60,
+  "parentForkMaxTokens": 100000
 }
 ```

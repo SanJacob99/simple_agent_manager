@@ -20,6 +20,11 @@ describe('getDefaultNodeData', () => {
     expect(node.sessionRetention).toBe(50);
     expect(node.memoryEnabled).toBe(true);
     expect(node.dailyMemoryEnabled).toBe(true);
+    expect(node.dailyResetEnabled).toBe(true);
+    expect(node.dailyResetHour).toBe(4);
+    expect(node.idleResetEnabled).toBe(false);
+    expect(node.idleResetMinutes).toBe(60);
+    expect(node.parentForkMaxTokens).toBe(100000);
   });
 
   it('seeds empty agent capability overrides', () => {

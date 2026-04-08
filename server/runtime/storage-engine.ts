@@ -1,12 +1,10 @@
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
-import { randomUUID } from 'crypto';
 import type { ResolvedStorageConfig } from '../../shared/agent-config';
-import type { SessionMeta, SessionEntry, MemoryFileInfo } from '../../shared/storage-types';
-export type { SessionMeta, SessionEntry, MemoryFileInfo };
+import type { SessionStoreEntry, MemoryFileInfo, MaintenanceReport } from '../../shared/storage-types';
 
-// --- Engine ---
+export type { SessionStoreEntry, MemoryFileInfo, MaintenanceReport };
 
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}\.md$/;
 
@@ -15,7 +13,7 @@ export class StorageEngine {
   private readonly sessionsDir: string;
   private readonly memoryDir: string;
   private readonly memoryEnabled: boolean;
-  private indexCache: SessionMeta[] | null = null;
+  private storeCache: Record<string, SessionStoreEntry> | null = null;
 
   constructor(
     private readonly config: ResolvedStorageConfig,
@@ -37,170 +35,337 @@ export class StorageEngine {
     }
   }
 
-  // --- Index I/O ---
-
-  private indexPath(): string {
-    return path.join(this.sessionsDir, '_index.json');
+  getAgentDir(): string {
+    return this.agentDir;
   }
 
-  private async readIndex(): Promise<SessionMeta[]> {
-    if (this.indexCache) return this.indexCache;
-    try {
-      const raw = await fs.readFile(this.indexPath(), 'utf-8');
-      this.indexCache = JSON.parse(raw) as SessionMeta[];
-    } catch {
-      this.indexCache = [];
+  getSessionsDir(): string {
+    return this.sessionsDir;
+  }
+
+  private storePath(): string {
+    return path.join(this.sessionsDir, 'sessions.json');
+  }
+
+  private async readStore(): Promise<Record<string, SessionStoreEntry>> {
+    if (this.storeCache) {
+      return this.storeCache;
     }
-    return this.indexCache;
+
+    try {
+      const raw = await fs.readFile(this.storePath(), 'utf-8');
+      this.storeCache = JSON.parse(raw) as Record<string, SessionStoreEntry>;
+    } catch {
+      this.storeCache = {};
+    }
+
+    return this.storeCache;
   }
 
-  private async writeIndex(sessions: SessionMeta[]): Promise<void> {
-    this.indexCache = sessions;
-    await fs.writeFile(this.indexPath(), JSON.stringify(sessions, null, 2), 'utf-8');
+  private async writeStore(store: Record<string, SessionStoreEntry>): Promise<void> {
+    this.storeCache = store;
+    await fs.mkdir(this.sessionsDir, { recursive: true });
+    await fs.writeFile(this.storePath(), JSON.stringify(store, null, 2), 'utf-8');
   }
 
-  // --- Session CRUD ---
-
-  async listSessions(): Promise<SessionMeta[]> {
-    const sessions = await this.readIndex();
-    return [...sessions].sort(
+  async listSessions(): Promise<SessionStoreEntry[]> {
+    const store = await this.readStore();
+    return Object.values(store).sort(
       (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
     );
   }
 
-  async createSession(meta: SessionMeta): Promise<void> {
-    const sessions = await this.readIndex();
-    sessions.push(meta);
-    await this.writeIndex(sessions);
-
-    const jsonlPath = path.join(this.agentDir, meta.sessionFile);
-    await fs.writeFile(jsonlPath, '', 'utf-8');
-  }
-
-  async createManagedSession(llmSlug: string, sessionKey?: string): Promise<SessionMeta> {
-    const sessionId = randomUUID();
-    const now = new Date().toISOString();
-    const meta: SessionMeta = {
-      sessionId,
-      sessionKey: sessionKey ?? sessionId,
-      agentName: this.agentName,
-      llmSlug,
-      startedAt: now,
-      updatedAt: now,
-      sessionFile: `sessions/${sessionId}.jsonl`,
-      contextTokens: 0,
-      totalInputTokens: 0,
-      totalOutputTokens: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-      totalEstimatedCostUsd: 0,
-      totalTokens: 0,
-    };
-
-    await this.createSession(meta);
-    await this.appendEntry(sessionId, {
-      type: 'session',
-      id: randomUUID(),
-      parentId: null,
-      timestamp: now,
-      version: 3,
-      sessionId,
+  async createSession(entry: SessionStoreEntry): Promise<void> {
+    const store = await this.readStore();
+    await this.writeStore({
+      ...store,
+      [entry.sessionKey]: entry,
     });
-
-    return meta;
   }
 
-  async deleteSession(sessionId: string): Promise<void> {
-    const sessions = await this.readIndex();
-    const session = sessions.find((s) => s.sessionId === sessionId);
-    const filtered = sessions.filter((s) => s.sessionId !== sessionId);
-    await this.writeIndex(filtered);
+  async getSession(sessionKey: string): Promise<SessionStoreEntry | null> {
+    const store = await this.readStore();
+    return store[sessionKey] ?? null;
+  }
 
-    if (session) {
-      const jsonlPath = path.join(this.agentDir, session.sessionFile);
-      try {
-        await fs.unlink(jsonlPath);
-      } catch {
-        // File may already be gone
-      }
+  async getSessionById(sessionId: string): Promise<SessionStoreEntry | null> {
+    const store = await this.readStore();
+    return Object.values(store).find((session) => session.sessionId === sessionId) ?? null;
+  }
+
+  async updateSession(
+    sessionKey: string,
+    partial: Partial<SessionStoreEntry>,
+  ): Promise<void> {
+    const store = await this.readStore();
+    const existing = store[sessionKey];
+    if (!existing) {
+      return;
     }
+
+    await this.writeStore({
+      ...store,
+      [sessionKey]: {
+        ...existing,
+        ...partial,
+      },
+    });
   }
 
-  async getSessionMeta(sessionId: string): Promise<SessionMeta | null> {
-    const sessions = await this.readIndex();
-    return sessions.find((s) => s.sessionId === sessionId) ?? null;
-  }
-
-  async getSessionByKey(sessionKey: string): Promise<SessionMeta | null> {
-    const sessions = await this.readIndex();
-    return sessions.find((s) => s.sessionKey === sessionKey) ?? null;
-  }
-
-  async updateSessionMeta(sessionId: string, partial: Partial<SessionMeta>): Promise<void> {
-    const sessions = await this.readIndex();
-    const idx = sessions.findIndex((s) => s.sessionId === sessionId);
-    if (idx === -1) return;
-    sessions[idx] = { ...sessions[idx], ...partial };
-    await this.writeIndex(sessions);
-  }
-
-  // --- JSONL entries ---
-
-  async appendEntry(sessionId: string, entry: SessionEntry): Promise<void> {
-    const meta = await this.getSessionMeta(sessionId);
-    if (!meta) return;
-    const jsonlPath = path.join(this.agentDir, meta.sessionFile);
-    await fs.appendFile(jsonlPath, JSON.stringify(entry) + '\n', 'utf-8');
-  }
-
-  async readEntries(sessionId: string): Promise<SessionEntry[]> {
-    const meta = await this.getSessionMeta(sessionId);
-    if (!meta) return [];
-    const jsonlPath = path.join(this.agentDir, meta.sessionFile);
-    try {
-      const raw = await fs.readFile(jsonlPath, 'utf-8');
-
-      // OPTIMIZATION: Single-pass parsing over chained array methods
-      // Avoids large intermediate array allocations for massive JSONL files
-      const entries: SessionEntry[] = [];
-      let startIdx = 0;
-      while (startIdx < raw.length) {
-        let endIdx = raw.indexOf('\n', startIdx);
-        if (endIdx === -1) endIdx = raw.length;
-
-        const line = raw.substring(startIdx, endIdx).trim();
-        if (line) {
-            entries.push(JSON.parse(line) as SessionEntry);
-        }
-        startIdx = endIdx + 1;
-      }
-      return entries;
-    } catch {
-      return [];
+  async deleteSession(sessionKey: string): Promise<void> {
+    const store = await this.readStore();
+    const existing = store[sessionKey];
+    if (!existing) {
+      return;
     }
+
+    const { [sessionKey]: _deleted, ...rest } = store;
+    await this.writeStore(rest);
+    await this.deleteTranscriptFile(existing);
   }
 
-  async replaceEntries(sessionId: string, entries: SessionEntry[]): Promise<void> {
-    const meta = await this.getSessionMeta(sessionId);
-    if (!meta) return;
-    const jsonlPath = path.join(this.agentDir, meta.sessionFile);
-    const serialized = entries.map((entry) => JSON.stringify(entry)).join('\n');
-    await fs.writeFile(jsonlPath, serialized ? `${serialized}\n` : '', 'utf-8');
+  async deleteAllSessions(): Promise<void> {
+    const store = await this.readStore();
+    await this.writeStore({});
+    await Promise.all(
+      Object.values(store).map((entry) => this.deleteTranscriptFile(entry)),
+    );
   }
 
-  // --- Retention ---
+  resolveTranscriptPath(entry: Pick<SessionStoreEntry, 'sessionId' | 'sessionFile'>): string {
+    if (!entry.sessionFile) {
+      return path.join(this.sessionsDir, `${entry.sessionId}.jsonl`);
+    }
+
+    if (path.isAbsolute(entry.sessionFile)) {
+      return entry.sessionFile;
+    }
+
+    return path.join(this.agentDir, entry.sessionFile);
+  }
 
   async enforceRetention(maxSessions: number): Promise<void> {
     const sessions = await this.listSessions();
-    if (sessions.length <= maxSessions) return;
+    if (sessions.length <= maxSessions) {
+      return;
+    }
 
-    const toRemove = sessions.slice(maxSessions);
-    for (const session of toRemove) {
-      await this.deleteSession(session.sessionId);
+    const overflow = sessions.slice(maxSessions);
+    for (const session of overflow) {
+      await this.deleteSession(session.sessionKey);
     }
   }
 
-  // --- Memory ---
+  async getDiskUsage(): Promise<number> {
+    try {
+      const files = await fs.readdir(this.sessionsDir);
+      let total = 0;
+      for (const file of files) {
+        try {
+          const stat = await fs.stat(path.join(this.sessionsDir, file));
+          if (stat.isFile()) {
+            total += stat.size;
+          }
+        } catch {
+          // Ignore files that disappear between readdir and stat
+        }
+      }
+      return total;
+    } catch {
+      return 0;
+    }
+  }
+
+  async pruneStaleEntries(pruneAfterDays: number, dryRun: boolean): Promise<string[]> {
+    const store = await this.readStore();
+    const threshold = Date.now() - pruneAfterDays * 24 * 60 * 60 * 1000;
+    const staleKeys: string[] = [];
+
+    for (const [key, entry] of Object.entries(store)) {
+      if (new Date(entry.updatedAt).getTime() < threshold) {
+        staleKeys.push(key);
+      }
+    }
+
+    if (!dryRun) {
+      for (const key of staleKeys) {
+        await this.deleteSession(key);
+      }
+    }
+
+    return staleKeys;
+  }
+
+  async removeOrphanTranscripts(dryRun: boolean): Promise<string[]> {
+    const store = await this.readStore();
+
+    // Build set of referenced transcript filenames (basename only)
+    const referenced = new Set<string>();
+    for (const entry of Object.values(store)) {
+      const resolved = this.resolveTranscriptPath(entry);
+      referenced.add(path.basename(resolved));
+    }
+
+    let files: string[];
+    try {
+      files = await fs.readdir(this.sessionsDir);
+    } catch {
+      return [];
+    }
+
+    const orphans: string[] = [];
+    for (const file of files) {
+      if (!file.endsWith('.jsonl')) continue;
+      if (!referenced.has(file)) {
+        orphans.push(file);
+        if (!dryRun) {
+          try {
+            await fs.unlink(path.join(this.sessionsDir, file));
+          } catch {
+            // Ignore
+          }
+        }
+      }
+    }
+
+    return orphans;
+  }
+
+  async cleanResetArchives(retentionDays: number, dryRun: boolean): Promise<string[]> {
+    if (retentionDays <= 0) return [];
+
+    const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+    const removed: string[] = [];
+
+    let files: string[];
+    try {
+      files = await fs.readdir(this.sessionsDir);
+    } catch {
+      return [];
+    }
+
+    for (const file of files) {
+      // Match *.reset.* pattern
+      if (!file.includes('.reset.')) continue;
+      const filePath = path.join(this.sessionsDir, file);
+      try {
+        const stat = await fs.stat(filePath);
+        if (stat.isFile() && stat.mtimeMs < cutoff) {
+          removed.push(filePath);
+          if (!dryRun) {
+            await fs.unlink(filePath);
+          }
+        }
+      } catch {
+        // Ignore
+      }
+    }
+
+    return removed;
+  }
+
+  async rotateStoreFile(maxBytes: number, dryRun: boolean): Promise<boolean> {
+    const storeFilePath = this.storePath();
+
+    let stat: Awaited<ReturnType<typeof fs.stat>>;
+    try {
+      stat = await fs.stat(storeFilePath);
+    } catch {
+      return false;
+    }
+
+    if (stat.size <= maxBytes) {
+      return false;
+    }
+
+    if (!dryRun) {
+      const timestamp = Date.now();
+      const bakPath = path.join(this.sessionsDir, `sessions.${timestamp}.json.bak`);
+      await fs.rename(storeFilePath, bakPath);
+      this.storeCache = null;
+      await this.writeStore({});
+    }
+
+    return true;
+  }
+
+  async enforceDiskBudget(maxBytes: number, highWaterBytes: number, dryRun: boolean): Promise<string[]> {
+    if (maxBytes <= 0) {
+      return [];
+    }
+
+    const usage = await this.getDiskUsage();
+    if (usage <= maxBytes) {
+      return [];
+    }
+
+    // First pass: remove orphan transcripts
+    await this.removeOrphanTranscripts(dryRun);
+
+    // Re-check usage after orphan removal
+    let currentUsage = await this.getDiskUsage();
+    const evicted: string[] = [];
+
+    if (currentUsage > highWaterBytes) {
+      // Evict oldest sessions by updatedAt until under highWaterBytes
+      const sessions = await this.listSessions();
+      // listSessions returns newest-first, so reverse for oldest-first
+      const oldest = [...sessions].reverse();
+
+      for (const session of oldest) {
+        if (currentUsage <= highWaterBytes) break;
+        evicted.push(session.sessionKey);
+        if (!dryRun) {
+          await this.deleteSession(session.sessionKey);
+        }
+        currentUsage = await this.getDiskUsage();
+      }
+    }
+
+    return evicted;
+  }
+
+  async runMaintenance(mode?: 'warn' | 'enforce'): Promise<MaintenanceReport> {
+    const effectiveMode = mode ?? this.config.maintenanceMode;
+    const dryRun = effectiveMode === 'warn';
+
+    const diskBefore = await this.getDiskUsage();
+
+    const prunedEntries = await this.pruneStaleEntries(this.config.pruneAfterDays, dryRun);
+    const orphanTranscripts = await this.removeOrphanTranscripts(dryRun);
+    const archivedResets = await this.cleanResetArchives(this.config.resetArchiveRetentionDays, dryRun);
+
+    // Enforce maxEntries limit
+    if (!dryRun && this.config.maxEntries > 0) {
+      const sessions = await this.listSessions();
+      if (sessions.length > this.config.maxEntries) {
+        const overflow = [...sessions].reverse().slice(0, sessions.length - this.config.maxEntries);
+        for (const session of overflow) {
+          await this.deleteSession(session.sessionKey);
+        }
+      }
+    }
+
+    const storeRotated = await this.rotateStoreFile(this.config.rotateBytes, dryRun);
+
+    const highWaterBytes = this.config.maxDiskBytes > 0
+      ? Math.floor(this.config.maxDiskBytes * this.config.highWaterPercent / 100)
+      : 0;
+    const evictedForBudget = await this.enforceDiskBudget(this.config.maxDiskBytes, highWaterBytes, dryRun);
+
+    const diskAfter = await this.getDiskUsage();
+
+    return {
+      mode: effectiveMode,
+      prunedEntries,
+      orphanTranscripts,
+      archivedResets,
+      storeRotated,
+      diskBefore,
+      diskAfter,
+      evictedForBudget,
+    };
+  }
 
   async appendDailyMemory(content: string, date?: string): Promise<void> {
     const dateStr = date ?? new Date().toISOString().slice(0, 10);
@@ -235,7 +400,7 @@ export class StorageEngine {
     try {
       const entries = await fs.readdir(this.memoryDir);
       return entries
-        .filter((e) => e.endsWith('.md'))
+        .filter((entry) => entry.endsWith('.md'))
         .map((name) => {
           const isDateFile = DATE_REGEX.test(name);
           return {
@@ -246,6 +411,16 @@ export class StorageEngine {
         });
     } catch {
       return [];
+    }
+  }
+
+  private async deleteTranscriptFile(entry: Pick<SessionStoreEntry, 'sessionId' | 'sessionFile'>): Promise<void> {
+    const transcriptPath = this.resolveTranscriptPath(entry);
+
+    try {
+      await fs.unlink(transcriptPath);
+    } catch {
+      // Ignore missing files so metadata cleanup stays idempotent.
     }
   }
 }

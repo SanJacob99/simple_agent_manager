@@ -1,14 +1,19 @@
 import type { ResolvedStorageConfig } from '../../shared/agent-config';
-import type { SessionMeta, SessionEntry, MemoryFileInfo } from '../../shared/storage-types';
+import type { SessionStoreEntry, MemoryFileInfo, MaintenanceReport, BranchTree, SessionLineage } from '../../shared/storage-types';
+import type {
+  SessionRouteRequest,
+  SessionRouteResponse,
+  SessionTranscriptResponse,
+} from '../../shared/session-routes';
 
 /**
- * Browser-side client that mirrors StorageEngine's interface
- * but delegates to the local Express server via fetch.
+ * Browser-side client that mirrors the server session/storage APIs.
  */
 export class StorageClient {
   constructor(
     private readonly config: ResolvedStorageConfig,
-    private readonly agentName: string,
+    public readonly agentName: string,
+    public readonly agentId: string,
   ) {}
 
   private configParam(): string {
@@ -28,80 +33,65 @@ export class StorageClient {
     if (!res.ok) throw new Error(await res.text());
   }
 
-  async listSessions(): Promise<SessionMeta[]> {
-    const res = await fetch(`/api/storage/sessions?${this.queryStr()}`);
+  async listSessions(): Promise<SessionStoreEntry[]> {
+    const res = await fetch(`/api/sessions/${encodeURIComponent(this.agentId)}?${this.queryStr()}`);
     if (!res.ok) throw new Error(await res.text());
     return res.json();
   }
 
-  async createSession(meta: SessionMeta): Promise<void> {
-    const res = await fetch('/api/storage/sessions', {
+  async routeSession(request?: SessionRouteRequest): Promise<SessionRouteResponse> {
+    const res = await fetch(`/api/sessions/${encodeURIComponent(this.agentId)}/route`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ config: this.config, agentName: this.agentName, meta }),
+      body: JSON.stringify({ config: this.config, agentName: this.agentName, request }),
     });
     if (!res.ok) throw new Error(await res.text());
+    return res.json();
   }
 
-  async deleteSession(sessionId: string): Promise<void> {
+  async resetSession(sessionKey: string): Promise<SessionRouteResponse> {
     const res = await fetch(
-      `/api/storage/sessions/${encodeURIComponent(sessionId)}?${this.queryStr()}`,
+      `/api/sessions/${encodeURIComponent(this.agentId)}/${encodeURIComponent(sessionKey)}/reset`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config: this.config, agentName: this.agentName }),
+      },
+    );
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  }
+
+  async getSession(sessionKey: string): Promise<SessionStoreEntry | null> {
+    const res = await fetch(
+      `/api/sessions/${encodeURIComponent(this.agentId)}/${encodeURIComponent(sessionKey)}?${this.queryStr()}`,
+    );
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  }
+
+  async getTranscript(sessionKey: string): Promise<SessionTranscriptResponse> {
+    const res = await fetch(
+      `/api/sessions/${encodeURIComponent(this.agentId)}/${encodeURIComponent(sessionKey)}/transcript?${this.queryStr()}`,
+    );
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  }
+
+  async deleteSession(sessionKey: string): Promise<void> {
+    const res = await fetch(
+      `/api/sessions/${encodeURIComponent(this.agentId)}/${encodeURIComponent(sessionKey)}?${this.queryStr()}`,
       { method: 'DELETE' },
     );
     if (!res.ok) throw new Error(await res.text());
   }
 
-  async getSessionMeta(sessionId: string): Promise<SessionMeta | null> {
+  async deleteAllSessions(): Promise<void> {
     const res = await fetch(
-      `/api/storage/sessions/${encodeURIComponent(sessionId)}?${this.queryStr()}`,
+      `/api/sessions/${encodeURIComponent(this.agentId)}?${this.queryStr()}`,
+      { method: 'DELETE' },
     );
     if (!res.ok) throw new Error(await res.text());
-    return res.json();
-  }
-
-  async updateSessionMeta(sessionId: string, partial: Partial<SessionMeta>): Promise<void> {
-    const res = await fetch(`/api/storage/sessions/${encodeURIComponent(sessionId)}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ config: this.config, agentName: this.agentName, partial }),
-    });
-    if (!res.ok) throw new Error(await res.text());
-  }
-
-  async appendEntry(sessionId: string, entry: SessionEntry): Promise<void> {
-    const res = await fetch(`/api/storage/sessions/${encodeURIComponent(sessionId)}/entries`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ config: this.config, agentName: this.agentName, entry }),
-    });
-    if (!res.ok) throw new Error(await res.text());
-  }
-
-  async readEntries(sessionId: string): Promise<SessionEntry[]> {
-    const res = await fetch(
-      `/api/storage/sessions/${encodeURIComponent(sessionId)}/entries?${this.queryStr()}`,
-    );
-    if (!res.ok) throw new Error(await res.text());
-    return res.json();
-  }
-
-  async replaceEntries(sessionId: string, entries: SessionEntry[]): Promise<void> {
-    const res = await fetch(`/api/storage/sessions/${encodeURIComponent(sessionId)}/entries`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ config: this.config, agentName: this.agentName, entries }),
-    });
-    if (!res.ok) throw new Error(await res.text());
-  }
-
-  async createManagedSession(llmSlug: string, sessionKey?: string): Promise<SessionMeta> {
-    const res = await fetch('/api/storage/sessions/draft', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ config: this.config, agentName: this.agentName, llmSlug, sessionKey }),
-    });
-    if (!res.ok) throw new Error(await res.text());
-    return res.json();
   }
 
   async enforceRetention(maxSessions: number): Promise<void> {
@@ -147,6 +137,42 @@ export class StorageClient {
 
   async listMemoryFiles(): Promise<MemoryFileInfo[]> {
     const res = await fetch(`/api/storage/memory/files?${this.queryStr()}`);
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  }
+
+  async runMaintenance(): Promise<MaintenanceReport> {
+    const res = await fetch('/api/storage/maintenance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config: this.config, agentName: this.agentName }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  }
+
+  async runMaintenanceDryRun(): Promise<MaintenanceReport> {
+    const res = await fetch('/api/storage/maintenance/dry-run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config: this.config, agentName: this.agentName }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  }
+
+  async fetchBranchTree(sessionKey: string): Promise<BranchTree> {
+    const res = await fetch(
+      `/api/sessions/${encodeURIComponent(this.agentId)}/${encodeURIComponent(sessionKey)}/branches?${this.queryStr()}`,
+    );
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  }
+
+  async fetchLineage(sessionKey: string): Promise<SessionLineage> {
+    const res = await fetch(
+      `/api/sessions/${encodeURIComponent(this.agentId)}/${encodeURIComponent(sessionKey)}/lineage?${this.queryStr()}`,
+    );
     if (!res.ok) throw new Error(await res.text());
     return res.json();
   }

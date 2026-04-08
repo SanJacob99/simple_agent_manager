@@ -81,7 +81,7 @@ describe('DefaultsSection', () => {
 
     render(<DefaultsSection />);
     fireEvent.click(
-      screen.getByRole('button', { name: /Apply defaults to existing agents/i }),
+      screen.getByRole('button', { name: /Apply to existing agents/i }),
     );
 
     expect(confirmSpy).toHaveBeenCalledWith(

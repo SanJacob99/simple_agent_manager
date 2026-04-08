@@ -22,7 +22,25 @@ describe('SettingsWorkspace', () => {
     );
 
     expect(
-      screen.getByText('Manage provider credentials stored in this browser.'),
+      screen.getByText('Manage provider credentials saved to a local settings file.'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the defaults section with node-type tabs', () => {
+    render(
+      <SettingsWorkspace
+        activeSection="defaults"
+        onExit={() => {}}
+      />,
+    );
+
+    expect(screen.getByText('Agent')).toBeInTheDocument();
+    expect(screen.getByText('Storage')).toBeInTheDocument();
+    expect(screen.getByText('Context Engine')).toBeInTheDocument();
+    expect(screen.getByText('Memory')).toBeInTheDocument();
+    expect(screen.getByText('Cron')).toBeInTheDocument();
+    expect(
+      screen.getByText('Choose the defaults applied to newly created nodes.'),
     ).toBeInTheDocument();
   });
 
