@@ -1,156 +1,147 @@
-
 # 🦑 Simple Agent Manager - Node Based Agent Builder
 
-![Cyborg Squid Logo](./docs/logo.png)
+![Simple Agent Manager logo](./docs/logo.png)
 
-A node-based graphical interface for building and managing custom AI agents. Drag-and-drop nodes onto a canvas to visually configure agents with memory, tools, context engines, databases, and more -- then chat with them directly from the dashboard.
+Simple Agent Manager is a node-based visual AI agent builder. You assemble an agent on a canvas, resolve that graph into a serializable `AgentConfig`, and run it through a local Express + WebSocket backend.
 
-Built with React 19, TypeScript, and [@xyflow/react](https://reactflow.dev/) for the graph editor. Features a full-stack architecture with a Node.js/Express/WebSocket backend powered by [pi-agent-core](https://github.com/nicepkg/pi-mono) for the agent runtime.
+The project is built with React 19, TypeScript, `@xyflow/react`, and `@mariozechner/pi-agent-core`.
 
-## Features
+## What is working today
 
-- **Visual Agent Builder** -- Drag agent and peripheral nodes onto a canvas, connect them with edges to define agent capabilities
-- **OpenClaw-Inspired Architecture** -- Memory, tools, and context engine nodes modeled after [OpenClaw](https://docs.openclaw.ai/) concepts
-- **Client-Server Architecture** -- Agent configs are serializable JSON sent to a Node.js backend. Agents run securely on the server with full access to files and external APIs.
-- **Session-Based Chat** -- Conversations are strictly isolated into distinct, immutable sessions to prevent context leakage. Automatically manages history limits and prunes old sessions.
-- **Multi-Provider LLM Support** -- OpenRouter, OpenAI, Anthropic, Google AI Studio, Google Vertex AI, Azure OpenAI, Mistral, Groq, xAI, Cerebras, MiniMax, Vercel AI Gateway, Ollama
-- **Memory Engine** -- Multiple backends (builtin/external/cloud), compaction strategies (summary/sliding-window/hybrid), memory tools (search/get/save) exposed to agents
-- **Tool System** -- Profiles (full/coding/messaging/minimal), groups (runtime/fs/web/memory/coding/communication), skills (markdown instructions), plugins
-- **Context Engine** -- Token budget management, compaction lifecycle (assemble/compact/afterTurn), RAG integration, system prompt additions
-- **Settings Modal** -- API key management per provider, stored in localStorage
-- **Export/Import** -- Export graphs as JSON bundles, import from file, load pre-built test fixtures
-- **Dark Theme** -- Tailwind CSS dark UI throughout
+- Drag-and-drop graph editing for agent and peripheral nodes
+- In-browser graph resolution via `src/utils/graph-to-agent.ts`
+- Local backend runtime in `server/` with streamed chat over WebSockets
+- Storage-backed sessions, transcript persistence, retention, and maintenance
+- Context budgeting and compaction through the context engine
+- Memory tools exposed from the memory engine
+- Settings workspace for provider keys, OpenRouter model discovery, defaults, and data maintenance
+- Graph import/export plus a bundled test fixture
 
-## Node Types
+## Current scope and caveats
 
-| Node | Description |
-|------|-------------|
-| **Agent** | Central hub node -- LLM provider, model, system prompt, thinking level |
-| **Memory** | How the agent remembers -- backends, compaction, memory tools |
-| **Tools** | Agent capabilities -- tool profiles, groups, skills, plugins |
-| **Skills** | Standalone skill definitions injected into the system prompt |
-| **Context Engine** | Context management -- token budget, compaction, RAG |
-| **Agent Comm** | Inter-agent communication (direct/broadcast) |
-| **Connectors** | External service connectors (REST API, etc.) |
-| **Database** | Data storage (PostgreSQL, MySQL, SQLite, MongoDB, IndexedDB, REST API) |
-| **Vector Database** | Vector storage (Pinecone, ChromaDB, Qdrant, Weaviate) |
+- Interactive chat is blocked unless an agent has both a connected `Context Engine` node and a connected `Storage` node.
+- OpenRouter model discovery is live; the other providers currently use curated static model lists in the UI.
+- Several node types and tool names are still extension surfaces rather than fully wired product features. In particular, `connectors`, `agentComm`, `vectorDatabase`, and `cron` need runtime inspection before you treat them as end-to-end features.
+- The current built-in tool surface includes real implementations for `calculator`, `web_fetch`, memory tools, and session tools. Many other named tools are placeholders/stubs.
 
-## Concepts Documentation
+## Node palette
 
-Detailed documentation for each node type lives in [`docs/concepts/`](docs/concepts/). Each concept doc covers the node's purpose, configuration properties, runtime behavior, connections, and examples. These docs are maintained by AI tools via rules in `CLAUDE.md` and `.agents/rules/docs-maintenance.md`.
+The default sidebar currently exposes these draggable nodes:
 
-## Getting Started
+| Node | Purpose |
+| --- | --- |
+| `agent` | Core agent identity, model, prompt, and reasoning settings |
+| `memory` | Memory backend, compaction, and memory tool toggles |
+| `tools` | Tool profiles, custom tool names, inline skills, and plugin bindings |
+| `skills` | Lightweight named skills that are folded into the resolved system prompt |
+| `contextEngine` | Token budget, compaction strategy, and prompt bootstrap limits |
+| `agentComm` | Configuration surface for agent-to-agent communication |
+| `connectors` | Configuration surface for external connector metadata |
+| `storage` | Session persistence, retention, maintenance, and memory file settings |
+| `vectorDatabase` | Configuration surface for vector-store metadata |
+
+The codebase also contains a `cron` node type and editor, but it is not part of the default palette and should be treated as in-progress unless you verify the full execution path.
+
+## Architecture
+
+```text
+src/
+  React UI: canvas, chat drawer, property editors, settings, Zustand stores
+
+shared/
+  Serializable agent config, shared protocol/types, tool resolution,
+  token estimation, and system prompt assembly
+
+server/
+  Express + WebSocket backend, agent manager, run coordinator, runtime engines,
+  storage/session routing, hooks, and transcript persistence
+```
+
+High-level flow:
+
+1. The canvas graph lives in `src/store/graph-store.ts`.
+2. `src/utils/graph-to-agent.ts` resolves the graph into `shared/agent-config.ts`.
+3. The frontend starts or updates an agent through the local backend.
+4. `server/agents/run-coordinator.ts` and `server/runtime/*` execute the run, stream events, and persist transcripts.
+
+## Settings workspace
+
+The settings view currently includes four sections:
+
+- `Providers & API Keys`: browser-local provider credentials, plus direct links to provider key pages
+- `Model Catalog`: OpenRouter sync and model inspection
+- `Defaults`: default provider/model/thinking level, prompt mode, safety guardrails, and storage path
+- `Data & Maintenance`: graph import/export, fixture loading, resets, and storage maintenance runs
+
+## Getting started
 
 ### Prerequisites
 
 - Node.js 18+
 - npm
 
-### Install & Run
+### Install and run
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173) in your browser.
+This starts:
 
-### Build
+- the Vite frontend at `http://localhost:5173`
+- the local backend at `http://localhost:3210`
+
+### Basic usage
+
+1. Open Settings and add a provider API key.
+2. Drag an `Agent` node onto the canvas.
+3. Add and connect at least a `Context Engine` node and a `Storage` node.
+4. Optionally connect `Memory`, `Tools`, `Skills`, and other peripheral nodes.
+5. Configure the selected node in the right-hand properties panel.
+6. Open the chat drawer from the agent node and start a session.
+
+## Tests and verification
 
 ```bash
+npm test
+npm run test:run
 npm run build
 ```
 
-Output is in `dist/`.
-
-### Real OpenRouter Tests
-
-To run the opt-in live OpenRouter tests, create a local `.env` file with:
+Opt-in live OpenRouter tests:
 
 ```bash
+# Copy .env.example to .env and add a real key
 OPENROUTER_API_KEY=your_key_here
-# Optional override; defaults to qwen/qwen3.6-plus:free
-OPENROUTER_MODEL=qwen/qwen3.6-plus:free
+# Optional: defaults to openai/gpt-4o-mini in the test
+OPENROUTER_MODEL=openai/gpt-4o-mini
 ```
-
-Then run:
 
 ```bash
 npm run test:openrouter
 npm run test:e2e:openrouter
 ```
 
-`npm run test:openrouter` exercises the backend integration path. `npm run test:e2e:openrouter` starts the real client and server, sends a message through the browser UI, and captures a trace of critical fetch and WebSocket milestones. Both are intentionally opt-in because they make live API calls and may incur cost or fail for network/provider reasons. The browser E2E retries automatically because live provider responses, especially free models, can occasionally return an empty turn.
+These live tests make real network calls and can fail for provider, network, or quota reasons.
 
-### Usage
+## Documentation
 
-1. **Configure API keys** -- Click the gear icon (top-right) to open Settings and enter your provider API keys
-2. **Create an agent** -- Drag an "Agent" node onto the canvas from the left sidebar
-3. **Add peripherals** -- Drag Memory, Tools, Context Engine, or Database nodes and connect them to the agent
-4. **Customize** -- Click any node to open the properties panel on the right and configure it
-5. **Chat** -- Click the "Chat" button on an agent node to open the chat drawer, create a new session or select an existing one, and start a conversation
-6. **Export/Import** -- Use the sidebar action buttons to export your graph, import one, or load the built-in test fixture
+- Node concept docs live in `docs/concepts/`
+- Agent-facing repository guidance lives in `AGENTS.md`
+- Shared config and prompt assembly are centered in `shared/agent-config.ts` and `shared/system-prompt-builder.ts`
 
+If you change node schemas, defaults, or runtime behavior, update the matching concept docs as part of the same change.
 
-### Provider API Key Setup
+## Project structure
 
-In **Settings → Providers & API Keys**, each provider row now includes a direct **“Get … key”** link to the provider portal.
-
-Current providers with key setup links: OpenAI, Anthropic, Google AI Studio, Google Vertex AI, OpenRouter, Azure OpenAI, Groq, xAI, Mistral, Cerebras, MiniMax, and Vercel AI Gateway. Ollama runs locally and does not require a cloud key.
-
-## Architecture
-
-```
-Client (React Flow UI)
-  -> Graph Nodes/Edges
-  -> resolveAgentConfig()  -->  AgentConfig (serializable JSON)
-  -> AgentClient (WebSocket connection & event subscription)
-
-Server (Node.js + Express + WebSockets)
-  -> agent-manager (Manages active runtimes)
-    -> AgentRuntime             (wraps pi-agent-core Agent)
-      -> MemoryEngine           (backends, compaction, memory tools)
-      -> ContextEngine          (assemble/compact lifecycle, token budget)
-      -> ToolFactory            (profiles, groups -> AgentTool instances)
-```
-
-**Config Layer** -- Node data types and graph traversal produce a serializable `AgentConfig` (pure JSON).
-
-**Server Layer** -- The backend runs `AgentRuntime` using the provided configuration, executing real `pi-agent-core` agents with their provided tools, memory, and context.
-
-**UI Layer** -- React components subscribe to WebSocket events for streaming updates, tool call displays, and status indicators.
-
-## Tech Stack
-
-- **React 19** + TypeScript + Vite 6
-- **Express 5** + **ws 8** -- Backend and WebSockets
-- **@xyflow/react 12** -- Node-based graph editor
-- **@mariozechner/pi-ai** -- Unified LLM API (stream, getModel, KnownProvider)
-- **@mariozechner/pi-agent-core** -- Agent class with tools, transformContext, event subscription
-- **Zustand 5** -- State management
-- **Tailwind CSS 4** -- Styling
-- **@sinclair/typebox** -- Tool parameter schemas
-- **lucide-react** -- Icons
-
-## Project Structure
-
-```
-server/             Node.js backend, Express, WebSocket handler
-  agents/           Agent execution and runtime management
-  auth/             API key management
-  connections/      WebSocket connection management
-  runtime/          Agent runtime (memory, context, tools)
-shared/             Shared types and agent configs (Client & Server)
-src/                React Frontend
-  canvas/          Flow canvas and drag-and-drop
-  chat/            Chat drawer, Session Management, and WebSocket Client
-  edges/           Custom edge components
-  fixtures/        Test graph fixtures
-  nodes/           Node components (Agent, Memory, Tools, etc.)
-  panels/          Sidebar, properties panel, property editors
-  store/           Zustand stores (graph, session, storage)
-  types/           TypeScript types (nodes, graph)
-  utils/           Utilities (theme, defaults, export/import)
+```text
+docs/                 Concept docs and project assets
+server/               Express server, WebSocket handling, runtime, storage, hooks
+shared/               Shared config/types/helpers used by both client and server
+src/                  React app, canvas UI, settings UI, chat UI, browser helpers
+storage/              Persisted local agent/session data
+e2e/                  Playwright coverage
 ```
 
 ## License
