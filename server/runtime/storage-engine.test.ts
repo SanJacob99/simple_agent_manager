@@ -19,6 +19,14 @@ function makeTempConfig(overrides?: Partial<ResolvedStorageConfig>): ResolvedSto
     idleResetEnabled: false,
     idleResetMinutes: 60,
     parentForkMaxTokens: 100000,
+    maintenanceMode: 'warn',
+    pruneAfterDays: 30,
+    maxEntries: 100,
+    rotateBytes: 10 * 1024 * 1024,
+    resetArchiveRetentionDays: 7,
+    maxDiskBytes: 0,
+    highWaterPercent: 80,
+    maintenanceIntervalMinutes: 60,
     ...overrides,
   };
 }
@@ -274,6 +282,306 @@ describe('StorageEngine', () => {
       const daily = files.find((file) => file.name === '2026-04-03.md');
       expect(daily?.isEvergreen).toBe(false);
       expect(daily?.date).toBe('2026-04-03');
+    });
+  });
+
+  describe('maintenance', () => {
+    describe('getDiskUsage', () => {
+      it('returns 0 when sessions directory does not exist', async () => {
+        const freshConfig = makeTempConfig();
+        // Do NOT call init() — sessionsDir won't exist
+        const freshEngine = new StorageEngine(freshConfig, 'no-dir-agent');
+        const usage = await freshEngine.getDiskUsage();
+        expect(usage).toBe(0);
+      });
+
+      it('sums file sizes for files in sessions directory', async () => {
+        const sessionsDir = engine.getSessionsDir();
+        await fs.writeFile(path.join(sessionsDir, 'a.txt'), 'hello', 'utf-8'); // 5 bytes
+        await fs.writeFile(path.join(sessionsDir, 'b.txt'), 'world!', 'utf-8'); // 6 bytes
+
+        const usage = await engine.getDiskUsage();
+        expect(usage).toBeGreaterThanOrEqual(11);
+      });
+    });
+
+    describe('pruneStaleEntries', () => {
+      it('removes entries older than threshold in enforce mode', async () => {
+        const old = makeEntry({
+          sessionKey: 'agent:test-agent:old',
+          sessionId: 'sess-old',
+          updatedAt: '2020-01-01T00:00:00.000Z',
+        });
+        const fresh = makeEntry({
+          sessionKey: 'agent:test-agent:fresh',
+          sessionId: 'sess-fresh',
+          updatedAt: new Date().toISOString(),
+        });
+        await engine.createSession(old);
+        await engine.createSession(fresh);
+
+        const pruned = await engine.pruneStaleEntries(30, false);
+
+        expect(pruned).toContain('agent:test-agent:old');
+        expect(pruned).not.toContain('agent:test-agent:fresh');
+
+        const remaining = await engine.listSessions();
+        expect(remaining.map((s) => s.sessionKey)).not.toContain('agent:test-agent:old');
+        expect(remaining.map((s) => s.sessionKey)).toContain('agent:test-agent:fresh');
+      });
+
+      it('dry-run returns stale keys without deleting', async () => {
+        const old = makeEntry({
+          sessionKey: 'agent:test-agent:old',
+          sessionId: 'sess-old',
+          updatedAt: '2020-01-01T00:00:00.000Z',
+        });
+        await engine.createSession(old);
+
+        const pruned = await engine.pruneStaleEntries(30, true);
+
+        expect(pruned).toContain('agent:test-agent:old');
+        // Session still present
+        const remaining = await engine.listSessions();
+        expect(remaining.map((s) => s.sessionKey)).toContain('agent:test-agent:old');
+      });
+
+      it('returns empty array when all entries are recent', async () => {
+        await engine.createSession(makeEntry({ updatedAt: new Date().toISOString() }));
+        const pruned = await engine.pruneStaleEntries(30, false);
+        expect(pruned).toHaveLength(0);
+      });
+    });
+
+    describe('removeOrphanTranscripts', () => {
+      it('deletes unreferenced .jsonl files', async () => {
+        const sessionsDir = engine.getSessionsDir();
+        const orphanPath = path.join(sessionsDir, 'orphan.jsonl');
+        await fs.writeFile(orphanPath, '{}', 'utf-8');
+
+        const removed = await engine.removeOrphanTranscripts(false);
+
+        expect(removed).toContain('orphan.jsonl');
+        await expect(fs.stat(orphanPath)).rejects.toThrow();
+      });
+
+      it('keeps .jsonl files referenced by a session entry', async () => {
+        const entry = makeEntry({ sessionId: 'sess-ref', sessionFile: undefined });
+        await engine.createSession(entry);
+
+        // Create the actual transcript file
+        const transcriptPath = engine.resolveTranscriptPath(entry);
+        await fs.writeFile(transcriptPath, '{}', 'utf-8');
+
+        const removed = await engine.removeOrphanTranscripts(false);
+
+        expect(removed).not.toContain('sess-ref.jsonl');
+        await expect(fs.stat(transcriptPath)).resolves.toBeTruthy();
+      });
+
+      it('dry-run returns orphan names without deleting', async () => {
+        const sessionsDir = engine.getSessionsDir();
+        const orphanPath = path.join(sessionsDir, 'ghost.jsonl');
+        await fs.writeFile(orphanPath, '{}', 'utf-8');
+
+        const removed = await engine.removeOrphanTranscripts(true);
+
+        expect(removed).toContain('ghost.jsonl');
+        await expect(fs.stat(orphanPath)).resolves.toBeTruthy();
+      });
+    });
+
+    describe('cleanResetArchives', () => {
+      it('deletes *.reset.* files older than retention', async () => {
+        const sessionsDir = engine.getSessionsDir();
+        const oldFile = path.join(sessionsDir, 'sessions.reset.20200101.json.bak');
+        await fs.writeFile(oldFile, '{}', 'utf-8');
+
+        // Set mtime to a year ago
+        const oldDate = new Date(Date.now() - 400 * 24 * 60 * 60 * 1000);
+        await fs.utimes(oldFile, oldDate, oldDate);
+
+        const archived = await engine.cleanResetArchives(7, false);
+
+        expect(archived.some((f) => f.includes('sessions.reset.20200101.json.bak'))).toBe(true);
+        await expect(fs.stat(oldFile)).rejects.toThrow();
+      });
+
+      it('keeps *.reset.* files newer than retention', async () => {
+        const sessionsDir = engine.getSessionsDir();
+        const recentFile = path.join(sessionsDir, 'sessions.reset.recent.json.bak');
+        await fs.writeFile(recentFile, '{}', 'utf-8');
+
+        const archived = await engine.cleanResetArchives(7, false);
+
+        expect(archived.some((f) => f.includes('sessions.reset.recent.json.bak'))).toBe(false);
+        await expect(fs.stat(recentFile)).resolves.toBeTruthy();
+      });
+
+      it('dry-run returns file paths without deleting', async () => {
+        const sessionsDir = engine.getSessionsDir();
+        const oldFile = path.join(sessionsDir, 'sessions.reset.old.json.bak');
+        await fs.writeFile(oldFile, '{}', 'utf-8');
+
+        const oldDate = new Date(Date.now() - 400 * 24 * 60 * 60 * 1000);
+        await fs.utimes(oldFile, oldDate, oldDate);
+
+        const archived = await engine.cleanResetArchives(7, true);
+
+        expect(archived.some((f) => f.includes('sessions.reset.old.json.bak'))).toBe(true);
+        await expect(fs.stat(oldFile)).resolves.toBeTruthy();
+      });
+    });
+
+    describe('rotateStoreFile', () => {
+      it('archives sessions.json when over maxBytes and resets to empty store', async () => {
+        const entry = makeEntry();
+        await engine.createSession(entry);
+
+        // Rotate at 1 byte threshold — guarantees over limit
+        const rotated = await engine.rotateStoreFile(1, false);
+
+        expect(rotated).toBe(true);
+
+        const sessionsDir = engine.getSessionsDir();
+        const files = await fs.readdir(sessionsDir);
+        const bakFiles = files.filter((f) => f.startsWith('sessions.') && f.endsWith('.json.bak'));
+        expect(bakFiles.length).toBeGreaterThanOrEqual(1);
+
+        // sessions.json should now be an empty store
+        const sessions = await engine.listSessions();
+        expect(sessions).toHaveLength(0);
+      });
+
+      it('does nothing when sessions.json is under maxBytes', async () => {
+        await engine.createSession(makeEntry());
+
+        const rotated = await engine.rotateStoreFile(100 * 1024 * 1024, false);
+
+        expect(rotated).toBe(false);
+        const sessions = await engine.listSessions();
+        expect(sessions).toHaveLength(1);
+      });
+
+      it('dry-run returns true without rotating', async () => {
+        await engine.createSession(makeEntry());
+
+        const rotated = await engine.rotateStoreFile(1, true);
+
+        expect(rotated).toBe(true);
+        // Data still intact
+        const sessions = await engine.listSessions();
+        expect(sessions).toHaveLength(1);
+      });
+    });
+
+    describe('enforceDiskBudget', () => {
+      it('returns empty array when maxBytes <= 0', async () => {
+        await engine.createSession(makeEntry());
+        const evicted = await engine.enforceDiskBudget(0, 0, false);
+        expect(evicted).toHaveLength(0);
+      });
+
+      it('evicts oldest sessions until under highWaterBytes', async () => {
+        const sessionsDir = engine.getSessionsDir();
+
+        // Create 3 sessions with known ages and write large transcript files so usage > budget
+        for (let i = 0; i < 3; i++) {
+          const entry = makeEntry({
+            sessionKey: `agent:test-agent:s${i}`,
+            sessionId: `sess-${i}`,
+            sessionFile: undefined,
+            updatedAt: `2026-04-0${i + 1}T00:00:00.000Z`,
+          });
+          await engine.createSession(entry);
+          const transcriptPath = engine.resolveTranscriptPath(entry);
+          await fs.writeFile(transcriptPath, 'x'.repeat(5000), 'utf-8');
+        }
+
+        // Also write sessions.json so total usage is definitely > budget
+        const usage = await engine.getDiskUsage();
+        // Set budget well below current usage to force eviction
+        const evicted = await engine.enforceDiskBudget(usage - 1, 0, false);
+
+        // At least one session should have been evicted
+        expect(evicted.length).toBeGreaterThanOrEqual(1);
+        // Oldest session (s0) should be evicted first
+        expect(evicted[0]).toBe('agent:test-agent:s0');
+      });
+
+      it('does nothing when already under budget', async () => {
+        const entry = makeEntry();
+        await engine.createSession(entry);
+        const usage = await engine.getDiskUsage();
+
+        const evicted = await engine.enforceDiskBudget(usage * 10, usage * 8, false);
+        expect(evicted).toHaveLength(0);
+      });
+    });
+
+    describe('runMaintenance', () => {
+      it('warn mode returns report without mutating data', async () => {
+        const staleEntry = makeEntry({
+          sessionKey: 'agent:test-agent:stale',
+          sessionId: 'sess-stale',
+          updatedAt: '2020-01-01T00:00:00.000Z',
+        });
+        await engine.createSession(staleEntry);
+
+        const warnEngine = new StorageEngine(
+          makeTempConfig({
+            storagePath: config.storagePath,
+            maintenanceMode: 'warn',
+            pruneAfterDays: 30,
+          }),
+          'test-agent',
+        );
+
+        const report = await warnEngine.runMaintenance('warn');
+
+        expect(report.mode).toBe('warn');
+        // In warn mode no sessions should be deleted
+        const sessions = await engine.listSessions();
+        expect(sessions.map((s) => s.sessionKey)).toContain('agent:test-agent:stale');
+      });
+
+      it('enforce mode prunes stale entries and returns report', async () => {
+        const staleEntry = makeEntry({
+          sessionKey: 'agent:test-agent:stale2',
+          sessionId: 'sess-stale2',
+          updatedAt: '2020-01-01T00:00:00.000Z',
+        });
+        await engine.createSession(staleEntry);
+
+        const enforceEngine = new StorageEngine(
+          makeTempConfig({
+            storagePath: config.storagePath,
+            maintenanceMode: 'enforce',
+            pruneAfterDays: 30,
+          }),
+          'test-agent',
+        );
+
+        const report = await enforceEngine.runMaintenance('enforce');
+
+        expect(report.mode).toBe('enforce');
+        expect(report.prunedEntries).toContain('agent:test-agent:stale2');
+        expect(typeof report.diskBefore).toBe('number');
+        expect(typeof report.diskAfter).toBe('number');
+      });
+
+      it('report includes required fields', async () => {
+        const report = await engine.runMaintenance();
+
+        expect(report).toHaveProperty('mode');
+        expect(report).toHaveProperty('prunedEntries');
+        expect(report).toHaveProperty('orphanTranscripts');
+        expect(report).toHaveProperty('archivedResets');
+        expect(report).toHaveProperty('storeRotated');
+        expect(report).toHaveProperty('diskBefore');
+        expect(report).toHaveProperty('diskAfter');
+        expect(report).toHaveProperty('evictedForBudget');
+      });
     });
   });
 });
