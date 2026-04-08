@@ -23,6 +23,40 @@ vi.mock('../runtime/agent-runtime', () => {
     });
     addTools = vi.fn();
     state = { messages: [], model: { api: 'openai-completions' } };
+    state = { messages: [] };
+  }
+  return { AgentRuntime: MockAgentRuntime };
+});
+
+// Mock StorageEngine to avoid filesystem
+vi.mock('../runtime/storage-engine', () => {
+  class MockStorageEngine {
+    private sessions: any[] = [];
+    init = vi.fn();
+    getSessionByKey = vi.fn(async (key: string) => {
+      return this.sessions.find((s: any) => s.sessionKey === key) ?? null;
+    });
+    getSessionMeta = vi.fn(async (id: string) => {
+      return this.sessions.find((s: any) => s.sessionId === id) ?? null;
+    });
+    createSession = vi.fn(async (meta: any) => {
+      this.sessions.push(meta);
+    });
+    createManagedSession = vi.fn(async (llmSlug: string, sessionKey?: string) => {
+      const sessionId = `test-session-id-${Math.random()}`;
+      const meta = { sessionId, sessionKey: sessionKey ?? sessionId, llmSlug };
+      this.sessions.push(meta);
+      return meta;
+    });
+    updateSessionMeta = vi.fn(async (sessionId: string, partial: any) => {
+      const session = this.sessions.find((s: any) => s.sessionId === sessionId);
+      if (session) {
+        Object.assign(session, partial);
+      }
+    });
+    enforceRetention = vi.fn();
+    listSessions = vi.fn(async () => this.sessions);
+    appendEntry = vi.fn();
   }
   return { AgentRuntime: MockAgentRuntime };
 });
