@@ -11,7 +11,8 @@ export type NodeType =
   | 'agentComm'
   | 'connectors'
   | 'storage'
-  | 'vectorDatabase';
+  | 'vectorDatabase'
+  | 'cron';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -188,6 +189,21 @@ export interface VectorDatabaseNodeData {
   connectionString: string;
 }
 
+// --- Cron Node ---
+
+export interface CronNodeData {
+  [key: string]: unknown;
+  type: 'cron';
+  label: string;
+  schedule: string;
+  prompt: string;
+  enabled: boolean;
+  sessionMode: 'persistent' | 'ephemeral';
+  timezone: string;
+  maxRunDurationMs: number;
+  retentionDays: number;
+}
+
 // --- Union Types ---
 
 export type FlowNodeData =
@@ -199,6 +215,7 @@ export type FlowNodeData =
   | AgentCommNodeData
   | ConnectorsNodeData
   | StorageNodeData
-  | VectorDatabaseNodeData;
+  | VectorDatabaseNodeData
+  | CronNodeData;
 
 export type AppNode = Node<FlowNodeData>;

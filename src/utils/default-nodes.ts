@@ -116,5 +116,17 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         collectionName: 'default',
         connectionString: '',
       };
+    case 'cron':
+      return {
+        type: 'cron',
+        label: 'Cron Job',
+        schedule: '0 9 * * *',
+        prompt: '',
+        enabled: true,
+        sessionMode: 'persistent',
+        timezone: 'local',
+        maxRunDurationMs: 300000,
+        retentionDays: 7,
+      };
   }
 }

@@ -9,6 +9,8 @@ export interface SessionRouteRequest {
   room?: string;
   space?: string;
   displayName?: string;
+  cronJobId?: string;
+  webhookId?: string;
 }
 
 export interface SessionRouteResponse {

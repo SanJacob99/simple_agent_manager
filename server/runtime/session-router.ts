@@ -13,6 +13,8 @@ export interface RouteRequest {
   room?: string;
   space?: string;
   displayName?: string;
+  cronJobId?: string;
+  webhookId?: string;
 }
 
 export interface RouteResult {
@@ -32,7 +34,7 @@ export class SessionRouter {
   ) {}
 
   async route(req: RouteRequest): Promise<RouteResult> {
-    const sessionKey = this.buildSessionKey(req.agentId, req.subKey);
+    const sessionKey = this.buildSessionKey(req.agentId, req.subKey, req.cronJobId, req.webhookId);
     const existing = await this.storageEngine.getSession(sessionKey);
 
     if (!existing) {
@@ -154,7 +156,9 @@ export class SessionRouter {
     return entry;
   }
 
-  private buildSessionKey(agentId: string, subKey?: string): string {
+  private buildSessionKey(agentId: string, subKey?: string, cronJobId?: string, webhookId?: string): string {
+    if (cronJobId) return `cron:${cronJobId}`;
+    if (webhookId) return `hook:${webhookId}`;
     return `agent:${agentId}:${subKey ?? 'main'}`;
   }
 

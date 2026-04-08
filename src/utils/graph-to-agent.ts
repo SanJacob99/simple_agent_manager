@@ -166,6 +166,24 @@ export function resolveAgentConfig(
       };
     });
 
+  // --- Cron Jobs ---
+  const crons = connectedNodes
+    .filter((n) => n.data.type === 'cron')
+    .map((n) => {
+      if (n.data.type !== 'cron') throw new Error('unreachable');
+      return {
+        cronNodeId: n.id,
+        label: n.data.label,
+        schedule: n.data.schedule,
+        prompt: n.data.prompt,
+        enabled: n.data.enabled,
+        sessionMode: n.data.sessionMode,
+        timezone: n.data.timezone,
+        maxRunDurationMs: n.data.maxRunDurationMs,
+        retentionDays: n.data.retentionDays,
+      };
+    });
+
   // --- Build structured system prompt ---
   const agentMode = (data as any).systemPromptMode as SystemPromptMode | undefined;
   const mode: SystemPromptMode = agentMode === 'manual' ? 'manual' : 'append';
@@ -224,6 +242,7 @@ export function resolveAgentConfig(
     agentComm,
     storage,
     vectorDatabases,
+    crons,
     exportedAt: Date.now(),
     sourceGraphId: agentNodeId,
     runTimeoutMs: 172800000,

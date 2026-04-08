@@ -89,6 +89,18 @@ export interface DiscoveredModelMetadata {
 
 // --- Agent Config interfaces ---
 
+export interface ResolvedCronConfig {
+  cronNodeId: string;
+  label: string;
+  schedule: string;
+  prompt: string;
+  enabled: boolean;
+  sessionMode: 'persistent' | 'ephemeral';
+  timezone: string;
+  maxRunDurationMs: number;
+  retentionDays: number;
+}
+
 export interface AgentConfig {
   id: string;
   version: number;
@@ -109,6 +121,7 @@ export interface AgentConfig {
   agentComm: ResolvedAgentCommConfig[];
   storage: ResolvedStorageConfig | null;
   vectorDatabases: ResolvedVectorDatabaseConfig[];
+  crons: ResolvedCronConfig[];
 
   exportedAt: number;
   sourceGraphId: string;
