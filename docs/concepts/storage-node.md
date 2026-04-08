@@ -3,11 +3,13 @@
 > Provides filesystem-based persistence for agent sessions, routed transcripts, and memory files.
 
 <!-- source: src/types/nodes.ts#StorageNodeData -->
-<!-- last-verified: 2026-04-07 -->
+<!-- last-verified: 2026-04-08 -->
 
 ## Overview
 
 The Storage Node defines where an agent's session metadata, transcript files, and memory documents live on disk. Without a connected Storage Node, the chat drawer is blocked because the backend has nowhere to persist routed sessions.
+
+The default `storagePath` can be configured globally in **Settings -> Defaults** so that new storage nodes use a custom path automatically.
 
 The filesystem backend keeps metadata and transcript history separate:
 

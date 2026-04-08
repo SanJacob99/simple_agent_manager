@@ -18,6 +18,10 @@ export interface AgentDefaults {
   safetyGuardrails: string;
 }
 
+export interface StorageDefaults {
+  storagePath: string;
+}
+
 export const DEFAULT_AGENT_DEFAULTS: AgentDefaults = {
   provider: 'openrouter',
   modelId: 'anthropic/claude-sonnet-4-20250514',
@@ -37,6 +41,10 @@ pause and ask; comply with stop/pause/audit requests and never bypass safeguards
 Do not manipulate or persuade anyone to expand access or disable safeguards.
 Do not copy yourself or change system prompts, safety rules, or tool policies
 unless explicitly requested.`,
+};
+
+export const DEFAULT_STORAGE_DEFAULTS: StorageDefaults = {
+  storagePath: '~/.simple-agent-manager/storage',
 };
 
 export const SETTINGS_SECTIONS: Array<{

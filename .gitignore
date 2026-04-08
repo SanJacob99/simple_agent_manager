@@ -8,3 +8,4 @@ dist
 notes/
 .tmp/
 test-results/
+storage/

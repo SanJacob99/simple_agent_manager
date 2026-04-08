@@ -19,6 +19,11 @@ export default function DefaultsSection() {
   const applyAgentDefaultsToExistingAgents = useGraphStore(
     (state) => state.applyAgentDefaultsToExistingAgents,
   );
+  const storageDefaults = useSettingsStore((state) => state.storageDefaults);
+  const setStorageDefaults = useSettingsStore((state) => state.setStorageDefaults);
+  const applyStorageDefaultsToExistingNodes = useGraphStore(
+    (state) => state.applyStorageDefaultsToExistingNodes,
+  );
   const systemPromptMode =
     agentDefaults.systemPromptMode === 'manual' ? 'manual' : 'append';
 
@@ -34,6 +39,15 @@ export default function DefaultsSection() {
     );
     if (approved) {
       applyAgentDefaultsToExistingAgents();
+    }
+  };
+
+  const confirmApplyStorage = () => {
+    const approved = window.confirm(
+      'Apply the default storage path to all existing storage nodes? This will change where their data is expected to live.',
+    );
+    if (approved) {
+      applyStorageDefaultsToExistingNodes();
     }
   };
 
@@ -192,13 +206,43 @@ export default function DefaultsSection() {
         </p>
       </label>
 
-      <button
-        type="button"
-        onClick={confirmApply}
-        className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm font-medium text-amber-200 transition hover:border-amber-400/60 hover:bg-amber-500/15"
-      >
-        Apply defaults to existing agents
-      </button>
+      <div className="border-t border-slate-700/50 pt-4" />
+
+      <label className="block">
+        <span className="mb-1 block text-sm font-medium text-slate-300">
+          Default Storage Path
+        </span>
+        <input
+          type="text"
+          aria-label="Default Storage Path"
+          value={storageDefaults.storagePath}
+          onChange={(event) =>
+            setStorageDefaults({ storagePath: event.target.value })
+          }
+          className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100"
+          placeholder="e.g. ~/.simple-agent-manager/storage"
+        />
+        <p className="mt-1 text-xs text-slate-500">
+          Root directory for new storage nodes. Supports ~ expansion.
+        </p>
+      </label>
+
+      <div className="flex flex-wrap gap-3 pt-2">
+        <button
+          type="button"
+          onClick={confirmApply}
+          className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm font-medium text-amber-200 transition hover:border-amber-400/60 hover:bg-amber-500/15"
+        >
+          Apply agent defaults
+        </button>
+        <button
+          type="button"
+          onClick={confirmApplyStorage}
+          className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-200 transition hover:border-slate-500 hover:bg-slate-900/60"
+        >
+          Apply storage default
+        </button>
+      </div>
     </div>
   );
 }

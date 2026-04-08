@@ -22,19 +22,28 @@ import { useSettingsStore } from '../settings/settings-store';
 
 function buildNodeData(nodeType: NodeType): FlowNodeData {
   const defaults = getDefaultNodeData(nodeType);
-  if (nodeType !== 'agent' || defaults.type !== 'agent') {
-    return defaults;
+
+  if (nodeType === 'agent' && defaults.type === 'agent') {
+    const agentDefaults = useSettingsStore.getState().agentDefaults;
+    return {
+      ...defaults,
+      provider: agentDefaults.provider,
+      modelId: agentDefaults.modelId,
+      thinkingLevel: agentDefaults.thinkingLevel,
+      systemPrompt: agentDefaults.systemPrompt,
+      systemPromptMode: agentDefaults.systemPromptMode,
+    };
   }
 
-  const agentDefaults = useSettingsStore.getState().agentDefaults;
-  return {
-    ...defaults,
-    provider: agentDefaults.provider,
-    modelId: agentDefaults.modelId,
-    thinkingLevel: agentDefaults.thinkingLevel,
-    systemPrompt: agentDefaults.systemPrompt,
-    systemPromptMode: agentDefaults.systemPromptMode,
-  };
+  if (nodeType === 'storage' && defaults.type === 'storage') {
+    const storageDefaults = useSettingsStore.getState().storageDefaults;
+    return {
+      ...defaults,
+      storagePath: storageDefaults.storagePath,
+    };
+  }
+
+  return defaults;
 }
 
 interface GraphStore {
@@ -52,6 +61,7 @@ interface GraphStore {
   removeNode: (nodeId: string) => void;
   updateNodeData: (nodeId: string, data: Partial<FlowNodeData>) => void;
   applyAgentDefaultsToExistingAgents: () => void;
+  applyStorageDefaultsToExistingNodes: () => void;
   clearGraph: () => void;
   setSelectedNode: (nodeId: string | null) => void;
   getSelectedNode: () => AppNode | undefined;
@@ -220,6 +230,23 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
                 provider: agentDefaults.provider,
                 modelId: agentDefaults.modelId,
                 thinkingLevel: agentDefaults.thinkingLevel,
+              },
+            }
+          : node,
+      ),
+    });
+  },
+
+  applyStorageDefaultsToExistingNodes: () => {
+    const storageDefaults = useSettingsStore.getState().storageDefaults;
+    set({
+      nodes: get().nodes.map((node) =>
+        node.data.type === 'storage'
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                storagePath: storageDefaults.storagePath,
               },
             }
           : node,

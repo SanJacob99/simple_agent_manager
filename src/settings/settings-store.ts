@@ -1,7 +1,9 @@
 import { create } from 'zustand';
 import {
   DEFAULT_AGENT_DEFAULTS,
+  DEFAULT_STORAGE_DEFAULTS,
   type AgentDefaults,
+  type StorageDefaults,
 } from './types';
 
 const STORAGE_KEY = 'agent-manager-settings';
@@ -10,16 +12,19 @@ const LEGACY_API_KEYS_STORAGE_KEY = 'agent-manager-api-keys';
 interface SettingsStore {
   apiKeys: Record<string, string>;
   agentDefaults: AgentDefaults;
+  storageDefaults: StorageDefaults;
   setApiKey: (provider: string, key: string) => void;
   getApiKey: (provider: string) => string | undefined;
   removeApiKey: (provider: string) => void;
   setAgentDefaults: (updates: Partial<AgentDefaults>) => void;
+  setStorageDefaults: (updates: Partial<StorageDefaults>) => void;
   resetSettings: () => void;
 }
 
 interface PersistedSettings {
   apiKeys: Record<string, string>;
   agentDefaults: AgentDefaults;
+  storageDefaults: StorageDefaults;
 }
 
 function loadSettings(): PersistedSettings {
@@ -33,6 +38,10 @@ function loadSettings(): PersistedSettings {
           ...DEFAULT_AGENT_DEFAULTS,
           ...(parsed.agentDefaults ?? {}),
         },
+        storageDefaults: {
+          ...DEFAULT_STORAGE_DEFAULTS,
+          ...(parsed.storageDefaults ?? {}),
+        },
       };
     }
 
@@ -40,11 +49,13 @@ function loadSettings(): PersistedSettings {
     return {
       apiKeys: legacyKeys ? JSON.parse(legacyKeys) : {},
       agentDefaults: DEFAULT_AGENT_DEFAULTS,
+      storageDefaults: DEFAULT_STORAGE_DEFAULTS,
     };
   } catch {
     return {
       apiKeys: {},
       agentDefaults: DEFAULT_AGENT_DEFAULTS,
+      storageDefaults: DEFAULT_STORAGE_DEFAULTS,
     };
   }
 }
@@ -61,6 +72,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     saveSettings({
       apiKeys: updated,
       agentDefaults: get().agentDefaults,
+      storageDefaults: get().storageDefaults,
     });
     set({ apiKeys: updated });
   },
@@ -75,6 +87,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     saveSettings({
       apiKeys: updated,
       agentDefaults: get().agentDefaults,
+      storageDefaults: get().storageDefaults,
     });
     set({ apiKeys: updated });
   },
@@ -87,14 +100,29 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     saveSettings({
       apiKeys: get().apiKeys,
       agentDefaults: nextAgentDefaults,
+      storageDefaults: get().storageDefaults,
     });
     set({ agentDefaults: nextAgentDefaults });
+  },
+
+  setStorageDefaults: (updates) => {
+    const nextStorageDefaults = {
+      ...get().storageDefaults,
+      ...updates,
+    };
+    saveSettings({
+      apiKeys: get().apiKeys,
+      agentDefaults: get().agentDefaults,
+      storageDefaults: nextStorageDefaults,
+    });
+    set({ storageDefaults: nextStorageDefaults });
   },
 
   resetSettings: () => {
     const resetState: PersistedSettings = {
       apiKeys: {},
       agentDefaults: DEFAULT_AGENT_DEFAULTS,
+      storageDefaults: DEFAULT_STORAGE_DEFAULTS,
     };
     saveSettings(resetState);
     set(resetState);
