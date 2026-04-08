@@ -10,6 +10,7 @@ import { handleConnection } from './connections/ws-handler';
 import { getGlobalHookRegistry } from './agents/agent-manager';
 import { HOOK_NAMES, type BackendLifecycleContext } from './hooks/hook-types';
 import { createStartupErrorHandler } from './startup';
+import { SettingsFileStore } from './runtime/settings-file-store';
 import type { ResolvedStorageConfig } from '../shared/agent-config';
 import type { SessionRouteRequest, SessionTranscriptResponse } from '../shared/session-routes';
 
@@ -20,6 +21,7 @@ app.use(express.json({ limit: '10mb' }));
 
 const apiKeys = new ApiKeyStore();
 const agentManager = new AgentManager(apiKeys);
+const settingsFile = new SettingsFileStore();
 
 // --- Storage engine instances ---
 
@@ -362,6 +364,33 @@ app.get('/api/sessions/:agentId/:sessionKey/lineage', async (req, res) => {
   }
 });
 
+// --- Settings persistence ---
+
+app.get('/api/settings', async (_req, res) => {
+  try {
+    const settings = await settingsFile.load();
+    res.json(settings);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.put('/api/settings', async (req, res) => {
+  try {
+    const settings = req.body as {
+      apiKeys: Record<string, string>;
+      agentDefaults: Record<string, unknown>;
+      storageDefaults: Record<string, unknown>;
+    };
+    await settingsFile.save(settings);
+    // Keep in-memory API key store in sync
+    apiKeys.setAll(settings.apiKeys ?? {});
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 // --- Health check ---
 
 app.get('/api/health', (_req, res) => {
@@ -381,6 +410,16 @@ wss.once('error', handleStartupError);
 
 wss.on('connection', (socket) => {
   handleConnection(socket, agentManager, apiKeys);
+});
+
+// Seed in-memory API key store from persisted settings
+settingsFile.load().then((s) => {
+  if (Object.keys(s.apiKeys).length > 0) {
+    apiKeys.setAll(s.apiKeys);
+    console.log(`[Settings] Loaded API keys for ${Object.keys(s.apiKeys).length} provider(s) from ${settingsFile.getFilePath()}`);
+  }
+}).catch((err) => {
+  console.error('[Settings] Failed to load settings file:', err);
 });
 
 httpServer.listen(PORT, () => {

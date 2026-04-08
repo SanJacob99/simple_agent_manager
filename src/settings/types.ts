@@ -55,7 +55,7 @@ export const SETTINGS_SECTIONS: Array<{
   {
     id: 'api-keys',
     label: 'Providers & API Keys',
-    description: 'Manage provider credentials stored in this browser.',
+    description: 'Manage provider credentials saved to a local settings file.',
   },
   {
     id: 'model-catalog',

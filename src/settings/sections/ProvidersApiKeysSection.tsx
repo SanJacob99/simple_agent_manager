@@ -127,8 +127,7 @@ export default function ProvidersApiKeysSection() {
       })}
 
       <p className="text-xs text-slate-500">
-        Keys are stored in your browser&apos;s local storage and never leave
-        this device.
+        Keys are saved to a local settings file on this machine.
       </p>
     </div>
   );

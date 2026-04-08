@@ -22,7 +22,7 @@ describe('SettingsWorkspace', () => {
     );
 
     expect(
-      screen.getByText('Manage provider credentials stored in this browser.'),
+      screen.getByText('Manage provider credentials saved to a local settings file.'),
     ).toBeInTheDocument();
   });
 

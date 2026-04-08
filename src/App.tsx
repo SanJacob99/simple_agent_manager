@@ -22,7 +22,14 @@ export default function App() {
   const closeChatDrawer = useAgentConnectionStore((s) => s.closeChatDrawer);
   const selectedNodeId = useGraphStore((s) => s.selectedNodeId);
   const openRouterKey = useSettingsStore((s) => s.apiKeys.openrouter);
+  const settingsLoaded = useSettingsStore((s) => s.loaded);
+  const loadFromServer = useSettingsStore((s) => s.loadFromServer);
   const syncOpenRouterKey = useModelCatalogStore((s) => s.syncOpenRouterKey);
+
+  // Load persisted settings from server on mount
+  useEffect(() => {
+    void loadFromServer();
+  }, [loadFromServer]);
 
   // Agent naming dialog
   const pendingNameNodeId = useGraphStore((s) => s.pendingNameNodeId);
