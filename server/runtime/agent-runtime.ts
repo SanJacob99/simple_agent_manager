@@ -1,5 +1,6 @@
-import { Agent, type AgentEvent, type AgentTool } from '@mariozechner/pi-agent-core';
+import { Agent, type AgentEvent, type AgentMessage, type AgentTool } from '@mariozechner/pi-agent-core';
 import type { TSchema } from '@sinclair/typebox';
+import type { SessionManager } from '@mariozechner/pi-coding-agent';
 import type { AgentConfig } from '../../shared/agent-config';
 import type { ImageAttachment } from '../../shared/protocol';
 import type { DiscoveredModelMetadata } from '../../shared/agent-config';
@@ -138,6 +139,20 @@ export class AgentRuntime {
     return this.agent.state.systemPrompt;
   }
 
+  setSessionContext(messages: AgentMessage[]): void {
+    this.agent.state.messages = [...messages];
+  }
+
+  setActiveSession(sessionManager: SessionManager | null): void {
+    this.contextEngine?.setActiveSession(sessionManager, (summary) => {
+      this.emit({ type: 'memory_compaction', summary });
+    });
+  }
+
+  clearActiveSession(): void {
+    this.contextEngine?.clearActiveSession();
+  }
+
   // ---------------------------------------------------------------------------
   // Tool hook wrapping
   // ---------------------------------------------------------------------------
@@ -259,6 +274,7 @@ export class AgentRuntime {
 
   destroy() {
     this.abort();
+    this.clearActiveSession();
     this.unsubscribeAgent?.();
     this.listeners.clear();
   }

@@ -13,6 +13,8 @@ import {
 import type { AppNode, FlowNodeData, NodeType } from '../types/nodes';
 import { createNodeId } from '../utils/id';
 import { getDefaultNodeData } from '../utils/default-nodes';
+import { resolveAgentConfig } from '../utils/graph-to-agent';
+import { StorageClient } from '../runtime/storage-client';
 import { saveGraph, loadGraph } from './storage';
 import { useSessionStore } from './session-store';
 import { useAgentConnectionStore } from './agent-connection-store';
@@ -88,7 +90,18 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
     if (!pendingDeleteAgent) return;
 
     if (deleteData) {
-      useSessionStore.getState().deleteAllSessionsForAgent(pendingDeleteAgent.agentName);
+      const config = resolveAgentConfig(pendingDeleteAgent.nodeId, nodes, edges);
+      if (config?.storage) {
+        const client = new StorageClient(
+          config.storage,
+          pendingDeleteAgent.agentName,
+          pendingDeleteAgent.nodeId,
+        );
+        void client.init()
+          .then(() => client.deleteAllSessions())
+          .catch(console.error);
+      }
+      useSessionStore.getState().deleteAllSessionsForAgent(pendingDeleteAgent.nodeId);
     }
     useSessionStore.getState().clearActiveSession(pendingDeleteAgent.nodeId);
     useAgentConnectionStore.getState().destroyAgent(pendingDeleteAgent.nodeId);

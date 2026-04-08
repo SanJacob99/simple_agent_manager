@@ -2,6 +2,8 @@ import express from 'express';
 import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
 import { StorageEngine } from './runtime/storage-engine';
+import { SessionTranscriptStore } from './runtime/session-transcript-store';
+import { SessionRouter } from './runtime/session-router';
 import { AgentManager } from './agents/agent-manager';
 import { ApiKeyStore } from './auth/api-keys';
 import { handleConnection } from './connections/ws-handler';
@@ -9,7 +11,7 @@ import { getGlobalHookRegistry } from './agents/agent-manager';
 import { HOOK_NAMES, type BackendLifecycleContext } from './hooks/hook-types';
 import { createStartupErrorHandler } from './startup';
 import type { ResolvedStorageConfig } from '../shared/agent-config';
-import type { SessionMeta, SessionEntry } from '../shared/storage-types';
+import type { SessionRouteRequest, SessionTranscriptResponse } from '../shared/session-routes';
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
@@ -22,6 +24,8 @@ const agentManager = new AgentManager(apiKeys);
 // --- Storage engine instances ---
 
 const engines = new Map<string, StorageEngine>();
+const transcriptStores = new Map<string, SessionTranscriptStore>();
+const sessionRouters = new Map<string, SessionRouter>();
 
 function getOrCreateEngine(config: ResolvedStorageConfig, agentName: string): StorageEngine {
   const key = `${config.storagePath}:${agentName}`;
@@ -33,7 +37,42 @@ function getOrCreateEngine(config: ResolvedStorageConfig, agentName: string): St
   return engine;
 }
 
-// --- Storage REST routes (unchanged) ---
+function getOrCreateTranscriptStore(
+  config: ResolvedStorageConfig,
+  agentName: string,
+): SessionTranscriptStore {
+  const key = `${config.storagePath}:${agentName}`;
+  let store = transcriptStores.get(key);
+  if (!store) {
+    store = new SessionTranscriptStore(
+      getOrCreateEngine(config, agentName).getSessionsDir(),
+      process.cwd(),
+    );
+    transcriptStores.set(key, store);
+  }
+  return store;
+}
+
+function getOrCreateSessionRouter(
+  config: ResolvedStorageConfig,
+  agentName: string,
+  agentId: string,
+): SessionRouter {
+  const key = `${config.storagePath}:${agentName}:${agentId}`;
+  let router = sessionRouters.get(key);
+  if (!router) {
+    router = new SessionRouter(
+      getOrCreateEngine(config, agentName),
+      getOrCreateTranscriptStore(config, agentName),
+      config,
+      agentId,
+    );
+    sessionRouters.set(key, router);
+  }
+  return router;
+}
+
+// --- Storage initialization ---
 
 app.post('/api/storage/init', async (req, res) => {
   const { config, agentName } = req.body as { config: ResolvedStorageConfig; agentName: string };
@@ -46,125 +85,108 @@ app.post('/api/storage/init', async (req, res) => {
   }
 });
 
-app.get('/api/storage/sessions', async (req, res) => {
+// --- Session REST routes ---
+
+app.get('/api/sessions/:agentId', async (req, res) => {
+  const { config, agentName } = req.query as { config: string; agentName: string };
+  try {
+    const parsedConfig = JSON.parse(config) as ResolvedStorageConfig;
+    const router = getOrCreateSessionRouter(parsedConfig, agentName, req.params.agentId);
+    res.json(await router.listSessions());
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.post('/api/sessions/:agentId/route', async (req, res) => {
+  const { config, agentName, request } = req.body as {
+    config: ResolvedStorageConfig;
+    agentName: string;
+    request?: SessionRouteRequest;
+  };
+  try {
+    const router = getOrCreateSessionRouter(config, agentName, req.params.agentId);
+    res.json(await router.route({
+      agentId: req.params.agentId,
+      ...(request ?? {}),
+    }));
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.post('/api/sessions/:agentId/:sessionKey/reset', async (req, res) => {
+  const { config, agentName } = req.body as {
+    config: ResolvedStorageConfig;
+    agentName: string;
+  };
+  try {
+    const router = getOrCreateSessionRouter(config, agentName, req.params.agentId);
+    res.json(await router.resetSession(req.params.sessionKey));
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.get('/api/sessions/:agentId/:sessionKey/transcript', async (req, res) => {
+  const { config, agentName } = req.query as { config: string; agentName: string };
+  try {
+    const parsedConfig = JSON.parse(config) as ResolvedStorageConfig;
+    const router = getOrCreateSessionRouter(parsedConfig, agentName, req.params.agentId);
+    const status = await router.getStatus(req.params.sessionKey);
+
+    if (!status) {
+      res.status(404).json({ error: `Session ${req.params.sessionKey} not found` });
+      return;
+    }
+
+    const engine = getOrCreateEngine(parsedConfig, agentName);
+    const transcriptStore = getOrCreateTranscriptStore(parsedConfig, agentName);
+    const transcriptPath = engine.resolveTranscriptPath(status);
+    const payload: SessionTranscriptResponse = {
+      sessionKey: status.sessionKey,
+      sessionId: status.sessionId,
+      transcriptPath,
+      entries: transcriptStore.readTranscript(transcriptPath),
+    };
+    res.json(payload);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.get('/api/sessions/:agentId/:sessionKey', async (req, res) => {
+  const { config, agentName } = req.query as { config: string; agentName: string };
+  try {
+    const parsedConfig = JSON.parse(config) as ResolvedStorageConfig;
+    const router = getOrCreateSessionRouter(parsedConfig, agentName, req.params.agentId);
+    res.json(await router.getStatus(req.params.sessionKey));
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.delete('/api/sessions/:agentId/:sessionKey', async (req, res) => {
   const { config, agentName } = req.query as { config: string; agentName: string };
   try {
     const parsedConfig = JSON.parse(config) as ResolvedStorageConfig;
     const engine = getOrCreateEngine(parsedConfig, agentName);
-    const sessions = await engine.listSessions();
-    res.json(sessions);
-  } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
-  }
-});
-
-app.post('/api/storage/sessions', async (req, res) => {
-  const { config, agentName, meta } = req.body as {
-    config: ResolvedStorageConfig;
-    agentName: string;
-    meta: SessionMeta;
-  };
-  try {
-    const engine = getOrCreateEngine(config, agentName);
-    await engine.createSession(meta);
+    await engine.deleteSession(req.params.sessionKey);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
 });
 
-app.delete('/api/storage/sessions/:id', async (req, res) => {
+app.delete('/api/sessions/:agentId', async (req, res) => {
   const { config, agentName } = req.query as { config: string; agentName: string };
   try {
     const parsedConfig = JSON.parse(config) as ResolvedStorageConfig;
+    const router = getOrCreateSessionRouter(parsedConfig, agentName, req.params.agentId);
     const engine = getOrCreateEngine(parsedConfig, agentName);
-    await engine.deleteSession(req.params.id);
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
-  }
-});
-
-app.get('/api/storage/sessions/:id', async (req, res) => {
-  const { config, agentName } = req.query as { config: string; agentName: string };
-  try {
-    const parsedConfig = JSON.parse(config) as ResolvedStorageConfig;
-    const engine = getOrCreateEngine(parsedConfig, agentName);
-    const meta = await engine.getSessionMeta(req.params.id);
-    res.json(meta);
-  } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
-  }
-});
-
-app.patch('/api/storage/sessions/:id', async (req, res) => {
-  const { config, agentName, partial } = req.body as {
-    config: ResolvedStorageConfig;
-    agentName: string;
-    partial: Partial<SessionMeta>;
-  };
-  try {
-    const engine = getOrCreateEngine(config, agentName);
-    await engine.updateSessionMeta(req.params.id, partial);
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
-  }
-});
-
-app.post('/api/storage/sessions/:id/entries', async (req, res) => {
-  const { config, agentName, entry } = req.body as {
-    config: ResolvedStorageConfig;
-    agentName: string;
-    entry: SessionEntry;
-  };
-  try {
-    const engine = getOrCreateEngine(config, agentName);
-    await engine.appendEntry(req.params.id, entry);
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
-  }
-});
-
-app.get('/api/storage/sessions/:id/entries', async (req, res) => {
-  const { config, agentName } = req.query as { config: string; agentName: string };
-  try {
-    const parsedConfig = JSON.parse(config) as ResolvedStorageConfig;
-    const engine = getOrCreateEngine(parsedConfig, agentName);
-    const entries = await engine.readEntries(req.params.id);
-    res.json(entries);
-  } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
-  }
-});
-
-app.post('/api/storage/sessions/draft', async (req, res) => {
-  const { config, agentName, llmSlug, sessionKey } = req.body as {
-    config: ResolvedStorageConfig;
-    agentName: string;
-    llmSlug: string;
-    sessionKey?: string;
-  };
-  try {
-    const engine = getOrCreateEngine(config, agentName);
-    const meta = await engine.createManagedSession(llmSlug, sessionKey);
-    res.json(meta);
-  } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
-  }
-});
-
-app.put('/api/storage/sessions/:id/entries', async (req, res) => {
-  const { config, agentName, entries } = req.body as {
-    config: ResolvedStorageConfig;
-    agentName: string;
-    entries: SessionEntry[];
-  };
-  try {
-    const engine = getOrCreateEngine(config, agentName);
-    await engine.replaceEntries(req.params.id, entries);
-    res.json({ ok: true });
+    const sessions = await router.listSessions();
+    await Promise.all(sessions.map((session) => engine.deleteSession(session.sessionKey)));
+    res.json({ ok: true, deleted: sessions.length });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }

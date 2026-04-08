@@ -161,6 +161,11 @@ export interface StorageNodeData {
   sessionRetention: number;
   memoryEnabled: boolean;
   dailyMemoryEnabled: boolean;
+  dailyResetEnabled: boolean;
+  dailyResetHour: number;
+  idleResetEnabled: boolean;
+  idleResetMinutes: number;
+  parentForkMaxTokens: number;
 }
 
 // --- Vector Database Node ---

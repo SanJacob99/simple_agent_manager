@@ -1,7 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentManager } from './agent-manager';
 import { ApiKeyStore } from '../auth/api-keys';
 import type { AgentConfig } from '../../shared/agent-config';
+import fs from 'fs/promises';
+import os from 'os';
+import path from 'path';
 
 // Mock AgentRuntime to avoid pi-agent-core model resolution
 vi.mock('../runtime/agent-runtime', () => {
@@ -10,30 +13,24 @@ vi.mock('../runtime/agent-runtime', () => {
     prompt = vi.fn(() => Promise.resolve());
     abort = vi.fn();
     destroy = vi.fn();
-    state = { messages: [] };
+    setModel = vi.fn();
+    setSystemPrompt = vi.fn();
+    getSystemPrompt = vi.fn(() => 'Test prompt');
+    setActiveSession = vi.fn();
+    clearActiveSession = vi.fn();
+    setSessionContext = vi.fn((messages: any[]) => {
+      this.state.messages = [...messages];
+    });
+    state = { messages: [], model: { api: 'openai-completions' } };
   }
   return { AgentRuntime: MockAgentRuntime };
 });
 
-// Mock StorageEngine to avoid filesystem
-vi.mock('../runtime/storage-engine', () => {
-  class MockStorageEngine {
-    private sessions: any[] = [];
-    init = vi.fn();
-    getSessionByKey = vi.fn(async (key: string) => {
-      return this.sessions.find((s: any) => s.sessionKey === key) ?? null;
-    });
-    createSession = vi.fn(async (meta: any) => {
-      this.sessions.push(meta);
-    });
-    updateSessionMeta = vi.fn();
-    enforceRetention = vi.fn();
-    listSessions = vi.fn(async () => this.sessions);
-  }
-  return { StorageEngine: MockStorageEngine };
-});
-
 function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
+  const storagePath = path.join(
+    os.tmpdir(),
+    `sam-agent-manager-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  );
   return {
     id: 'agent-1',
     version: 3,
@@ -58,10 +55,15 @@ function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
     storage: {
       label: 'Storage',
       backendType: 'filesystem',
-      storagePath: '/tmp/test',
+      storagePath,
       sessionRetention: 50,
       memoryEnabled: false,
       dailyMemoryEnabled: false,
+      dailyResetEnabled: true,
+      dailyResetHour: 4,
+      idleResetEnabled: false,
+      idleResetMinutes: 60,
+      parentForkMaxTokens: 100000,
     },
     vectorDatabases: [],
     exportedAt: Date.now(),
@@ -82,6 +84,7 @@ function createDeferred<T>() {
 describe('AgentManager', () => {
   let manager: AgentManager;
   let apiKeys: ApiKeyStore;
+  const storagePaths = new Set<string>();
 
   beforeEach(() => {
     apiKeys = new ApiKeyStore();
@@ -89,27 +92,43 @@ describe('AgentManager', () => {
     manager = new AgentManager(apiKeys);
   });
 
+  afterEach(async () => {
+    await manager.shutdown();
+    await Promise.all(
+      [...storagePaths].map((storagePath) => fs.rm(storagePath, { recursive: true, force: true })),
+    );
+    storagePaths.clear();
+  });
+
   it('starts an agent and tracks it', async () => {
-    await manager.start(makeConfig());
+    const config = makeConfig();
+    storagePaths.add(config.storage!.storagePath);
+    await manager.start(config);
     expect(manager.has('agent-1')).toBe(true);
   });
 
   it('destroys an agent', async () => {
-    await manager.start(makeConfig());
+    const config = makeConfig();
+    storagePaths.add(config.storage!.storagePath);
+    await manager.start(config);
     manager.destroy('agent-1');
     expect(manager.has('agent-1')).toBe(false);
   });
 
   it('replaces an existing agent on re-start', async () => {
-    await manager.start(makeConfig());
-    await manager.start(makeConfig({
+    const first = makeConfig();
+    const second = makeConfig({
       systemPrompt: {
         mode: 'manual',
         sections: [{ key: 'manual', label: 'Manual Prompt', content: 'Updated prompt', tokenEstimate: 3 }],
         assembled: 'Updated prompt',
         userInstructions: 'Updated prompt',
       },
-    }));
+    });
+    storagePaths.add(first.storage!.storagePath);
+    storagePaths.add(second.storage!.storagePath);
+    await manager.start(first);
+    await manager.start(second);
     expect(manager.has('agent-1')).toBe(true);
   });
 
@@ -118,8 +137,12 @@ describe('AgentManager', () => {
   });
 
   it('shutdown destroys all agents', async () => {
-    await manager.start(makeConfig());
-    await manager.start(makeConfig({ id: 'agent-2', name: 'Agent 2' }));
+    const first = makeConfig();
+    const second = makeConfig({ id: 'agent-2', name: 'Agent 2' });
+    storagePaths.add(first.storage!.storagePath);
+    storagePaths.add(second.storage!.storagePath);
+    await manager.start(first);
+    await manager.start(second);
     await manager.shutdown();
     expect(manager.has('agent-1')).toBe(false);
     expect(manager.has('agent-2')).toBe(false);
@@ -127,7 +150,9 @@ describe('AgentManager', () => {
 
   describe('dispatch facade', () => {
     it('dispatches a run and returns runId and sessionId', async () => {
-      await manager.start(makeConfig());
+      const config = makeConfig();
+      storagePaths.add(config.storage!.storagePath);
+      await manager.start(config);
       const result = await manager.dispatch('agent-1', {
         sessionKey: 'test-session',
         text: 'Hello',
@@ -145,7 +170,9 @@ describe('AgentManager', () => {
     });
 
     it('wait returns run result', async () => {
-      await manager.start(makeConfig());
+      const config = makeConfig();
+      storagePaths.add(config.storage!.storagePath);
+      await manager.start(config);
       const { runId } = await manager.dispatch('agent-1', {
         sessionKey: 'wait-test',
         text: 'Hello',
@@ -157,7 +184,9 @@ describe('AgentManager', () => {
     });
 
     it('abortRun aborts a specific run', async () => {
-      await manager.start(makeConfig());
+      const config = makeConfig();
+      storagePaths.add(config.storage!.storagePath);
+      await manager.start(config);
 
       // Make prompt hang
       const runtime = (manager as any).agents.get('agent-1').runtime;
@@ -177,7 +206,9 @@ describe('AgentManager', () => {
     });
 
     it('accepts queued dispatches for the same session', async () => {
-      await manager.start(makeConfig());
+      const config = makeConfig();
+      storagePaths.add(config.storage!.storagePath);
+      await manager.start(config);
 
       const runtime = (manager as any).agents.get('agent-1').runtime;
       const deferred = createDeferred<void>();
@@ -200,7 +231,9 @@ describe('AgentManager', () => {
     });
 
     it('aborts a pending run through the facade', async () => {
-      await manager.start(makeConfig());
+      const config = makeConfig();
+      storagePaths.add(config.storage!.storagePath);
+      await manager.start(config);
 
       const runtime = (manager as any).agents.get('agent-1').runtime;
       const deferred = createDeferred<void>();

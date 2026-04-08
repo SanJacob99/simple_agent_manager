@@ -174,6 +174,11 @@ export interface ResolvedStorageConfig {
   sessionRetention: number;
   memoryEnabled: boolean;
   dailyMemoryEnabled: boolean;
+  dailyResetEnabled: boolean;
+  dailyResetHour: number;
+  idleResetEnabled: boolean;
+  idleResetMinutes: number;
+  parentForkMaxTokens: number;
 }
 
 export interface ResolvedVectorDatabaseConfig {

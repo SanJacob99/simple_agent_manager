@@ -1,111 +1,104 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import fs from 'fs/promises';
-import path from 'path';
-import os from 'os';
 import { useSessionStore, type Message } from './session-store';
-import { StorageEngine } from '../../server/runtime/storage-engine';
-import type { ResolvedStorageConfig } from '../../shared/agent-config';
+import type { SessionStoreEntry } from '../../shared/storage-types';
 
-function makeTempConfig(overrides?: Partial<ResolvedStorageConfig>): ResolvedStorageConfig {
+function makeMeta(overrides?: Partial<SessionStoreEntry>): SessionStoreEntry {
   return {
-    label: 'Test Storage',
-    backendType: 'filesystem',
-    storagePath: path.join(
-      os.tmpdir(),
-      `sam-session-store-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-    ),
-    sessionRetention: 50,
-    memoryEnabled: false,
-    dailyMemoryEnabled: false,
+    sessionKey: 'agent:agent-1:main',
+    sessionId: 'sess-1',
+    agentId: 'agent-1',
+    sessionFile: 'sessions/sess-1.jsonl',
+    createdAt: '2026-04-07T12:00:00.000Z',
+    updatedAt: '2026-04-07T12:00:00.000Z',
+    chatType: 'direct',
+    displayName: 'Main session',
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    contextTokens: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalEstimatedCostUsd: 0,
+    compactionCount: 0,
     ...overrides,
   };
 }
 
 describe('session-store', () => {
-  let tempStoragePath: string | null = null;
-
   beforeEach(() => {
     useSessionStore.getState().unbindStorage();
     useSessionStore.getState().resetAllSessions();
-    tempStoragePath = null;
   });
 
   afterEach(() => {
     useSessionStore.getState().unbindStorage();
     useSessionStore.getState().resetAllSessions();
-    if (tempStoragePath) {
-      void fs.rm(tempStoragePath, { recursive: true, force: true });
-    }
     vi.restoreAllMocks();
   });
 
-  it('creates sessions from backend-managed metadata instead of generating local file ids', async () => {
+  it('creates sessions from routed backend metadata and keys them by sessionKey', async () => {
+    const meta = makeMeta();
     const storage = {
-      createManagedSession: vi.fn(async () => ({
-        sessionId: 'backend-session-id',
-        sessionKey: 'backend-session-id',
-        agentName: 'Agent',
-        llmSlug: 'openrouter/model-1',
-        startedAt: '2026-04-06T12:00:00.000Z',
-        updatedAt: '2026-04-06T12:00:00.000Z',
-        sessionFile: 'sessions/backend-session-id.jsonl',
-        contextTokens: 0,
-        totalInputTokens: 0,
-        totalOutputTokens: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-        totalEstimatedCostUsd: 0,
-        totalTokens: 0,
+      routeSession: vi.fn(async () => ({
+        sessionKey: meta.sessionKey,
+        sessionId: meta.sessionId,
+        transcriptPath: 'C:/tmp/sess-1.jsonl',
+        created: true,
+        reset: false,
       })),
+      getSession: vi.fn(async () => meta),
       deleteSession: vi.fn(async () => {}),
       listSessions: vi.fn(async () => []),
-      readEntries: vi.fn(async () => []),
+      deleteAllSessions: vi.fn(async () => {}),
     } as any;
 
     const store = useSessionStore.getState();
     store.bindStorage(storage);
-    const sessionId = await store.createSession('Agent', 'openrouter', 'model-1');
+    const sessionKey = await store.createSession('agent-1', 'openrouter', 'model-1');
 
-    expect(sessionId).toBe('backend-session-id');
-    expect(storage.createManagedSession).toHaveBeenCalledWith('openrouter/model-1');
-    expect(useSessionStore.getState().sessions[sessionId]).toEqual(
+    expect(sessionKey).toBe(meta.sessionKey);
+    expect(storage.routeSession).toHaveBeenCalledWith(
       expect.objectContaining({
-        id: 'backend-session-id',
-        agentName: 'Agent',
-        llmSlug: 'openrouter/model-1',
+        subKey: expect.stringMatching(/^session-/),
+      }),
+    );
+    expect(useSessionStore.getState().sessions[sessionKey]).toEqual(
+      expect.objectContaining({
+        id: meta.sessionKey,
+        sessionKey: meta.sessionKey,
+        sessionId: meta.sessionId,
+        agentId: 'agent-1',
       }),
     );
   });
 
   it('adds messages to local state without persisting transcript writes from the frontend', async () => {
+    const meta = makeMeta();
     const storage = {
-      createManagedSession: vi.fn(async () => ({
-        sessionId: 'backend-session-id',
-        sessionKey: 'backend-session-id',
-        agentName: 'Agent',
-        llmSlug: 'openrouter/model-1',
-        startedAt: '2026-04-06T12:00:00.000Z',
-        updatedAt: '2026-04-06T12:00:00.000Z',
-        sessionFile: 'sessions/backend-session-id.jsonl',
-        contextTokens: 0,
-        totalInputTokens: 0,
-        totalOutputTokens: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-        totalEstimatedCostUsd: 0,
-        totalTokens: 0,
+      routeSession: vi.fn(async () => ({
+        sessionKey: meta.sessionKey,
+        sessionId: meta.sessionId,
+        transcriptPath: 'C:/tmp/sess-1.jsonl',
+        created: true,
+        reset: false,
       })),
-      appendEntry: vi.fn(async () => {}),
-      replaceEntries: vi.fn(async () => {}),
-      updateSessionMeta: vi.fn(async () => {}),
+      getSession: vi.fn(async () => meta),
+      getTranscript: vi.fn(async () => ({ sessionKey: meta.sessionKey, sessionId: meta.sessionId, transcriptPath: 'x', entries: [] })),
       deleteSession: vi.fn(async () => {}),
       listSessions: vi.fn(async () => []),
-      readEntries: vi.fn(async () => []),
+      resetSession: vi.fn(async () => ({
+        sessionKey: meta.sessionKey,
+        sessionId: 'sess-2',
+        transcriptPath: 'C:/tmp/sess-2.jsonl',
+        created: false,
+        reset: true,
+      })),
+      deleteAllSessions: vi.fn(async () => {}),
     } as any;
 
     const store = useSessionStore.getState();
-    store.bindStorage(storage as any);
-    const sessionId = await store.createSession('Agent', 'openrouter', 'model-1');
+    store.bindStorage(storage);
+    const sessionKey = await store.createSession('agent-1', 'openrouter', 'model-1');
     const message: Message = {
       id: 'assistant-1',
       role: 'assistant',
@@ -113,43 +106,100 @@ describe('session-store', () => {
       timestamp: Date.now(),
     };
 
-    await store.addMessage(sessionId, message);
+    await store.addMessage(sessionKey, message);
 
-    expect(useSessionStore.getState().sessions[sessionId]?.messages).toEqual([message]);
-    expect(storage.appendEntry).not.toHaveBeenCalled();
-    expect(storage.replaceEntries).not.toHaveBeenCalled();
-    expect(storage.updateSessionMeta).not.toHaveBeenCalled();
+    expect(useSessionStore.getState().sessions[sessionKey]?.messages).toEqual([message]);
+    expect(storage.getTranscript).not.toHaveBeenCalled();
+    expect(storage.resetSession).not.toHaveBeenCalled();
   });
 
-  it('loads backend-managed transcript entries from storage files', async () => {
-    const config = makeTempConfig();
-    tempStoragePath = config.storagePath;
-
-    const storage = new StorageEngine(config, 'Agent');
-    await storage.init();
-    const meta = await storage.createManagedSession('openrouter/model-1');
-    await storage.appendEntry(meta.sessionId, {
-      type: 'message',
-      id: 'assistant-1',
-      parentId: null,
-      timestamp: '2026-04-06T12:00:01.000Z',
-      message: {
-        role: 'assistant',
-        content: [{ type: 'text', text: 'Final reply' }],
-        timestamp: Date.parse('2026-04-06T12:00:01.000Z'),
-      },
-    });
+  it('loads session metadata first and refreshes transcript entries on flush', async () => {
+    const meta = makeMeta();
+    const storage = {
+      listSessions: vi.fn(async () => [meta]),
+      getSession: vi.fn(async () => meta),
+      getTranscript: vi.fn(async () => ({
+        sessionKey: meta.sessionKey,
+        sessionId: meta.sessionId,
+        transcriptPath: 'C:/tmp/sess-1.jsonl',
+        entries: [
+          {
+            type: 'message',
+            id: 'assistant-1',
+            parentId: null,
+            timestamp: '2026-04-07T12:00:01.000Z',
+            message: {
+              role: 'assistant',
+              content: [{ type: 'text', text: 'Final reply' }],
+              usage: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 15 },
+              timestamp: Date.parse('2026-04-07T12:00:01.000Z'),
+            },
+          },
+        ],
+      })),
+      deleteAllSessions: vi.fn(async () => {}),
+    } as any;
 
     const store = useSessionStore.getState();
-    store.bindStorage(storage as any);
+    store.bindStorage(storage);
     await store.loadSessionsFromDisk();
 
-    expect(useSessionStore.getState().sessions[meta.sessionId]?.messages).toEqual([
+    expect(useSessionStore.getState().sessions[meta.sessionKey]?.messages).toEqual([]);
+
+    await store.flushSession(meta.sessionKey);
+
+    expect(useSessionStore.getState().sessions[meta.sessionKey]?.messages).toEqual([
       expect.objectContaining({
         id: 'assistant-1',
         role: 'assistant',
         content: 'Final reply',
       }),
     ]);
+  });
+
+  it('resets the active transcript via the backend when clearing messages', async () => {
+    const initialMeta = makeMeta();
+    const resetMeta = makeMeta({
+      sessionId: 'sess-2',
+      sessionFile: 'sessions/sess-2.jsonl',
+      updatedAt: '2026-04-07T12:05:00.000Z',
+    });
+
+    const storage = {
+      resetSession: vi.fn(async () => ({
+        sessionKey: initialMeta.sessionKey,
+        sessionId: resetMeta.sessionId,
+        transcriptPath: 'C:/tmp/sess-2.jsonl',
+        created: false,
+        reset: true,
+      })),
+      getSession: vi.fn(async () => resetMeta),
+      deleteAllSessions: vi.fn(async () => {}),
+    } as any;
+
+    useSessionStore.setState({
+      sessions: {
+        [initialMeta.sessionKey]: {
+          id: initialMeta.sessionKey,
+          sessionKey: initialMeta.sessionKey,
+          sessionId: initialMeta.sessionId,
+          agentId: initialMeta.agentId,
+          createdAt: new Date(initialMeta.createdAt).getTime(),
+          lastMessageAt: new Date(initialMeta.updatedAt).getTime(),
+          displayName: initialMeta.displayName!,
+          messages: [{ id: 'm1', role: 'user', content: 'Hello', timestamp: Date.now() }],
+          meta: initialMeta,
+        },
+      },
+      activeSessionKey: {},
+      storageEngine: storage,
+    } as any);
+
+    await useSessionStore.getState().clearSessionMessages(initialMeta.sessionKey);
+
+    const session = useSessionStore.getState().sessions[initialMeta.sessionKey];
+    expect(storage.resetSession).toHaveBeenCalledWith(initialMeta.sessionKey);
+    expect(session.messages).toEqual([]);
+    expect(session.sessionId).toBe('sess-2');
   });
 });

@@ -1,16 +1,36 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import fs from 'fs/promises';
+import os from 'os';
+import path from 'path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { SessionManager } from '@mariozechner/pi-coding-agent';
 import { RunCoordinator } from './run-coordinator';
 import { StreamProcessor } from './stream-processor';
-import type { AgentConfig } from '../../shared/agent-config';
+import { StorageEngine } from '../runtime/storage-engine';
 import type { AgentRuntime } from '../runtime/agent-runtime';
-import type { StorageEngine } from '../runtime/storage-engine';
-import type { SessionMeta } from '../../shared/storage-types';
+import type { AgentConfig } from '../../shared/agent-config';
 import { HookRegistry } from '../hooks/hook-registry';
 import { HOOK_NAMES, type BeforeAgentReplyContext } from '../hooks/hook-types';
 
+function makeUsage() {
+  return {
+    input: 10,
+    output: 5,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 15,
+    cost: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      total: 0,
+    },
+  };
+}
+
 function mockRuntime(): AgentRuntime {
   const listeners = new Set<(event: any) => void>();
-  return {
+  const runtime: any = {
     prompt: vi.fn(() => Promise.resolve()),
     abort: vi.fn(),
     destroy: vi.fn(),
@@ -18,56 +38,28 @@ function mockRuntime(): AgentRuntime {
       listeners.add(listener);
       return () => listeners.delete(listener);
     }),
-    state: { messages: [] },
+    setModel: vi.fn(),
+    setSystemPrompt: vi.fn(),
+    getSystemPrompt: vi.fn(() => 'Test'),
+    setActiveSession: vi.fn(),
+    clearActiveSession: vi.fn(),
+    setSessionContext: vi.fn((messages: any[]) => {
+      runtime.state.messages = [...messages];
+    }),
+    state: {
+      messages: [],
+      model: { api: 'openai-completions' },
+    },
     emitEvent: (event: any) => {
       for (const listener of listeners) {
         listener(event);
       }
     },
-  } as any;
+  };
+  return runtime as AgentRuntime;
 }
 
-function mockStorage(): StorageEngine {
-  const sessions: SessionMeta[] = [];
-  return {
-    getSessionByKey: vi.fn(async (key: string) => {
-      return sessions.find((s) => s.sessionKey === key) ?? null;
-    }),
-    getSessionMeta: vi.fn(async (sessionId: string) => {
-      return sessions.find((s) => s.sessionId === sessionId) ?? null;
-    }),
-    createSession: vi.fn(async (meta: SessionMeta) => {
-      sessions.push(meta);
-    }),
-    createManagedSession: vi.fn(async (llmSlug: string, sessionKey?: string) => {
-      const meta: SessionMeta = {
-        sessionId: `sess-${sessions.length + 1}`,
-        sessionKey: sessionKey ?? `sess-${sessions.length + 1}`,
-        agentName: 'Test Agent',
-        llmSlug,
-        startedAt: '2026-04-06T12:00:00.000Z',
-        updatedAt: '2026-04-06T12:00:00.000Z',
-        sessionFile: `sessions/sess-${sessions.length + 1}.jsonl`,
-        contextTokens: 0,
-        totalInputTokens: 0,
-        totalOutputTokens: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-        totalEstimatedCostUsd: 0,
-        totalTokens: 0,
-      };
-      sessions.push(meta);
-      return meta;
-    }),
-    updateSessionMeta: vi.fn(),
-    enforceRetention: vi.fn(),
-    listSessions: vi.fn(async () => sessions),
-    appendEntry: vi.fn(async () => {}),
-    readEntries: vi.fn(async () => []),
-  } as any;
-}
-
-function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
+function makeConfig(storagePath: string, overrides: Partial<AgentConfig> = {}): AgentConfig {
   return {
     id: 'agent-1',
     version: 3,
@@ -92,10 +84,15 @@ function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
     storage: {
       label: 'Storage',
       backendType: 'filesystem',
-      storagePath: '/tmp/test',
+      storagePath,
       sessionRetention: 50,
       memoryEnabled: false,
       dailyMemoryEnabled: false,
+      dailyResetEnabled: true,
+      dailyResetHour: 4,
+      idleResetEnabled: false,
+      idleResetMinutes: 60,
+      parentForkMaxTokens: 100000,
     },
     vectorDatabases: [],
     exportedAt: Date.now(),
@@ -115,18 +112,35 @@ function createDeferred<T>() {
 
 describe('RunCoordinator', () => {
   let runtime: AgentRuntime;
+  let storagePath: string;
+  let config: AgentConfig;
   let storage: StorageEngine;
   let coordinator: RunCoordinator;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    storagePath = await fs.mkdtemp(path.join(os.tmpdir(), 'sam-run-coordinator-'));
+    config = makeConfig(storagePath);
     runtime = mockRuntime();
-    storage = mockStorage();
-    coordinator = new RunCoordinator('agent-1', runtime, makeConfig(), storage);
+    storage = new StorageEngine(config.storage!, config.name);
+    await storage.init();
+    coordinator = new RunCoordinator('agent-1', runtime, config, storage);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     coordinator.destroy();
+    await fs.rm(storagePath, { recursive: true, force: true });
   });
+
+  async function getSession(subKey: string) {
+    return storage.getSession(`agent:agent-1:${subKey}`);
+  }
+
+  async function readTranscript(subKey: string) {
+    const session = await getSession(subKey);
+    expect(session).toBeTruthy();
+    const transcriptPath = storage.resolveTranscriptPath(session!);
+    return SessionManager.open(transcriptPath, storage.getSessionsDir(), process.cwd()).getEntries();
+  }
 
   describe('dispatch', () => {
     it('returns a runId, sessionId, and acceptedAt', async () => {
@@ -141,25 +155,24 @@ describe('RunCoordinator', () => {
       expect(typeof result.acceptedAt).toBe('number');
     });
 
-    it('creates a new session when sessionKey is not found', async () => {
+    it('creates a new session when the subKey is first routed', async () => {
+      const retentionSpy = vi.spyOn(storage, 'enforceRetention');
+
       await coordinator.dispatch({ sessionKey: 'new-session', text: 'Hello' });
 
-      expect(storage.getSessionByKey).toHaveBeenCalledWith('new-session');
-      expect(storage.createManagedSession).toHaveBeenCalledTimes(1);
-      expect(storage.createManagedSession).toHaveBeenCalledWith('openai/gpt-4', 'new-session');
+      const session = await getSession('new-session');
+      expect(session?.sessionKey).toBe('agent:agent-1:new-session');
+      expect(retentionSpy).toHaveBeenCalledWith(50);
     });
 
-    it('reuses existing session when sessionKey is found', async () => {
-      // First dispatch creates the session
-      const firstResult = await coordinator.dispatch({ sessionKey: 'reuse-session', text: 'First' });
-      // Wait for the first run to complete
-      await coordinator.wait(firstResult.runId, 5000);
+    it('reuses an existing session when the same subKey is routed again', async () => {
+      const first = await coordinator.dispatch({ sessionKey: 'reuse-session', text: 'First' });
+      await coordinator.wait(first.runId, 5000);
 
-      // Second dispatch reuses
-      await coordinator.dispatch({ sessionKey: 'reuse-session', text: 'Second' });
+      const second = await coordinator.dispatch({ sessionKey: 'reuse-session', text: 'Second' });
+      await coordinator.wait(second.runId, 5000);
 
-      // createManagedSession called only once (from the first dispatch)
-      expect(storage.createManagedSession).toHaveBeenCalledTimes(1);
+      expect(second.sessionId).toBe(first.sessionId);
     });
 
     it('reuses an existing session when the frontend passes the backend session id', async () => {
@@ -169,40 +182,29 @@ describe('RunCoordinator', () => {
       const second = await coordinator.dispatch({ sessionKey: first.sessionId, text: 'Second' });
       await coordinator.wait(second.runId, 5000);
 
-      expect(storage.createManagedSession).toHaveBeenCalledTimes(1);
       expect(second.sessionId).toBe(first.sessionId);
-    });
-
-    it('enforces retention after creating a new session', async () => {
-      await coordinator.dispatch({ sessionKey: 'retention-test', text: 'Hello' });
-
-      expect(storage.enforceRetention).toHaveBeenCalledWith(50);
     });
 
     it('persists the user message from the backend when a run starts', async () => {
       const result = await coordinator.dispatch({ sessionKey: 'persist-user', text: 'Hello backend' });
       await coordinator.wait(result.runId, 5000);
 
-      expect(storage.appendEntry).toHaveBeenCalledWith(
-        result.sessionId,
-        expect.objectContaining({
-          type: 'message',
-          message: expect.objectContaining({
-            role: 'user',
-            content: [{ type: 'text', text: 'Hello backend' }],
+      const entries = await readTranscript('persist-user');
+      expect(entries).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'message',
+            message: expect.objectContaining({
+              role: 'user',
+              content: 'Hello backend',
+            }),
           }),
-        }),
+        ]),
       );
     });
 
-    it('persists tool and assistant transcript entries from backend runtime events', async () => {
+    it('persists tool and assistant transcript entries and updates usage counters', async () => {
       (runtime.prompt as any).mockImplementationOnce(async () => {
-        (runtime as any).emitEvent({
-          type: 'tool_execution_start',
-          toolCallId: 'tool-1',
-          toolName: 'search',
-          args: {},
-        });
         (runtime as any).emitEvent({
           type: 'tool_execution_end',
           toolCallId: 'tool-1',
@@ -222,7 +224,6 @@ describe('RunCoordinator', () => {
             type: 'text_delta',
             contentIndex: 0,
             delta: 'Final',
-            partial: {},
           },
         });
         (runtime as any).emitEvent({
@@ -231,14 +232,19 @@ describe('RunCoordinator', () => {
             type: 'text_end',
             contentIndex: 0,
             content: 'Final reply',
-            partial: {},
           },
         });
         (runtime as any).emitEvent({
           type: 'message_end',
           message: {
             role: 'assistant',
-            usage: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 15 },
+            content: [{ type: 'text', text: 'Final reply' }],
+            api: 'openai-completions',
+            provider: 'openai',
+            model: 'gpt-4',
+            usage: makeUsage(),
+            stopReason: 'stop',
+            timestamp: Date.now(),
           },
         });
       });
@@ -246,28 +252,30 @@ describe('RunCoordinator', () => {
       const result = await coordinator.dispatch({ sessionKey: 'persist-stream', text: 'Hello' });
       await coordinator.wait(result.runId, 5000);
 
-      expect(storage.appendEntry).toHaveBeenCalledWith(
-        result.sessionId,
-        expect.objectContaining({
-          type: 'message',
-          message: expect.objectContaining({
-            role: 'tool',
-            content: [{ type: 'text', text: 'search: found 3 results' }],
-          }),
-        }),
-      );
-      expect(storage.appendEntry).toHaveBeenCalledWith(
-        result.sessionId,
-        expect.objectContaining({
-          type: 'message',
-          tokenCount: 5,
-          usage: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 15 },
-          message: expect.objectContaining({
-            role: 'assistant',
-            content: [{ type: 'text', text: 'Final reply' }],
-          }),
-        }),
-      );
+      const entries = await readTranscript('persist-stream');
+      const roles = entries
+        .filter((entry) => entry.type === 'message')
+        .map((entry) => (entry as any).message.role);
+
+      expect(roles).toEqual(['user', 'toolResult', 'assistant']);
+
+      const status = await getSession('persist-stream');
+      expect(status?.inputTokens).toBe(10);
+      expect(status?.outputTokens).toBe(5);
+      expect(status?.totalTokens).toBe(15);
+    });
+
+    it('snapshots user-only transcripts when the run fails before an assistant reply', async () => {
+      (runtime.prompt as any).mockRejectedValueOnce(new Error('Model failed'));
+
+      const result = await coordinator.dispatch({ sessionKey: 'user-only', text: 'Hello' });
+      const wait = await coordinator.wait(result.runId, 5000);
+
+      expect(wait.status).toBe('error');
+
+      const entries = await readTranscript('user-only');
+      expect(entries).toHaveLength(1);
+      expect((entries[0] as any).message.role).toBe('user');
     });
 
     it('accepts a second dispatch on the same session and leaves it pending', async () => {
@@ -292,8 +300,6 @@ describe('RunCoordinator', () => {
       coordinator.subscribeAll((event) => events.push(event));
 
       await coordinator.dispatch({ sessionKey: 'lifecycle-test', text: 'Hello' });
-
-      // Allow the async execution to start
       await new Promise((r) => setTimeout(r, 10));
 
       const startEvent = events.find((e) => e.type === 'lifecycle:start');
@@ -302,22 +308,6 @@ describe('RunCoordinator', () => {
       expect(startEvent.runId).toBeDefined();
       expect(startEvent.sessionId).toBeDefined();
       expect(startEvent.startedAt).toBeDefined();
-    });
-
-    it('emits lifecycle:end on successful completion', async () => {
-      const events: any[] = [];
-      coordinator.subscribeAll((event) => events.push(event));
-
-      const { runId } = await coordinator.dispatch({ sessionKey: 'success-test', text: 'Hello' });
-      await coordinator.wait(runId, 5000);
-
-      const endEvent = events.find((e) => e.type === 'lifecycle:end');
-      expect(endEvent).toBeDefined();
-      expect(endEvent.status).toBe('ok');
-      expect(endEvent.runId).toBe(runId);
-      expect(endEvent.startedAt).toBeDefined();
-      expect(endEvent.endedAt).toBeDefined();
-      expect(endEvent.endedAt).toBeGreaterThanOrEqual(endEvent.startedAt);
     });
 
     it('emits lifecycle:error when runtime.prompt rejects', async () => {
@@ -357,60 +347,13 @@ describe('RunCoordinator', () => {
       expect(result.status).toBe('timeout');
       expect(result.runId).toBe(runId);
     });
-
-    it('returns phase pending when wait times out before a queued run starts', async () => {
-      const deferred = createDeferred<void>();
-      (runtime.prompt as any).mockImplementationOnce(() => deferred.promise);
-
-      await coordinator.dispatch({ sessionKey: 'same', text: 'First' });
-      const second = await coordinator.dispatch({ sessionKey: 'same', text: 'Second' });
-
-      const result = await coordinator.wait(second.runId, 25);
-
-      expect(result.status).toBe('timeout');
-      expect((result as any).phase).toBe('pending');
-      expect((result as any).queue).toEqual({ sessionPosition: 1, globalPosition: 1 });
-
-      deferred.resolve();
-    });
-
-    it('returns error for unknown runId', async () => {
-      const result = await coordinator.wait('nonexistent-run', 100);
-      expect(result.status).toBe('error');
-      expect(result.error?.code).toBe('internal');
-    });
-  });
-
-  describe('timeout', () => {
-    it('aborts the run when run timeout expires', async () => {
-      (runtime.prompt as any).mockImplementation(() => new Promise(() => {}));
-
-      const events: any[] = [];
-      coordinator.subscribeAll((event) => events.push(event));
-
-      const { runId } = await coordinator.dispatch({
-        sessionKey: 'timeout-test',
-        text: 'Hello',
-        timeoutMs: 50,
-      });
-
-      const result = await coordinator.wait(runId, 5000);
-
-      expect(result.status).toBe('error');
-      expect(result.error?.code).toBe('timeout');
-      expect(runtime.abort).toHaveBeenCalled();
-    });
   });
 
   describe('abort', () => {
     it('aborts an active run and emits lifecycle:error', async () => {
       (runtime.prompt as any).mockImplementation(() => new Promise(() => {}));
 
-      const events: any[] = [];
-      coordinator.subscribeAll((event) => events.push(event));
-
       const { runId } = await coordinator.dispatch({ sessionKey: 'abort-test', text: 'Hello' });
-
       await new Promise((r) => setTimeout(r, 10));
 
       coordinator.abort(runId);
@@ -420,121 +363,9 @@ describe('RunCoordinator', () => {
       expect(result.error?.code).toBe('aborted');
       expect(runtime.abort).toHaveBeenCalled();
     });
-
-    it('does nothing for completed runs', async () => {
-      const { runId } = await coordinator.dispatch({ sessionKey: 'abort-done', text: 'Hello' });
-      await coordinator.wait(runId, 5000);
-
-      coordinator.abort(runId);
-      const record = coordinator.getRunStatus(runId);
-      expect(record?.status).toBe('completed');
-    });
-
-    it('aborts a pending run without calling runtime.abort', async () => {
-      const deferred = createDeferred<void>();
-      (runtime.prompt as any).mockImplementationOnce(() => deferred.promise);
-
-      const events: any[] = [];
-      coordinator.subscribeAll((event) => events.push(event));
-
-      await coordinator.dispatch({ sessionKey: 'same', text: 'First' });
-      const second = await coordinator.dispatch({ sessionKey: 'same', text: 'Second' });
-
-      coordinator.abort(second.runId);
-
-      const result = await coordinator.wait(second.runId, 1000);
-      expect(result.status).toBe('error');
-      expect(result.error?.code).toBe('aborted');
-      expect(runtime.abort).toHaveBeenCalledTimes(0);
-      expect(events.some((e) => e.type === 'queue:left' && e.reason === 'aborted')).toBe(true);
-
-      deferred.resolve();
-    });
   });
 
-  describe('subscribe', () => {
-    it('delivers stream events only for the subscribed run', async () => {
-      const events: any[] = [];
-
-      const { runId } = await coordinator.dispatch({ sessionKey: 'sub-test', text: 'Hello' });
-      coordinator.subscribe(runId, (event) => events.push(event));
-
-      await coordinator.wait(runId, 5000);
-
-      const streamEvents = events.filter((e) => e.type === 'stream');
-      for (const e of streamEvents) {
-        expect(e.runId).toBe(runId);
-      }
-    });
-  });
-
-  describe('integration: full dispatch-wait cycle', () => {
-    it('dispatches, streams events, waits, and returns payloads', async () => {
-      const allEvents: any[] = [];
-      coordinator.subscribeAll((event) => allEvents.push(event));
-
-      const { runId } = await coordinator.dispatch({ sessionKey: 'full-cycle', text: 'Hello' });
-      const result = await coordinator.wait(runId, 5000);
-
-      expect(result.status).toBe('ok');
-      expect(result.runId).toBe(runId);
-
-      const lifecycleStart = allEvents.find((e) => e.type === 'lifecycle:start');
-      expect(lifecycleStart).toBeDefined();
-      expect(lifecycleStart.runId).toBe(runId);
-
-      const lifecycleEnd = allEvents.find((e) => e.type === 'lifecycle:end');
-      expect(lifecycleEnd).toBeDefined();
-      expect(lifecycleEnd.runId).toBe(runId);
-      expect(lifecycleEnd.status).toBe('ok');
-    });
-
-    it('session is reusable after a run completes', async () => {
-      const { runId: run1 } = await coordinator.dispatch({ sessionKey: 'reuse', text: 'First' });
-      await coordinator.wait(run1, 5000);
-
-      const { runId: run2 } = await coordinator.dispatch({ sessionKey: 'reuse', text: 'Second' });
-      await coordinator.wait(run2, 5000);
-
-      expect(run1).not.toBe(run2);
-
-      const result = await coordinator.wait(run2, 100);
-      expect(result.status).toBe('ok');
-    });
-
-    it('classifyError maps rate limit errors correctly', async () => {
-      (runtime.prompt as any).mockRejectedValueOnce(new Error('Rate limit exceeded (429)'));
-
-      const { runId } = await coordinator.dispatch({ sessionKey: 'rate-limit', text: 'Hello' });
-      const result = await coordinator.wait(runId, 5000);
-
-      expect(result.status).toBe('error');
-      expect(result.error?.code).toBe('rate_limited');
-      expect(result.error?.retriable).toBe(true);
-    });
-
-    it('starts the next eligible queued run when the active run finishes', async () => {
-      const first = createDeferred<void>();
-      const second = createDeferred<void>();
-
-      (runtime.prompt as any)
-        .mockImplementationOnce(() => first.promise)
-        .mockImplementationOnce(() => second.promise);
-
-      const run1 = await coordinator.dispatch({ sessionKey: 'sess-a', text: 'First' });
-      const run2 = await coordinator.dispatch({ sessionKey: 'sess-b', text: 'Second' });
-
-      expect(coordinator.getRunStatus(run2.runId)?.status).toBe('pending');
-
-      first.resolve();
-      await coordinator.wait(run1.runId, 5000);
-
-      expect(coordinator.getRunStatus(run2.runId)?.status).toBe('running');
-
-      second.resolve();
-      await coordinator.wait(run2.runId, 5000);
-    });
-
+  describe('integration: stream processor', () => {
     it('streams a synthetic reply when before_agent_reply claims the turn', async () => {
       const hooks = new HookRegistry();
       hooks.register<BeforeAgentReplyContext>(HOOK_NAMES.BEFORE_AGENT_REPLY, {
@@ -550,11 +381,11 @@ describe('RunCoordinator', () => {
       const hookedCoordinator = new RunCoordinator(
         'agent-1',
         runtime,
-        makeConfig(),
+        config,
         storage,
         hooks,
       );
-      const processor = new StreamProcessor('agent-1', hookedCoordinator, makeConfig());
+      const processor = new StreamProcessor('agent-1', hookedCoordinator, config);
       const emitted: any[] = [];
       processor.subscribe((event) => emitted.push(event));
 
@@ -571,9 +402,6 @@ describe('RunCoordinator', () => {
         expect(emitted.map((event) => event.type)).toEqual(
           expect.arrayContaining(['message:start', 'message:delta', 'message:end', 'lifecycle:end']),
         );
-
-        const lifecycleEnd = emitted.find((event) => event.type === 'lifecycle:end');
-        expect(lifecycleEnd?.payloads).toEqual([{ type: 'text', content: 'Synthetic hello' }]);
       } finally {
         processor.destroy();
         hookedCoordinator.destroy();

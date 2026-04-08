@@ -80,6 +80,77 @@ export default function StorageProperties({ nodeId, data }: Props) {
           </label>
         </Field>
       )}
+
+      <div className="mt-3 border-t border-slate-800/80 pt-3">
+        <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+          Session Resets
+        </div>
+
+        <Field label="Daily Reset">
+          <label className="flex items-center gap-2 text-xs text-slate-300">
+            <input
+              type="checkbox"
+              checked={data.dailyResetEnabled}
+              onChange={(e) => update(nodeId, { dailyResetEnabled: e.target.checked })}
+            />
+            Start a fresh session after the daily cutoff
+          </label>
+        </Field>
+
+        {data.dailyResetEnabled && (
+          <Field label="Daily Reset Hour">
+            <input
+              className={inputClass}
+              type="number"
+              min={0}
+              max={23}
+              value={data.dailyResetHour}
+              onChange={(e) =>
+                update(nodeId, {
+                  dailyResetHour: Math.min(23, Math.max(0, parseInt(e.target.value, 10) || 0)),
+                })
+              }
+            />
+          </Field>
+        )}
+
+        <Field label="Idle Reset">
+          <label className="flex items-center gap-2 text-xs text-slate-300">
+            <input
+              type="checkbox"
+              checked={data.idleResetEnabled}
+              onChange={(e) => update(nodeId, { idleResetEnabled: e.target.checked })}
+            />
+            Reset after a period of inactivity
+          </label>
+        </Field>
+
+        {data.idleResetEnabled && (
+          <Field label="Idle Reset Minutes">
+            <input
+              className={inputClass}
+              type="number"
+              min={1}
+              value={data.idleResetMinutes}
+              onChange={(e) =>
+                update(nodeId, { idleResetMinutes: parseInt(e.target.value, 10) || 60 })
+              }
+            />
+          </Field>
+        )}
+
+        <Field label="Parent Fork Token Limit">
+          <input
+            className={inputClass}
+            type="number"
+            min={0}
+            value={data.parentForkMaxTokens}
+            onChange={(e) =>
+              update(nodeId, { parentForkMaxTokens: parseInt(e.target.value, 10) || 0 })
+            }
+          />
+        </Field>
+      </div>
     </div>
   );
 }

@@ -3,6 +3,8 @@ import testFixture from '../../fixtures/test-graph.json';
 import { useGraphStore } from '../../store/graph-store';
 import { useModelCatalogStore } from '../../store/model-catalog-store';
 import { useSessionStore } from '../../store/session-store';
+import { resolveAgentConfig } from '../../utils/graph-to-agent';
+import { StorageClient } from '../../runtime/storage-client';
 import {
   downloadJson,
   exportGraph,
@@ -42,6 +44,25 @@ export default function DataMaintenanceSection() {
       fn();
       setMessage(null);
     }
+  };
+
+  const clearPersistedSessions = async () => {
+    const agentNodes = nodes.filter((node) => node.data.type === 'agent');
+    await Promise.all(agentNodes.map(async (node) => {
+      const agentName = (node.data as { name?: string }).name;
+      if (!agentName) {
+        return;
+      }
+
+      const config = resolveAgentConfig(node.id, nodes, edges);
+      if (!config?.storage) {
+        return;
+      }
+
+      const client = new StorageClient(config.storage, agentName, node.id);
+      await client.init();
+      await client.deleteAllSessions();
+    }));
   };
 
   return (
@@ -97,7 +118,11 @@ export default function DataMaintenanceSection() {
         <button
           type="button"
           onClick={() =>
-            confirmAndRun('Clear all chat sessions?', () => resetAllSessions())
+            confirmAndRun('Clear all chat sessions?', () => {
+              void clearPersistedSessions()
+                .catch(console.error)
+                .finally(() => resetAllSessions());
+            })
           }
           className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-200 transition hover:border-red-400/60 hover:bg-red-500/15"
         >
@@ -121,10 +146,14 @@ export default function DataMaintenanceSection() {
             confirmAndRun(
               'Reset graph, sessions, settings, and model catalog?',
               () => {
-                clearGraph();
-                resetAllSessions();
-                resetSettings();
-                resetModelCatalog();
+                void clearPersistedSessions()
+                  .catch(console.error)
+                  .finally(() => {
+                    clearGraph();
+                    resetAllSessions();
+                    resetSettings();
+                    resetModelCatalog();
+                  });
               },
             )
           }

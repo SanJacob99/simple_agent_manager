@@ -29,7 +29,6 @@ export default function App() {
   const setPendingNameNodeId = useGraphStore((s) => s.setPendingNameNodeId);
   const updateNodeData = useGraphStore((s) => s.updateNodeData);
   const removeNode = useGraphStore((s) => s.removeNode);
-  const getAgentNames = useGraphStore((s) => s.getAgentNames);
 
   // Orphan session pruning
   const pruneOrphanSessions = useSessionStore((s) => s.pruneOrphanSessions);
@@ -41,15 +40,10 @@ export default function App() {
 
   // Prune orphan sessions on mount and when graph changes
   useEffect(() => {
-    const agentNames = getAgentNames();
-    pruneOrphanSessions(agentNames);
-
-    // Also clean up old chat-store localStorage key
-    try {
-      localStorage.removeItem('agent-manager-chats');
-    } catch {
-      // ignore
-    }
+    const agentIds = nodes
+      .filter((node) => node.data.type === 'agent')
+      .map((node) => node.id);
+    pruneOrphanSessions(agentIds);
   }, [nodes.length]); // Re-prune when nodes change
 
   const handleNameConfirm = (name: string) => {

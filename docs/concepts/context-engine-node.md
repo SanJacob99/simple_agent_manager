@@ -1,69 +1,58 @@
 # Context Engine Node
 
-> Manages token budgets, message compaction, and RAG integration to keep conversations within the model's context window.
+> Manages token budgets, compaction, and transcript-aware context assembly so conversations stay inside the model's context window.
 
 <!-- source: src/types/nodes.ts#ContextEngineNodeData -->
-<!-- last-verified: 2026-04-04 -->
+<!-- last-verified: 2026-04-07 -->
 <!-- token-budget-inheritance, compaction-trigger-modes, tooltips -->
 
 ## Overview
 
-The Context Engine Node controls how an agent manages its conversation context. As conversations grow, they can exceed the model's context window. The Context Engine applies compaction strategies to trim or summarize older messages, tracks token usage against a budget, and optionally integrates RAG (Retrieval-Augmented Generation) for pulling in relevant external context.
+The Context Engine Node controls how an agent assembles prompt context, when it compacts older conversation state, and whether RAG content is allowed into that budget. It plugs into `pi-agent-core` through `transformContext`, so the agent can trim or summarize history before each model call.
 
-It implements an OpenClaw-inspired lifecycle: **assemble** (gather messages within budget) → **compact** (reduce if over budget) → **afterTurn** (post-turn bookkeeping). This lifecycle is wired into `pi-agent-core`'s `transformContext` hook, which runs before each LLM call.
+In the current implementation, compaction is no longer only an in-memory concern. When the runtime binds an active session transcript, summary-style compaction writes a real `compaction` entry into the session file through `SessionManager`. That allows resumed sessions to rebuild context from persisted compaction summaries instead of depending on a still-live process.
 
 ## Configuration
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
 | `label` | `string` | `"Context Engine"` | Display label on the canvas |
-| `tokenBudget` | `number` | Inherited from model | Maximum tokens for the full context. Auto-inherited from the connected agent's model context window when available. Falls back to `128000` if model metadata is unavailable. |
-| `reservedForResponse` | `number` | `4096` | Tokens reserved for the model's response |
-| `ownsCompaction` | `boolean` | `true` | Whether this node owns compaction (vs. memory node). When enabled, no other node triggers its own compaction. |
-| `compactionStrategy` | `CompactionStrategy` | `"trim-oldest"` | Strategy: `summary`, `sliding-window`, `trim-oldest`, `hybrid` |
-| `compactionTrigger` | `string` | `"auto"` | When to compact: `auto`, `manual`, `threshold`. Controls what input is shown for the threshold value (see below). |
-| `compactionThreshold` | `number` | `0.8` | Meaning depends on trigger: ratio (0-1) for `threshold`, token count for `manual`, unused for `auto`. |
-| `bootstrapMaxChars` | `number` | `20000` | Maximum characters per bootstrap file before truncation |
-| `bootstrapTotalMaxChars` | `number` | `150000` | Maximum total characters across all bootstrap files |
-| `autoFlushBeforeCompact` | `boolean` | `true` | Flush pending tool results and buffered messages before compacting |
-| `ragEnabled` | `boolean` | `false` | Enable RAG retrieval. Requires a connected Vector Database node. |
+| `tokenBudget` | `number` | Inherited from model | Max tokens for assembled context |
+| `reservedForResponse` | `number` | `4096` | Tokens reserved for the model response |
+| `ownsCompaction` | `boolean` | `true` | Whether this node owns compaction |
+| `compactionStrategy` | `CompactionStrategy` | `"trim-oldest"` | `summary`, `sliding-window`, `trim-oldest`, or `hybrid` |
+| `compactionTrigger` | `string` | `"auto"` | When compaction should become available |
+| `compactionThreshold` | `number` | `0.8` | Trigger threshold or token count, depending on mode |
+| `bootstrapMaxChars` | `number` | `20000` | Max characters per bootstrap file |
+| `bootstrapTotalMaxChars` | `number` | `150000` | Max total characters across bootstrap files |
+| `autoFlushBeforeCompact` | `boolean` | `true` | Flush pending buffers before compaction |
+| `ragEnabled` | `boolean` | `false` | Whether to enable RAG retrieval |
 | `ragTopK` | `number` | `5` | Number of RAG results to retrieve |
-| `ragMinScore` | `number` | `0.7` | Minimum similarity score for RAG results |
-
-### Compaction trigger modes
-
-- **`auto`** — Compaction fires automatically when context usage reaches 80% of `tokenBudget`. No additional configuration needed.
-- **`threshold`** — Compaction fires when usage exceeds the configured ratio (0-1) of `tokenBudget`. The `compactionThreshold` field shows a 0-1 input.
-- **`manual`** — Compaction is user-triggered. The `compactionThreshold` field shows a token-count input representing the point after which compaction is available.
-
-### Token budget inheritance
-
-When a Context Engine is connected to an Agent, the `tokenBudget` is automatically set to the model's context window size. The value is resolved in order: OpenRouter model catalog → agent `modelCapabilities.contextWindow` override → well-known defaults for common models. If none are available, the field becomes a manual input.
+| `ragMinScore` | `number` | `0.7` | Minimum similarity threshold for RAG results |
 
 ## Runtime Behavior
 
-At runtime, the configuration creates a `ContextEngine` instance (`src/runtime/context-engine.ts`) which exposes:
+The runtime creates a `ContextEngine` that exposes:
 
-**`buildTransformContext()`** — Returns a function that plugs into `pi-agent-core`'s `transformContext` option. Before each LLM call, this function runs `assemble()` on the current messages, compacting if the estimated token count exceeds `tokenBudget - reservedForResponse`.
+- `buildTransformContext()` to plug into `pi-agent-core`
+- `assemble(messages)` to estimate tokens and call compaction when needed
+- `compact(messages)` to apply the configured reduction strategy
+- `afterTurn(messages)` for post-turn bookkeeping
 
-**`assemble(messages)`** — Estimates token usage. If over budget, calls `compact()`. Returns `{ messages, estimatedTokens }` — the processed message list and the estimated token count.
+Current compaction behavior:
 
-**`compact(messages)`** — Applies the configured compaction strategy:
-- `trim-oldest`: Drops oldest messages one by one until within budget (keeps minimum 2)
-- `sliding-window`: Same behavior as trim-oldest (drops from the front)
-- `summary` / `hybrid`: Keeps the most recent 30% of messages, summarizes older ones into a single user message with truncated content (max 2000 chars)
+- `trim-oldest` and `sliding-window` keep the newest messages that fit
+- `summary` and `hybrid` keep the newest slice of conversation and replace older context with a generated summary message
+- when a live transcript is bound, summary/hybrid compaction appends a persisted `compaction` entry via `SessionManager.appendCompaction(...)`
+- the runtime emits a `memory_compaction` event when one of these persisted summaries is written, so the UI can show compacting state
 
-**`afterTurn(messages)`** — Post-turn hook for future bookkeeping (currently a no-op placeholder).
-
-The context engine no longer manages system prompt additions. System prompt construction is now handled by the structured system prompt builder in `AgentRuntime`, which assembles sections (safety, tooling, skills, workspace, time, runtime) based on the agent's `systemPromptMode`.
-
-Token estimation uses a character-based heuristic in `src/runtime/token-estimator.ts`.
+The context engine no longer owns system prompt additions. Prompt construction is handled by the agent runtime's assembled system prompt.
 
 ## Connections
 
 - **Sends to**: Agent Node
 - **Receives from**: None
-- At most one Context Engine Node should be connected to an agent.
+- One Context Engine per agent
 
 ## Example
 

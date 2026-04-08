@@ -23,7 +23,7 @@ interface AgentConnectionStore {
   startAgent: (agentId: string, config: AgentConfig) => Promise<void>;
   sendPrompt: (
     agentId: string,
-    sessionId: string,
+    sessionKey: string,
     text: string,
     attachments?: ImageAttachment[],
   ) => Promise<void>;
@@ -85,12 +85,12 @@ export const useAgentConnectionStore = create<AgentConnectionStore>((set, get) =
     return deferred.promise;
   },
 
-  sendPrompt: async (agentId, sessionId, text, attachments) => {
+  sendPrompt: async (agentId, sessionKey, text, attachments) => {
     const pendingStart = pendingStarts.get(agentId);
     if (pendingStart) {
       await pendingStart.rawPromise;
     }
-    agentClient.send({ type: 'agent:prompt', agentId, sessionId, text, attachments });
+    agentClient.send({ type: 'agent:dispatch', agentId, sessionKey, text, attachments });
   },
 
   abortAgent: (agentId) => {

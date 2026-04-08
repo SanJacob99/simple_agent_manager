@@ -94,6 +94,11 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         sessionRetention: 50,
         memoryEnabled: true,
         dailyMemoryEnabled: true,
+        dailyResetEnabled: true,
+        dailyResetHour: 4,
+        idleResetEnabled: false,
+        idleResetMinutes: 60,
+        parentForkMaxTokens: 100000,
       };
     case 'vectorDatabase':
       return {

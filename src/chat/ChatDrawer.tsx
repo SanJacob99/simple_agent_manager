@@ -46,20 +46,16 @@ function formatSessionDate(timestamp: number): string {
   });
 }
 
-function formatSessionLabel(llmSlug: string, lastMessageAt: number, isDefault: boolean): string {
-  // Shorten the llm slug for display
-  const parts = llmSlug.split('/');
-  const shortSlug = parts.length > 2 ? `${parts[0]}/${parts[parts.length - 1]}` : llmSlug;
+function formatSessionLabel(label: string, lastMessageAt: number, isMain: boolean): string {
   const dateStr = formatSessionDate(lastMessageAt);
-  const prefix = isDefault ? '● ' : '';
-  return `${prefix}${shortSlug} · ${dateStr}`;
+  const prefix = isMain ? 'Main · ' : '';
+  return `${prefix}${label} · ${dateStr}`;
 }
 
 export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
   const nodes = useGraphStore((s) => s.nodes);
   const edges = useGraphStore((s) => s.edges);
   const startAgent = useAgentConnectionStore((s) => s.startAgent);
-  const sendPromptCmd = useAgentConnectionStore((s) => s.sendPrompt);
   const abortAgent = useAgentConnectionStore((s) => s.abortAgent);
   const destroyAgent = useAgentConnectionStore((s) => s.destroyAgent);
   const connectionStatus = useAgentConnectionStore((s) => s.connectionStatus);
@@ -76,7 +72,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
 
   // Session store
   const sessions = useSessionStore((s) => s.sessions);
-  const activeSessionIdMap = useSessionStore((s) => s.activeSessionId);
+  const activeSessionKeyMap = useSessionStore((s) => s.activeSessionKey);
   const createSession = useSessionStore((s) => s.createSession);
   const deleteSession = useSessionStore((s) => s.deleteSession);
   const setActiveSession = useSessionStore((s) => s.setActiveSession);
@@ -102,7 +98,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
       return;
     }
 
-    const client = new StorageClient(config.storage, agentName);
+    const client = new StorageClient(config.storage, agentName, agentNodeId);
     client.init()
       .then(() => {
         bindStorage(client);
@@ -119,13 +115,13 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
 
   // Get sessions for this agent
   const agentSessions = useMemo(
-    () => getSessionsForAgent(agentName),
-    [sessions, agentName, getSessionsForAgent],
+    () => getSessionsForAgent(agentNodeId),
+    [sessions, agentNodeId, getSessionsForAgent],
   );
 
-  // Active session ID
-  const activeSessionId = activeSessionIdMap[agentNodeId] ?? null;
-  const activeSession = activeSessionId ? sessions[activeSessionId] : null;
+  // Active session key
+  const activeSessionKey = activeSessionKeyMap[agentNodeId] ?? null;
+  const activeSession = activeSessionKey ? sessions[activeSessionKey] : null;
   const messages = activeSession?.messages ?? [];
 
   const creatingSessionRef = useRef(false);
@@ -139,7 +135,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
       creatingSessionRef.current = true;
       
       // No sessions at all — create default
-      createSession(agentName, config.provider, config.modelId, true)
+      createSession(agentNodeId, config.provider, config.modelId, true)
         .then((id) => {
           setActiveSession(agentNodeId, id);
           creatingSessionRef.current = false;
@@ -148,11 +144,11 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
           console.error(err);
           creatingSessionRef.current = false;
         });
-    } else if (!activeSessionId || !sessions[activeSessionId]) {
+    } else if (!activeSessionKey || !sessions[activeSessionKey]) {
       // No active session or active session was deleted — pick the most recent
       setActiveSession(agentNodeId, agentSessions[0].id);
     }
-  }, [agentName, config, agentSessions.length, activeSessionId, storageReady]);
+  }, [agentNodeId, config, agentSessions.length, activeSessionKey, storageReady]);
 
   // UI state
   const [showSessionDropdown, setShowSessionDropdown] = useState(false);
@@ -194,23 +190,16 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
     if (!config || !agentName) return;
 
     // Enforce limit before creating
-    await enforceSessionLimit(agentName, 3);
+    await enforceSessionLimit(agentNodeId, 3);
 
     // Check if we're at the limit after enforcement
-    const currentSessions = getSessionsForAgent(agentName);
+    const currentSessions = getSessionsForAgent(agentNodeId);
     if (currentSessions.length >= 3) {
-      // Drop the oldest
       const oldest = currentSessions[currentSessions.length - 1];
-      if (oldest.id.endsWith(':default')) {
-        if (currentSessions.length > 1) {
-          await deleteSession(currentSessions[currentSessions.length - 1].id);
-        }
-      } else {
-        await deleteSession(oldest.id);
-      }
+      await deleteSession(oldest.id);
     }
 
-    const id = await createSession(agentName, config.provider, config.modelId, false);
+    const id = await createSession(agentNodeId, config.provider, config.modelId, false);
     setActiveSession(agentNodeId, id);
     setShowSessionDropdown(false);
 
@@ -224,13 +213,13 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
       setDeleteConfirmId(null);
 
       // If we deleted the active session, switch to another
-      if (activeSessionId === sessionId) {
-        const remaining = getSessionsForAgent(agentName);
+      if (activeSessionKey === sessionId) {
+        const remaining = getSessionsForAgent(agentNodeId);
         if (remaining.length > 0) {
           setActiveSession(agentNodeId, remaining[0].id);
         } else if (config) {
           // Create a new default session
-          const id = await createSession(agentName, config.provider, config.modelId, true);
+          const id = await createSession(agentNodeId, config.provider, config.modelId, true);
           setActiveSession(agentNodeId, id);
         }
       }
@@ -247,7 +236,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
   };
 
   const sendMessage = useCallback(async () => {
-    if ((!input.trim() && attachments.length === 0) || isStreaming || !config || !activeSessionId) return;
+    if ((!input.trim() && attachments.length === 0) || isStreaming || !config || !activeSessionKey) return;
 
     const trimmedInput = input.trim();
     const currentAttachments = attachments;
@@ -259,7 +248,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
       tokenCount: estimateTokens(trimmedInput),
     };
 
-    addMessage(activeSessionId, userMessage);
+    addMessage(activeSessionKey, userMessage);
     setInput('');
     setAttachments([]);
     setAttachmentPreviews([]);
@@ -268,8 +257,8 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
     startAgent(agentNodeId, config);
 
     // Delegate streaming event handling to useChatStream
-    chatStream.sendMessage(trimmedInput, activeSessionId, currentAttachments.length ? currentAttachments : undefined);
-  }, [input, attachments, isStreaming, config, agentNodeId, activeSessionId, startAgent, chatStream]);
+    chatStream.sendMessage(trimmedInput, activeSessionKey, currentAttachments.length ? currentAttachments : undefined);
+  }, [input, attachments, isStreaming, config, agentNodeId, activeSessionKey, startAgent, chatStream]);
 
   const handleStop = () => {
     abortAgent(agentNodeId);
@@ -365,7 +354,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
           )}
           {messages.length > 0 && (
             <button
-              onClick={() => activeSessionId && clearSessionMessages(activeSessionId)}
+              onClick={() => activeSessionKey && clearSessionMessages(activeSessionKey)}
               className="rounded p-1 text-slate-500 transition hover:bg-slate-800 hover:text-red-400"
               title="Clear Messages"
             >
@@ -393,9 +382,9 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
               <span className="truncate">
                 {activeSession
                   ? formatSessionLabel(
-                      activeSession.llmSlug,
+                      activeSession.displayName,
                       activeSession.lastMessageAt,
-                      activeSession.id.endsWith(':default'),
+                      activeSession.sessionKey.endsWith(':main'),
                     )
                   : 'No session'}
               </span>
@@ -410,7 +399,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
                   <div
                     key={session.id}
                     className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] cursor-pointer transition ${
-                      session.id === activeSessionId
+                      session.id === activeSessionKey
                         ? 'bg-blue-500/10 text-blue-300'
                         : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200'
                     }`}
@@ -420,9 +409,9 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
                       onClick={() => handleSwitchSession(session.id)}
                     >
                       {formatSessionLabel(
-                        session.llmSlug,
+                        session.displayName,
                         session.lastMessageAt,
-                        session.id.endsWith(':default'),
+                        session.sessionKey.endsWith(':main'),
                       )}
                       <span className="ml-1 text-[8px] text-slate-600">
                         ({session.messages.length} msgs)

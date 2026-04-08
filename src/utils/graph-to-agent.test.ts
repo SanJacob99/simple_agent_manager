@@ -68,6 +68,11 @@ describe('resolveAgentConfig', () => {
             sessionRetention: 50,
             memoryEnabled: true,
             dailyMemoryEnabled: true,
+            dailyResetEnabled: true,
+            dailyResetHour: 4,
+            idleResetEnabled: false,
+            idleResetMinutes: 60,
+            parentForkMaxTokens: 100000,
           },
         },
       ] as any,
@@ -79,6 +84,11 @@ describe('resolveAgentConfig', () => {
     expect(config?.storage?.storagePath).toBe('/home/user/.simple-agent-manager/storage');
     expect(config?.storage?.sessionRetention).toBe(50);
     expect(config?.storage?.memoryEnabled).toBe(true);
+    expect(config?.storage?.dailyResetEnabled).toBe(true);
+    expect(config?.storage?.dailyResetHour).toBe(4);
+    expect(config?.storage?.idleResetEnabled).toBe(false);
+    expect(config?.storage?.idleResetMinutes).toBe(60);
+    expect(config?.storage?.parentForkMaxTokens).toBe(100000);
   });
 
   it('returns storage as null when no storage node is connected', () => {
@@ -144,6 +154,11 @@ describe('resolveAgentConfig', () => {
             sessionRetention: 50,
             memoryEnabled: true,
             dailyMemoryEnabled: true,
+            dailyResetEnabled: true,
+            dailyResetHour: 4,
+            idleResetEnabled: false,
+            idleResetMinutes: 60,
+            parentForkMaxTokens: 100000,
           },
         },
       ] as any,

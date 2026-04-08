@@ -137,6 +137,11 @@ export function resolveAgentConfig(
         sessionRetention: storageNode.data.sessionRetention,
         memoryEnabled: storageNode.data.memoryEnabled,
         dailyMemoryEnabled: storageNode.data.dailyMemoryEnabled,
+        dailyResetEnabled: storageNode.data.dailyResetEnabled,
+        dailyResetHour: storageNode.data.dailyResetHour,
+        idleResetEnabled: storageNode.data.idleResetEnabled,
+        idleResetMinutes: storageNode.data.idleResetMinutes,
+        parentForkMaxTokens: storageNode.data.parentForkMaxTokens,
       }
     : null;
 
