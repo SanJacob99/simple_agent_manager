@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentRuntime } from './agent-runtime';
+import { log } from '../logger';
 import type { AgentConfig } from '../../shared/agent-config';
 
 vi.mock('../logger');
@@ -7,6 +8,9 @@ vi.mock('../logger');
 const promptMock = vi.fn();
 const subscribeMock = vi.fn(() => vi.fn());
 const abortMock = vi.fn();
+
+// Captures the onPayload callback passed to Agent constructor so tests can invoke it directly.
+let capturedOnPayload: ((payload: any) => void) | undefined;
 
 vi.mock('@mariozechner/pi-agent-core', () => {
   class MockAgent {
@@ -19,6 +23,12 @@ vi.mock('@mariozechner/pi-agent-core', () => {
     prompt = promptMock;
     subscribe = subscribeMock;
     abort = abortMock;
+
+    constructor(options: any) {
+      if (options?.onPayload) {
+        capturedOnPayload = options.onPayload;
+      }
+    }
   }
 
   return { Agent: MockAgent };
@@ -64,6 +74,8 @@ describe('AgentRuntime', () => {
     promptMock.mockReset();
     subscribeMock.mockClear();
     abortMock.mockClear();
+    capturedOnPayload = undefined;
+    vi.mocked(log).mockClear();
   });
 
   it('rejects prompt when the underlying agent prompt throws', async () => {
@@ -72,5 +84,113 @@ describe('AgentRuntime', () => {
     const runtime = new AgentRuntime(makeConfig(), () => 'sk-test');
 
     await expect(runtime.prompt('Hello')).rejects.toThrow('stream failed');
+  });
+});
+
+describe('summarizePayload behavior via onPayload', () => {
+  beforeEach(() => {
+    promptMock.mockReset();
+    subscribeMock.mockClear();
+    abortMock.mockClear();
+    capturedOnPayload = undefined;
+    vi.mocked(log).mockClear();
+    // Construct a runtime so that MockAgent captures onPayload
+    new AgentRuntime(makeConfig(), () => 'sk-test');
+  });
+
+  it('formats short string content correctly', () => {
+    expect(capturedOnPayload).toBeDefined();
+    const payload = {
+      model: 'claude-sonnet-4-6',
+      messages: [{ role: 'user', content: 'Hello world' }],
+      tools: [{ name: 'tool1' }, { name: 'tool2' }, { name: 'tool3' }],
+    };
+    capturedOnPayload!(payload);
+    expect(vi.mocked(log)).toHaveBeenCalledWith(
+      'pi-ai Request Payload',
+      'model=claude-sonnet-4-6 | messages=1 | tools=3 | last_user=Hello world',
+    );
+  });
+
+  it('truncates long string content at 200 chars with ellipsis', () => {
+    expect(capturedOnPayload).toBeDefined();
+    const longText = 'A'.repeat(250);
+    const payload = {
+      model: 'claude-sonnet-4-6',
+      messages: [{ role: 'user', content: longText }],
+      tools: [],
+    };
+    capturedOnPayload!(payload);
+    const [[, summary]] = vi.mocked(log).mock.calls;
+    expect(summary).toMatch(/last_user=A{200}\.\.\.$/);
+  });
+
+  it('extracts text from array content with a text block', () => {
+    expect(capturedOnPayload).toBeDefined();
+    const payload = {
+      model: 'gpt-4',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'image', url: 'http://example.com/img.png' },
+            { type: 'text', text: 'What is this?' },
+          ],
+        },
+      ],
+      tools: [{ name: 'search' }],
+    };
+    capturedOnPayload!(payload);
+    expect(vi.mocked(log)).toHaveBeenCalledWith(
+      'pi-ai Request Payload',
+      'model=gpt-4 | messages=1 | tools=1 | last_user=What is this?',
+    );
+  });
+
+  it('produces empty last_user when array content has no text block', () => {
+    expect(capturedOnPayload).toBeDefined();
+    const payload = {
+      model: 'gpt-4',
+      messages: [
+        {
+          role: 'user',
+          content: [{ type: 'image', url: 'http://example.com/img.png' }],
+        },
+      ],
+      tools: [],
+    };
+    capturedOnPayload!(payload);
+    expect(vi.mocked(log)).toHaveBeenCalledWith(
+      'pi-ai Request Payload',
+      'model=gpt-4 | messages=1 | tools=0 | last_user=',
+    );
+  });
+
+  it('produces empty last_user when there is no user message', () => {
+    expect(capturedOnPayload).toBeDefined();
+    const payload = {
+      model: 'gpt-4',
+      messages: [{ role: 'assistant', content: 'Sure, here you go.' }],
+      tools: [{ name: 'tool1' }],
+    };
+    capturedOnPayload!(payload);
+    expect(vi.mocked(log)).toHaveBeenCalledWith(
+      'pi-ai Request Payload',
+      'model=gpt-4 | messages=1 | tools=1 | last_user=',
+    );
+  });
+
+  it('counts tools as 0 when tools key is absent from payload', () => {
+    expect(capturedOnPayload).toBeDefined();
+    const payload = {
+      model: 'gpt-4',
+      messages: [{ role: 'user', content: 'No tools here' }],
+      // tools deliberately omitted
+    };
+    capturedOnPayload!(payload);
+    expect(vi.mocked(log)).toHaveBeenCalledWith(
+      'pi-ai Request Payload',
+      'model=gpt-4 | messages=1 | tools=0 | last_user=No tools here',
+    );
   });
 });
