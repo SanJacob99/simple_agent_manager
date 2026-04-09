@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { handleConnection } from './ws-handler';
 
+vi.mock('../logger');
+
 function makeMockSocket() {
   const handlers = new Map<string, (...args: any[]) => void>();
 
