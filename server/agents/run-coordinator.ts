@@ -7,6 +7,7 @@ import type { StorageEngine } from '../runtime/storage-engine';
 import type { AgentConfig } from '../../shared/agent-config';
 import type { SessionStoreEntry } from '../../shared/storage-types';
 import type { HookRegistry } from '../hooks/hook-registry';
+import { log } from '../logger';
 import { SessionRouter, type RouteRequest, type RouteResult } from '../runtime/session-router';
 import { SessionTranscriptStore } from '../runtime/session-transcript-store';
 import {
@@ -132,7 +133,7 @@ export class RunCoordinator {
     }
 
     const _t0 = Date.now();
-    const _lap = (label: string) => console.log(`[TIMING:SERVER] +${Date.now() - _t0}ms ${label}`);
+    const _lap = (label: string) => log('TIMING:SERVER', `+${Date.now() - _t0}ms ${label}`);
     _lap('dispatch_received');
 
     const routed = await this.resolveSession(params.sessionKey);
@@ -404,7 +405,7 @@ export class RunCoordinator {
     }
 
     const _t0 = Date.now();
-    const _lap = (label: string) => console.log(`[TIMING:SERVER] +${Date.now() - _t0}ms ${label} [runId=${record.runId.slice(0, 8)}]`);
+    const _lap = (label: string) => log('TIMING:SERVER', `+${Date.now() - _t0}ms ${label} [runId=${record.runId.slice(0, 8)}]`);
     _lap('execute_run_start');
 
     record.status = 'running';

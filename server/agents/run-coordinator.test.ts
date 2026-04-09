@@ -11,6 +11,8 @@ import type { AgentConfig } from '../../shared/agent-config';
 import { HookRegistry } from '../hooks/hook-registry';
 import { HOOK_NAMES, type BeforeAgentReplyContext } from '../hooks/hook-types';
 
+vi.mock('../logger');
+
 const RUN_DIAGNOSTIC_CUSTOM_TYPE = 'sam.run_diagnostic';
 
 function makeUsage() {
