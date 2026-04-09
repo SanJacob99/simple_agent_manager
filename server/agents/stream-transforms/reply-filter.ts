@@ -24,6 +24,7 @@ function extractAssistantText(message: { content?: unknown }): string {
 
 export class ReplyFilter implements StreamTransform {
   private pendingMessageStarted = false;
+  private pendingEvents: ServerEvent[] = [];
 
   process(event: CoordinatorEvent, context: RunStreamContext, emit: EmitFn): void {
     if (event.type !== 'stream') return;
@@ -34,9 +35,9 @@ export class ReplyFilter implements StreamTransform {
       const msg = raw.message as { role?: string };
       if (msg.role === 'assistant') {
         this.pendingMessageStarted = true;
-        // Emit immediately — if it turns out to be no_reply, the client will
-        // retract via message:suppressed (which it already handles).
-        emit({
+        this.pendingEvents = [];
+        // Buffer message:start — only emit if we confirm it's not NO_REPLY
+        this.pendingEvents.push({
           type: 'message:start',
           agentId: '',
           runId: context.runId,
@@ -53,8 +54,8 @@ export class ReplyFilter implements StreamTransform {
       if (aEvent.type === 'text_delta') {
         context.textBuffer += aEvent.delta;
         if (this.pendingMessageStarted) {
-          // Stream each delta immediately
-          emit({
+          // Buffer delta — only emit if we confirm it's not NO_REPLY
+          this.pendingEvents.push({
             type: 'message:delta',
             agentId: '',
             runId: context.runId,
@@ -70,12 +71,17 @@ export class ReplyFilter implements StreamTransform {
           context.noReplyDetected = true;
           context.messageSuppressed = true;
           this.pendingMessageStarted = false;
+          this.pendingEvents = [];
           emit({
             type: 'message:suppressed',
             agentId: '',
             runId: context.runId,
             reason: 'no_reply',
           } as any);
+        } else {
+          // Not NO_REPLY, flush pending events
+          this.pendingEvents.forEach(emit);
+          this.pendingEvents = [];
         }
         return;
       }
@@ -97,6 +103,7 @@ export class ReplyFilter implements StreamTransform {
               context.noReplyDetected = true;
               context.messageSuppressed = true;
               this.pendingMessageStarted = false;
+              this.pendingEvents = [];
               emit({
                 type: 'message:suppressed',
                 agentId: '',
@@ -105,12 +112,17 @@ export class ReplyFilter implements StreamTransform {
               } as any);
               return;
             }
+            // Not NO_REPLY, flush pending events and add the fallback delta
+            this.pendingEvents.forEach(emit);
             emit({
               type: 'message:delta',
               agentId: '',
               runId: context.runId,
               delta: fallbackText,
             } as any);
+          } else {
+            // No fallback text, just flush pending
+            this.pendingEvents.forEach(emit);
           }
 
           emit({
@@ -122,6 +134,7 @@ export class ReplyFilter implements StreamTransform {
         }
       }
       this.pendingMessageStarted = false;
+      this.pendingEvents = [];
       return;
     }
   }
