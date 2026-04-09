@@ -183,7 +183,7 @@ export const useAgentConnectionStore = create<AgentConnectionStore>((set, get) =
     return get().agents[agentId]?.status ?? 'disconnected';
   },
 
-  connectionStatus: 'disconnected' as const,
+  connectionStatus: agentClient.status,
   setConnectionStatus: (status: 'connecting' | 'connected' | 'disconnected') => set({ connectionStatus: status }),
 
   reset: () => {

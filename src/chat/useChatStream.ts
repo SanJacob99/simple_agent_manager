@@ -42,21 +42,11 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
   const sessionKeyRef = useRef<string>('');
   const pendingDeltaRef = useRef<string>('');
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const timingT0Ref = useRef<number>(0);
-  const firstDeltaLoggedRef = useRef(false);
-
-  // Lap timer — logs ms since the send() call
-  const lap = (label: string) => {
-    const ms = (performance.now() - timingT0Ref.current).toFixed(1);
-    console.log(`[TIMING:CLIENT] +${ms}ms ${label}`);
-  };
-
   const flushDelta = useCallback(() => {
     flushTimerRef.current = null;
     if (!pendingDeltaRef.current) return;
     assistantContentRef.current += pendingDeltaRef.current;
     pendingDeltaRef.current = '';
-    lap('flush_to_store');
     updateMessage(sessionKeyRef.current, assistantMsgIdRef.current, (m) => ({
       ...m,
       content: assistantContentRef.current,
@@ -84,10 +74,6 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
     (text: string, sessionKey: string, attachments?: any[]) => {
       cleanup();
 
-      timingT0Ref.current = performance.now();
-      firstDeltaLoggedRef.current = false;
-      lap('user_send');
-
       const msgId = `msg_${Date.now()}_a`;
       assistantMsgIdRef.current = msgId;
       assistantContentRef.current = '';
@@ -104,7 +90,6 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
 
         switch (event.type) {
           case 'message:start':
-            lap('message:start');
             assistantContentRef.current = '';
             setReasoning(null);
             setIsReasoning(false);
@@ -117,10 +102,6 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
             break;
 
           case 'message:delta':
-            if (!firstDeltaLoggedRef.current) {
-              lap('first_delta');
-              firstDeltaLoggedRef.current = true;
-            }
             pendingDeltaRef.current += event.delta;
             if (flushTimerRef.current === null) {
               flushTimerRef.current = setTimeout(flushDelta, 0);
@@ -128,7 +109,6 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
             break;
 
           case 'message:end':
-            lap('message:end');
             // Cancel pending timer and flush any remaining buffered text immediately
             if (flushTimerRef.current !== null) {
               clearTimeout(flushTimerRef.current);
@@ -138,7 +118,6 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
               assistantContentRef.current += pendingDeltaRef.current;
               pendingDeltaRef.current = '';
             }
-            lap('flush_to_store (end)');
             updateMessage(sessionKeyRef.current, assistantMsgIdRef.current, (m) => ({
               ...m,
               content: assistantContentRef.current,
@@ -241,9 +220,7 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
 
       unsubRef.current = unsub;
 
-      lap('ws_send');
       void sendPrompt(agentNodeId, sessionKey, text, attachments)
-        .then(() => lap('ws_sent'))
         .catch(() => undefined);
     },
     [agentNodeId, addMessage, updateMessage, deleteMessage, flushSession, sendPrompt, cleanup],
