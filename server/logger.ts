@@ -5,6 +5,7 @@ const logsDir = path.join(process.cwd(), 'logs');
 fs.mkdirSync(logsDir, { recursive: true });
 
 const stream = fs.createWriteStream(path.join(logsDir, 'debug.log'), { flags: 'w' });
+stream.on('error', () => { /* suppress: debug log failure must not crash the process */ });
 
 function formatLine(category: string, message: string): string {
   return `[${new Date().toISOString()}] [${category}] ${message}\n`;
