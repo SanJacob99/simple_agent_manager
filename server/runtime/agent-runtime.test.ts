@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentRuntime } from './agent-runtime';
 import type { AgentConfig } from '../../shared/agent-config';
 
+vi.mock('../logger');
+
 const promptMock = vi.fn();
 const subscribeMock = vi.fn(() => vi.fn());
 const abortMock = vi.fn();
