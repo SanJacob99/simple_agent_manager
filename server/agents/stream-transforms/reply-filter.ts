@@ -23,7 +23,6 @@ function extractAssistantText(message: { content?: unknown }): string {
 }
 
 export class ReplyFilter implements StreamTransform {
-  private bufferedEvents: ServerEvent[] = [];
   private pendingMessageStarted = false;
 
   process(event: CoordinatorEvent, context: RunStreamContext, emit: EmitFn): void {
@@ -35,8 +34,9 @@ export class ReplyFilter implements StreamTransform {
       const msg = raw.message as { role?: string };
       if (msg.role === 'assistant') {
         this.pendingMessageStarted = true;
-        this.bufferedEvents = [];
-        this.bufferedEvents.push({
+        // Emit immediately — if it turns out to be no_reply, the client will
+        // retract via message:suppressed (which it already handles).
+        emit({
           type: 'message:start',
           agentId: '',
           runId: context.runId,
@@ -53,7 +53,8 @@ export class ReplyFilter implements StreamTransform {
       if (aEvent.type === 'text_delta') {
         context.textBuffer += aEvent.delta;
         if (this.pendingMessageStarted) {
-          this.bufferedEvents.push({
+          // Stream each delta immediately
+          emit({
             type: 'message:delta',
             agentId: '',
             runId: context.runId,
@@ -68,7 +69,6 @@ export class ReplyFilter implements StreamTransform {
         if (NO_REPLY_PATTERN.test(content.trim())) {
           context.noReplyDetected = true;
           context.messageSuppressed = true;
-          this.bufferedEvents = [];
           this.pendingMessageStarted = false;
           emit({
             type: 'message:suppressed',
@@ -76,11 +76,6 @@ export class ReplyFilter implements StreamTransform {
             runId: context.runId,
             reason: 'no_reply',
           } as any);
-        } else {
-          for (const buffered of this.bufferedEvents) {
-            emit(buffered);
-          }
-          this.bufferedEvents = [];
         }
         return;
       }
@@ -92,39 +87,31 @@ export class ReplyFilter implements StreamTransform {
       if (this.pendingMessageStarted && !context.messageSuppressed) {
         const endMsg = raw.message as { role?: string; usage?: any; content?: unknown };
         if (endMsg.role === 'assistant') {
+          // Fallback: if no deltas streamed, send full text in one delta
           const fallbackText =
-            context.textBuffer.length === 0
-              ? extractAssistantText(endMsg)
-              : '';
+            context.textBuffer.length === 0 ? extractAssistantText(endMsg) : '';
 
           if (fallbackText) {
             context.textBuffer = fallbackText;
-            this.bufferedEvents.push({
+            if (NO_REPLY_PATTERN.test(fallbackText.trim())) {
+              context.noReplyDetected = true;
+              context.messageSuppressed = true;
+              this.pendingMessageStarted = false;
+              emit({
+                type: 'message:suppressed',
+                agentId: '',
+                runId: context.runId,
+                reason: 'no_reply',
+              } as any);
+              return;
+            }
+            emit({
               type: 'message:delta',
               agentId: '',
               runId: context.runId,
               delta: fallbackText,
             } as any);
           }
-
-          if (fallbackText && NO_REPLY_PATTERN.test(fallbackText.trim())) {
-            context.noReplyDetected = true;
-            context.messageSuppressed = true;
-            this.bufferedEvents = [];
-            this.pendingMessageStarted = false;
-            emit({
-              type: 'message:suppressed',
-              agentId: '',
-              runId: context.runId,
-              reason: 'no_reply',
-            } as any);
-            return;
-          }
-
-          for (const buffered of this.bufferedEvents) {
-            emit(buffered);
-          }
-          this.bufferedEvents = [];
 
           emit({
             type: 'message:end',

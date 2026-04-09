@@ -1,17 +1,16 @@
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
-import { X, Send, Bot, Loader2, Square, Trash2, Wrench, Plus, ChevronDown, Unplug, ImagePlus, Brain, RefreshCw } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { X, Bot, Loader2, Trash2, Plus, ChevronDown, Unplug } from 'lucide-react';
 import { useGraphStore } from '../store/graph-store';
 import { useAgentConnectionStore } from '../store/agent-connection-store';
 import { useUILayoutStore } from '../store/ui-layout-store';
 import { resolveAgentConfig } from '../utils/graph-to-agent';
 import type { ImageAttachment } from '../../shared/protocol';
 import { useSessionStore, type Message } from '../store/session-store';
+import ChatInput from './ChatInput';
+import ChatMessages from './ChatMessages';
 import { StorageClient } from '../runtime/storage-client';
 import { estimateTokens } from '../../shared/token-estimator';
 import { useContextWindow, usePeripheralReservations } from './useContextWindow';
-import ContextUsagePanel from './ContextUsagePanel';
 import { useChatStream } from './useChatStream';
 import { useRightAnchoredResize } from '../panels/useRightAnchoredResize';
 import PanelResizeHandle from '../panels/PanelResizeHandle';
@@ -21,10 +20,6 @@ interface ChatDrawerProps {
   onClose: () => void;
 }
 
-function formatTokenBadge(count: number): string {
-  if (count >= 1000) return `${(count / 1000).toFixed(1)}K`;
-  return count.toString();
-}
 
 function formatSessionDate(timestamp: number): string {
   const date = new Date(timestamp);
@@ -62,7 +57,10 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
   const storedWidth = useUILayoutStore((s) => s.chatDrawerWidth);
   const setChatDrawerWidth = useUILayoutStore((s) => s.setChatDrawerWidth);
 
-  const config = resolveAgentConfig(agentNodeId, nodes, edges);
+  const config = useMemo(
+    () => resolveAgentConfig(agentNodeId, nodes, edges),
+    [agentNodeId, nodes, edges],
+  );
   const { width, onResizeStart } = useRightAnchoredResize({
     width: storedWidth,
     minWidth: 360,
@@ -70,14 +68,15 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
     onWidthChange: setChatDrawerWidth,
   });
 
-  // Session store
+  // Session store — subscribe only to metadata, never to message content.
+  // Message content subscriptions live in ChatMessages so streaming deltas
+  // don't re-render this component.
   const sessions = useSessionStore((s) => s.sessions);
   const activeSessionKeyMap = useSessionStore((s) => s.activeSessionKey);
   const createSession = useSessionStore((s) => s.createSession);
   const deleteSession = useSessionStore((s) => s.deleteSession);
   const setActiveSession = useSessionStore((s) => s.setActiveSession);
   const addMessage = useSessionStore((s) => s.addMessage);
-
   const clearSessionMessages = useSessionStore((s) => s.clearSessionMessages);
   const getSessionsForAgent = useSessionStore((s) => s.getSessionsForAgent);
   const enforceSessionLimit = useSessionStore((s) => s.enforceSessionLimit);
@@ -122,7 +121,6 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
   // Active session key
   const activeSessionKey = activeSessionKeyMap[agentNodeId] ?? null;
   const activeSession = activeSessionKey ? sessions[activeSessionKey] : null;
-  const messages = activeSession?.messages ?? [];
 
   const creatingSessionRef = useRef(false);
 
@@ -161,42 +159,8 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
 
   const chatStream = useChatStream(agentNodeId);
 
-  const [input, setInput] = useState('');
-  const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
-  const [attachmentPreviews, setAttachmentPreviews] = useState<string[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-
   const isStreaming = chatStream.isStreaming;
   const supportsVision = config?.modelCapabilities?.inputModalities?.includes('image') ?? false;
-
-  const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const isUserScrolledUpRef = useRef(false);
-  const prevMessageCountRef = useRef(0);
-
-  const handleMessagesScroll = useCallback(() => {
-    const container = messagesContainerRef.current;
-    if (!container) return;
-    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-    isUserScrolledUpRef.current = distanceFromBottom > 80;
-  }, []);
-
-  useEffect(() => {
-    const isNewMessage = messages.length > prevMessageCountRef.current;
-    prevMessageCountRef.current = messages.length;
-
-    // Don't fight user scroll during streaming — only auto-scroll if pinned to bottom
-    // or a new message just arrived (forces back to bottom on send/receive)
-    if (isUserScrolledUpRef.current && !isNewMessage) return;
-
-    if (isNewMessage) isUserScrolledUpRef.current = false;
-
-    // Instant during streaming to avoid repeated smooth-scroll bounce;
-    // smooth only when a discrete new message lands
-    messagesEndRef.current?.scrollIntoView({
-      behavior: isNewMessage && !isStreaming ? 'smooth' : 'instant',
-    });
-  }, [messages, isStreaming]);
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -259,53 +223,25 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
     destroyAgent(agentNodeId);
   };
 
-  const sendMessage = useCallback(async () => {
-    if ((!input.trim() && attachments.length === 0) || isStreaming || !config || !activeSessionKey) return;
+  const handleSend = useCallback((text: string, attachments: ImageAttachment[]) => {
+    if (!config || !activeSessionKey) return;
 
-    const trimmedInput = input.trim();
-    const currentAttachments = attachments;
     const userMessage: Message = {
       id: `msg_${Date.now()}`,
       role: 'user',
-      content: trimmedInput || `[${currentAttachments.length} image${currentAttachments.length > 1 ? 's' : ''}]`,
+      content: text || `[${attachments.length} image${attachments.length > 1 ? 's' : ''}]`,
       timestamp: Date.now(),
-      tokenCount: estimateTokens(trimmedInput),
+      tokenCount: estimateTokens(text),
     };
 
     addMessage(activeSessionKey, userMessage);
-    setInput('');
-    setAttachments([]);
-    setAttachmentPreviews([]);
-
-    // Ensure agent is started with current config
     startAgent(agentNodeId, config);
+    chatStream.sendMessage(text, activeSessionKey, attachments.length ? attachments : undefined);
+  }, [config, agentNodeId, activeSessionKey, addMessage, startAgent, chatStream]);
 
-    // Delegate streaming event handling to useChatStream
-    chatStream.sendMessage(trimmedInput, activeSessionKey, currentAttachments.length ? currentAttachments : undefined);
-  }, [input, attachments, isStreaming, config, agentNodeId, activeSessionKey, startAgent, chatStream]);
-
-  const handleStop = () => {
+  const handleStop = useCallback(() => {
     abortAgent(agentNodeId);
-  };
-
-  const handleImageSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    if (!files.length) return;
-    files.forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const dataUrl = ev.target?.result as string;
-        // dataUrl format: "data:<mimeType>;base64,<data>"
-        const [header, data] = dataUrl.split(',');
-        const mimeType = header.split(':')[1].split(';')[0];
-        setAttachments((prev) => [...prev, { data, mimeType }]);
-        setAttachmentPreviews((prev) => [...prev, dataUrl]);
-      };
-      reader.readAsDataURL(file);
-    });
-    // Reset file input so the same file can be re-selected
-    e.target.value = '';
-  }, []);
+  }, [abortAgent, agentNodeId]);
 
   const handleClose = () => {
     destroyAgent(agentNodeId);
@@ -376,7 +312,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
           {isStreaming && (
             <Loader2 size={14} className="animate-spin text-blue-400" />
           )}
-          {messages.length > 0 && (
+          {(activeSession?.messages.length ?? 0) > 0 && (
             <button
               onClick={() => activeSessionKey && clearSessionMessages(activeSessionKey)}
               className="rounded p-1 text-slate-500 transition hover:bg-slate-800 hover:text-red-400"
@@ -501,212 +437,26 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
         </div>
       )}
 
-      {/* Messages */}
-      <div
-        ref={messagesContainerRef}
-        onScroll={handleMessagesScroll}
-        className={`flex-1 overflow-y-auto p-4 space-y-3 ${isBlocked ? 'pointer-events-none select-none blur-[2px]' : ''}`}
-      >
-        {messages.length === 0 && (
-          <div className="flex h-full items-center justify-center">
-            <p className="text-xs text-slate-600">
-              Send a message to start the conversation
-            </p>
-          </div>
-        )}
-        {messages.map((msg) => (
-          <div
-            key={msg.id}
-            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
-            <div className="max-w-[85%]">
-              <div
-                className={`rounded-lg px-3 py-2 text-xs leading-relaxed ${msg.role === 'user'
-                  ? 'bg-blue-600 text-white'
-                  : msg.role === 'tool'
-                    ? 'border border-slate-700 bg-slate-800/50 text-slate-400 italic'
-                    : msg.kind === 'diagnostic'
-                      ? 'border border-amber-500/30 bg-amber-500/10 text-amber-50'
-                      : 'bg-slate-800 text-slate-200'
-                  }`}
-              >
-                {msg.role === 'assistant' ? (
-                  <div className={`prose-sm max-w-none break-words ${msg.kind === 'diagnostic' ? 'text-amber-50' : 'text-slate-200'}`}>
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      components={{
-                        p: (props: any) => { const { node, ...rest } = props; return <p className="mb-2 last:mb-0 leading-relaxed" {...rest} /> },
-                        a: (props: any) => { const { node, ...rest } = props; return <a className="text-blue-400 hover:text-blue-300 underline underline-offset-2" target="_blank" rel="noopener noreferrer" {...rest} /> },
-                        ul: (props: any) => { const { node, ...rest } = props; return <ul className="list-disc pl-4 mb-2 space-y-1" {...rest} /> },
-                        ol: (props: any) => { const { node, ...rest } = props; return <ol className="list-decimal pl-4 mb-2 space-y-1" {...rest} /> },
-                        li: (props: any) => { const { node, ...rest } = props; return <li className="marker:text-slate-500" {...rest} /> },
-                        h1: (props: any) => { const { node, ...rest } = props; return <h1 className="text-lg font-bold mt-4 mb-2 text-slate-100" {...rest} /> },
-                        h2: (props: any) => { const { node, ...rest } = props; return <h2 className="text-base font-bold mt-4 mb-2 text-slate-100 border-b border-slate-700/50 pb-1" {...rest} /> },
-                        h3: (props: any) => { const { node, ...rest } = props; return <h3 className="text-sm font-bold mt-3 mb-1 text-slate-200" {...rest} /> },
-                        table: (props: any) => { const { node, ...rest } = props; return <div className="overflow-x-auto my-3"><table className="w-full text-left border-collapse" {...rest} /></div> },
-                        th: (props: any) => { const { node, ...rest } = props; return <th className="border border-slate-700 bg-slate-900/50 px-3 py-2 font-semibold text-slate-100" {...rest} /> },
-                        td: (props: any) => { const { node, ...rest } = props; return <td className="border border-slate-700 px-3 py-2 text-slate-300" {...rest} /> },
-                        blockquote: (props: any) => { const { node, ...rest } = props; return <blockquote className="border-l-4 border-blue-500/50 bg-slate-900/30 pl-3 py-1 pr-2 my-2 italic text-slate-400 rounded-r" {...rest} /> },
-                        code(props: any) {
-                          const { children, className, node, ...rest } = props;
-                          const match = /language-(\w+)/.exec(className || '');
-                          return match ? (
-                            <div className="rounded-md bg-[#0d1117] border border-slate-700/60 my-3 overflow-hidden shadow-sm">
-                              <div className="bg-slate-800/80 px-3 py-1.5 text-[10px] text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-700/60">
-                                {match[1]}
-                              </div>
-                              <pre className="p-3 overflow-x-auto text-[11px] font-mono text-slate-300 leading-normal">
-                                <code className={className} {...rest}>
-                                  {children}
-                                </code>
-                              </pre>
-                            </div>
-                          ) : (
-                            <code className="bg-slate-900/60 px-1.5 py-0.5 rounded border border-slate-700/50 text-slate-300 font-mono text-[11px]" {...rest}>
-                              {children}
-                            </code>
-                          );
-                        }
-                      }}
-                    >
-                      {msg.content}
-                    </ReactMarkdown>
-                  </div>
-                ) : (
-                  <pre className="whitespace-pre-wrap font-sans break-words">{msg.content}</pre>
-                )}
-                {msg.role === 'assistant' && !msg.content && isStreaming && (
-                  <span className="inline-block h-3 w-1 animate-pulse bg-slate-400" />
-                )}
-              </div>
-              {/* Token badge */}
-              {msg.tokenCount != null && msg.tokenCount > 0 && (
-                <div className={`flex items-center gap-1 mt-0.5 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  {msg.role === 'tool' && <Wrench size={8} className="text-slate-600" />}
-                  <span className="text-[8px] tabular-nums text-slate-600 font-mono">
-                    {formatTokenBadge(msg.tokenCount)} tokens
-                  </span>
-                  {msg.usage && (
-                    <span className="text-[8px] text-slate-600 font-mono">
-                      (in:{formatTokenBadge(msg.usage.input)} out:{formatTokenBadge(msg.usage.output)})
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        ))}
-        {/* Reasoning indicator */}
-        {chatStream.isReasoning && (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-purple-500/10 border border-purple-500/20">
-            <Brain size={12} className="text-purple-400 animate-pulse" />
-            <span className="text-[10px] text-purple-300">Thinking...</span>
-          </div>
-        )}
-        {/* Compaction indicator */}
-        {chatStream.compacting && (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-amber-500/10 border border-amber-500/20">
-            <RefreshCw size={12} className="text-amber-400 animate-spin" />
-            <span className="text-[10px] text-amber-300">Compacting context...</span>
-          </div>
-        )}
-        {/* Suppressed reply notice */}
-        {chatStream.suppressedReply && !isStreaming && (
-          <div className="flex justify-start">
-            <div className="rounded-lg px-3 py-2 text-[10px] text-slate-500 italic bg-slate-800/30 border border-slate-700/50">
-              Agent chose not to reply
-            </div>
-          </div>
-        )}
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* Context Usage Panel — above input */}
-      <div className={isBlocked ? 'pointer-events-none select-none blur-[2px]' : ''}>
-        <ContextUsagePanel
-          messages={messages}
-          contextInfo={contextInfo}
-          peripheralReservations={peripheralReservations}
-        />
-      </div>
+      <ChatMessages
+        activeSessionKey={activeSessionKey}
+        isBlocked={isBlocked}
+        isStreaming={isStreaming}
+        isReasoning={chatStream.isReasoning}
+        compacting={chatStream.compacting}
+        suppressedReply={chatStream.suppressedReply}
+        streamingMsgId={chatStream.streamingMsgId}
+        contextInfo={contextInfo}
+        peripheralReservations={peripheralReservations}
+      />
 
       {/* Input */}
-      <div className={`border-t border-slate-800 p-3 ${isBlocked ? 'pointer-events-none select-none blur-[2px]' : ''}`}>
-        {/* Image attachment thumbnails */}
-        {attachmentPreviews.length > 0 && (
-          <div className="flex flex-wrap gap-2 mb-2">
-            {attachmentPreviews.map((preview, i) => (
-              <div key={i} className="relative group">
-                <img
-                  src={preview}
-                  alt={`attachment ${i + 1}`}
-                  className="h-14 w-14 rounded object-cover border border-slate-700"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAttachments((prev) => prev.filter((_, idx) => idx !== i));
-                    setAttachmentPreviews((prev) => prev.filter((_, idx) => idx !== i));
-                  }}
-                  className="absolute -top-1 -right-1 hidden group-hover:flex items-center justify-center w-4 h-4 rounded-full bg-slate-900 border border-slate-600 text-slate-300 hover:text-white text-[10px]"
-                  title="Remove image"
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-        <div className="flex gap-2">
-          {supportsVision && (
-            <>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                multiple
-                className="hidden"
-                onChange={handleImageSelect}
-              />
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isStreaming || isBlocked}
-                className="rounded-lg border border-slate-700 bg-slate-800 p-2 text-slate-400 transition hover:text-slate-200 hover:border-slate-600 disabled:opacity-50"
-                title="Attach images"
-              >
-                <ImagePlus size={14} />
-              </button>
-            </>
-          )}
-          <input
-            className="flex-1 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:border-blue-500 focus:outline-none"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-            placeholder="Type a message..."
-            disabled={isStreaming || isBlocked}
-          />
-          {isStreaming ? (
-            <button
-              onClick={handleStop}
-              className="rounded-lg bg-red-600 p-2 text-white transition hover:bg-red-500"
-              title="Stop Agent"
-            >
-              <Square fill="currentColor" size={14} />
-            </button>
-          ) : (
-            <button
-              onClick={sendMessage}
-              disabled={(!input.trim() && attachments.length === 0) || isBlocked}
-              className="rounded-lg bg-blue-600 p-2 text-white transition hover:bg-blue-500 disabled:opacity-50"
-              title="Send Message"
-            >
-              <Send size={14} />
-            </button>
-          )}
-        </div>
-      </div>
+      <ChatInput
+        isStreaming={isStreaming}
+        isBlocked={isBlocked}
+        supportsVision={supportsVision}
+        onSend={handleSend}
+        onStop={handleStop}
+      />
     </div>
   );
 }

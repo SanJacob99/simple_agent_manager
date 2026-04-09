@@ -365,7 +365,9 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             messages: session.messages.map((message) =>
               message.id === messageId ? updater(message) : message,
             ),
-            lastMessageAt: Date.now(),
+            // Intentionally not updating lastMessageAt here — this fires on every
+            // streaming delta and would cause all session-subscribed components to
+            // re-render. lastMessageAt is updated by addMessage when a message lands.
           },
         },
       };

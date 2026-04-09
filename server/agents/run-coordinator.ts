@@ -131,7 +131,12 @@ export class RunCoordinator {
       throw new Error('Cannot dispatch: no storage configured for this agent');
     }
 
+    const _t0 = Date.now();
+    const _lap = (label: string) => console.log(`[TIMING:SERVER] +${Date.now() - _t0}ms ${label}`);
+    _lap('dispatch_received');
+
     const routed = await this.resolveSession(params.sessionKey);
+    _lap('session_resolved');
     const runId = randomUUID();
     const acceptedAt = Date.now();
 
@@ -161,6 +166,7 @@ export class RunCoordinator {
         blockReason: undefined,
       };
       await this.hooks.invoke(HOOK_NAMES.MESSAGE_RECEIVED, msgCtx);
+      _lap('after_hook:message_received');
 
       if (msgCtx.blocked) {
         this.pendingParams.delete(runId);
@@ -397,6 +403,10 @@ export class RunCoordinator {
       throw new Error('Cannot execute run without transcript storage');
     }
 
+    const _t0 = Date.now();
+    const _lap = (label: string) => console.log(`[TIMING:SERVER] +${Date.now() - _t0}ms ${label} [runId=${record.runId.slice(0, 8)}]`);
+    _lap('execute_run_start');
+
     record.status = 'running';
     record.startedAt = Date.now();
 
@@ -464,6 +474,7 @@ export class RunCoordinator {
       }
 
       await this.persistUserMessage(record, params, transcriptManager);
+      _lap('after_persist_user_message');
 
       if (this.hooks) {
         const modelCtx: BeforeModelResolveContext = {
@@ -475,6 +486,7 @@ export class RunCoordinator {
         };
 
         await this.hooks.invoke(HOOK_NAMES.BEFORE_MODEL_RESOLVE, modelCtx);
+        _lap('after_hook:before_model_resolve');
 
         if (modelCtx.overrides.provider || modelCtx.overrides.modelId) {
           const provider = modelCtx.overrides.provider ?? this.config.provider;
@@ -494,6 +506,7 @@ export class RunCoordinator {
         };
 
         await this.hooks.invoke(HOOK_NAMES.BEFORE_PROMPT_BUILD, promptCtx);
+        _lap('after_hook:before_prompt_build');
 
         if (promptCtx.overrides.systemPrompt) {
           this.runtime.setSystemPrompt(promptCtx.overrides.systemPrompt);
@@ -527,6 +540,7 @@ export class RunCoordinator {
         };
 
         await this.hooks.invoke(HOOK_NAMES.BEFORE_AGENT_REPLY, replyCtx);
+        _lap('after_hook:before_agent_reply');
 
         if (replyCtx.claimed) {
           if (replyCtx.silent) {
@@ -608,13 +622,20 @@ export class RunCoordinator {
       });
     }, timeoutMs);
 
+    let _firstApiDeltaLogged = false;
     const unsubscribe = this.runtime.subscribe((event: RuntimeEvent) => {
+      if (!_firstApiDeltaLogged && 'type' in event) {
+        if (event.type === 'message_start') _lap('api:message_start');
+        else if (event.type === 'text_delta') { _lap('api:first_delta'); _firstApiDeltaLogged = true; }
+      }
       queueTranscriptWrite(() => this.persistRuntimeEvent(record, transcriptManager, event, transcriptState));
       this.emitForRun(record.runId, { type: 'stream', runId: record.runId, event });
     });
 
     try {
+      _lap('api_call_start');
       await this.runtime.prompt(promptText, params.attachments);
+      _lap('api_call_complete');
       if (record.status !== 'running') {
         return;
       }
@@ -649,7 +670,11 @@ export class RunCoordinator {
     }
 
     transcriptManager.appendMessage(message);
-    await this.touchSession(record.sessionKey, message.timestamp);
+    // Fire-and-forget: touchSession is a metadata timestamp update (read+write
+    // of session JSON). It does not need to complete before the API call starts.
+    this.touchSession(record.sessionKey, message.timestamp).catch((err) => {
+      console.error('[RunCoordinator] touchSession failed:', err);
+    });
   }
 
   private async persistRuntimeEvent(
