@@ -62,8 +62,9 @@ function createSessionsListTool(ctx: SessionToolContext): AgentTool<TSchema> {
         }
 
         if (params.recency != null) {
-          const cutoff = Date.now() - (params.recency as number) * 60 * 1000;
-          sessions = sessions.filter((s) => new Date(s.updatedAt).getTime() >= cutoff);
+          // ⚡ Bolt Optimization: Compare ISO timestamp strings lexically instead of parsing multiple Date objects.
+          const cutoffStr = new Date(Date.now() - (params.recency as number) * 60 * 1000).toISOString();
+          sessions = sessions.filter((s) => s.updatedAt >= cutoffStr);
         }
 
         const summary = sessions.map((s) => ({

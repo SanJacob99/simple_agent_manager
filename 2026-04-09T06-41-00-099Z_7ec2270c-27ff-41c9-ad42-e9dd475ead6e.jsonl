@@ -1,0 +1,3 @@
+{"type":"session","version":3,"id":"edfe9032-213a-4ce4-95df-b15edd97d3c1","timestamp":"2026-04-09T06:41:00.101Z","cwd":"/app"}
+{"type":"message","id":"9a5dec06","parentId":null,"timestamp":"2026-04-09T06:41:00.101Z","message":{"role":"user","content":"First","timestamp":1775716860101}}
+{"type":"message","id":"4318c52f","parentId":"9a5dec06","timestamp":"2026-04-09T06:41:00.103Z","message":{"role":"user","content":"Second","timestamp":1775716860103}}

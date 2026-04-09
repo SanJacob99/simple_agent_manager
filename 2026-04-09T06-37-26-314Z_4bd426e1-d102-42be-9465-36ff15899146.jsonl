@@ -1,0 +1,3 @@
+{"type":"session","version":3,"id":"28533dcb-c36a-4365-bc5a-16e6ce01dbe3","timestamp":"2026-04-09T06:37:26.316Z","cwd":"/app"}
+{"type":"custom","customType":"sam.run_diagnostic","data":{"kind":"run_error","runId":"1319d8c7-903d-4758-af1a-ba04366a33c9","sessionId":"4bd426e1-d102-42be-9465-36ff15899146","code":"aborted","message":"Run aborted by caller","phase":"pending","retriable":false,"createdAt":1775716646316},"id":"945034c0","parentId":null,"timestamp":"2026-04-09T06:37:26.316Z"}
+":"this.storageEngine.updateSession is not a function","phase":"running","retriable":false,"createdAt":1775716646315},"id":"2986040a","parentId":"bb57a5ab","timestamp":"2026-04-09T06:37:26.315Z"}

@@ -1,0 +1,3 @@
+{"type":"session","version":3,"id":"578386f8-eca0-44aa-af35-f192f9ae57d2","timestamp":"2026-04-09T06:37:26.277Z","cwd":"/app"}
+{"type":"message","id":"974c4618","parentId":null,"timestamp":"2026-04-09T06:37:26.277Z","message":{"role":"user","content":"Hello","timestamp":1775716646277}}
+{"type":"custom","customType":"sam.run_diagnostic","data":{"kind":"run_error","runId":"20a11caa-5341-4a32-92ea-ad444238b571","sessionId":"35fdb394-d854-49d8-a346-381291840f1b","code":"internal","message":"this.storageEngine.updateSession is not a function","phase":"running","retriable":false,"createdAt":1775716646277},"id":"a42be39a","parentId":"974c4618","timestamp":"2026-04-09T06:37:26.277Z"}
