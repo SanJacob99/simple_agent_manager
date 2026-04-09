@@ -1,3 +1,0 @@
-{"type":"session","version":3,"id":"edb60588-c105-40ad-8a59-3ea7eefa7ea7","timestamp":"2026-04-09T06:38:42.751Z","cwd":"/app"}
-{"type":"message","id":"5f7bac36","parentId":null,"timestamp":"2026-04-09T06:38:42.751Z","message":{"role":"user","content":"First","timestamp":1775716722751}}
-4-3b5fb9d4a77d","code":"aborted","message":"Run aborted by caller","phase":"pending","retriable":false,"createdAt":1775716722752},"id":"612b4c99","parentId":null,"timestamp":"2026-04-09T06:38:42.752Z"}
