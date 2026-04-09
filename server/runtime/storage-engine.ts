@@ -15,6 +15,15 @@ export class StorageEngine {
   private readonly memoryEnabled: boolean;
   private storeCache: Record<string, SessionStoreEntry> | null = null;
 
+  private _safeJoin(base: string, target: string): string {
+    const resolvedBase = path.resolve(base);
+    const resolvedTarget = path.resolve(resolvedBase, target);
+    if (!resolvedTarget.startsWith(resolvedBase + path.sep) && resolvedTarget !== resolvedBase) {
+      throw new Error('Path traversal detected');
+    }
+    return resolvedTarget;
+  }
+
   constructor(
     private readonly config: ResolvedStorageConfig,
     private readonly agentName: string,
@@ -22,7 +31,7 @@ export class StorageEngine {
     const resolvedPath = config.storagePath.startsWith('~')
       ? config.storagePath.replace('~', os.homedir())
       : config.storagePath;
-    this.agentDir = path.join(resolvedPath, agentName);
+    this.agentDir = this._safeJoin(resolvedPath, agentName);
     this.sessionsDir = path.join(this.agentDir, 'sessions');
     this.memoryDir = path.join(this.agentDir, 'memory');
     this.memoryEnabled = config.memoryEnabled;
@@ -134,14 +143,14 @@ export class StorageEngine {
 
   resolveTranscriptPath(entry: Pick<SessionStoreEntry, 'sessionId' | 'sessionFile'>): string {
     if (!entry.sessionFile) {
-      return path.join(this.sessionsDir, `${entry.sessionId}.jsonl`);
+      return this._safeJoin(this.sessionsDir, `${entry.sessionId}.jsonl`);
     }
 
     if (path.isAbsolute(entry.sessionFile)) {
       return entry.sessionFile;
     }
 
-    return path.join(this.agentDir, entry.sessionFile);
+    return this._safeJoin(this.agentDir, entry.sessionFile);
   }
 
   async enforceRetention(maxSessions: number): Promise<void> {
@@ -369,12 +378,12 @@ export class StorageEngine {
 
   async appendDailyMemory(content: string, date?: string): Promise<void> {
     const dateStr = date ?? new Date().toISOString().slice(0, 10);
-    const filePath = path.join(this.memoryDir, `${dateStr}.md`);
+    const filePath = this._safeJoin(this.memoryDir, `${dateStr}.md`);
     await fs.appendFile(filePath, content, 'utf-8');
   }
 
   async readDailyMemory(date: string): Promise<string | null> {
-    const filePath = path.join(this.memoryDir, `${date}.md`);
+    const filePath = this._safeJoin(this.memoryDir, `${date}.md`);
     try {
       return await fs.readFile(filePath, 'utf-8');
     } catch {
