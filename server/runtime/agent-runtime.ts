@@ -146,7 +146,7 @@ export class AgentRuntime {
     });
 
     this.agent.state.model = model;
-    console.log(`[AgentRuntime] Model swapped to ${provider}/${modelId}`);
+    log('AgentRuntime', `Model swapped to ${provider}/${modelId}`);
   }
 
   /**
