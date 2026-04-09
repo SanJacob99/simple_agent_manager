@@ -22,8 +22,7 @@ vi.mock('../runtime/agent-runtime', () => {
       this.state.messages = [...messages];
     });
     addTools = vi.fn();
-    state = { messages: [], model: { api: 'openai-completions' } };
-    state = { messages: [] };
+    state = { messages: [], model: { api: 'openai-completions' } as any };
   }
   return { AgentRuntime: MockAgentRuntime };
 });
@@ -36,8 +35,20 @@ vi.mock('../runtime/storage-engine', () => {
     getSessionByKey = vi.fn(async (key: string) => {
       return this.sessions.find((s: any) => s.sessionKey === key) ?? null;
     });
+    getSession = vi.fn(async (key: string) => {
+      return this.sessions.find((s: any) => s.sessionKey === key) ?? null;
+    });
+    getSessionById = vi.fn(async (id: string) => {
+      return this.sessions.find((s: any) => s.sessionId === id) ?? null;
+    });
     getSessionMeta = vi.fn(async (id: string) => {
       return this.sessions.find((s: any) => s.sessionId === id) ?? null;
+    });
+    updateSession = vi.fn(async (sessionKey: string, partial: any) => {
+      const session = this.sessions.find((s: any) => s.sessionKey === sessionKey);
+      if (session) {
+        Object.assign(session, partial);
+      }
     });
     createSession = vi.fn(async (meta: any) => {
       this.sessions.push(meta);
@@ -57,8 +68,11 @@ vi.mock('../runtime/storage-engine', () => {
     enforceRetention = vi.fn();
     listSessions = vi.fn(async () => this.sessions);
     appendEntry = vi.fn();
+    getSessionsDir = vi.fn(() => os.tmpdir());
+    getAgentDir = vi.fn(() => os.tmpdir());
+    resolveTranscriptPath = vi.fn((session: any) => session.sessionFile ?? 'mock.jsonl');
   }
-  return { AgentRuntime: MockAgentRuntime };
+  return { StorageEngine: MockStorageEngine };
 });
 
 function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
