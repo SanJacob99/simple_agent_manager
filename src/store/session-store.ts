@@ -343,7 +343,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       activeSessionKey: { ...state.activeSessionKey, [nodeId]: sessionKey },
     }));
 
-    if (get().sessions[sessionKey]) {
+    const session = get().sessions[sessionKey];
+    if (session && session.messages.length === 0) {
       void get().flushSession(sessionKey).catch(console.error);
     }
   },

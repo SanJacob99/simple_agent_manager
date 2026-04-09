@@ -3,7 +3,7 @@
 > The central hub node that represents an AI agent — defines which LLM to use, the system prompt, and orchestrates all connected peripheral nodes.
 
 <!-- source: src/types/nodes.ts#AgentNodeData -->
-<!-- last-verified: 2026-04-08 -->
+<!-- last-verified: 2026-04-09 -->
 
 ## Overview
 
@@ -56,7 +56,7 @@ When the chat drawer opens for an agent, the following happens:
 
 2. **System prompt augmentation**: `resolveAgentConfig` calls `buildSystemPrompt()` to assemble a structured prompt with named sections (safety, tooling, skills, workspace, time, runtime). Behavior depends on `systemPromptMode`: in `auto` mode the prompt is fully app-managed and the user's system prompt field is read-only; in `append` mode the app-built prompt is used and the user's instructions are appended at the end; in `manual` mode only the user's text is used with no app injection.
 
-3. **Runtime creation** (`src/runtime/agent-runtime.ts`): `AgentRuntime` takes the config + an API key resolver and creates:
+3. **Runtime creation** (`server/runtime/agent-runtime.ts`): `AgentRuntime` takes the config + an API key resolver and creates:
    - A `MemoryEngine` (if memory node connected)
    - A `ContextEngine` (if context engine node connected)
    - Tool instances via `resolveToolNames()` + `createAgentTools()`
@@ -66,7 +66,7 @@ When the chat drawer opens for an agent, the following happens:
 
 5. **Catalog-assisted selection**: On the frontend, OpenRouter discovery is loaded from a backend-owned persisted cache file and only refreshed on demand. This improves picker search and model metadata display, but it is not required for runtime execution because manual model IDs and snapshotted capabilities remain first-class.
 
-6. **Event streaming**: The runtime forwards `pi-agent-core` agent events to listeners. The ChatDrawer subscribes to these for streaming text, tool calls, and status updates.
+6. **Event streaming**: The runtime forwards `pi-agent-core` agent events to listeners. The ChatDrawer subscribes to these for streaming text, tool calls, and status updates. Runtime-level fetch logging must stay non-blocking for streamed provider responses so `message:start` and `message:delta` events continue reaching the drawer incrementally instead of being buffered until the response ends.
 
 ## Connections
 

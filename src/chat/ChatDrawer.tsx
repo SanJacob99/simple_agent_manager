@@ -15,6 +15,7 @@ import { useChatStream } from './useChatStream';
 import { useRightAnchoredResize } from '../panels/useRightAnchoredResize';
 import PanelResizeHandle from '../panels/PanelResizeHandle';
 import { getChatConnectionIssue } from './chat-connection-state';
+import { shouldShowTranscriptLoading } from './transcript-loading';
 
 interface ChatDrawerProps {
   agentNodeId: string;
@@ -286,11 +287,13 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
   }, [config, connectionStatus, hasConnectedOnce]);
 
   const isBlocked = missingPeripherals.length > 0;
-  const isTranscriptLoading = !isBlocked && (
-    !storageReady
-    || activeTranscriptStatus === 'loading'
-    || (storageReady && (activeSessionKey === null))
-  );
+  const isTranscriptLoading = shouldShowTranscriptLoading({
+    isBlocked,
+    storageReady,
+    activeTranscriptStatus,
+    activeSessionKey,
+    messageCount: activeSession?.messages.length ?? 0,
+  });
 
   if (!config) return null;
 

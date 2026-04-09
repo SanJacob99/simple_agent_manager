@@ -1,9 +1,14 @@
-import { memo, useRef, useEffect, useCallback, useMemo, useLayoutEffect } from 'react';
+import { memo, useRef, useEffect, useCallback, useMemo, useLayoutEffect, useState } from 'react';
 import { Brain, RefreshCw, MessageSquareMore } from 'lucide-react';
 import { useSessionStore, type Message } from '../store/session-store';
 import type { ContextWindowInfo, PeripheralReservation } from './useContextWindow';
 import ContextUsagePanel from './ContextUsagePanel';
 import MessageBubble from './MessageBubble';
+import {
+  getAssistantMessageIds,
+  getInitialRichMarkdownMessageIds,
+  MARKDOWN_BATCH_SIZE,
+} from './markdown-rendering';
 
 // Stable empty array — never recreated, so the Zustand selector always returns
 // the same reference when there are no messages (avoids infinite snapshot loop).
@@ -46,6 +51,8 @@ function ChatMessages({
   const tokenKey = messages.map((m) => `${m.id}:${m.tokenCount ?? 0}`).join(',');
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const messagesForContext = useMemo(() => messages, [tokenKey]);
+  const assistantMessageIds = useMemo(() => getAssistantMessageIds(messages), [messages]);
+  const assistantIdKey = assistantMessageIds.join(',');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -54,6 +61,7 @@ function ChatMessages({
   const prevSessionKeyRef = useRef<string | null>(null);
   const prevTranscriptLoadingRef = useRef(isTranscriptLoading);
   const pinToBottomRef = useRef(false);
+  const [richMarkdownIds, setRichMarkdownIds] = useState<Set<string>>(() => new Set());
 
   const handleScroll = useCallback(() => {
     const el = containerRef.current;
@@ -96,6 +104,52 @@ function ChatMessages({
     });
   }, [messages, isStreaming, isTranscriptLoading]);
 
+  useEffect(() => {
+    if (isTranscriptLoading) return;
+
+    const initialIds = getInitialRichMarkdownMessageIds(messages);
+    setRichMarkdownIds(new Set(initialIds));
+
+    if (assistantMessageIds.length <= initialIds.length) {
+      return;
+    }
+
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let renderedCount = initialIds.length;
+
+    const scheduleNextBatch = () => {
+      if (cancelled) return;
+      timer = setTimeout(() => {
+        if (cancelled) return;
+
+        const nextEnd = assistantMessageIds.length - renderedCount;
+        const nextStart = Math.max(nextEnd - MARKDOWN_BATCH_SIZE, 0);
+        const batchIds = assistantMessageIds.slice(nextStart, nextEnd);
+        renderedCount += batchIds.length;
+
+        setRichMarkdownIds((prev) => {
+          const next = new Set(prev);
+          batchIds.forEach((id) => next.add(id));
+          return next;
+        });
+
+        if (renderedCount < assistantMessageIds.length) {
+          scheduleNextBatch();
+        }
+      }, 16);
+    };
+
+    scheduleNextBatch();
+
+    return () => {
+      cancelled = true;
+      if (timer !== null) {
+        clearTimeout(timer);
+      }
+    };
+  }, [assistantIdKey, assistantMessageIds, isTranscriptLoading, messages]);
+
   return (
     <>
       <div
@@ -131,6 +185,7 @@ function ChatMessages({
             key={msg.id}
             msg={msg}
             isStreamingThis={isStreaming && msg.id === streamingMsgId}
+            preferPlainText={msg.role === 'assistant' && !richMarkdownIds.has(msg.id)}
           />
         ))}
         {!isTranscriptLoading && isReasoning && (

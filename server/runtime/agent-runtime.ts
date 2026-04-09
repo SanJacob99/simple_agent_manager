@@ -292,8 +292,15 @@ export class AgentRuntime {
         const response = await originalFetch(...args);
         log('pi-ai Fetch', `[STATUS] ${response.status} ${response.statusText}`);
         const clone = response.clone();
-        const bodyText = await clone.text();
-        log('pi-ai Fetch', `[BODY] ${bodyText.substring(0, 1000)}`);
+        // Never await the cloned body here: doing so buffers the full stream
+        // before returning the Response and breaks live token streaming.
+        void clone.text()
+          .then((bodyText) => {
+            log('pi-ai Fetch', `[BODY] ${bodyText.substring(0, 1000)}`);
+          })
+          .catch((err) => {
+            log('pi-ai Fetch', `[BODY_ERROR] ${err instanceof Error ? err.message : String(err)}`);
+          });
         return response;
       } catch (err) {
         log('pi-ai Fetch', `[ERROR] ${err instanceof Error ? err.message : String(err)}`);

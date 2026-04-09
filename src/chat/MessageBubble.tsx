@@ -13,6 +13,7 @@ interface MessageBubbleProps {
   msg: Message;
   /** True only for the single message currently being streamed in. */
   isStreamingThis: boolean;
+  preferPlainText?: boolean;
 }
 
 const markdownComponents = {
@@ -48,7 +49,7 @@ const markdownComponents = {
   },
 };
 
-function MessageBubble({ msg, isStreamingThis }: MessageBubbleProps) {
+function MessageBubble({ msg, isStreamingThis, preferPlainText = false }: MessageBubbleProps) {
   const isDiagnostic = msg.kind === 'diagnostic';
 
   return (
@@ -68,7 +69,7 @@ function MessageBubble({ msg, isStreamingThis }: MessageBubbleProps) {
           {msg.role === 'assistant' ? (
             <div className={`prose-sm max-w-none break-words ${isDiagnostic ? 'text-amber-50' : 'text-slate-200'}`}>
               {/* Skip ReactMarkdown while streaming — parse once when done */}
-              {isStreamingThis ? (
+              {isStreamingThis || preferPlainText ? (
                 <span className="whitespace-pre-wrap">{msg.content}</span>
               ) : (
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>

@@ -85,6 +85,47 @@ describe('AgentRuntime', () => {
 
     await expect(runtime.prompt('Hello')).rejects.toThrow('stream failed');
   });
+
+  it('does not block prompt progress while debug body logging reads the response clone', async () => {
+    let resolveBodyText!: (value: string) => void;
+    const bodyTextPromise = new Promise<string>((resolve) => {
+      resolveBodyText = resolve;
+    });
+
+    const cloneText = vi.fn(() => bodyTextPromise);
+    const originalFetch = vi.fn(async () => ({
+      status: 200,
+      statusText: 'OK',
+      clone: () => ({ text: cloneText }),
+    }));
+
+    const previousFetch = globalThis.fetch;
+    globalThis.fetch = originalFetch as typeof fetch;
+
+    try {
+      promptMock.mockImplementationOnce(async () => {
+        await globalThis.fetch('https://example.test/stream');
+      });
+
+      const runtime = new AgentRuntime(makeConfig(), () => 'sk-test');
+
+      let resolved = false;
+      const promptPromise = runtime.prompt('Hello').then(() => {
+        resolved = true;
+      });
+
+      await vi.waitFor(() => {
+        expect(originalFetch).toHaveBeenCalledWith('https://example.test/stream');
+        expect(cloneText).toHaveBeenCalledTimes(1);
+        expect(resolved).toBe(true);
+      });
+
+      resolveBodyText('data: streamed chunk');
+      await promptPromise;
+    } finally {
+      globalThis.fetch = previousFetch;
+    }
+  });
 });
 
 describe('summarizePayload behavior via onPayload', () => {

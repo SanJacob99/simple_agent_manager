@@ -24,6 +24,7 @@ function extractAssistantText(message: { content?: unknown }): string {
 
 export class ReplyFilter implements StreamTransform {
   private pendingMessageStarted = false;
+  private isBuffering = false;
   private pendingEvents: ServerEvent[] = [];
   private hadThinking = false;
 
@@ -37,6 +38,7 @@ export class ReplyFilter implements StreamTransform {
       if (msg.role === 'assistant') {
         this.pendingMessageStarted = true;
         this.hadThinking = false;
+        this.isBuffering = true;
         this.pendingEvents = [];
         // Buffer message:start — only emit if we confirm it's not NO_REPLY
         this.pendingEvents.push({
@@ -61,13 +63,35 @@ export class ReplyFilter implements StreamTransform {
       if (aEvent.type === 'text_delta') {
         context.textBuffer += aEvent.delta;
         if (this.pendingMessageStarted) {
-          // Buffer delta — only emit if we confirm it's not NO_REPLY
-          this.pendingEvents.push({
-            type: 'message:delta',
-            agentId: '',
-            runId: context.runId,
-            delta: aEvent.delta,
-          } as any);
+          if (this.isBuffering) {
+            // Buffer delta — only emit if we confirm it's not NO_REPLY
+            this.pendingEvents.push({
+              type: 'message:delta',
+              agentId: '',
+              runId: context.runId,
+              delta: aEvent.delta,
+            } as any);
+            
+            const normalized = context.textBuffer.trimStart().toLowerCase();
+            const possibleNoReply = 
+              normalized === '' || 
+              "no_reply".startsWith(normalized) || 
+              (normalized.startsWith("no_reply") && normalized.trim() === "no_reply");
+              
+            if (!possibleNoReply) {
+              this.isBuffering = false;
+              this.pendingEvents.forEach(emit);
+              this.pendingEvents = [];
+            }
+          } else {
+            // Not buffering, emit directly
+            emit({
+              type: 'message:delta',
+              agentId: '',
+              runId: context.runId,
+              delta: aEvent.delta,
+            } as any);
+          }
         }
         return;
       }
@@ -78,6 +102,7 @@ export class ReplyFilter implements StreamTransform {
           context.noReplyDetected = true;
           context.messageSuppressed = true;
           this.pendingMessageStarted = false;
+          this.isBuffering = false;
           this.pendingEvents = [];
           emit({
             type: 'message:suppressed',
@@ -86,7 +111,8 @@ export class ReplyFilter implements StreamTransform {
             reason: 'no_reply',
           } as any);
         } else {
-          // Not NO_REPLY, flush pending events
+          // Not NO_REPLY, flush pending events if still buffering
+          this.isBuffering = false;
           this.pendingEvents.forEach(emit);
           this.pendingEvents = [];
         }
@@ -110,6 +136,7 @@ export class ReplyFilter implements StreamTransform {
               context.noReplyDetected = true;
               context.messageSuppressed = true;
               this.pendingMessageStarted = false;
+              this.isBuffering = false;
               this.pendingEvents = [];
               emit({
                 type: 'message:suppressed',
@@ -120,6 +147,7 @@ export class ReplyFilter implements StreamTransform {
               return;
             }
             // Not NO_REPLY, flush pending events and add the fallback delta
+            this.isBuffering = false;
             this.pendingEvents.forEach(emit);
             emit({
               type: 'message:delta',
@@ -134,12 +162,14 @@ export class ReplyFilter implements StreamTransform {
             // the "Thinking..." indicator on the client.
             if (this.hadThinking && context.textBuffer.length === 0) {
               this.pendingMessageStarted = false;
+              this.isBuffering = false;
               this.pendingEvents = [];
               return;
             }
             // No thinking either — or thinking happened but text was already
             // streamed (text_end flushed pendingEvents). Flush any remaining
             // pending events so at least an empty bubble appears.
+            this.isBuffering = false;
             this.pendingEvents.forEach(emit);
           }
 
@@ -152,6 +182,7 @@ export class ReplyFilter implements StreamTransform {
         }
       }
       this.pendingMessageStarted = false;
+      this.isBuffering = false;
       this.pendingEvents = [];
       this.hadThinking = false;
       return;

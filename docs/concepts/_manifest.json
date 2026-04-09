@@ -5,7 +5,7 @@
     "agent": {
       "doc": "agent-node.md",
       "type": "src/types/nodes.ts#AgentNodeData",
-      "runtime": "src/runtime/agent-runtime.ts"
+      "runtime": "server/runtime/agent-runtime.ts"
     },
     "memory": {
       "doc": "memory-node.md",

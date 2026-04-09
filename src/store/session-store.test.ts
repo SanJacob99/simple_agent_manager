@@ -415,6 +415,51 @@ describe('session-store', () => {
     });
   });
 
+  it('does not re-fetch the transcript when re-selecting a session that is already hydrated', async () => {
+    const meta = makeMeta();
+    const storage = {
+      agentId: meta.agentId,
+      getTranscript: vi.fn(async () => ({
+        sessionKey: meta.sessionKey,
+        sessionId: meta.sessionId,
+        transcriptPath: 'C:/tmp/sess-1.jsonl',
+        entries: [],
+      })),
+      deleteAllSessions: vi.fn(async () => {}),
+    } as any;
+
+    useSessionStore.setState({
+      storageEngine: storage,
+      storageEngines: { [meta.agentId]: storage },
+      sessions: {
+        [meta.sessionKey]: {
+          id: meta.sessionKey,
+          sessionKey: meta.sessionKey,
+          sessionId: meta.sessionId,
+          agentId: meta.agentId,
+          createdAt: new Date(meta.createdAt).getTime(),
+          lastMessageAt: new Date(meta.updatedAt).getTime(),
+          displayName: meta.displayName!,
+          messages: [
+            {
+              id: 'assistant-1',
+              role: 'assistant',
+              content: 'Already loaded',
+              timestamp: Date.now(),
+            },
+          ],
+          meta,
+        },
+      },
+    } as any);
+
+    useSessionStore.getState().setActiveSession(meta.agentId, meta.sessionKey);
+
+    await Promise.resolve();
+
+    expect(storage.getTranscript).not.toHaveBeenCalled();
+  });
+
   it('rehydrates transcript messages for the already-active session when sessions reload from disk', async () => {
     const meta = makeMeta();
     const storage = {
