@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useMemo, useLayoutEffect } from 'react';
+import { memo, useRef, useEffect, useCallback, useMemo, useLayoutEffect } from 'react';
 import { Brain, RefreshCw, MessageSquareMore } from 'lucide-react';
 import { useSessionStore, type Message } from '../store/session-store';
 import type { ContextWindowInfo, PeripheralReservation } from './useContextWindow';
@@ -22,7 +22,7 @@ interface ChatMessagesProps {
   peripheralReservations: PeripheralReservation[];
 }
 
-export default function ChatMessages({
+function ChatMessages({
   activeSessionKey,
   isBlocked,
   isTranscriptLoading,
@@ -165,3 +165,5 @@ export default function ChatMessages({
     </>
   );
 }
+
+export default memo(ChatMessages);

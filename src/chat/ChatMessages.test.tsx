@@ -64,7 +64,7 @@ describe('ChatMessages', () => {
       />,
     );
 
-    expect(screen.getByText('Loading conversation')).toBeInTheDocument();
+    expect(screen.getByText('Loading')).toBeInTheDocument();
     expect(screen.queryByText('Send a message to start the conversation')).not.toBeInTheDocument();
   });
 
