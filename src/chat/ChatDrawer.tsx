@@ -14,6 +14,7 @@ import { useContextWindow, usePeripheralReservations } from './useContextWindow'
 import { useChatStream } from './useChatStream';
 import { useRightAnchoredResize } from '../panels/useRightAnchoredResize';
 import PanelResizeHandle from '../panels/PanelResizeHandle';
+import { getChatConnectionIssue } from './chat-connection-state';
 
 interface ChatDrawerProps {
   agentNodeId: string;
@@ -54,6 +55,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
   const abortAgent = useAgentConnectionStore((s) => s.abortAgent);
   const destroyAgent = useAgentConnectionStore((s) => s.destroyAgent);
   const connectionStatus = useAgentConnectionStore((s) => s.connectionStatus);
+  const hasConnectedOnce = useAgentConnectionStore((s) => s.hasConnectedOnce);
   const storedWidth = useUILayoutStore((s) => s.chatDrawerWidth);
   const setChatDrawerWidth = useUILayoutStore((s) => s.setChatDrawerWidth);
 
@@ -83,6 +85,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
   const bindStorage = useSessionStore((s) => s.bindStorage);
   const unbindStorage = useSessionStore((s) => s.unbindStorage);
   const loadSessionsFromDisk = useSessionStore((s) => s.loadSessionsFromDisk);
+  const transcriptStatus = useSessionStore((s) => s.transcriptStatus);
 
   // Find the agent node to get name
   const agentNode = nodes.find((n) => n.id === agentNodeId && n.data.type === 'agent');
@@ -121,6 +124,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
   // Active session key
   const activeSessionKey = activeSessionKeyMap[agentNodeId] ?? null;
   const activeSession = activeSessionKey ? sessions[activeSessionKey] : null;
+  const activeTranscriptStatus = activeSessionKey ? transcriptStatus[activeSessionKey] ?? 'idle' : 'idle';
 
   const creatingSessionRef = useRef(false);
 
@@ -273,19 +277,20 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
       });
     }
 
-    if (connectionStatus === 'disconnected') {
-      missing.push({
-        key: 'disconnected',
-        label: 'Connection Lost',
-        description: 'The WebSocket connection to the backend has dropped.',
-        hint: 'Please refresh the page to reconnect to the server.',
-      });
+    const connectionIssue = getChatConnectionIssue(connectionStatus, hasConnectedOnce);
+    if (connectionIssue) {
+      missing.push(connectionIssue);
     }
 
     return missing;
-  }, [config, connectionStatus]);
+  }, [config, connectionStatus, hasConnectedOnce]);
 
   const isBlocked = missingPeripherals.length > 0;
+  const isTranscriptLoading = !isBlocked && (
+    !storageReady
+    || activeTranscriptStatus === 'loading'
+    || (storageReady && (activeSessionKey === null))
+  );
 
   if (!config) return null;
 
@@ -440,6 +445,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
       <ChatMessages
         activeSessionKey={activeSessionKey}
         isBlocked={isBlocked}
+        isTranscriptLoading={isTranscriptLoading}
         isStreaming={isStreaming}
         isReasoning={chatStream.isReasoning}
         compacting={chatStream.compacting}

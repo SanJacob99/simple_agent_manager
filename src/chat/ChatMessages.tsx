@@ -1,5 +1,5 @@
-import { useRef, useEffect, useCallback, useMemo } from 'react';
-import { Brain, RefreshCw } from 'lucide-react';
+import { useRef, useEffect, useCallback, useMemo, useLayoutEffect } from 'react';
+import { Brain, RefreshCw, MessageSquareMore } from 'lucide-react';
 import { useSessionStore, type Message } from '../store/session-store';
 import type { ContextWindowInfo, PeripheralReservation } from './useContextWindow';
 import ContextUsagePanel from './ContextUsagePanel';
@@ -12,6 +12,7 @@ const EMPTY: Message[] = [];
 interface ChatMessagesProps {
   activeSessionKey: string | null;
   isBlocked: boolean;
+  isTranscriptLoading: boolean;
   isStreaming: boolean;
   isReasoning: boolean;
   compacting: boolean;
@@ -24,6 +25,7 @@ interface ChatMessagesProps {
 export default function ChatMessages({
   activeSessionKey,
   isBlocked,
+  isTranscriptLoading,
   isStreaming,
   isReasoning,
   compacting,
@@ -49,6 +51,9 @@ export default function ChatMessages({
   const containerRef = useRef<HTMLDivElement>(null);
   const isUserScrolledUpRef = useRef(false);
   const prevMessageCountRef = useRef(0);
+  const prevSessionKeyRef = useRef<string | null>(null);
+  const prevTranscriptLoadingRef = useRef(isTranscriptLoading);
+  const pinToBottomRef = useRef(false);
 
   const handleScroll = useCallback(() => {
     const el = containerRef.current;
@@ -57,8 +62,31 @@ export default function ChatMessages({
   }, []);
 
   useEffect(() => {
+    if (prevSessionKeyRef.current !== activeSessionKey) {
+      prevSessionKeyRef.current = activeSessionKey;
+      prevMessageCountRef.current = 0;
+      isUserScrolledUpRef.current = false;
+      pinToBottomRef.current = true;
+    }
+
+    if (prevTranscriptLoadingRef.current && !isTranscriptLoading) {
+      pinToBottomRef.current = true;
+    }
+
+    prevTranscriptLoadingRef.current = isTranscriptLoading;
+  }, [activeSessionKey, isTranscriptLoading]);
+
+  useLayoutEffect(() => {
+    if (isTranscriptLoading) return;
+
     const isNewMessage = messages.length > prevMessageCountRef.current;
     prevMessageCountRef.current = messages.length;
+
+    if (pinToBottomRef.current) {
+      pinToBottomRef.current = false;
+      messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
+      return;
+    }
 
     if (isUserScrolledUpRef.current && !isNewMessage) return;
     if (isNewMessage) isUserScrolledUpRef.current = false;
@@ -66,7 +94,7 @@ export default function ChatMessages({
     messagesEndRef.current?.scrollIntoView({
       behavior: isNewMessage && !isStreaming ? 'smooth' : 'instant',
     });
-  }, [messages, isStreaming]);
+  }, [messages, isStreaming, isTranscriptLoading]);
 
   return (
     <>
@@ -75,31 +103,49 @@ export default function ChatMessages({
         onScroll={handleScroll}
         className={`flex-1 overflow-y-auto p-4 space-y-3 ${isBlocked ? 'pointer-events-none select-none blur-[2px]' : ''}`}
       >
-        {messages.length === 0 && (
+        {isTranscriptLoading && (
+          <div className="flex h-full items-center justify-center">
+            <div className="flex w-full max-w-[280px] flex-col items-center gap-4 rounded-2xl border border-slate-800 bg-slate-950/80 px-6 py-8 text-center">
+              <div className="relative flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-800 bg-slate-900">
+                <MessageSquareMore size={18} className="text-blue-300" />
+                <span className="absolute inset-0 rounded-2xl border border-blue-400/20 animate-ping" />
+              </div>
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-slate-200">Loading</p>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="h-2 w-2 animate-bounce rounded-full bg-blue-400 [animation-delay:-0.2s]" />
+                <span className="h-2 w-2 animate-bounce rounded-full bg-blue-300 [animation-delay:-0.1s]" />
+                <span className="h-2 w-2 animate-bounce rounded-full bg-blue-200" />
+              </div>
+            </div>
+          </div>
+        )}
+        {!isTranscriptLoading && messages.length === 0 && (
           <div className="flex h-full items-center justify-center">
             <p className="text-xs text-slate-600">Send a message to start the conversation</p>
           </div>
         )}
-        {messages.map((msg) => (
+        {!isTranscriptLoading && messages.map((msg) => (
           <MessageBubble
             key={msg.id}
             msg={msg}
             isStreamingThis={isStreaming && msg.id === streamingMsgId}
           />
         ))}
-        {isReasoning && (
+        {!isTranscriptLoading && isReasoning && (
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-purple-500/10 border border-purple-500/20">
             <Brain size={12} className="text-purple-400 animate-pulse" />
             <span className="text-[10px] text-purple-300">Thinking...</span>
           </div>
         )}
-        {compacting && (
+        {!isTranscriptLoading && compacting && (
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-amber-500/10 border border-amber-500/20">
             <RefreshCw size={12} className="text-amber-400 animate-spin" />
             <span className="text-[10px] text-amber-300">Compacting context...</span>
           </div>
         )}
-        {suppressedReply && !isStreaming && (
+        {!isTranscriptLoading && suppressedReply && !isStreaming && (
           <div className="flex justify-start">
             <div className="rounded-lg px-3 py-2 text-[10px] text-slate-500 italic bg-slate-800/30 border border-slate-700/50">
               Agent chose not to reply
@@ -109,7 +155,7 @@ export default function ChatMessages({
         <div ref={messagesEndRef} />
       </div>
 
-      <div className={isBlocked ? 'pointer-events-none select-none blur-[2px]' : ''}>
+      <div className={isBlocked || isTranscriptLoading ? 'pointer-events-none select-none blur-[2px]' : ''}>
         <ContextUsagePanel
           messages={messagesForContext}
           contextInfo={contextInfo}
