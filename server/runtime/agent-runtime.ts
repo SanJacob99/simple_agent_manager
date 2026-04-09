@@ -285,6 +285,24 @@ export class AgentRuntime {
   }
 
   async prompt(text: string, attachments?: ImageAttachment[]): Promise<void> {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (...args) => {
+      log('pi-ai Fetch', `[START] URL: ${args[0]}`);
+      try {
+        const response = await originalFetch(...args);
+        log('pi-ai Fetch', `[STATUS] ${response.status} ${response.statusText}`);
+        const clone = response.clone();
+        const bodyText = await clone.text();
+        log('pi-ai Fetch', `[BODY] ${bodyText.substring(0, 1000)}`);
+        return response;
+      } catch (err) {
+        log('pi-ai Fetch', `[ERROR] ${err instanceof Error ? err.message : String(err)}`);
+        throw err;
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    };
+
     try {
       const images = attachments?.map((a) => ({ type: 'image' as const, data: a.data, mimeType: a.mimeType }));
       await this.agent.prompt(text, images?.length ? images : undefined);

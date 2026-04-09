@@ -25,6 +25,7 @@ function extractAssistantText(message: { content?: unknown }): string {
 export class ReplyFilter implements StreamTransform {
   private pendingMessageStarted = false;
   private pendingEvents: ServerEvent[] = [];
+  private hadThinking = false;
 
   process(event: CoordinatorEvent, context: RunStreamContext, emit: EmitFn): void {
     if (event.type !== 'stream') return;
@@ -35,6 +36,7 @@ export class ReplyFilter implements StreamTransform {
       const msg = raw.message as { role?: string };
       if (msg.role === 'assistant') {
         this.pendingMessageStarted = true;
+        this.hadThinking = false;
         this.pendingEvents = [];
         // Buffer message:start — only emit if we confirm it's not NO_REPLY
         this.pendingEvents.push({
@@ -50,6 +52,11 @@ export class ReplyFilter implements StreamTransform {
     if (raw.type === 'message_update') {
       const aEvent = raw.assistantMessageEvent;
       if (!aEvent) return;
+
+      // Track whether any thinking blocks arrived for this assistant turn.
+      if (aEvent.type === 'thinking_start') {
+        this.hadThinking = true;
+      }
 
       if (aEvent.type === 'text_delta') {
         context.textBuffer += aEvent.delta;
@@ -121,7 +128,18 @@ export class ReplyFilter implements StreamTransform {
               delta: fallbackText,
             } as any);
           } else {
-            // No fallback text, just flush pending
+            // No text content at all. If the model only produced thinking
+            // blocks (and no text was accumulated via text_end), suppress the
+            // empty bubble entirely — the reasoning:end event already closed
+            // the "Thinking..." indicator on the client.
+            if (this.hadThinking && context.textBuffer.length === 0) {
+              this.pendingMessageStarted = false;
+              this.pendingEvents = [];
+              return;
+            }
+            // No thinking either — or thinking happened but text was already
+            // streamed (text_end flushed pendingEvents). Flush any remaining
+            // pending events so at least an empty bubble appears.
             this.pendingEvents.forEach(emit);
           }
 
@@ -135,6 +153,7 @@ export class ReplyFilter implements StreamTransform {
       }
       this.pendingMessageStarted = false;
       this.pendingEvents = [];
+      this.hadThinking = false;
       return;
     }
   }

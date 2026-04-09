@@ -623,11 +623,41 @@ export class RunCoordinator {
       });
     }, timeoutMs);
 
-    let _firstApiDeltaLogged = false;
+    let _apiCallCount = 0;
+    let _firstTextDeltaLogged = false;
+    let _firstThinkingDeltaLogged = false;
+    
     const unsubscribe = this.runtime.subscribe((event: RuntimeEvent) => {
-      if (!_firstApiDeltaLogged && 'type' in event) {
-        if (event.type === 'message_start') _lap('api:message_start');
-        else if (event.type === 'text_delta') { _lap('api:first_delta'); _firstApiDeltaLogged = true; }
+      if ('type' in event) {
+        if (event.type === 'message_start' && (event as any).message?.role === 'assistant') {
+          _apiCallCount++;
+          _firstTextDeltaLogged = false;
+          _firstThinkingDeltaLogged = false;
+          
+          let passInfo = `pass=${_apiCallCount}`;
+          if (_apiCallCount === 2) {
+            passInfo += `, fallback_or_retry`;
+          } else if (_apiCallCount > 2) {
+            passInfo += `, tool_retry`;
+          }
+          _lap(`api:message_start [${passInfo}]`);
+        }
+        else if (
+          !_firstTextDeltaLogged &&
+          event.type === 'message_update' &&
+          (event as any).assistantMessageEvent?.type === 'text_delta'
+        ) {
+          _lap(`api:first_text_delta [pass=${_apiCallCount}]`);
+          _firstTextDeltaLogged = true;
+        }
+        else if (
+          !_firstThinkingDeltaLogged &&
+          event.type === 'message_update' &&
+          (event as any).assistantMessageEvent?.type === 'thinking_delta'
+        ) {
+          _lap(`api:first_thinking_delta [pass=${_apiCallCount}]`);
+          _firstThinkingDeltaLogged = true;
+        }
       }
       queueTranscriptWrite(() => this.persistRuntimeEvent(record, transcriptManager, event, transcriptState));
       this.emitForRun(record.runId, { type: 'stream', runId: record.runId, event });

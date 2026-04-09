@@ -26,6 +26,20 @@ function textEnd(content: string): CoordinatorEvent {
   });
 }
 
+function thinkingStart(): CoordinatorEvent {
+  return streamEvent({
+    type: 'message_update',
+    assistantMessageEvent: { type: 'thinking_start', contentIndex: 0, partial: {} },
+  });
+}
+
+function thinkingEnd(): CoordinatorEvent {
+  return streamEvent({
+    type: 'message_update',
+    assistantMessageEvent: { type: 'thinking_end', contentIndex: 0, content: 'thought', partial: {} },
+  });
+}
+
 function messageEnd(): CoordinatorEvent {
   return streamEvent({ type: 'message_end', message: { role: 'assistant' } });
 }
@@ -110,6 +124,59 @@ describe('ReplyFilter', () => {
 
     expect(ctx.noReplyDetected).toBe(false);
     expect(emitted.some((e) => e.type === 'message:start')).toBe(true);
+  });
+
+  it('suppresses ghost bubble when model returns only thinking blocks (no text)', () => {
+    const filter = new ReplyFilter();
+    const ctx = createRunStreamContext('run-1');
+    const emitted: ServerEvent[] = [];
+    const emit = (e: ServerEvent) => emitted.push(e);
+
+    filter.process(messageStart(), ctx, emit);
+    filter.process(thinkingStart(), ctx, emit);
+    filter.process(thinkingEnd(), ctx, emit);
+    filter.process(messageEnd(), ctx, emit);
+
+    const types = emitted.map((e) => e.type);
+    expect(types).not.toContain('message:start');
+    expect(types).not.toContain('message:delta');
+    expect(types).not.toContain('message:end');
+    expect(types).not.toContain('message:suppressed');
+    expect(ctx.noReplyDetected).toBe(false);
+  });
+
+  it('emits normal message events when model returns both thinking and text', () => {
+    const filter = new ReplyFilter();
+    const ctx = createRunStreamContext('run-1');
+    const emitted: ServerEvent[] = [];
+    const emit = (e: ServerEvent) => emitted.push(e);
+
+    filter.process(messageStart(), ctx, emit);
+    filter.process(thinkingStart(), ctx, emit);
+    filter.process(thinkingEnd(), ctx, emit);
+    filter.process(textDelta('Hello'), ctx, emit);
+    filter.process(textEnd('Hello'), ctx, emit);
+    filter.process(messageEnd(), ctx, emit);
+
+    const types = emitted.map((e) => e.type);
+    expect(types).toContain('message:start');
+    expect(types).toContain('message:delta');
+    expect(types).toContain('message:end');
+    expect(ctx.noReplyDetected).toBe(false);
+  });
+
+  it('still emits empty bubble when there is no text and no thinking', () => {
+    const filter = new ReplyFilter();
+    const ctx = createRunStreamContext('run-1');
+    const emitted: ServerEvent[] = [];
+    const emit = (e: ServerEvent) => emitted.push(e);
+
+    filter.process(messageStart(), ctx, emit);
+    filter.process(messageEnd(), ctx, emit);
+
+    const types = emitted.map((e) => e.type);
+    expect(types).toContain('message:start');
+    expect(types).toContain('message:end');
   });
 
   it('falls back to assistant message_end content when no text deltas were streamed', () => {
