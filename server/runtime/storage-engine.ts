@@ -15,6 +15,15 @@ export class StorageEngine {
   private readonly memoryEnabled: boolean;
   private storeCache: Record<string, SessionStoreEntry> | null = null;
 
+  private _safeJoin(base: string, target: string): string {
+    const resolvedBase = path.resolve(base);
+    const resolvedTarget = path.resolve(resolvedBase, target);
+    if (!resolvedTarget.startsWith(resolvedBase + path.sep) && resolvedTarget !== resolvedBase) {
+      throw new Error('Path traversal detected');
+    }
+    return resolvedTarget;
+  }
+
   constructor(
     private readonly config: ResolvedStorageConfig,
     private readonly agentName: string,
@@ -22,7 +31,7 @@ export class StorageEngine {
     const resolvedPath = config.storagePath.startsWith('~')
       ? config.storagePath.replace('~', os.homedir())
       : config.storagePath;
-    this.agentDir = path.join(resolvedPath, agentName);
+    this.agentDir = this._safeJoin(resolvedPath, agentName);
     this.sessionsDir = path.join(this.agentDir, 'sessions');
     this.memoryDir = path.join(this.agentDir, 'memory');
     this.memoryEnabled = config.memoryEnabled;
@@ -70,9 +79,13 @@ export class StorageEngine {
 
   async listSessions(): Promise<SessionStoreEntry[]> {
     const store = await this.readStore();
-    return Object.values(store).sort(
-      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-    );
+    // ⚡ Bolt Optimization: Use fast lexical string comparison instead of `new Date(...).getTime()` parsing overhead.
+    // ISO 8601 strings naturally sort chronologically via direct string evaluation.
+    return Object.values(store).sort((a, b) => {
+      if (b.updatedAt > a.updatedAt) return 1;
+      if (b.updatedAt < a.updatedAt) return -1;
+      return 0;
+    });
   }
 
   async createSession(entry: SessionStoreEntry): Promise<void> {
@@ -134,14 +147,14 @@ export class StorageEngine {
 
   resolveTranscriptPath(entry: Pick<SessionStoreEntry, 'sessionId' | 'sessionFile'>): string {
     if (!entry.sessionFile) {
-      return path.join(this.sessionsDir, `${entry.sessionId}.jsonl`);
+      return this._safeJoin(this.sessionsDir, `${entry.sessionId}.jsonl`);
     }
 
     if (path.isAbsolute(entry.sessionFile)) {
       return entry.sessionFile;
     }
 
-    return path.join(this.agentDir, entry.sessionFile);
+    return this._safeJoin(this.agentDir, entry.sessionFile);
   }
 
   async enforceRetention(maxSessions: number): Promise<void> {
@@ -178,11 +191,13 @@ export class StorageEngine {
 
   async pruneStaleEntries(pruneAfterDays: number, dryRun: boolean): Promise<string[]> {
     const store = await this.readStore();
-    const threshold = Date.now() - pruneAfterDays * 24 * 60 * 60 * 1000;
+    // ⚡ Bolt Optimization: Compute a single ISO threshold string to compare directly against
+    // `entry.updatedAt`. This avoids allocating parsed Date objects in a potentially large hot loop.
+    const thresholdDateStr = new Date(Date.now() - pruneAfterDays * 24 * 60 * 60 * 1000).toISOString();
     const staleKeys: string[] = [];
 
     for (const [key, entry] of Object.entries(store)) {
-      if (new Date(entry.updatedAt).getTime() < threshold) {
+      if (entry.updatedAt < thresholdDateStr) {
         staleKeys.push(key);
       }
     }
@@ -369,12 +384,12 @@ export class StorageEngine {
 
   async appendDailyMemory(content: string, date?: string): Promise<void> {
     const dateStr = date ?? new Date().toISOString().slice(0, 10);
-    const filePath = path.join(this.memoryDir, `${dateStr}.md`);
+    const filePath = this._safeJoin(this.memoryDir, `${dateStr}.md`);
     await fs.appendFile(filePath, content, 'utf-8');
   }
 
   async readDailyMemory(date: string): Promise<string | null> {
-    const filePath = path.join(this.memoryDir, `${date}.md`);
+    const filePath = this._safeJoin(this.memoryDir, `${date}.md`);
     try {
       return await fs.readFile(filePath, 'utf-8');
     } catch {

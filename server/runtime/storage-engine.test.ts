@@ -220,6 +220,18 @@ describe('StorageEngine', () => {
       const result = engine.resolveTranscriptPath(makeEntry({ sessionFile: '/custom/path/transcript.jsonl' }));
       expect(result).toBe('/custom/path/transcript.jsonl');
     });
+
+    it('throws error when sessionFile explicitly set to path traversing out', () => {
+      expect(() => {
+        engine.resolveTranscriptPath(makeEntry({ sessionFile: '../../../etc/passwd' }));
+      }).toThrow('Path traversal detected');
+    });
+
+    it('throws error when sessionId traverses out', () => {
+      expect(() => {
+        engine.resolveTranscriptPath(makeEntry({ sessionFile: undefined, sessionId: '../../../etc/passwd' }));
+      }).toThrow('Path traversal detected');
+    });
   });
 
   describe('session retention', () => {

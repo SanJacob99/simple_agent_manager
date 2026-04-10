@@ -22,7 +22,7 @@ vi.mock('../runtime/agent-runtime', () => {
       this.state.messages = [...messages];
     });
     addTools = vi.fn();
-    state: any = { messages: [], model: { api: 'openai-completions' } };
+    state = { messages: [] as any[], model: { api: 'openai-completions' } as any };
   }
   return { AgentRuntime: MockAgentRuntime };
 });
@@ -30,6 +30,7 @@ vi.mock('../runtime/agent-runtime', () => {
 // Mock StorageEngine to avoid filesystem
 vi.mock('../runtime/storage-engine', () => {
   const os = require('os');
+  const path = require('path');
   class MockStorageEngine {
     private sessions: Map<string, any> = new Map();
     init = vi.fn();
@@ -54,9 +55,15 @@ vi.mock('../runtime/storage-engine', () => {
     deleteSession = vi.fn();
     enforceRetention = vi.fn();
     listSessions = vi.fn(async () => [...this.sessions.values()]);
-    resolveTranscriptPath = vi.fn((entry: any) =>
-      require('path').join(os.tmpdir(), `${entry.sessionId}.jsonl`),
-    );
+    resolveTranscriptPath = vi.fn((entry: any) => {
+      if (!entry.sessionFile) {
+        return path.join(os.tmpdir(), `${entry.sessionId}.jsonl`);
+      }
+
+      return path.isAbsolute(entry.sessionFile)
+        ? entry.sessionFile
+        : path.join(os.tmpdir(), entry.sessionFile);
+    });
   }
   return { StorageEngine: MockStorageEngine };
 });
