@@ -104,7 +104,7 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
           case 'message:delta':
             pendingDeltaRef.current += event.delta;
             if (flushTimerRef.current === null) {
-              flushTimerRef.current = setTimeout(flushDelta, 0);
+              flushTimerRef.current = setTimeout(flushDelta, 32);
             }
             break;
 

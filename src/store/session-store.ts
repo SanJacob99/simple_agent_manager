@@ -379,14 +379,20 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     set((state) => {
       const session = state.sessions[sessionKey];
       if (!session) return state;
+
+      const idx = session.messages.findIndex((m) => m.id === messageId);
+      if (idx === -1) return state;
+
+      const updated = updater(session.messages[idx]);
+      const nextMessages = session.messages.slice();
+      nextMessages[idx] = updated;
+
       return {
         sessions: {
           ...state.sessions,
           [sessionKey]: {
             ...session,
-            messages: session.messages.map((message) =>
-              message.id === messageId ? updater(message) : message,
-            ),
+            messages: nextMessages,
             // Intentionally not updating lastMessageAt here — this fires on every
             // streaming delta and would cause all session-subscribed components to
             // re-render. lastMessageAt is updated by addMessage when a message lands.
