@@ -5,10 +5,10 @@ dist
 *.local
 *.tsbuildinfo
 .worktrees
-notes/
 .tmp/
 test-results/
 storage/
 logs/
 settings.json
 provider-catalog*
+notes/
