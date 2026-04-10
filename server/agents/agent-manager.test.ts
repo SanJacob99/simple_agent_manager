@@ -22,55 +22,48 @@ vi.mock('../runtime/agent-runtime', () => {
       this.state.messages = [...messages];
     });
     addTools = vi.fn();
-    state = { messages: [], model: { api: 'openai-completions' } as any };
+    state = { messages: [] as any[], model: { api: 'openai-completions' } as any };
   }
   return { AgentRuntime: MockAgentRuntime };
 });
 
 // Mock StorageEngine to avoid filesystem
 vi.mock('../runtime/storage-engine', () => {
+  const os = require('os');
+  const path = require('path');
   class MockStorageEngine {
-    private sessions: any[] = [];
+    private sessions: Map<string, any> = new Map();
     init = vi.fn();
-    getSessionByKey = vi.fn(async (key: string) => {
-      return this.sessions.find((s: any) => s.sessionKey === key) ?? null;
-    });
+    getAgentDir = vi.fn(() => os.tmpdir());
+    getSessionsDir = vi.fn(() => os.tmpdir());
     getSession = vi.fn(async (key: string) => {
-      return this.sessions.find((s: any) => s.sessionKey === key) ?? null;
+      return this.sessions.get(key) ?? null;
     });
     getSessionById = vi.fn(async (id: string) => {
-      return this.sessions.find((s: any) => s.sessionId === id) ?? null;
-    });
-    getSessionMeta = vi.fn(async (id: string) => {
-      return this.sessions.find((s: any) => s.sessionId === id) ?? null;
-    });
-    updateSession = vi.fn(async (sessionKey: string, partial: any) => {
-      const session = this.sessions.find((s: any) => s.sessionKey === sessionKey);
-      if (session) {
-        Object.assign(session, partial);
+      for (const s of this.sessions.values()) {
+        if (s.sessionId === id) return s;
       }
+      return null;
     });
-    createSession = vi.fn(async (meta: any) => {
-      this.sessions.push(meta);
+    createSession = vi.fn(async (entry: any) => {
+      this.sessions.set(entry.sessionKey, entry);
     });
-    createManagedSession = vi.fn(async (llmSlug: string, sessionKey?: string) => {
-      const sessionId = `test-session-id-${Math.random()}`;
-      const meta = { sessionId, sessionKey: sessionKey ?? sessionId, llmSlug };
-      this.sessions.push(meta);
-      return meta;
+    updateSession = vi.fn(async (key: string, partial: any) => {
+      const s = this.sessions.get(key);
+      if (s) this.sessions.set(key, { ...s, ...partial });
     });
-    updateSessionMeta = vi.fn(async (sessionId: string, partial: any) => {
-      const session = this.sessions.find((s: any) => s.sessionId === sessionId);
-      if (session) {
-        Object.assign(session, partial);
-      }
-    });
+    deleteSession = vi.fn();
     enforceRetention = vi.fn();
-    listSessions = vi.fn(async () => this.sessions);
-    appendEntry = vi.fn();
-    getSessionsDir = vi.fn(() => os.tmpdir());
-    getAgentDir = vi.fn(() => os.tmpdir());
-    resolveTranscriptPath = vi.fn((session: any) => session.sessionFile ?? 'mock.jsonl');
+    listSessions = vi.fn(async () => [...this.sessions.values()]);
+    resolveTranscriptPath = vi.fn((entry: any) => {
+      if (!entry.sessionFile) {
+        return path.join(os.tmpdir(), `${entry.sessionId}.jsonl`);
+      }
+
+      return path.isAbsolute(entry.sessionFile)
+        ? entry.sessionFile
+        : path.join(os.tmpdir(), entry.sessionFile);
+    });
   }
   return { StorageEngine: MockStorageEngine };
 });
@@ -113,8 +106,17 @@ function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
       idleResetEnabled: false,
       idleResetMinutes: 60,
       parentForkMaxTokens: 100000,
+      maintenanceMode: 'warn',
+      pruneAfterDays: 30,
+      maxEntries: 100,
+      rotateBytes: 1048576,
+      resetArchiveRetentionDays: 7,
+      maxDiskBytes: 104857600,
+      highWaterPercent: 80,
+      maintenanceIntervalMinutes: 60,
     },
     vectorDatabases: [],
+    crons: [],
     exportedAt: Date.now(),
     sourceGraphId: 'agent-1',
     runTimeoutMs: 172800000,

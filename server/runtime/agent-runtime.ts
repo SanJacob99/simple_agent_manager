@@ -11,6 +11,7 @@ import { MemoryEngine } from './memory-engine';
 import { ContextEngine } from './context-engine';
 import { resolveToolNames, createAgentTools } from './tool-factory';
 import { resolveRuntimeModel } from './model-resolver';
+import { log } from '../logger';
 
 export type RuntimeEvent =
   | AgentEvent
@@ -19,6 +20,27 @@ export type RuntimeEvent =
   | { type: 'memory_compaction'; summary: string };
 
 export type RuntimeEventListener = (event: RuntimeEvent) => void;
+
+function summarizePayload(payload: any): string {
+  const model: string = payload.model ?? 'unknown';
+  const messages: any[] = payload.messages ?? [];
+  const tools: any[] = payload.tools ?? [];
+  const lastUser = [...messages].reverse().find((m: any) => m.role === 'user');
+  let lastUserText = '';
+  if (lastUser) {
+    const content = lastUser.content;
+    if (typeof content === 'string') {
+      lastUserText = content.length > 200 ? content.slice(0, 200) + '...' : content;
+    } else if (Array.isArray(content)) {
+      const textBlock = content.find((b: any) => b.type === 'text');
+      if (textBlock?.text) {
+        const t: string = textBlock.text;
+        lastUserText = t.length > 200 ? t.slice(0, 200) + '...' : t;
+      }
+    }
+  }
+  return `model=${model} | messages=${messages.length} | tools=${tools.length} | last_user=${lastUserText}`;
+}
 
 /**
  * AgentRuntime wraps pi-agent-core Agent with memory, context engine, and tools.
@@ -95,7 +117,7 @@ export class AgentRuntime {
       getApiKey,
       toolExecution: 'parallel',
       onPayload: (payload) => {
-        console.log('[pi-ai Request Payload]', JSON.stringify(payload, null, 2));
+        log('pi-ai Request Payload', summarizePayload(payload));
       },
     });
 
@@ -124,7 +146,7 @@ export class AgentRuntime {
     });
 
     this.agent.state.model = model;
-    console.log(`[AgentRuntime] Model swapped to ${provider}/${modelId}`);
+    log('AgentRuntime', `Model swapped to ${provider}/${modelId}`);
   }
 
   /**
@@ -263,6 +285,31 @@ export class AgentRuntime {
   }
 
   async prompt(text: string, attachments?: ImageAttachment[]): Promise<void> {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (...args) => {
+      log('pi-ai Fetch', `[START] URL: ${args[0]}`);
+      try {
+        const response = await originalFetch(...args);
+        log('pi-ai Fetch', `[STATUS] ${response.status} ${response.statusText}`);
+        const clone = response.clone();
+        // Never await the cloned body here: doing so buffers the full stream
+        // before returning the Response and breaks live token streaming.
+        void clone.text()
+          .then((bodyText) => {
+            log('pi-ai Fetch', `[BODY] ${bodyText.substring(0, 1000)}`);
+          })
+          .catch((err) => {
+            log('pi-ai Fetch', `[BODY_ERROR] ${err instanceof Error ? err.message : String(err)}`);
+          });
+        return response;
+      } catch (err) {
+        log('pi-ai Fetch', `[ERROR] ${err instanceof Error ? err.message : String(err)}`);
+        throw err;
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    };
+
     try {
       const images = attachments?.map((a) => ({ type: 'image' as const, data: a.data, mimeType: a.mimeType }));
       await this.agent.prompt(text, images?.length ? images : undefined);

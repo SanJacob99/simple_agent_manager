@@ -1,6 +1,12 @@
-import { useState, useEffect } from 'react';
-import { PROVIDERS, STATIC_MODELS } from '../../runtime/provider-model-options';
+import { useState, useEffect, useMemo } from 'react';
+import { PROVIDERS } from '../../runtime/provider-model-options';
+import ProviderModelPicker from '../../components/model-picker/ProviderModelPicker';
+import {
+  getDefaultModelId,
+  getModelOptions,
+} from '../../components/model-picker/provider-model-utils';
 import { useGraphStore } from '../../store/graph-store';
+import { useModelCatalogStore } from '../../store/model-catalog-store';
 import { useSettingsStore } from '../settings-store';
 import type { ThinkingLevel, CompactionStrategy, MemoryBackend } from '../../types/nodes';
 import type { DefaultsSubTab } from '../types';
@@ -37,8 +43,20 @@ function AgentSubSection() {
   const agentDefaults = useSettingsStore((s) => s.agentDefaults);
   const setAgentDefaults = useSettingsStore((s) => s.setAgentDefaults);
   const applyAgentDefaultsToExistingAgents = useGraphStore((s) => s.applyAgentDefaultsToExistingAgents);
+  const openRouterModels = useModelCatalogStore((s) => s.models.openrouter);
 
   const systemPromptMode = agentDefaults.systemPromptMode === 'manual' ? 'manual' : 'append';
+  const discoveredModels = useMemo(
+    () =>
+      agentDefaults.provider === 'openrouter'
+        ? Object.keys(openRouterModels)
+        : [],
+    [agentDefaults.provider, openRouterModels],
+  );
+  const availableModels = useMemo(
+    () => getModelOptions(agentDefaults.provider, discoveredModels),
+    [agentDefaults.provider, discoveredModels],
+  );
 
   useEffect(() => {
     if (agentDefaults.systemPromptMode !== systemPromptMode) {
@@ -54,7 +72,12 @@ function AgentSubSection() {
           value={agentDefaults.provider}
           onChange={(e) => {
             const provider = e.target.value;
-            setAgentDefaults({ provider, modelId: STATIC_MODELS[provider]?.[0] ?? '' });
+            const discoveredIds =
+              provider === 'openrouter' ? Object.keys(openRouterModels) : [];
+            setAgentDefaults({
+              provider,
+              modelId: getDefaultModelId(provider, discoveredIds, openRouterModels),
+            });
           }}
           className={inputCls}
         >
@@ -63,16 +86,15 @@ function AgentSubSection() {
       </Field>
 
       <Field label="Model">
-        <select
-          aria-label="Model"
-          value={agentDefaults.modelId}
-          onChange={(e) => setAgentDefaults({ modelId: e.target.value })}
-          className={inputCls}
-        >
-          {(STATIC_MODELS[agentDefaults.provider] ?? []).map((m) => (
-            <option key={m} value={m}>{m}</option>
-          ))}
-        </select>
+        <ProviderModelPicker
+          provider={agentDefaults.provider}
+          modelId={agentDefaults.modelId}
+          availableModels={availableModels}
+          discoveredModels={openRouterModels}
+          onSelectModel={(modelId) => setAgentDefaults({ modelId })}
+          onChangeManualModelId={(modelId) => setAgentDefaults({ modelId })}
+          inputClassName={inputCls}
+        />
       </Field>
 
       <Field label="Thinking Level">

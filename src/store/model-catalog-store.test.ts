@@ -14,76 +14,122 @@ describe('model catalog store', () => {
     useModelCatalogStore.getState().reset();
   });
 
-  it('fetches OpenRouter models when a new key is provided', async () => {
+  it('loads cached OpenRouter catalog data from the backend', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () =>
-        jsonResponse({
-          data: [
-            {
+      vi.fn(async (url: string | URL | Request) => {
+        expect(typeof url === 'string' ? url : url.toString()).toBe(
+          '/api/model-catalog/openrouter',
+        );
+
+        return jsonResponse({
+          models: {
+            'xiaomi/mimo-v2-pro': {
               id: 'xiaomi/mimo-v2-pro',
-              context_length: 128000,
-              pricing: { prompt: '0.1', completion: '0.2' },
-              architecture: { input_modalities: ['text'] },
-              top_provider: { max_completion_tokens: 8192 },
-              supported_parameters: ['reasoning'],
+              provider: 'openrouter',
             },
-          ],
-        }),
-      ) as unknown as typeof fetch,
+          },
+          userModels: {},
+          syncedAt: '2026-04-08T14:00:00.000Z',
+          userModelsRequireRefresh: false,
+        });
+      }) as unknown as typeof fetch,
     );
 
-    await useModelCatalogStore.getState().syncOpenRouterKey('key-1');
+    await useModelCatalogStore.getState().loadOpenRouterCatalog();
 
     expect(
       useModelCatalogStore.getState().models.openrouter['xiaomi/mimo-v2-pro'],
     ).toBeDefined();
+    expect(useModelCatalogStore.getState().syncedAt.openrouter).toBe(
+      '2026-04-08T14:00:00.000Z',
+    );
   });
 
-  it('clears stale OpenRouter metadata before refetching when the key changes', async () => {
+  it('refreshes the OpenRouter catalog through the backend refresh endpoint', async () => {
+    const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const ref = typeof url === 'string' ? url : url.toString();
+      expect(ref).toBe('/api/model-catalog/openrouter/refresh');
+      expect(init?.method).toBe('POST');
+
+      return jsonResponse({
+        models: {
+          'openai/gpt-4o': {
+            id: 'openai/gpt-4o',
+            provider: 'openrouter',
+          },
+        },
+        userModels: {
+          'openai/gpt-4o': {
+            id: 'openai/gpt-4o',
+            provider: 'openrouter',
+          },
+        },
+        syncedAt: '2026-04-08T15:00:00.000Z',
+        userModelsRequireRefresh: false,
+      });
+    });
+
+    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+
+    await useModelCatalogStore.getState().refreshOpenRouterCatalog();
+
+    expect(useModelCatalogStore.getState().models.openrouter['openai/gpt-4o']).toBeDefined();
+    expect(useModelCatalogStore.getState().userModels.openrouter['openai/gpt-4o']).toBeDefined();
+    expect(useModelCatalogStore.getState().syncedAt.openrouter).toBe(
+      '2026-04-08T15:00:00.000Z',
+    );
+  });
+
+  it('clears persisted catalog state through the backend delete endpoint', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => jsonResponse({ data: [] })) as unknown as typeof fetch,
+      vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+        expect(typeof url === 'string' ? url : url.toString()).toBe(
+          '/api/model-catalog/openrouter',
+        );
+        expect(init?.method).toBe('DELETE');
+        return jsonResponse({ ok: true });
+      }) as unknown as typeof fetch,
     );
 
     useModelCatalogStore.setState({
-      models: {
-        openrouter: {
-          stale: { id: 'stale', provider: 'openrouter' },
-        },
-      },
+      models: { openrouter: { stale: { id: 'stale', provider: 'openrouter' } } },
+      userModels: { openrouter: { stale: { id: 'stale', provider: 'openrouter' } } },
+      syncedAt: { openrouter: '2026-04-08T15:00:00.000Z' },
+      userModelsRequireRefresh: { openrouter: true },
+      loading: { openrouter: false },
+      errors: { openrouter: null },
     } as any);
 
-    await useModelCatalogStore.getState().syncOpenRouterKey('key-2');
+    await useModelCatalogStore.getState().clearOpenRouterCatalog();
 
     const state = useModelCatalogStore.getState();
-    expect(state.lastSyncedKeys.openrouter).toBe('key-2');
-    expect(state.models.openrouter.stale).toBeUndefined();
+    expect(state.models.openrouter).toEqual({});
+    expect(state.userModels.openrouter).toEqual({});
+    expect(state.syncedAt.openrouter).toBeNull();
+    expect(state.userModelsRequireRefresh.openrouter).toBe(false);
   });
 
-  it('does not refetch when the OpenRouter key is unchanged', async () => {
-    const fetchMock = vi.fn(async () => jsonResponse({ data: [] }));
+  it('keeps full models visible when userModelsRequireRefresh is true', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          models: {
+            'openai/gpt-4o': { id: 'openai/gpt-4o', provider: 'openrouter' },
+          },
+          userModels: {},
+          syncedAt: '2026-04-08T16:00:00.000Z',
+          userModelsRequireRefresh: true,
+        })) as unknown as typeof fetch,
+    );
 
-    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
+    await useModelCatalogStore.getState().loadOpenRouterCatalog();
 
-    const store = useModelCatalogStore.getState();
-    await store.syncOpenRouterKey('same-key');
-    await store.syncOpenRouterKey('same-key');
-
-    // syncOpenRouterKey makes 2 parallel fetches (full + user models)
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-  });
-
-  it('refetches when sync is forced with the same OpenRouter key', async () => {
-    const fetchMock = vi.fn(async () => jsonResponse({ data: [] }));
-
-    vi.stubGlobal('fetch', fetchMock as unknown as typeof fetch);
-
-    const store = useModelCatalogStore.getState();
-    await store.syncOpenRouterKey('same-key');
-    await store.syncOpenRouterKey('same-key', { force: true });
-
-    // Each sync triggers 2 parallel fetches, forced sync re-fetches
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    const state = useModelCatalogStore.getState();
+    expect(state.models.openrouter['openai/gpt-4o']).toBeDefined();
+    expect(state.userModels.openrouter).toEqual({});
+    expect(state.userModelsRequireRefresh.openrouter).toBe(true);
   });
 });

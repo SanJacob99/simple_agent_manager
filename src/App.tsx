@@ -24,7 +24,7 @@ export default function App() {
   const openRouterKey = useSettingsStore((s) => s.apiKeys.openrouter);
   const settingsLoaded = useSettingsStore((s) => s.loaded);
   const loadFromServer = useSettingsStore((s) => s.loadFromServer);
-  const syncOpenRouterKey = useModelCatalogStore((s) => s.syncOpenRouterKey);
+  const loadOpenRouterCatalog = useModelCatalogStore((s) => s.loadOpenRouterCatalog);
 
   // Load persisted settings from server on mount
   useEffect(() => {
@@ -42,8 +42,12 @@ export default function App() {
   const nodes = useGraphStore((s) => s.nodes);
 
   useEffect(() => {
-    void syncOpenRouterKey(openRouterKey);
-  }, [openRouterKey, syncOpenRouterKey]);
+    if (!settingsLoaded) {
+      return;
+    }
+
+    void loadOpenRouterCatalog();
+  }, [loadOpenRouterCatalog, openRouterKey, settingsLoaded]);
 
   // Prune orphan sessions on mount and when graph changes
   useEffect(() => {

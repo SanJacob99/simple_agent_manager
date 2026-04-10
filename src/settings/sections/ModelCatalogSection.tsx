@@ -31,9 +31,15 @@ export default function ModelCatalogSection() {
   const openRouterKey = useSettingsStore((state) => state.apiKeys.openrouter);
   const modelsMap = useModelCatalogStore((state) => state.models.openrouter);
   const userModelsMap = useModelCatalogStore((state) => state.userModels.openrouter);
+  const syncedAt = useModelCatalogStore((state) => state.syncedAt.openrouter);
+  const userModelsRequireRefresh = useModelCatalogStore(
+    (state) => state.userModelsRequireRefresh.openrouter,
+  );
   const loading = useModelCatalogStore((state) => state.loading.openrouter);
   const error = useModelCatalogStore((state) => state.errors.openrouter);
-  const syncOpenRouterKey = useModelCatalogStore((state) => state.syncOpenRouterKey);
+  const refreshOpenRouterCatalog = useModelCatalogStore(
+    (state) => state.refreshOpenRouterCatalog,
+  );
 
   const [viewMode, setViewMode] = useState<'all' | 'user'>('user');
   const [searchQuery, setSearchQuery] = useState('');
@@ -84,6 +90,8 @@ export default function ModelCatalogSection() {
             <p className="text-xs text-slate-400">
               {loading
                 ? 'Refreshing OpenRouter models...'
+                : syncedAt
+                ? `Cached OpenRouter catalog last updated ${new Date(syncedAt).toLocaleString()}.`
                 : totalFound === 0
                 ? 'No models synchronized.'
                 : `Discovered ${totalFound} OpenRouter models.`}
@@ -95,7 +103,7 @@ export default function ModelCatalogSection() {
           <button
             type="button"
             disabled={!openRouterKey || loading}
-            onClick={() => void syncOpenRouterKey(openRouterKey, { force: true })}
+            onClick={() => void refreshOpenRouterCatalog()}
             className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
@@ -103,6 +111,12 @@ export default function ModelCatalogSection() {
           </button>
         </div>
       </div>
+
+      {userModelsRequireRefresh && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
+          Your OpenRouter API key changed. Refresh to repopulate My Enabled Models for this account.
+        </div>
+      )}
 
       {totalFound > 0 && (
         <div className="space-y-4">

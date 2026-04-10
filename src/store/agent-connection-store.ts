@@ -12,6 +12,7 @@ interface AgentState {
 interface AgentConnectionStore {
   agents: Record<string, AgentState>;
   connectionStatus: 'connecting' | 'connected' | 'disconnected';
+  hasConnectedOnce: boolean;
   setConnectionStatus: (status: 'connecting' | 'connected' | 'disconnected') => void;
 
   // Chat drawer UI state
@@ -183,15 +184,25 @@ export const useAgentConnectionStore = create<AgentConnectionStore>((set, get) =
     return get().agents[agentId]?.status ?? 'disconnected';
   },
 
-  connectionStatus: 'disconnected' as const,
-  setConnectionStatus: (status: 'connecting' | 'connected' | 'disconnected') => set({ connectionStatus: status }),
+  connectionStatus: agentClient.status,
+  hasConnectedOnce: agentClient.status === 'connected',
+  setConnectionStatus: (status: 'connecting' | 'connected' | 'disconnected') =>
+    set((state) => ({
+      connectionStatus: status,
+      hasConnectedOnce: state.hasConnectedOnce || status === 'connected',
+    })),
 
   reset: () => {
     for (const pending of pendingStarts.values()) {
       pending.reject(new Error('Agent connection store reset'));
     }
     pendingStarts.clear();
-    set({ agents: {}, chatAgentNodeId: null });
+    set({
+      agents: {},
+      chatAgentNodeId: null,
+      connectionStatus: 'disconnected',
+      hasConnectedOnce: false,
+    });
   },
 }));
 

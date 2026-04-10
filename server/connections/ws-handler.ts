@@ -2,6 +2,7 @@ import type WebSocket from 'ws';
 import type { AgentManager } from '../agents/agent-manager';
 import type { ApiKeyStore } from '../auth/api-keys';
 import type { Command, AgentStateEvent } from '../../shared/protocol';
+import { log, logError, logConsoleAndFile } from '../logger';
 
 /**
  * Handles a single WebSocket connection: parses incoming commands,
@@ -12,14 +13,14 @@ export function handleConnection(
   manager: AgentManager,
   apiKeys: ApiKeyStore,
 ): void {
-  console.log('[ws] Client connected');
+  logConsoleAndFile('ws', 'Client connected');
   const pendingStarts = new Map<string, Promise<void>>();
 
   socket.on('message', async (data) => {
     let command: Command;
     try {
       command = JSON.parse(data.toString()) as Command;
-      console.log(`[ws] Received command: ${command.type}`, 'agentId' in command ? `(Agent: ${(command as any).agentId})` : '');
+      log('ws', `Received command: ${command.type}${'agentId' in command ? ` (Agent: ${(command as any).agentId})` : ''}`);
     } catch {
       socket.send(JSON.stringify({ type: 'error', error: 'Invalid JSON' }));
       return;
@@ -129,12 +130,12 @@ export function handleConnection(
   });
 
   socket.on('close', () => {
-    console.log('[ws] Client disconnected');
+    logConsoleAndFile('ws', 'Client disconnected');
     manager.removeSocketFromAll(socket);
   });
 
   socket.on('error', (err) => {
-    console.error('[ws] Socket error:', err.message);
+    logError('ws', `Socket error: ${err.message}`);
     manager.removeSocketFromAll(socket);
   });
 }

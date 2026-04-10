@@ -40,6 +40,8 @@ export interface ChatSession {
   meta: SessionStoreEntry;
 }
 
+export type TranscriptStatus = 'idle' | 'loading' | 'ready';
+
 function extractMessageContent(content: unknown): string {
   if (typeof content === 'string') {
     return content;
@@ -115,9 +117,31 @@ function toChatSession(meta: SessionStoreEntry, messages: Message[] = []): ChatS
   };
 }
 
+const NUMBERED_SESSION_LABEL = /^Session (\d+)$/;
+
+function getNextSessionDisplayName(
+  sessions: Record<string, ChatSession>,
+  agentId: string,
+): string {
+  const highestNumber = Object.values(sessions)
+    .filter((session) => session.agentId === agentId)
+    .reduce((maxNumber, session) => {
+      const match = NUMBERED_SESSION_LABEL.exec(session.displayName);
+      if (!match) {
+        return maxNumber;
+      }
+
+      const sessionNumber = Number.parseInt(match[1], 10);
+      return Number.isNaN(sessionNumber) ? maxNumber : Math.max(maxNumber, sessionNumber);
+    }, 0);
+
+  return `Session ${highestNumber + 1}`;
+}
+
 interface SessionStore {
   sessions: Record<string, ChatSession>;
   activeSessionKey: Record<string, string>;
+  transcriptStatus: Record<string, TranscriptStatus>;
   storageEngine: StorageBackend | null;
   storageEngines: Record<string, StorageBackend>;
 
@@ -163,6 +187,7 @@ interface SessionStore {
 export const useSessionStore = create<SessionStore>()((set, get) => ({
   sessions: {},
   activeSessionKey: {},
+  transcriptStatus: {},
   storageEngine: null,
   storageEngines: {},
 
@@ -212,6 +237,12 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       return {
         sessions: nextSessions,
         activeSessionKey: nextActive,
+        transcriptStatus: Object.fromEntries(
+          Object.keys(nextSessions).map((sessionKey) => [
+            sessionKey,
+            state.transcriptStatus[sessionKey] ?? 'idle',
+          ]),
+        ),
       };
     });
 
@@ -228,11 +259,14 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     }
 
     const subKey = isDefault ? 'main' : `session-${Date.now()}`;
+    const displayName = isDefault
+      ? 'Main session'
+      : getNextSessionDisplayName(get().sessions, agentId);
     const routed = await storageEngine.routeSession({
       subKey,
       chatType: 'direct',
       provider,
-      displayName: isDefault ? 'Main session' : `${provider}/${modelId}`,
+      displayName,
     });
     const meta = await storageEngine.getSession(routed.sessionKey);
 
@@ -244,6 +278,10 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       sessions: {
         ...state.sessions,
         [meta.sessionKey]: toChatSession(meta),
+      },
+      transcriptStatus: {
+        ...state.transcriptStatus,
+        [meta.sessionKey]: 'ready',
       },
     }));
 
@@ -261,11 +299,12 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
     set((state) => {
       const { [sessionKey]: _deleted, ...rest } = state.sessions;
+      const { [sessionKey]: _deletedStatus, ...restStatus } = state.transcriptStatus;
       const nextActive = { ...state.activeSessionKey };
       for (const [nodeId, activeKey] of Object.entries(nextActive)) {
         if (activeKey === sessionKey) delete nextActive[nodeId];
       }
-      return { sessions: rest, activeSessionKey: nextActive };
+      return { sessions: rest, activeSessionKey: nextActive, transcriptStatus: restStatus };
     });
   },
 
@@ -279,17 +318,23 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
     set((state) => {
       const nextSessions: Record<string, ChatSession> = {};
+      const nextTranscriptStatus: Record<string, TranscriptStatus> = {};
       const nextActive = { ...state.activeSessionKey };
 
       for (const [sessionKey, session] of Object.entries(state.sessions)) {
         if (session.agentId !== agentId) {
           nextSessions[sessionKey] = session;
+          nextTranscriptStatus[sessionKey] = state.transcriptStatus[sessionKey] ?? 'idle';
         }
       }
       for (const [nodeId, activeKey] of Object.entries(nextActive)) {
         if (!(activeKey in nextSessions)) delete nextActive[nodeId];
       }
-      return { sessions: nextSessions, activeSessionKey: nextActive };
+      return {
+        sessions: nextSessions,
+        activeSessionKey: nextActive,
+        transcriptStatus: nextTranscriptStatus,
+      };
     });
   },
 
@@ -298,7 +343,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       activeSessionKey: { ...state.activeSessionKey, [nodeId]: sessionKey },
     }));
 
-    if (get().sessions[sessionKey]) {
+    const session = get().sessions[sessionKey];
+    if (session && session.messages.length === 0) {
       void get().flushSession(sessionKey).catch(console.error);
     }
   },
@@ -333,15 +379,23 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     set((state) => {
       const session = state.sessions[sessionKey];
       if (!session) return state;
+
+      const idx = session.messages.findIndex((m) => m.id === messageId);
+      if (idx === -1) return state;
+
+      const updated = updater(session.messages[idx]);
+      const nextMessages = session.messages.slice();
+      nextMessages[idx] = updated;
+
       return {
         sessions: {
           ...state.sessions,
           [sessionKey]: {
             ...session,
-            messages: session.messages.map((message) =>
-              message.id === messageId ? updater(message) : message,
-            ),
-            lastMessageAt: Date.now(),
+            messages: nextMessages,
+            // Intentionally not updating lastMessageAt here — this fires on every
+            // streaming delta and would cause all session-subscribed components to
+            // re-render. lastMessageAt is updated by addMessage when a message lands.
           },
         },
       };
@@ -378,6 +432,10 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             ...state.sessions,
             [sessionKey]: toChatSession(meta),
           },
+          transcriptStatus: {
+            ...state.transcriptStatus,
+            [sessionKey]: 'ready',
+          },
         }));
         return;
       }
@@ -395,6 +453,10 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             lastMessageAt: Date.now(),
           },
         },
+        transcriptStatus: {
+          ...state.transcriptStatus,
+          [sessionKey]: 'ready',
+        },
       };
     });
   },
@@ -404,6 +466,13 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     if (!session) return;
     const storageEngine = get().storageEngines[session.agentId] ?? get().storageEngine;
     if (!storageEngine) return;
+
+    set((state) => ({
+      transcriptStatus: {
+        ...state.transcriptStatus,
+        [sessionKey]: 'loading',
+      },
+    }));
 
     const [transcript, meta] = await Promise.all([
       storageEngine.getTranscript(sessionKey),
@@ -418,6 +487,10 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       sessions: {
         ...state.sessions,
         [sessionKey]: toChatSession(meta ?? session.meta, messages),
+      },
+      transcriptStatus: {
+        ...state.transcriptStatus,
+        [sessionKey]: 'ready',
       },
     }));
   },
@@ -434,17 +507,23 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
     set((state) => {
       const nextSessions: Record<string, ChatSession> = {};
+      const nextTranscriptStatus: Record<string, TranscriptStatus> = {};
       const nextActive = { ...state.activeSessionKey };
 
       for (const [sessionKey, session] of Object.entries(state.sessions)) {
         if (validIds.has(session.agentId)) {
           nextSessions[sessionKey] = session;
+          nextTranscriptStatus[sessionKey] = state.transcriptStatus[sessionKey] ?? 'idle';
         }
       }
       for (const [nodeId, activeKey] of Object.entries(nextActive)) {
         if (!(activeKey in nextSessions)) delete nextActive[nodeId];
       }
-      return { sessions: nextSessions, activeSessionKey: nextActive };
+      return {
+        sessions: nextSessions,
+        activeSessionKey: nextActive,
+        transcriptStatus: nextTranscriptStatus,
+      };
     });
   },
 
@@ -463,16 +542,22 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
     set((state) => {
       const nextSessions = { ...state.sessions };
+      const nextTranscriptStatus = { ...state.transcriptStatus };
       const nextActive = { ...state.activeSessionKey };
 
       for (const session of overflow) {
         delete nextSessions[session.sessionKey];
+        delete nextTranscriptStatus[session.sessionKey];
       }
       for (const [nodeId, activeKey] of Object.entries(nextActive)) {
         if (!(activeKey in nextSessions)) delete nextActive[nodeId];
       }
 
-      return { sessions: nextSessions, activeSessionKey: nextActive };
+      return {
+        sessions: nextSessions,
+        activeSessionKey: nextActive,
+        transcriptStatus: nextTranscriptStatus,
+      };
     });
   },
 
@@ -481,7 +566,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     for (const storage of storages) {
       void storage.deleteAllSessions().catch(console.error);
     }
-    set({ sessions: {}, activeSessionKey: {} });
+    set({ sessions: {}, activeSessionKey: {}, transcriptStatus: {} });
   },
 
   activeBranch: {},

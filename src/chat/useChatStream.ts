@@ -13,6 +13,7 @@ export interface ToolSummaryInfo {
 
 export interface ChatStreamState {
   isStreaming: boolean;
+  streamingMsgId: string;
   reasoning: string | null;
   isReasoning: boolean;
   suppressedReply: boolean;
@@ -39,8 +40,29 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
   const assistantMsgIdRef = useRef<string>('');
   const assistantContentRef = useRef<string>('');
   const sessionKeyRef = useRef<string>('');
+  const pendingDeltaRef = useRef<string>('');
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flushDelta = useCallback(() => {
+    flushTimerRef.current = null;
+    if (!pendingDeltaRef.current) return;
+    assistantContentRef.current += pendingDeltaRef.current;
+    pendingDeltaRef.current = '';
+    updateMessage(sessionKeyRef.current, assistantMsgIdRef.current, (m) => ({
+      ...m,
+      content: assistantContentRef.current,
+    }));
+  }, [updateMessage]);
 
   const cleanup = useCallback(() => {
+    if (flushTimerRef.current !== null) {
+      clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
+    // Flush any buffered delta before tearing down
+    if (pendingDeltaRef.current) {
+      assistantContentRef.current += pendingDeltaRef.current;
+      pendingDeltaRef.current = '';
+    }
     unsubRef.current?.();
     unsubRef.current = null;
   }, []);
@@ -80,21 +102,30 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
             break;
 
           case 'message:delta':
-            assistantContentRef.current += event.delta;
-            updateMessage(sessionKeyRef.current, assistantMsgIdRef.current, (m) => ({
-              ...m,
-              content: assistantContentRef.current,
-            }));
+            pendingDeltaRef.current += event.delta;
+            if (flushTimerRef.current === null) {
+              flushTimerRef.current = setTimeout(flushDelta, 32);
+            }
             break;
 
           case 'message:end':
-            if (event.message.usage) {
-              updateMessage(sessionKeyRef.current, assistantMsgIdRef.current, (m) => ({
-                ...m,
-                tokenCount: event.message.usage!.output,
-                usage: event.message.usage,
-              }));
+            // Cancel pending timer and flush any remaining buffered text immediately
+            if (flushTimerRef.current !== null) {
+              clearTimeout(flushTimerRef.current);
+              flushTimerRef.current = null;
             }
+            if (pendingDeltaRef.current) {
+              assistantContentRef.current += pendingDeltaRef.current;
+              pendingDeltaRef.current = '';
+            }
+            updateMessage(sessionKeyRef.current, assistantMsgIdRef.current, (m) => ({
+              ...m,
+              content: assistantContentRef.current,
+              ...(event.message.usage && {
+                tokenCount: event.message.usage.output,
+                usage: event.message.usage,
+              }),
+            }));
             void flushSession(sessionKeyRef.current);
             break;
 
@@ -189,13 +220,15 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
 
       unsubRef.current = unsub;
 
-      void sendPrompt(agentNodeId, sessionKey, text, attachments).catch(() => undefined);
+      void sendPrompt(agentNodeId, sessionKey, text, attachments)
+        .catch(() => undefined);
     },
     [agentNodeId, addMessage, updateMessage, deleteMessage, flushSession, sendPrompt, cleanup],
   );
 
   return {
     isStreaming,
+    streamingMsgId: assistantMsgIdRef.current,
     reasoning,
     isReasoning,
     suppressedReply,

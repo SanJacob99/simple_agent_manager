@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import DefaultsSection from './DefaultsSection';
 import { useSettingsStore } from '../settings-store';
 import { useGraphStore } from '../../store/graph-store';
+import { useModelCatalogStore } from '../../store/model-catalog-store';
 
 describe('DefaultsSection', () => {
   beforeEach(() => {
@@ -38,6 +39,14 @@ describe('DefaultsSection', () => {
           },
         },
       ],
+    } as any);
+    useModelCatalogStore.setState({
+      models: { openrouter: {} },
+      userModels: { openrouter: {} },
+      syncedAt: { openrouter: null },
+      userModelsRequireRefresh: { openrouter: false },
+      loading: { openrouter: false },
+      errors: { openrouter: null },
     } as any);
   });
 
@@ -95,5 +104,57 @@ describe('DefaultsSection', () => {
         'Old prompt',
       );
     }
+  });
+
+  it('shows a searchable picker for default agent models', () => {
+    render(<DefaultsSection />);
+
+    fireEvent.click(screen.getByRole('button', { name: /model picker/i }));
+
+    expect(screen.getByLabelText('Search models')).toBeInTheDocument();
+    expect(screen.getByLabelText('Model results')).toBeInTheDocument();
+  });
+
+  it('allows a manual custom OpenRouter model ID in defaults', () => {
+    useSettingsStore.setState((state) => ({
+      ...state,
+      agentDefaults: {
+        ...state.agentDefaults,
+        provider: 'openrouter',
+        modelId: 'manual/custom-model',
+      },
+    }));
+
+    render(<DefaultsSection />);
+
+    expect(screen.getByDisplayValue('manual/custom-model')).toBeInTheDocument();
+  });
+
+  it('shows discovered OpenRouter models in the default picker', () => {
+    useSettingsStore.setState((state) => ({
+      ...state,
+      agentDefaults: {
+        ...state.agentDefaults,
+        provider: 'openrouter',
+        modelId: 'anthropic/claude-sonnet-4-20250514',
+      },
+    }));
+    useModelCatalogStore.setState({
+      models: {
+        openrouter: {
+          'xiaomi/mimo-v2-pro': {
+            id: 'xiaomi/mimo-v2-pro',
+            provider: 'openrouter',
+            name: 'Mimo V2 Pro',
+          },
+        },
+      },
+    } as any);
+
+    render(<DefaultsSection />);
+
+    fireEvent.click(screen.getByRole('button', { name: /model picker/i }));
+
+    expect(screen.getByText('xiaomi/mimo-v2-pro')).toBeInTheDocument();
   });
 });

@@ -72,7 +72,7 @@ export class AgentClient {
 
   send(command: Command): void {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
-      console.warn('[AgentClient] Cannot send, socket not open');
+      console.warn('[AgentClient] Cannot send, socket not open. Message dropped.');
       return;
     }
     this.socket.send(JSON.stringify(command));

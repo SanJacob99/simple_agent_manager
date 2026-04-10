@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import DataMaintenanceSection from './DataMaintenanceSection';
 import { useGraphStore } from '../../store/graph-store';
+import { useModelCatalogStore } from '../../store/model-catalog-store';
 import { useSessionStore } from '../../store/session-store';
 import { useSettingsStore } from '../settings-store';
 
@@ -100,6 +101,9 @@ describe('DataMaintenanceSection', () => {
         safetyGuardrails: 'Be safe.',
       },
     });
+    useModelCatalogStore.setState({
+      clearOpenRouterCatalog: vi.fn(async () => undefined),
+    } as any);
   });
 
   it('shows an inline error when an imported graph is invalid', async () => {
@@ -142,5 +146,27 @@ describe('DataMaintenanceSection', () => {
 
     expect(useSessionStore.getState().sessions).toEqual({});
     expect(useSessionStore.getState().activeSessionKey).toEqual({});
+  });
+
+  it('clears the persisted model catalog during app settings reset', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    render(<DataMaintenanceSection />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Clear App Settings/i }));
+
+    await waitFor(() => {
+      expect(useModelCatalogStore.getState().clearOpenRouterCatalog).toHaveBeenCalled();
+    });
+  });
+
+  it('clears the persisted model catalog during reset everything', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    render(<DataMaintenanceSection />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Reset Everything/i }));
+
+    await waitFor(() => {
+      expect(useModelCatalogStore.getState().clearOpenRouterCatalog).toHaveBeenCalled();
+    });
   });
 });

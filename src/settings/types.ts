@@ -124,7 +124,7 @@ export const SETTINGS_SECTIONS: Array<{
   {
     id: 'model-catalog',
     label: 'Model Catalog',
-    description: 'Inspect and refresh OpenRouter model discovery.',
+    description: 'Inspect and refresh cached OpenRouter model discovery.',
   },
   {
     id: 'defaults',

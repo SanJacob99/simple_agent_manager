@@ -15,9 +15,9 @@ export class ReasoningGate implements StreamTransform {
 
     switch (aEvent.type) {
       case 'thinking_start':
-        if (this.showReasoning) {
-          emit({ type: 'reasoning:start', agentId: '', runId: context.runId });
-        }
+        // Always emit start/end so the UI can show a "Thinking..." indicator,
+        // even when the full reasoning content is hidden.
+        emit({ type: 'reasoning:start', agentId: '', runId: context.runId });
         break;
 
       case 'thinking_delta':
@@ -28,9 +28,8 @@ export class ReasoningGate implements StreamTransform {
         break;
 
       case 'thinking_end':
-        if (this.showReasoning) {
-          emit({ type: 'reasoning:end', agentId: '', runId: context.runId, content: aEvent.content });
-        }
+        // Always emit end to close the indicator opened by thinking_start.
+        emit({ type: 'reasoning:end', agentId: '', runId: context.runId, content: this.showReasoning ? aEvent.content : '' });
         break;
     }
   }

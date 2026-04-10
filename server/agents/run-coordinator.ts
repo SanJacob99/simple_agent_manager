@@ -7,6 +7,7 @@ import type { StorageEngine } from '../runtime/storage-engine';
 import type { AgentConfig } from '../../shared/agent-config';
 import type { SessionStoreEntry } from '../../shared/storage-types';
 import type { HookRegistry } from '../hooks/hook-registry';
+import { log } from '../logger';
 import { SessionRouter, type RouteRequest, type RouteResult } from '../runtime/session-router';
 import { SessionTranscriptStore } from '../runtime/session-transcript-store';
 import {
@@ -131,7 +132,12 @@ export class RunCoordinator {
       throw new Error('Cannot dispatch: no storage configured for this agent');
     }
 
+    const _t0 = Date.now();
+    const _lap = (label: string) => log('TIMING:SERVER', `+${Date.now() - _t0}ms ${label}`);
+    _lap('dispatch_received');
+
     const routed = await this.resolveSession(params.sessionKey);
+    _lap('session_resolved');
     const runId = randomUUID();
     const acceptedAt = Date.now();
 
@@ -161,6 +167,7 @@ export class RunCoordinator {
         blockReason: undefined,
       };
       await this.hooks.invoke(HOOK_NAMES.MESSAGE_RECEIVED, msgCtx);
+      _lap('after_hook:message_received');
 
       if (msgCtx.blocked) {
         this.pendingParams.delete(runId);
@@ -397,6 +404,10 @@ export class RunCoordinator {
       throw new Error('Cannot execute run without transcript storage');
     }
 
+    const _t0 = Date.now();
+    const _lap = (label: string) => log('TIMING:SERVER', `+${Date.now() - _t0}ms ${label} [runId=${record.runId.slice(0, 8)}]`);
+    _lap('execute_run_start');
+
     record.status = 'running';
     record.startedAt = Date.now();
 
@@ -464,6 +475,7 @@ export class RunCoordinator {
       }
 
       await this.persistUserMessage(record, params, transcriptManager);
+      _lap('after_persist_user_message');
 
       if (this.hooks) {
         const modelCtx: BeforeModelResolveContext = {
@@ -475,6 +487,7 @@ export class RunCoordinator {
         };
 
         await this.hooks.invoke(HOOK_NAMES.BEFORE_MODEL_RESOLVE, modelCtx);
+        _lap('after_hook:before_model_resolve');
 
         if (modelCtx.overrides.provider || modelCtx.overrides.modelId) {
           const provider = modelCtx.overrides.provider ?? this.config.provider;
@@ -494,6 +507,7 @@ export class RunCoordinator {
         };
 
         await this.hooks.invoke(HOOK_NAMES.BEFORE_PROMPT_BUILD, promptCtx);
+        _lap('after_hook:before_prompt_build');
 
         if (promptCtx.overrides.systemPrompt) {
           this.runtime.setSystemPrompt(promptCtx.overrides.systemPrompt);
@@ -527,6 +541,7 @@ export class RunCoordinator {
         };
 
         await this.hooks.invoke(HOOK_NAMES.BEFORE_AGENT_REPLY, replyCtx);
+        _lap('after_hook:before_agent_reply');
 
         if (replyCtx.claimed) {
           if (replyCtx.silent) {
@@ -608,13 +623,50 @@ export class RunCoordinator {
       });
     }, timeoutMs);
 
+    let _apiCallCount = 0;
+    let _firstTextDeltaLogged = false;
+    let _firstThinkingDeltaLogged = false;
+    
     const unsubscribe = this.runtime.subscribe((event: RuntimeEvent) => {
+      if ('type' in event) {
+        if (event.type === 'message_start' && (event as any).message?.role === 'assistant') {
+          _apiCallCount++;
+          _firstTextDeltaLogged = false;
+          _firstThinkingDeltaLogged = false;
+          
+          let passInfo = `pass=${_apiCallCount}`;
+          if (_apiCallCount === 2) {
+            passInfo += `, fallback_or_retry`;
+          } else if (_apiCallCount > 2) {
+            passInfo += `, tool_retry`;
+          }
+          _lap(`api:message_start [${passInfo}]`);
+        }
+        else if (
+          !_firstTextDeltaLogged &&
+          event.type === 'message_update' &&
+          (event as any).assistantMessageEvent?.type === 'text_delta'
+        ) {
+          _lap(`api:first_text_delta [pass=${_apiCallCount}]`);
+          _firstTextDeltaLogged = true;
+        }
+        else if (
+          !_firstThinkingDeltaLogged &&
+          event.type === 'message_update' &&
+          (event as any).assistantMessageEvent?.type === 'thinking_delta'
+        ) {
+          _lap(`api:first_thinking_delta [pass=${_apiCallCount}]`);
+          _firstThinkingDeltaLogged = true;
+        }
+      }
       queueTranscriptWrite(() => this.persistRuntimeEvent(record, transcriptManager, event, transcriptState));
       this.emitForRun(record.runId, { type: 'stream', runId: record.runId, event });
     });
 
     try {
+      _lap('api_call_start');
       await this.runtime.prompt(promptText, params.attachments);
+      _lap('api_call_complete');
       if (record.status !== 'running') {
         return;
       }
@@ -649,7 +701,11 @@ export class RunCoordinator {
     }
 
     transcriptManager.appendMessage(message);
-    await this.touchSession(record.sessionKey, message.timestamp);
+    // Fire-and-forget: touchSession is a metadata timestamp update (read+write
+    // of session JSON). It does not need to complete before the API call starts.
+    this.touchSession(record.sessionKey, message.timestamp).catch((err) => {
+      console.error('[RunCoordinator] touchSession failed:', err);
+    });
   }
 
   private async persistRuntimeEvent(

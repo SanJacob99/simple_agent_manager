@@ -96,4 +96,16 @@ describe('AgentConnectionStore', () => {
     });
     expect(store.getAgentStatus('a1')).toBe('disconnected');
   });
+
+  it('remembers when the websocket has connected at least once', () => {
+    const store = useAgentConnectionStore.getState();
+
+    expect(store.hasConnectedOnce).toBe(false);
+
+    store.setConnectionStatus('connected');
+    expect(useAgentConnectionStore.getState().hasConnectedOnce).toBe(true);
+
+    store.setConnectionStatus('disconnected');
+    expect(useAgentConnectionStore.getState().hasConnectedOnce).toBe(true);
+  });
 });
