@@ -257,4 +257,41 @@ describe('StreamProcessor', () => {
       expect((event as any).agentId).toBe('agent-1');
     }
   });
+
+  it('forwards lifecycle errors even when no run context was created', () => {
+    const coordinator = mockCoordinator();
+    const processor = new StreamProcessor('agent-1', coordinator as any, makeConfig());
+    const emitted: ServerEvent[] = [];
+    processor.subscribe((e) => emitted.push(e));
+
+    emitToCoordinator(coordinator, {
+      type: 'lifecycle:error',
+      runId: 'run-1',
+      status: 'error',
+      error: {
+        code: 'internal',
+        message: 'The fetch to the provider api failed',
+        retriable: false,
+      },
+      endedAt: 2000,
+    });
+
+    expect(emitted).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'lifecycle:error',
+          agentId: 'agent-1',
+          runId: 'run-1',
+          error: expect.objectContaining({
+            message: 'The fetch to the provider api failed',
+          }),
+        }),
+        expect.objectContaining({
+          type: 'agent:error',
+          agentId: 'agent-1',
+          error: 'The fetch to the provider api failed',
+        }),
+      ]),
+    );
+  });
 });

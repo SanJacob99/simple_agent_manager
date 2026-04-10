@@ -78,7 +78,26 @@ export class StreamProcessor {
     if (!runId) return;
 
     const context = this.contexts.get(runId);
-    if (!context) return;
+    if (!context) {
+      if (event.type === 'lifecycle:error') {
+        const errorEvent = event as any;
+        this.emit({
+          type: 'lifecycle:error',
+          agentId: this.agentId,
+          runId,
+          status: 'error',
+          error: errorEvent.error,
+          startedAt: errorEvent.startedAt,
+          endedAt: errorEvent.endedAt,
+        });
+        this.emit({
+          type: 'agent:error',
+          agentId: this.agentId,
+          error: errorEvent.error?.message ?? 'Unknown error',
+        });
+      }
+      return;
+    }
 
     // Build emit function that stamps agentId
     const finalEmit: EmitFn = (shaped) => {
