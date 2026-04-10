@@ -104,6 +104,13 @@ export interface ResolvedCronConfig {
   retentionDays: number;
 }
 
+export interface ResolvedProviderConfig {
+  pluginId: string;
+  authMethodId: string;
+  envVar: string;
+  baseUrl: string; // raw override from node; '' means server fills plugin.defaultBaseUrl
+}
+
 export interface AgentConfig {
   id: string;
   version: number;
@@ -111,7 +118,7 @@ export interface AgentConfig {
   description: string;
   tags: string[];
 
-  provider: string;
+  provider: ResolvedProviderConfig;
   modelId: string;
   thinkingLevel: string;
   systemPrompt: ResolvedSystemPrompt;
