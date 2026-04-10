@@ -11,4 +11,4 @@ test-results/
 storage/
 logs/
 settings.json
-openrouter-model-catalog.json
+provider-catalog*

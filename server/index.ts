@@ -36,8 +36,16 @@ const engines = new Map<string, StorageEngine>();
 const transcriptStores = new Map<string, SessionTranscriptStore>();
 const sessionRouters = new Map<string, SessionRouter>();
 
+function engineKey(config: ResolvedStorageConfig, agentName: string): string {
+  return `${config.storagePath}:${agentName}`;
+}
+
+function sessionRouterKey(config: ResolvedStorageConfig, agentName: string, agentId: string): string {
+  return `${config.storagePath}:${agentName}:${agentId}`;
+}
+
 function getOrCreateEngine(config: ResolvedStorageConfig, agentName: string): StorageEngine {
-  const key = `${config.storagePath}:${agentName}`;
+  const key = engineKey(config, agentName);
   let engine = engines.get(key);
   if (!engine) {
     engine = new StorageEngine(config, agentName);
@@ -50,7 +58,7 @@ function getOrCreateTranscriptStore(
   config: ResolvedStorageConfig,
   agentName: string,
 ): SessionTranscriptStore {
-  const key = `${config.storagePath}:${agentName}`;
+  const key = engineKey(config, agentName);
   let store = transcriptStores.get(key);
   if (!store) {
     store = new SessionTranscriptStore(
@@ -67,7 +75,7 @@ function getOrCreateSessionRouter(
   agentName: string,
   agentId: string,
 ): SessionRouter {
-  const key = `${config.storagePath}:${agentName}:${agentId}`;
+  const key = sessionRouterKey(config, agentName, agentId);
   let router = sessionRouters.get(key);
   if (!router) {
     router = new SessionRouter(
@@ -81,6 +89,18 @@ function getOrCreateSessionRouter(
   return router;
 }
 
+function forgetAgentStorage(config: ResolvedStorageConfig, agentName: string): void {
+  const key = engineKey(config, agentName);
+  engines.delete(key);
+  transcriptStores.delete(key);
+
+  for (const routerKey of sessionRouters.keys()) {
+    if (routerKey.startsWith(`${key}:`)) {
+      sessionRouters.delete(routerKey);
+    }
+  }
+}
+
 // --- Storage initialization ---
 
 app.post('/api/storage/init', async (req, res) => {
@@ -88,6 +108,21 @@ app.post('/api/storage/init', async (req, res) => {
   try {
     const engine = getOrCreateEngine(config, agentName);
     await engine.init();
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.delete('/api/storage/agent-data', async (req, res) => {
+  const { config, agentName } = req.body as {
+    config: ResolvedStorageConfig;
+    agentName: string;
+  };
+  try {
+    const engine = getOrCreateEngine(config, agentName);
+    await engine.deleteAgentData();
+    forgetAgentStorage(config, agentName);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });

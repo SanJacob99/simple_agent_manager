@@ -6,6 +6,7 @@ import { useAgentConnectionStore } from './agent-connection-store';
 const storageClientMocks = vi.hoisted(() => ({
   construct: vi.fn(),
   init: vi.fn(async () => undefined),
+  deleteAgentData: vi.fn(async () => undefined),
   deleteAllSessions: vi.fn(async () => undefined),
 }));
 
@@ -21,6 +22,7 @@ vi.mock('../runtime/storage-client', () => ({
     }
 
     init = storageClientMocks.init;
+    deleteAgentData = storageClientMocks.deleteAgentData;
     deleteAllSessions = storageClientMocks.deleteAllSessions;
   },
 }));
@@ -35,6 +37,7 @@ describe('graph store defaults integration', () => {
     resolveAgentConfigMock.mockReturnValue({ storage: { baseDir: 'sessions' } });
     storageClientMocks.construct.mockClear();
     storageClientMocks.init.mockClear();
+    storageClientMocks.deleteAgentData.mockClear();
     storageClientMocks.deleteAllSessions.mockClear();
 
     localStorage.clear();
@@ -159,7 +162,7 @@ describe('graph store defaults integration', () => {
     expect(useAgentConnectionStore.getState().chatAgentNodeId).toBeNull();
   });
 
-  it('deletes persisted sessions when removing an agent with deleteData enabled', async () => {
+  it('deletes all persisted agent data when removing an agent with deleteData enabled', async () => {
     useGraphStore.setState({
       nodes: [
         {
@@ -192,6 +195,6 @@ describe('graph store defaults integration', () => {
       'agent-1',
     );
     expect(storageClientMocks.init).toHaveBeenCalledOnce();
-    expect(storageClientMocks.deleteAllSessions).toHaveBeenCalledOnce();
+    expect(storageClientMocks.deleteAgentData).toHaveBeenCalledOnce();
   });
 });

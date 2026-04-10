@@ -159,7 +159,7 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
           pendingDeleteAgent.nodeId,
         );
         void client.init()
-          .then(() => client.deleteAllSessions())
+          .then(() => client.deleteAgentData())
           .catch(console.error);
       }
       useSessionStore.getState().deleteAllSessionsForAgent(pendingDeleteAgent.nodeId);
