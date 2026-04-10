@@ -7,6 +7,9 @@ import type { DiscoveredModelMetadata } from '../../shared/agent-config';
 import type { HookRegistry } from '../hooks/hook-registry';
 import type { BeforeToolCallContext, AfterToolCallContext } from '../hooks/hook-types';
 import { HOOK_NAMES } from '../hooks/hook-types';
+import type { ProviderPluginRegistry } from '../providers/plugin-registry';
+import { resolveProviderRuntimeAuth } from '../providers/provider-auth';
+import { resolveProviderStreamFn } from '../providers/stream-resolver';
 import { MemoryEngine } from './memory-engine';
 import { ContextEngine } from './context-engine';
 import { resolveToolNames, createAgentTools } from './tool-factory';
@@ -63,6 +66,7 @@ export class AgentRuntime {
     getApiKey: (provider: string) => Promise<string | undefined> | string | undefined,
     getDiscoveredModel?: (provider: string, modelId: string) => DiscoveredModelMetadata | undefined,
     hookRegistry?: HookRegistry,
+    private readonly pluginRegistry?: ProviderPluginRegistry,
   ) {
     this.config = config;
     this.getApiKeyFn = getApiKey;
@@ -94,8 +98,12 @@ export class AgentRuntime {
     // Build system prompt
     const systemPrompt = config.systemPrompt.assembled;
 
+    const plugin = this.pluginRegistry?.get(config.provider.pluginId);
+    const runtimeProviderId = plugin?.runtimeProviderId ?? config.provider.pluginId;
+
     const model = resolveRuntimeModel({
       provider: config.provider,
+      runtimeProviderId,
       modelId: config.modelId,
       modelCapabilities: config.modelCapabilities,
       getDiscoveredModel: this.getDiscoveredModelFn,
@@ -137,16 +145,17 @@ export class AgentRuntime {
    * Swap the model for the next prompt call. Called by RunCoordinator
    * after before_model_resolve hook fires with overrides.
    */
-  setModel(provider: string, modelId: string): void {
+  setModel(runtimeProviderId: string, modelId: string): void {
     const model = resolveRuntimeModel({
-      provider,
+      provider: this.config.provider,
+      runtimeProviderId,
       modelId,
       modelCapabilities: this.config.modelCapabilities,
       getDiscoveredModel: this.getDiscoveredModelFn,
     });
 
     this.agent.state.model = model;
-    log('AgentRuntime', `Model swapped to ${provider}/${modelId}`);
+    log('AgentRuntime', `Model swapped to ${runtimeProviderId}/${modelId}`);
   }
 
   /**

@@ -3,12 +3,15 @@ import type { Api, Model } from '@mariozechner/pi-ai';
 import type {
   DiscoveredModelMetadata,
   ModelCapabilityOverrides,
+  ResolvedProviderConfig,
 } from '../../shared/agent-config';
 
 interface ResolveRuntimeModelArgs {
-  provider: string;
+  provider: ResolvedProviderConfig;
+  runtimeProviderId: string;
   modelId: string;
   modelCapabilities: ModelCapabilityOverrides;
+  baseUrl?: string;
   getDiscoveredModel: (
     provider: string,
     modelId: string,
@@ -30,24 +33,30 @@ function applyCapabilityOverrides(
 }
 
 export function resolveRuntimeModel(args: ResolveRuntimeModelArgs): Model<Api> {
+  const pid = args.runtimeProviderId;
+
   const builtIn = (
     getModel as (provider: string, modelId: string) => Model<Api> | undefined
-  )(args.provider, args.modelId);
+  )(pid, args.modelId);
 
   if (builtIn) {
-    return applyCapabilityOverrides(builtIn, args.modelCapabilities);
+    const model = applyCapabilityOverrides(builtIn, args.modelCapabilities);
+    if (args.baseUrl) {
+      return { ...model, baseUrl: args.baseUrl };
+    }
+    return model;
   }
 
-  const discovered = args.getDiscoveredModel(args.provider, args.modelId);
+  const discovered = args.getDiscoveredModel(pid, args.modelId);
   const template = (
     getModels as (provider: string) => Model<Api>[]
-  )(args.provider)[0];
+  )(pid)[0];
 
   if (!template) {
-    throw new Error(`No model template available for provider: ${args.provider}`);
+    throw new Error(`No model template available for provider: ${pid}`);
   }
 
-  return applyCapabilityOverrides(
+  const model = applyCapabilityOverrides(
     {
       ...template,
       id: args.modelId,
@@ -60,4 +69,9 @@ export function resolveRuntimeModel(args: ResolveRuntimeModelArgs): Model<Api> {
     },
     args.modelCapabilities,
   );
+
+  if (args.baseUrl) {
+    return { ...model, baseUrl: args.baseUrl };
+  }
+  return model;
 }

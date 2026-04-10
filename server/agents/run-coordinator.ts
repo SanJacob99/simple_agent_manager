@@ -490,7 +490,7 @@ export class RunCoordinator {
         _lap('after_hook:before_model_resolve');
 
         if (modelCtx.overrides.provider || modelCtx.overrides.modelId) {
-          const provider = modelCtx.overrides.provider ?? this.config.provider;
+          const provider = modelCtx.overrides.provider ?? this.config.provider.pluginId;
           const modelId = modelCtx.overrides.modelId ?? this.config.modelId;
           this.runtime.setModel(provider, modelId);
         }
@@ -563,7 +563,7 @@ export class RunCoordinator {
               {
                 role: 'assistant',
                 content: [{ type: 'text', text: replyCtx.syntheticReply }],
-                provider: this.config.provider,
+                provider: this.config.provider.pluginId,
                 model: this.config.modelId,
                 stopReason: 'stop',
                 timestamp: Date.now(),
@@ -862,7 +862,7 @@ export class RunCoordinator {
         ? rawMessage.content
         : [{ type: 'text', text: fallbackText }],
       api: rawMessage?.api ?? (this.runtime.state.model as any)?.api ?? 'openai-completions',
-      provider: rawMessage?.provider ?? this.config.provider,
+      provider: rawMessage?.provider ?? this.config.provider.pluginId,
       model: rawMessage?.model ?? this.config.modelId,
       responseId: rawMessage?.responseId,
       usage: normalized.usage,
