@@ -6,6 +6,7 @@ import { useGraphStore } from './store/graph-store';
 import { useAgentConnectionStore } from './store/agent-connection-store';
 import { useSettingsStore } from './settings/settings-store';
 import { useModelCatalogStore } from './store/model-catalog-store';
+import { useProviderRegistryStore } from './store/provider-registry-store';
 
 vi.mock('./canvas/FlowCanvas', () => ({
   default: () => <div>Flow Canvas Stub</div>,
@@ -32,12 +33,21 @@ describe('App settings workspace shell', () => {
       agents: {},
     } as any);
     useSettingsStore.setState({
-      apiKeys: {},
+      apiKeys: { openrouter: 'key-1' },
+      providerDefaults: {
+        pluginId: 'openrouter',
+        authMethodId: 'api-key',
+        envVar: 'OPENROUTER_API_KEY',
+        baseUrl: '',
+      },
       loaded: true,
       loadFromServer: vi.fn(async () => undefined),
     } as any);
     useModelCatalogStore.setState({
       loadOpenRouterCatalog: vi.fn(async () => undefined),
+    } as any);
+    useProviderRegistryStore.setState({
+      loadProviders: vi.fn(async () => undefined),
     } as any);
   });
 
@@ -95,5 +105,15 @@ describe('App settings workspace shell', () => {
     );
 
     expect(useModelCatalogStore.getState().loadOpenRouterCatalog).toHaveBeenCalled();
+  });
+
+  it('loads the provider registry on mount', () => {
+    render(
+      <ReactFlowProvider>
+        <App />
+      </ReactFlowProvider>,
+    );
+
+    expect(useProviderRegistryStore.getState().loadProviders).toHaveBeenCalled();
   });
 });

@@ -28,7 +28,7 @@ export interface BeforeModelResolveContext {
   sessionId: string;
   config: Readonly<AgentConfig>;
   overrides: {
-    provider?: string;
+    provider?: string; // runtimeProviderId override, not pluginId
     modelId?: string;
   };
 }

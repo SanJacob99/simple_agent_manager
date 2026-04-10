@@ -1,78 +1,68 @@
 # Agent Node
 
-> The central hub node that represents an AI agent — defines which LLM to use, the system prompt, and orchestrates all connected peripheral nodes.
+> The central hub node that stores model and prompt settings while connected peripheral nodes supply runtime services.
 
 <!-- source: src/types/nodes.ts#AgentNodeData -->
-<!-- last-verified: 2026-04-09 -->
+<!-- last-verified: 2026-04-10 -->
 
 ## Overview
 
-The Agent Node is the core building block of every graph. Each agent node represents a single AI agent backed by an LLM provider and model. It is the only node type that can receive connections from peripheral nodes (Memory, Tools, Skills, Context Engine, etc.), and it is the only node that can be chatted with.
+The Agent Node is the core node in every graph. It stores the agent's name, prompt settings, selected model id, and a snapshot of model capabilities. Peripheral nodes connect into the agent to provide memory, tools, context handling, storage, and now provider identity.
 
-When a user opens the chat drawer for an agent, the system traverses all edges pointing to that agent node, collects the connected peripheral configurations, and resolves them into an `AgentConfig` via `resolveAgentConfig()` in `src/utils/graph-to-agent.ts`. This config is then used to instantiate an `AgentRuntime` which wraps a `pi-agent-core` Agent with integrated memory, tools, and context management.
+The agent no longer stores a `provider` field directly. Provider selection lives on a connected Provider Node, and `resolveAgentConfig()` in `src/utils/graph-to-agent.ts` builds a structured `ResolvedProviderConfig` from that connection.
 
-The agent node stores a **full model capabilities snapshot** so the backend can operate independently of the frontend's live model catalog. When a user selects a model, all discovered API capabilities are snapshotted into `modelCapabilities`. Users can then override individual fields. This ensures connected nodes (like Context Engine) can always read capabilities even when the frontend is detached.
-
-Both the canvas Agent properties panel and the Settings Defaults workspace use the same searchable model-picker behavior. For OpenRouter, the picker merges built-in static models with a backend-persisted cached catalog when available, but it still allows manual provider-supported model IDs that are not present in the cached file yet.
-
-OpenRouter is the default LLM provider. Direct Anthropic, Google, and OpenAI integrations are planned for future releases.
+The Agent Node still owns `modelId`, `thinkingLevel`, and `modelCapabilities`. That capability snapshot lets the backend resolve models even when live catalog data is stale or unavailable.
 
 ## Configuration
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
 | `name` | `string` | `""` | Display name for the agent |
-| `nameConfirmed` | `boolean` | `false` | Whether the user has confirmed the agent name |
-| `systemPrompt` | `string` | `"You are a helpful assistant."` | The system prompt sent to the LLM |
-| `provider` | `string` | `"openrouter"` | LLM provider ID (openrouter, anthropic, openai, google, ollama, mistral, groq, xai) |
-| `modelId` | `string` | `"anthropic/claude-sonnet-4-20250514"` | Model identifier for the selected provider |
-| `thinkingLevel` | `ThinkingLevel` | `"off"` | Thinking/reasoning level: off, minimal, low, medium, high, xhigh |
-| `description` | `string` | `""` | Optional description of the agent's purpose |
-| `tags` | `string[]` | `[]` | Freeform tags for categorization |
-| `modelCapabilities` | `ModelCapabilityOverrides` | `{}` | Full capabilities snapshot from API + user overrides. See below. |
-| `systemPromptMode` | `SystemPromptMode` | `"auto"` | How the system prompt is built: `auto` (app-managed, read-only), `append` (app-built + user instructions at the end), `manual` (user-owned, no app injection) |
+| `nameConfirmed` | `boolean` | `false` | Whether the user has confirmed the generated or edited name |
+| `systemPrompt` | `string` | `"You are a helpful assistant."` | User-owned system prompt or appended instructions |
+| `modelId` | `string` | `"anthropic/claude-sonnet-4-20250514"` | Model id for the connected provider |
+| `thinkingLevel` | `ThinkingLevel` | `"off"` | Requested reasoning level for supported models |
+| `description` | `string` | `""` | Optional purpose/summary for the agent |
+| `tags` | `string[]` | `[]` | Freeform tags used by the UI |
+| `modelCapabilities` | `ModelCapabilityOverrides` | `{}` | Snapshotted model metadata plus any user overrides |
+| `systemPromptMode` | `SystemPromptMode` | `"auto"` | Prompt assembly mode. `auto` is resolved as app-managed append behavior |
+| `showReasoning` | `boolean` | `false` | Whether to expose reasoning output in the UI when supported |
+| `verbose` | `boolean` | `false` | Whether to prefer more verbose runtime output |
 
 ### ModelCapabilityOverrides Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `reasoningSupported` | `boolean` | Whether the model supports chain-of-thought reasoning |
-| `inputModalities` | `ModelInputModality[]` | Input types: `'text'`, `'image'` |
-| `contextWindow` | `number` | Max input tokens (prompt + history) |
-| `maxTokens` | `number` | Max output tokens per response |
-| `cost` | `ModelCostInfo` | Pricing per token (input, output, cache read/write) |
-| `outputModalities` | `string[]` | Output types: `'text'`, `'image'`, etc. |
-| `tokenizer` | `string` | Tokenizer name (e.g. `'claude'`, `'o200k_base'`) |
-| `supportedParameters` | `string[]` | API parameters the model supports (e.g. `'temperature'`, `'reasoning'`) |
-| `topProvider` | `ModelTopProviderInfo` | Provider-specific limits (context length, max completion, moderation) |
-| `description` | `string` | Model description from the API |
-| `modelName` | `string` | Human-readable model name from the API |
+| `reasoningSupported` | `boolean` | Whether the model supports reasoning |
+| `inputModalities` | `ModelInputModality[]` | Supported input types such as `text` or `image` |
+| `contextWindow` | `number` | Maximum input token window |
+| `maxTokens` | `number` | Maximum response tokens |
+| `cost` | `ModelCostInfo` | Pricing data for input/output/cache tokens |
+| `outputModalities` | `string[]` | Supported output types |
+| `tokenizer` | `string` | Tokenizer identifier |
+| `supportedParameters` | `string[]` | Model API parameters known to be supported |
+| `topProvider` | `ModelTopProviderInfo` | Provider-specific limits and moderation metadata |
+| `description` | `string` | Provider/catalog description text |
+| `modelName` | `string` | Human-readable model name |
 
 ## Runtime Behavior
 
-When the chat drawer opens for an agent, the following happens:
-
-1. **Config resolution** (`src/utils/graph-to-agent.ts`): `resolveAgentConfig()` finds all peripheral nodes connected to this agent via edges, extracts their configuration, and builds a flat `AgentConfig` JSON object.
-
-2. **System prompt augmentation**: `resolveAgentConfig` calls `buildSystemPrompt()` to assemble a structured prompt with named sections (safety, tooling, skills, workspace, time, runtime). Behavior depends on `systemPromptMode`: in `auto` mode the prompt is fully app-managed and the user's system prompt field is read-only; in `append` mode the app-built prompt is used and the user's instructions are appended at the end; in `manual` mode only the user's text is used with no app injection.
-
-3. **Runtime creation** (`server/runtime/agent-runtime.ts`): `AgentRuntime` takes the config + an API key resolver and creates:
-   - A `MemoryEngine` (if memory node connected)
-   - A `ContextEngine` (if context engine node connected)
-   - Tool instances via `resolveToolNames()` + `createAgentTools()`
-   - A `pi-agent-core` Agent with the assembled system prompt, model, tools, and `transformContext`
-
-4. **Model resolution** (`src/runtime/model-resolver.ts`): The provider + modelId are resolved to a concrete model object. Capability overrides (from the agent node's snapshotted capabilities) are applied on top of built-in model metadata. Since capabilities are always snapshotted, the backend can resolve the model without needing the frontend's live catalog or cached discovery data.
-
-5. **Catalog-assisted selection**: On the frontend, OpenRouter discovery is loaded from a backend-owned persisted cache file and only refreshed on demand. This improves picker search and model metadata display, but it is not required for runtime execution because manual model IDs and snapshotted capabilities remain first-class.
-
-6. **Event streaming**: The runtime forwards `pi-agent-core` agent events to listeners. The ChatDrawer subscribes to these for streaming text, tool calls, and status updates. Runtime-level fetch logging must stay non-blocking for streamed provider responses so `message:start` and `message:delta` events continue reaching the drawer incrementally instead of being buffered until the response ends.
+1. `resolveAgentConfig()` collects incoming peripheral nodes and creates a serializable `AgentConfig`.
+2. The connected Provider Node is resolved into `AgentConfig.provider`. If no Provider Node is connected, config resolution still succeeds, but runtime validation reports the graph as unrunnable.
+3. `buildSystemPrompt()` assembles the final system prompt based on `systemPromptMode`, tool summaries, skills, workspace path, and runtime metadata.
+4. `server/runtime/agent-runtime.ts` creates the runtime agent, and `server/runtime/model-resolver.ts` resolves the final runtime model using:
+   - the provider plugin's runtime provider id
+   - the stored `modelId`
+   - the agent's snapshotted capability overrides
+5. The model picker UI in the Agent properties panel is driven by the connected Provider Node's catalog state, keyed by provider instance rather than a hardcoded provider string.
+6. Interactive chat requires a connected Provider Node, Context Engine Node, and Storage Node before the drawer can start a session.
 
 ## Connections
 
-- **Receives from**: Memory, Tools, Skills, Context Engine, Agent Comm, Connectors, Database, Vector Database (all peripheral types)
-- **Sends to**: None — agent nodes are always the target of edges, never the source
-- Only peripheral → agent connections are allowed. Agent-to-agent and peripheral-to-peripheral connections are rejected by the canvas validation logic.
+- Receives from: Provider, Memory, Tools, Skills, Context Engine, Agent Comm, Connectors, Storage, Vector Database, and Cron nodes
+- Sends to: None
+- Only peripheral-to-agent connections are supported
+- Runtime validation requires exactly one connected Provider Node
 
 ## Example
 
@@ -82,7 +72,6 @@ When the chat drawer opens for an agent, the following happens:
   "name": "Research Assistant",
   "nameConfirmed": true,
   "systemPrompt": "You are a research assistant. Search the web for information, save important findings to memory, and provide well-sourced answers.",
-  "provider": "openrouter",
   "modelId": "anthropic/claude-sonnet-4-20250514",
   "thinkingLevel": "medium",
   "description": "Web research agent with memory",
@@ -100,6 +89,8 @@ When the chat drawer opens for an agent, the following happens:
     "description": "Claude Sonnet 4 is Anthropic's latest model.",
     "modelName": "Claude Sonnet 4"
   },
-  "systemPromptMode": "append"
+  "systemPromptMode": "append",
+  "showReasoning": false,
+  "verbose": false
 }
 ```

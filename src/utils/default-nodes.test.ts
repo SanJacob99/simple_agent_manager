@@ -6,7 +6,6 @@ describe('getDefaultNodeData', () => {
     const node = getDefaultNodeData('agent');
 
     expect(node.type).toBe('agent');
-    expect(node.provider).toBe('openrouter');
     expect(node.systemPromptMode).toBe('append');
   });
 
@@ -32,5 +31,15 @@ describe('getDefaultNodeData', () => {
 
     expect(node.type).toBe('agent');
     expect(node.modelCapabilities).toEqual({});
+  });
+
+  it('returns provider defaults', () => {
+    const data = getDefaultNodeData('provider');
+    expect(data.type).toBe('provider');
+    if (data.type !== 'provider') throw new Error('unreachable');
+    expect(data.pluginId).toBe('openrouter');
+    expect(data.authMethodId).toBe('api-key');
+    expect(data.envVar).toBe('OPENROUTER_API_KEY');
+    expect(data.baseUrl).toBe('');
   });
 });

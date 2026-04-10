@@ -57,6 +57,11 @@ export function importGraph(bundle: unknown): { nodes: AppNode[]; edges: Edge[] 
     const defaults = getDefaultNodeData(node.data.type);
     const merged = { ...defaults, ...node.data } as FlowNodeData;
 
+    // Remove the pre-provider-node schema field from imported agent nodes.
+    if (merged.type === 'agent' && 'provider' in merged) {
+      delete (merged as FlowNodeData & { provider?: unknown }).provider;
+    }
+
     // Auto-confirm names for imported agents that already have a name
     if (
       merged.type === 'agent' &&

@@ -5,10 +5,10 @@ dist
 *.local
 *.tsbuildinfo
 .worktrees
-notes/
 .tmp/
 test-results/
 storage/
 logs/
 settings.json
-openrouter-model-catalog.json
+provider-catalog*
+notes/

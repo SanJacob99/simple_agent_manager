@@ -27,11 +27,21 @@ function buildNodeData(nodeType: NodeType): FlowNodeData {
     const agentDefaults = useSettingsStore.getState().agentDefaults;
     return {
       ...defaults,
-      provider: agentDefaults.provider,
       modelId: agentDefaults.modelId,
       thinkingLevel: agentDefaults.thinkingLevel,
       systemPrompt: agentDefaults.systemPrompt,
       systemPromptMode: agentDefaults.systemPromptMode,
+    };
+  }
+
+  if (nodeType === 'provider' && defaults.type === 'provider') {
+    const providerDefaults = useSettingsStore.getState().providerDefaults;
+    return {
+      ...defaults,
+      pluginId: providerDefaults.pluginId,
+      authMethodId: providerDefaults.authMethodId,
+      envVar: providerDefaults.envVar,
+      baseUrl: providerDefaults.baseUrl,
     };
   }
 
@@ -149,7 +159,7 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
           pendingDeleteAgent.nodeId,
         );
         void client.init()
-          .then(() => client.deleteAllSessions())
+          .then(() => client.deleteAgentData())
           .catch(console.error);
       }
       useSessionStore.getState().deleteAllSessionsForAgent(pendingDeleteAgent.nodeId);
@@ -268,7 +278,6 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
               ...node,
               data: {
                 ...node.data,
-                provider: agentDefaults.provider,
                 modelId: agentDefaults.modelId,
                 thinkingLevel: agentDefaults.thinkingLevel,
               },

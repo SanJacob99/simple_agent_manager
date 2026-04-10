@@ -94,6 +94,15 @@ export class StorageClient {
     if (!res.ok) throw new Error(await res.text());
   }
 
+  async deleteAgentData(): Promise<void> {
+    const res = await fetch('/api/storage/agent-data', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config: this.config, agentName: this.agentName }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+  }
+
   async enforceRetention(maxSessions: number): Promise<void> {
     const res = await fetch('/api/storage/sessions/enforce-retention', {
       method: 'POST',

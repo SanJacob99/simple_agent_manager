@@ -1,12 +1,14 @@
 import { useState, useEffect, useMemo } from 'react';
-import { PROVIDERS } from '../../runtime/provider-model-options';
 import ProviderModelPicker from '../../components/model-picker/ProviderModelPicker';
 import {
-  getDefaultModelId,
   getModelOptions,
 } from '../../components/model-picker/provider-model-utils';
 import { useGraphStore } from '../../store/graph-store';
-import { useModelCatalogStore } from '../../store/model-catalog-store';
+import {
+  buildProviderCatalogKey,
+  useModelCatalogStore,
+} from '../../store/model-catalog-store';
+import { useProviderRegistryStore } from '../../store/provider-registry-store';
 import { useSettingsStore } from '../settings-store';
 import type { ThinkingLevel, CompactionStrategy, MemoryBackend } from '../../types/nodes';
 import type { DefaultsSubTab } from '../types';
@@ -17,6 +19,7 @@ const MEMORY_BACKENDS: MemoryBackend[] = ['builtin', 'external', 'cloud'];
 
 const TABS: { id: DefaultsSubTab; label: string }[] = [
   { id: 'agent', label: 'Agent' },
+  { id: 'provider', label: 'Provider' },
   { id: 'storage', label: 'Storage' },
   { id: 'contextEngine', label: 'Context Engine' },
   { id: 'memory', label: 'Memory' },
@@ -41,21 +44,27 @@ const inputCls = 'w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py
 
 function AgentSubSection() {
   const agentDefaults = useSettingsStore((s) => s.agentDefaults);
+  const providerDefaults = useSettingsStore((s) => s.providerDefaults);
   const setAgentDefaults = useSettingsStore((s) => s.setAgentDefaults);
   const applyAgentDefaultsToExistingAgents = useGraphStore((s) => s.applyAgentDefaultsToExistingAgents);
-  const openRouterModels = useModelCatalogStore((s) => s.models.openrouter);
+  const modelsByKey = useModelCatalogStore((s) => s.models);
+  const catalogKey = useMemo(
+    () => buildProviderCatalogKey(providerDefaults),
+    [providerDefaults],
+  );
+  const providerModels = useMemo(
+    () => modelsByKey[catalogKey] ?? {},
+    [catalogKey, modelsByKey],
+  );
 
   const systemPromptMode = agentDefaults.systemPromptMode === 'manual' ? 'manual' : 'append';
   const discoveredModels = useMemo(
-    () =>
-      agentDefaults.provider === 'openrouter'
-        ? Object.keys(openRouterModels)
-        : [],
-    [agentDefaults.provider, openRouterModels],
+    () => Object.keys(providerModels),
+    [providerModels],
   );
   const availableModels = useMemo(
-    () => getModelOptions(agentDefaults.provider, discoveredModels),
-    [agentDefaults.provider, discoveredModels],
+    () => getModelOptions(providerDefaults.pluginId, discoveredModels),
+    [providerDefaults.pluginId, discoveredModels],
   );
 
   useEffect(() => {
@@ -66,31 +75,12 @@ function AgentSubSection() {
 
   return (
     <div className="space-y-4">
-      <Field label="Provider">
-        <select
-          aria-label="Provider"
-          value={agentDefaults.provider}
-          onChange={(e) => {
-            const provider = e.target.value;
-            const discoveredIds =
-              provider === 'openrouter' ? Object.keys(openRouterModels) : [];
-            setAgentDefaults({
-              provider,
-              modelId: getDefaultModelId(provider, discoveredIds, openRouterModels),
-            });
-          }}
-          className={inputCls}
-        >
-          {PROVIDERS.map((p) => <option key={p} value={p}>{p}</option>)}
-        </select>
-      </Field>
-
       <Field label="Model">
         <ProviderModelPicker
-          provider={agentDefaults.provider}
+          provider={providerDefaults.pluginId}
           modelId={agentDefaults.modelId}
           availableModels={availableModels}
-          discoveredModels={openRouterModels}
+          discoveredModels={providerModels}
           onSelectModel={(modelId) => setAgentDefaults({ modelId })}
           onChangeManualModelId={(modelId) => setAgentDefaults({ modelId })}
           inputClassName={inputCls}
@@ -174,7 +164,7 @@ function AgentSubSection() {
         <button
           type="button"
           onClick={() => {
-            if (window.confirm('Apply provider, model, and thinking level to all existing agents? This does not change names, descriptions, tags, system prompts, capabilities, or peripheral links.')) {
+            if (window.confirm('Apply model and thinking level to all existing agents? This does not change names, descriptions, tags, system prompts, capabilities, or peripheral links.')) {
               applyAgentDefaultsToExistingAgents();
             }
           }}
@@ -183,6 +173,112 @@ function AgentSubSection() {
           Apply to existing agents
         </button>
       </div>
+    </div>
+  );
+}
+
+function ProviderSubSection() {
+  const providerDefaults = useSettingsStore((s) => s.providerDefaults);
+  const setProviderDefaults = useSettingsStore((s) => s.setProviderDefaults);
+  const providers = useProviderRegistryStore((s) => s.providers);
+  const currentProvider = providers.find((provider) => provider.id === providerDefaults.pluginId);
+  const authOptions = currentProvider?.auth ?? [];
+
+  return (
+    <div className="space-y-4">
+      <Field
+        label="Provider Plugin"
+        hint="New Provider nodes inherit these defaults."
+      >
+        <select
+          aria-label="Provider Plugin"
+          value={providerDefaults.pluginId}
+          onChange={(e) => {
+            const nextProvider = providers.find((provider) => provider.id === e.target.value);
+            const nextAuth = nextProvider?.auth[0];
+            setProviderDefaults({
+              pluginId: e.target.value,
+              authMethodId: nextAuth?.methodId ?? '',
+              envVar: nextAuth?.envVar ?? '',
+              baseUrl: '',
+            });
+          }}
+          className={inputCls}
+          disabled={providers.length === 0}
+        >
+          {providers.length > 0 ? (
+            providers.map((provider) => (
+              <option key={provider.id} value={provider.id}>
+                {provider.name}
+              </option>
+            ))
+          ) : (
+            <option value={providerDefaults.pluginId}>
+              {providerDefaults.pluginId || 'No providers loaded'}
+            </option>
+          )}
+        </select>
+      </Field>
+
+      <Field label="Auth Method">
+        <select
+          aria-label="Auth Method"
+          value={providerDefaults.authMethodId}
+          onChange={(e) => {
+            const nextAuth = authOptions.find((auth) => auth.methodId === e.target.value);
+            setProviderDefaults({
+              authMethodId: e.target.value,
+              envVar: nextAuth?.envVar ?? providerDefaults.envVar,
+            });
+          }}
+          className={inputCls}
+          disabled={authOptions.length === 0}
+        >
+          {authOptions.length > 0 ? (
+            authOptions.map((auth) => (
+              <option key={auth.methodId} value={auth.methodId}>
+                {auth.label}
+              </option>
+            ))
+          ) : (
+            <option value={providerDefaults.authMethodId}>
+              {providerDefaults.authMethodId || 'No auth methods available'}
+            </option>
+          )}
+        </select>
+      </Field>
+
+      <Field
+        label="Environment Variable"
+        hint="Used as the runtime fallback when no saved API key is available."
+      >
+        <input
+          type="text"
+          aria-label="Environment Variable"
+          value={providerDefaults.envVar}
+          onChange={(e) => setProviderDefaults({ envVar: e.target.value })}
+          className={inputCls}
+          placeholder="OPENROUTER_API_KEY"
+        />
+      </Field>
+
+      <Field
+        label="Base URL"
+        hint="Optional override. Leave blank to use the provider plugin default."
+      >
+        <input
+          type="text"
+          aria-label="Base URL"
+          value={providerDefaults.baseUrl}
+          onChange={(e) => setProviderDefaults({ baseUrl: e.target.value })}
+          className={inputCls}
+          placeholder={currentProvider?.defaultBaseUrl ?? ''}
+        />
+      </Field>
+
+      {currentProvider ? (
+        <p className="text-xs text-slate-500">{currentProvider.description}</p>
+      ) : null}
     </div>
   );
 }
@@ -522,6 +618,7 @@ export default function DefaultsSection() {
 
       {/* Active sub-section */}
       {activeTab === 'agent' && <AgentSubSection />}
+      {activeTab === 'provider' && <ProviderSubSection />}
       {activeTab === 'storage' && <StorageSubSection />}
       {activeTab === 'contextEngine' && <ContextEngineSubSection />}
       {activeTab === 'memory' && <MemorySubSection />}

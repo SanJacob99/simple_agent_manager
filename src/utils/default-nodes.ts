@@ -9,7 +9,6 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         name: '',
         nameConfirmed: false,
         systemPrompt: 'You are a helpful assistant.',
-        provider: 'openrouter',
         modelId: 'anthropic/claude-sonnet-4-20250514',
         thinkingLevel: 'off',
         description: '',
@@ -127,6 +126,15 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         timezone: 'local',
         maxRunDurationMs: 300000,
         retentionDays: 7,
+      };
+    case 'provider':
+      return {
+        type: 'provider',
+        label: 'Provider',
+        pluginId: 'openrouter',
+        authMethodId: 'api-key',
+        envVar: 'OPENROUTER_API_KEY',
+        baseUrl: '',
       };
   }
 }

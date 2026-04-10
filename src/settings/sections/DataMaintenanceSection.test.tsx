@@ -93,16 +93,21 @@ describe('DataMaintenanceSection', () => {
     useSettingsStore.setState({
       apiKeys: { openrouter: 'key-1' },
       agentDefaults: {
-        provider: 'openai',
         modelId: 'gpt-4o',
         thinkingLevel: 'high',
         systemPromptMode: 'append',
         systemPrompt: 'Be concise.',
         safetyGuardrails: 'Be safe.',
       },
+      providerDefaults: {
+        pluginId: 'openrouter',
+        authMethodId: 'api-key',
+        envVar: 'OPENROUTER_API_KEY',
+        baseUrl: '',
+      },
     });
     useModelCatalogStore.setState({
-      clearOpenRouterCatalog: vi.fn(async () => undefined),
+      clearAllCatalogs: vi.fn(async () => undefined),
     } as any);
   });
 
@@ -155,7 +160,7 @@ describe('DataMaintenanceSection', () => {
     fireEvent.click(screen.getByRole('button', { name: /Clear App Settings/i }));
 
     await waitFor(() => {
-      expect(useModelCatalogStore.getState().clearOpenRouterCatalog).toHaveBeenCalled();
+      expect(useModelCatalogStore.getState().clearAllCatalogs).toHaveBeenCalled();
     });
   });
 
@@ -166,7 +171,7 @@ describe('DataMaintenanceSection', () => {
     fireEvent.click(screen.getByRole('button', { name: /Reset Everything/i }));
 
     await waitFor(() => {
-      expect(useModelCatalogStore.getState().clearOpenRouterCatalog).toHaveBeenCalled();
+      expect(useModelCatalogStore.getState().clearAllCatalogs).toHaveBeenCalled();
     });
   });
 });

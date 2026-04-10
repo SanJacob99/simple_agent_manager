@@ -7,6 +7,7 @@ import { HookRegistry } from '../hooks/hook-registry';
 import { PluginLoader } from '../hooks/plugin-loader';
 import { registerInternalHooks } from '../hooks/internal-hooks';
 import { HOOK_NAMES, type BackendLifecycleContext } from '../hooks/hook-types';
+import { ProviderPluginRegistry } from '../providers/plugin-registry';
 import type { ApiKeyStore } from '../auth/api-keys';
 import type { AgentConfig } from '../../shared/agent-config';
 import type {
@@ -48,7 +49,10 @@ export function getGlobalHookRegistry(): HookRegistry {
 export class AgentManager {
   private agents = new Map<string, ManagedAgent>();
 
-  constructor(private readonly apiKeys: ApiKeyStore) {}
+  constructor(
+    private readonly apiKeys: ApiKeyStore,
+    private readonly pluginRegistry: ProviderPluginRegistry,
+  ) {}
 
   async start(config: AgentConfig): Promise<void> {
     // Destroy existing if present
@@ -82,8 +86,9 @@ export class AgentManager {
     const runtime = new AgentRuntime(
       config,
       (provider) => Promise.resolve(this.apiKeys.get(provider)),
-      undefined, // getDiscoveredModel
+      undefined,
       hooks,
+      this.pluginRegistry,
     );
 
     // Create coordinator with hook registry

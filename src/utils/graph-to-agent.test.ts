@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveAgentConfig } from './graph-to-agent';
+import { resolveAgentConfig, validateAgentRuntimeGraph } from './graph-to-agent';
 
 describe('resolveAgentConfig', () => {
   it('carries per-agent capability overrides into runtime config', () => {
@@ -15,7 +15,6 @@ describe('resolveAgentConfig', () => {
             name: 'Agent',
             systemPrompt: 'Test',
             systemPromptMode: 'manual' as const,
-            provider: 'openrouter',
             modelId: 'xiaomi/mimo-v2-pro',
             thinkingLevel: 'medium',
             description: '',
@@ -48,7 +47,7 @@ describe('resolveAgentConfig', () => {
             nameConfirmed: true,
             systemPrompt: 'Test',
             systemPromptMode: 'manual' as const,
-            provider: 'anthropic',
+
             modelId: 'claude-sonnet-4-20250514',
             thinkingLevel: 'off',
             description: '',
@@ -105,7 +104,7 @@ describe('resolveAgentConfig', () => {
             nameConfirmed: true,
             systemPrompt: 'Test',
             systemPromptMode: 'manual' as const,
-            provider: 'anthropic',
+
             modelId: 'claude-sonnet-4-20250514',
             thinkingLevel: 'off',
             description: '',
@@ -134,7 +133,7 @@ describe('resolveAgentConfig', () => {
             nameConfirmed: true,
             systemPrompt: 'Test',
             systemPromptMode: 'manual' as const,
-            provider: 'anthropic',
+
             modelId: 'claude-sonnet-4-20250514',
             thinkingLevel: 'off',
             description: '',
@@ -183,7 +182,7 @@ describe('resolveAgentConfig', () => {
             nameConfirmed: true,
             systemPrompt: 'Ignored in auto mode',
             systemPromptMode: 'auto',
-            provider: 'anthropic',
+
             modelId: 'claude-sonnet-4-20250514',
             thinkingLevel: 'off',
             description: '',
@@ -216,7 +215,7 @@ describe('resolveAgentConfig', () => {
             nameConfirmed: true,
             systemPrompt: 'Always be concise.',
             systemPromptMode: 'append',
-            provider: 'anthropic',
+
             modelId: 'claude-sonnet-4-20250514',
             thinkingLevel: 'off',
             description: '',
@@ -249,7 +248,7 @@ describe('resolveAgentConfig', () => {
             nameConfirmed: true,
             systemPrompt: 'Full custom prompt.',
             systemPromptMode: 'manual',
-            provider: 'anthropic',
+
             modelId: 'claude-sonnet-4-20250514',
             thinkingLevel: 'off',
             description: '',
@@ -265,5 +264,115 @@ describe('resolveAgentConfig', () => {
     expect(config?.systemPrompt.mode).toBe('manual');
     expect(config?.systemPrompt.assembled).toBe('Full custom prompt.');
     expect(config?.systemPrompt.assembled).not.toContain('Be safe.');
+  });
+});
+
+describe('provider node resolution', () => {
+  const baseAgent = {
+    id: 'agent-1',
+    type: 'agent',
+    position: { x: 0, y: 0 },
+    data: {
+      type: 'agent' as const,
+      name: 'Test',
+      nameConfirmed: true,
+      systemPrompt: 'hello',
+      systemPromptMode: 'append' as const,
+      modelId: 'anthropic/claude-sonnet-4-20250514',
+      thinkingLevel: 'off' as const,
+      description: '',
+      tags: [],
+      modelCapabilities: {},
+      showReasoning: false,
+      verbose: false,
+    },
+  };
+
+  const providerNode = {
+    id: 'provider-1',
+    type: 'provider',
+    position: { x: 0, y: 0 },
+    data: {
+      type: 'provider' as const,
+      label: 'Provider',
+      pluginId: 'openrouter',
+      authMethodId: 'api-key',
+      envVar: 'OPENROUTER_API_KEY',
+      baseUrl: '',
+    },
+  };
+
+  const providerEdge = {
+    id: 'e1',
+    source: 'provider-1',
+    target: 'agent-1',
+    type: 'data',
+  };
+
+  it('resolves ResolvedProviderConfig from connected provider node', () => {
+    const result = resolveAgentConfig(
+      'agent-1',
+      [baseAgent as any, providerNode as any],
+      [providerEdge as any],
+    );
+    expect(result).not.toBeNull();
+    expect(result!.provider).toEqual({
+      pluginId: 'openrouter',
+      authMethodId: 'api-key',
+      envVar: 'OPENROUTER_API_KEY',
+      baseUrl: '',
+    });
+  });
+
+  it('returns config with empty provider when no provider node connected', () => {
+    const result = resolveAgentConfig(
+      'agent-1',
+      [baseAgent as any],
+      [],
+    );
+    expect(result).not.toBeNull();
+    expect(result!.provider).toEqual({
+      pluginId: '',
+      authMethodId: '',
+      envVar: '',
+      baseUrl: '',
+    });
+  });
+});
+
+describe('validateAgentRuntimeGraph', () => {
+  const baseAgent = {
+    id: 'agent-1',
+    type: 'agent',
+    position: { x: 0, y: 0 },
+    data: { type: 'agent' as const, name: 'Test', nameConfirmed: true, systemPrompt: '', systemPromptMode: 'append' as const, modelId: 'test', thinkingLevel: 'off' as const, description: '', tags: [], modelCapabilities: {}, showReasoning: false, verbose: false },
+  };
+  const providerNode = {
+    id: 'p1', type: 'provider', position: { x: 0, y: 0 },
+    data: { type: 'provider' as const, label: 'P', pluginId: 'openrouter', authMethodId: 'api-key', envVar: 'KEY', baseUrl: '' },
+  };
+  const edge = { id: 'e1', source: 'p1', target: 'agent-1', type: 'data' };
+
+  it('returns missing_provider when no provider connected', () => {
+    const errors = validateAgentRuntimeGraph('agent-1', [baseAgent as any], []);
+    expect(errors).toEqual([{ code: 'missing_provider', message: expect.any(String) }]);
+  });
+
+  it('returns empty array when one provider connected', () => {
+    const errors = validateAgentRuntimeGraph('agent-1', [baseAgent as any, providerNode as any], [edge as any]);
+    expect(errors).toEqual([]);
+  });
+
+  it('returns duplicate_provider when two providers connected', () => {
+    const p2 = { ...providerNode, id: 'p2', data: { ...providerNode.data } };
+    const e2 = { id: 'e2', source: 'p2', target: 'agent-1', type: 'data' };
+    const errors = validateAgentRuntimeGraph('agent-1', [baseAgent as any, providerNode as any, p2 as any], [edge as any, e2 as any]);
+    expect(errors).toEqual([{ code: 'duplicate_provider', message: expect.any(String) }]);
+  });
+
+  it('returns empty_plugin_id when pluginId is empty', () => {
+    const emptyPlugin = { ...providerNode, data: { ...providerNode.data, pluginId: '' } };
+    const errors = validateAgentRuntimeGraph('agent-1', [baseAgent as any, emptyPlugin as any], [edge as any]);
+    expect(errors).toEqual([{ code: 'empty_plugin_id', message: expect.any(String) }]);
   });
 });

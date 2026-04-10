@@ -1,11 +1,13 @@
 import { create } from 'zustand';
 import {
   DEFAULT_AGENT_DEFAULTS,
+  DEFAULT_PROVIDER_DEFAULTS,
   DEFAULT_STORAGE_DEFAULTS,
   DEFAULT_CONTEXT_ENGINE_DEFAULTS,
   DEFAULT_MEMORY_DEFAULTS,
   DEFAULT_CRON_DEFAULTS,
   type AgentDefaults,
+  type ProviderDefaults,
   type StorageDefaults,
   type ContextEngineDefaults,
   type MemoryDefaults,
@@ -15,6 +17,7 @@ import {
 interface PersistedSettings {
   apiKeys: Record<string, string>;
   agentDefaults: AgentDefaults;
+  providerDefaults: ProviderDefaults;
   storageDefaults: StorageDefaults;
   contextEngineDefaults: ContextEngineDefaults;
   memoryDefaults: MemoryDefaults;
@@ -27,6 +30,7 @@ interface SettingsStore extends PersistedSettings {
   getApiKey: (provider: string) => string | undefined;
   removeApiKey: (provider: string) => void;
   setAgentDefaults: (updates: Partial<AgentDefaults>) => void;
+  setProviderDefaults: (updates: Partial<ProviderDefaults>) => void;
   setStorageDefaults: (updates: Partial<StorageDefaults>) => void;
   setContextEngineDefaults: (updates: Partial<ContextEngineDefaults>) => void;
   setMemoryDefaults: (updates: Partial<MemoryDefaults>) => void;
@@ -37,6 +41,7 @@ interface SettingsStore extends PersistedSettings {
 
 const INITIAL_DEFAULTS: Omit<PersistedSettings, 'apiKeys'> = {
   agentDefaults: DEFAULT_AGENT_DEFAULTS,
+  providerDefaults: DEFAULT_PROVIDER_DEFAULTS,
   storageDefaults: DEFAULT_STORAGE_DEFAULTS,
   contextEngineDefaults: DEFAULT_CONTEXT_ENGINE_DEFAULTS,
   memoryDefaults: DEFAULT_MEMORY_DEFAULTS,
@@ -50,6 +55,7 @@ async function fetchSettings(): Promise<PersistedSettings> {
   return {
     apiKeys: data.apiKeys ?? {},
     agentDefaults: { ...DEFAULT_AGENT_DEFAULTS, ...(data.agentDefaults ?? {}) },
+    providerDefaults: { ...DEFAULT_PROVIDER_DEFAULTS, ...(data.providerDefaults ?? {}) },
     storageDefaults: { ...DEFAULT_STORAGE_DEFAULTS, ...(data.storageDefaults ?? {}) },
     contextEngineDefaults: { ...DEFAULT_CONTEXT_ENGINE_DEFAULTS, ...(data.contextEngineDefaults ?? {}) },
     memoryDefaults: { ...DEFAULT_MEMORY_DEFAULTS, ...(data.memoryDefaults ?? {}) },
@@ -73,6 +79,7 @@ function getSnapshot(state: SettingsStore): PersistedSettings {
   return {
     apiKeys: state.apiKeys,
     agentDefaults: state.agentDefaults,
+    providerDefaults: state.providerDefaults,
     storageDefaults: state.storageDefaults,
     contextEngineDefaults: state.contextEngineDefaults,
     memoryDefaults: state.memoryDefaults,
@@ -115,6 +122,12 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     const next = { ...get().agentDefaults, ...updates };
     set({ agentDefaults: next });
     saveSettings({ ...getSnapshot(get()), agentDefaults: next });
+  },
+
+  setProviderDefaults: (updates) => {
+    const next = { ...get().providerDefaults, ...updates };
+    set({ providerDefaults: next });
+    saveSettings({ ...getSnapshot(get()), providerDefaults: next });
   },
 
   setStorageDefaults: (updates) => {

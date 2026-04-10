@@ -16,11 +16,23 @@
             "nameConfirmed": true,
             "systemPrompt": "You are a helpful research assistant. Use your tools to search the web, save important findings to memory, and provide well-researched answers.",
             "systemPromptMode": "append",
-            "provider": "anthropic",
             "modelId": "claude-sonnet-4-20250514",
             "thinkingLevel": "medium",
             "description": "A research assistant that can search the web and remember findings",
             "tags": ["research", "web", "memory"]
+          }
+        },
+        {
+          "id": "provider-1",
+          "type": "provider",
+          "position": { "x": 100, "y": 660 },
+          "data": {
+            "type": "provider",
+            "label": "OpenRouter",
+            "pluginId": "openrouter",
+            "authMethodId": "api-key",
+            "envVar": "OPENROUTER_API_KEY",
+            "baseUrl": ""
           }
         },
         {
@@ -104,6 +116,13 @@
         }
       ],
       "edges": [
+        {
+          "id": "edge_provider-1_agent-1",
+          "source": "provider-1",
+          "target": "agent-1",
+          "type": "data",
+          "animated": true
+        },
         {
           "id": "edge_memory-1_agent-1",
           "source": "memory-1",

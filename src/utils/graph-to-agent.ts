@@ -1,7 +1,6 @@
 import type { AppNode } from '../types/nodes';
 import type { Edge } from '@xyflow/react';
-import type { AgentConfig } from '../../shared/agent-config';
-import type { SystemPromptMode } from '../../shared/agent-config';
+import type { AgentConfig, ResolvedProviderConfig, SystemPromptMode } from '../../shared/agent-config';
 import { resolveToolNames } from '../../shared/resolve-tool-names';
 import { buildSystemPrompt } from '../../shared/system-prompt-builder';
 
@@ -23,6 +22,18 @@ export function resolveAgentConfig(
   const connectedNodes = connectedEdges
     .map((e) => nodes.find((n) => n.id === e.source))
     .filter((n): n is AppNode => n !== undefined);
+
+  // --- Provider ---
+  const providerNode = connectedNodes.find((n) => n.data.type === 'provider');
+  const providerConfig: ResolvedProviderConfig =
+    providerNode && providerNode.data.type === 'provider'
+      ? {
+          pluginId: providerNode.data.pluginId as string,
+          authMethodId: providerNode.data.authMethodId as string,
+          envVar: providerNode.data.envVar as string,
+          baseUrl: providerNode.data.baseUrl as string,
+        }
+      : { pluginId: '', authMethodId: '', envVar: '', baseUrl: '' };
 
   // --- Memory ---
   const memoryNode = connectedNodes.find((n) => n.data.type === 'memory');
@@ -230,7 +241,7 @@ export function resolveAgentConfig(
     name: data.name,
     description: data.description,
     tags: data.tags,
-    provider: data.provider,
+    provider: providerConfig,
     modelId: data.modelId,
     thinkingLevel: data.thinkingLevel,
     systemPrompt,
@@ -249,4 +260,46 @@ export function resolveAgentConfig(
     showReasoning: data.showReasoning ?? false,
     verbose: data.verbose ?? false,
   };
+}
+
+export interface AgentGraphValidationError {
+  code: 'missing_provider' | 'duplicate_provider' | 'empty_plugin_id';
+  message: string;
+}
+
+export function validateAgentRuntimeGraph(
+  agentNodeId: string,
+  nodes: AppNode[],
+  edges: Edge[],
+): AgentGraphValidationError[] {
+  const errors: AgentGraphValidationError[] = [];
+
+  const connectedEdges = edges.filter((e) => e.target === agentNodeId);
+  const connectedNodes = connectedEdges
+    .map((e) => nodes.find((n) => n.id === e.source))
+    .filter((n): n is AppNode => n !== undefined);
+
+  const providerNodes = connectedNodes.filter((n) => n.data.type === 'provider');
+
+  if (providerNodes.length === 0) {
+    errors.push({
+      code: 'missing_provider',
+      message: 'Agent requires a connected Provider node to run.',
+    });
+  } else if (providerNodes.length > 1) {
+    errors.push({
+      code: 'duplicate_provider',
+      message: 'Agent must have exactly one connected Provider node.',
+    });
+  } else if (
+    providerNodes[0].data.type === 'provider' &&
+    !(providerNodes[0].data.pluginId as string)
+  ) {
+    errors.push({
+      code: 'empty_plugin_id',
+      message: 'Provider node has no plugin selected.',
+    });
+  }
+
+  return errors;
 }

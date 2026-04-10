@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useGraphStore } from '../../store/graph-store';
-import { useModelCatalogStore } from '../../store/model-catalog-store';
+import {
+  buildProviderCatalogKey,
+  useModelCatalogStore,
+} from '../../store/model-catalog-store';
 import type { AgentNodeData, ThinkingLevel } from '../../types/nodes';
 import type {
   DiscoveredModelMetadata,
@@ -8,13 +11,11 @@ import type {
   ModelCostInfo,
   ModelInputModality,
 } from '../../types/model-metadata';
-import { PROVIDERS } from '../../runtime/provider-model-options';
 import ProviderModelPicker from '../../components/model-picker/ProviderModelPicker';
 import {
-  getDefaultModelId,
   getModelOptions,
 } from '../../components/model-picker/provider-model-utils';
-import { Field, Tooltip, inputClass, selectClass, textareaClass } from './shared';
+import { Field, inputClass, selectClass, textareaClass } from './shared';
 import SystemPromptPreview from '../SystemPromptPreview';
 import ModelCapabilitiesPanel from './ModelCapabilitiesPanel';
 
@@ -68,20 +69,52 @@ function snapshotCapabilities(
 export default function AgentProperties({ nodeId, data }: Props) {
   const [showPreview, setShowPreview] = useState(false);
   const update = useGraphStore((s) => s.updateNodeData);
-  const openRouterModels = useModelCatalogStore((s) => s.models.openrouter);
+  const edges = useGraphStore((s) => s.edges);
+  const allNodes = useGraphStore((s) => s.nodes);
+  const modelsByKey = useModelCatalogStore((s) => s.models);
+  const connectedPluginId = useMemo(() => {
+    const incomingEdges = edges.filter((edge) => edge.target === nodeId);
+    for (const edge of incomingEdges) {
+      const source = allNodes.find((node) => node.id === edge.source);
+      if (source?.data.type === 'provider') {
+        return source.data.pluginId as string;
+      }
+    }
+    return '';
+  }, [allNodes, edges, nodeId]);
+  const connectedBaseUrl = useMemo(() => {
+    const incomingEdges = edges.filter((edge) => edge.target === nodeId);
+    for (const edge of incomingEdges) {
+      const source = allNodes.find((node) => node.id === edge.source);
+      if (source?.data.type === 'provider') {
+        return source.data.baseUrl as string;
+      }
+    }
+    return '';
+  }, [allNodes, edges, nodeId]);
+  const catalogKey = useMemo(
+    () =>
+      buildProviderCatalogKey({
+        pluginId: connectedPluginId,
+        baseUrl: connectedBaseUrl,
+      }),
+    [connectedBaseUrl, connectedPluginId],
+  );
+  const providerModels = useMemo(
+    () => modelsByKey[catalogKey] ?? {},
+    [catalogKey, modelsByKey],
+  );
 
   const discoveredModels = useMemo(
-    () => (data.provider === 'openrouter' ? Object.keys(openRouterModels) : []),
-    [data.provider, openRouterModels],
+    () => Object.keys(providerModels),
+    [providerModels],
   );
   const discoveredModel =
-    data.provider === 'openrouter'
-      ? openRouterModels[data.modelId]
-      : undefined;
+    providerModels[data.modelId];
 
   const availableModels = useMemo(
-    () => getModelOptions(data.provider, discoveredModels),
-    [data.provider, discoveredModels],
+    () => getModelOptions(connectedPluginId, discoveredModels),
+    [connectedPluginId, discoveredModels],
   );
 
   const systemPromptMode = data.systemPromptMode === 'manual' ? 'manual' : 'append';
@@ -164,11 +197,8 @@ export default function AgentProperties({ nodeId, data }: Props) {
   };
 
   const applyModelSelection = (newModelId: string) => {
-    let discovered: DiscoveredModelMetadata | undefined;
-    if (data.provider === 'openrouter') {
-      discovered = openRouterModels[newModelId];
-    }
-
+    const discovered: DiscoveredModelMetadata | undefined =
+      providerModels[newModelId];
     const caps = snapshotCapabilities(discovered);
     update(nodeId, {
       modelId: newModelId,
@@ -180,10 +210,7 @@ export default function AgentProperties({ nodeId, data }: Props) {
   const commitManualModelId = () => {
     const trimmedModelId = data.modelId.trim();
     if (!trimmedModelId) return;
-    if (
-      data.provider === 'openrouter' &&
-      openRouterModels[trimmedModelId]
-    ) {
+    if (providerModels[trimmedModelId]) {
       applyModelSelection(trimmedModelId);
     }
   };
@@ -237,49 +264,12 @@ export default function AgentProperties({ nodeId, data }: Props) {
         />
       </Field>
 
-      <Field label="Provider">
-        <select
-          className={selectClass}
-          value={data.provider}
-          onChange={(e) => {
-            const provider = e.target.value;
-            const discoveredIds =
-              provider === 'openrouter' ? Object.keys(openRouterModels) : [];
-            const newModelId = getDefaultModelId(
-              provider,
-              discoveredIds,
-              openRouterModels,
-            );
-
-            // Snapshot capabilities for the new model
-            let discovered: DiscoveredModelMetadata | undefined;
-            if (provider === 'openrouter') {
-              discovered = openRouterModels[newModelId];
-            }
-
-            const caps = snapshotCapabilities(discovered);
-            update(nodeId, {
-              provider,
-              modelId: newModelId,
-              modelCapabilities: caps,
-              ...(caps.reasoningSupported === false ? { thinkingLevel: 'off' } : {}),
-            });
-          }}
-        >
-          {PROVIDERS.map((p) => (
-            <option key={p} value={p}>
-              {p}
-            </option>
-          ))}
-        </select>
-      </Field>
-
       <Field label="Model">
         <ProviderModelPicker
-          provider={data.provider}
+          provider={connectedPluginId}
           modelId={data.modelId}
           availableModels={availableModels}
-          discoveredModels={openRouterModels}
+          discoveredModels={providerModels}
           onSelectModel={applyModelSelection}
           onChangeManualModelId={(modelId) => update(nodeId, { modelId })}
           onCommitManualModelId={commitManualModelId}

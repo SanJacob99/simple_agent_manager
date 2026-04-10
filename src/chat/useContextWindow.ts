@@ -1,5 +1,8 @@
 import { useMemo } from 'react';
-import { useModelCatalogStore } from '../store/model-catalog-store';
+import {
+  buildProviderCatalogKey,
+  useModelCatalogStore,
+} from '../store/model-catalog-store';
 import type { AgentConfig } from '../../shared/agent-config';
 import { estimateTokens } from '../../shared/token-estimator';
 
@@ -43,7 +46,10 @@ export function useContextWindow(config: AgentConfig | null): ContextWindowInfo 
     }
 
     // 2. Check catalog metadata
-    const catalogModel = getModelMetadata(config.provider, config.modelId);
+    const catalogModel = getModelMetadata(
+      buildProviderCatalogKey(config.provider),
+      config.modelId,
+    );
     if (catalogModel?.contextWindow) {
       return {
         contextWindow: catalogModel.contextWindow,

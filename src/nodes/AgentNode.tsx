@@ -1,9 +1,10 @@
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import { Bot, MessageSquare } from 'lucide-react';
 import type { AgentNodeData } from '../types/nodes';
 import { NODE_COLORS } from '../utils/theme';
 import { useAgentConnectionStore } from '../store/agent-connection-store';
+import { useGraphStore } from '../store/graph-store';
 
 type AgentNode = Node<AgentNodeData>;
 
@@ -11,7 +12,19 @@ function AgentNodeComponent({ id, data, selected }: NodeProps<AgentNode>) {
   const color = NODE_COLORS.agent;
   const openChat = useAgentConnectionStore((s) => s.openChatDrawer);
   const chatAgentId = useAgentConnectionStore((s) => s.chatAgentNodeId);
+  const edges = useGraphStore((s) => s.edges);
+  const nodes = useGraphStore((s) => s.nodes);
   const isActive = chatAgentId === id;
+  const providerLabel = useMemo(() => {
+    const incomingEdges = edges.filter((edge) => edge.target === id);
+    for (const edge of incomingEdges) {
+      const source = nodes.find((node) => node.id === edge.source);
+      if (source?.data.type === 'provider') {
+        return source.data.pluginId || 'no provider';
+      }
+    }
+    return 'no provider';
+  }, [edges, id, nodes]);
 
   return (
     <div
@@ -63,7 +76,7 @@ function AgentNodeComponent({ id, data, selected }: NodeProps<AgentNode>) {
         {/* Provider & Model */}
         <div className="flex items-center gap-2">
           <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-medium text-slate-400">
-            {data.provider}
+            {providerLabel}
           </span>
           <span className="truncate text-[11px] text-slate-300">
             {data.modelId}

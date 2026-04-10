@@ -188,6 +188,20 @@ describe('StorageEngine', () => {
       await expect(fs.stat(engine.resolveTranscriptPath(debug))).rejects.toThrow();
     });
 
+    it('deletes the full agent directory when removing agent data', async () => {
+      const entry = makeEntry();
+      const transcriptPath = engine.resolveTranscriptPath(entry);
+      await fs.mkdir(path.dirname(transcriptPath), { recursive: true });
+      await fs.writeFile(transcriptPath, 'test\n', 'utf-8');
+      await engine.createSession(entry);
+      await engine.writeLongTermMemory('# Agent Memory');
+      await engine.appendDailyMemory('Daily note', '2026-04-10');
+
+      await engine.deleteAgentData();
+
+      await expect(fs.stat(engine.getAgentDir())).rejects.toThrow();
+    });
+
     it('lists sessions sorted by updatedAt descending', async () => {
       await engine.createSession(
         makeEntry({

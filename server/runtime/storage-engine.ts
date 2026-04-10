@@ -145,6 +145,11 @@ export class StorageEngine {
     );
   }
 
+  async deleteAgentData(): Promise<void> {
+    this.storeCache = null;
+    await fs.rm(this.agentDir, { recursive: true, force: true });
+  }
+
   resolveTranscriptPath(entry: Pick<SessionStoreEntry, 'sessionId' | 'sessionFile'>): string {
     if (!entry.sessionFile) {
       return this._safeJoin(this.sessionsDir, `${entry.sessionId}.jsonl`);

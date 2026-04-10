@@ -2,7 +2,13 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import AgentProperties from './AgentProperties';
 import { useGraphStore } from '../../store/graph-store';
-import { useModelCatalogStore } from '../../store/model-catalog-store';
+import {
+  DEFAULT_OPENROUTER_REQUEST,
+  buildProviderCatalogKey,
+  useModelCatalogStore,
+} from '../../store/model-catalog-store';
+
+const openRouterCatalogKey = buildProviderCatalogKey(DEFAULT_OPENROUTER_REQUEST);
 
 function createAgentData(overrides: Record<string, unknown> = {}) {
   return {
@@ -11,7 +17,6 @@ function createAgentData(overrides: Record<string, unknown> = {}) {
     nameConfirmed: true,
     systemPrompt: 'Test',
     systemPromptMode: 'append' as const,
-    provider: 'openrouter',
     modelId: 'xiaomi/mimo-v2-pro',
     thinkingLevel: 'off' as const,
     description: '',
@@ -23,13 +28,51 @@ function createAgentData(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function seedGraph(
+  agentData: ReturnType<typeof createAgentData>,
+  pluginId = 'openrouter',
+) {
+  useGraphStore.setState({
+    nodes: [
+      {
+        id: 'agent-1',
+        type: 'agent',
+        position: { x: 0, y: 0 },
+        data: agentData,
+      },
+      {
+        id: 'provider-1',
+        type: 'provider',
+        position: { x: 0, y: 0 },
+        data: {
+          type: 'provider',
+          label: 'Provider',
+          pluginId,
+          authMethodId: 'api-key',
+          envVar: 'OPENROUTER_API_KEY',
+          baseUrl: '',
+        },
+      },
+    ] as any,
+    edges: [
+      {
+        id: 'edge_provider-1_agent-1',
+        source: 'provider-1',
+        target: 'agent-1',
+        type: 'data',
+      },
+    ] as any,
+    selectedNodeId: null,
+  } as any);
+}
+
 describe('AgentProperties', () => {
   beforeEach(() => {
     localStorage.clear();
 
     useModelCatalogStore.setState({
       models: {
-        openrouter: {
+        [openRouterCatalogKey]: {
           'xiaomi/mimo-v2-pro': {
             id: 'xiaomi/mimo-v2-pro',
             provider: 'openrouter',
@@ -41,8 +84,8 @@ describe('AgentProperties', () => {
           },
         },
       },
-      loading: { openrouter: false },
-      errors: { openrouter: null },
+      loading: { [openRouterCatalogKey]: false },
+      errors: { [openRouterCatalogKey]: null },
       lastSyncedKeys: {},
     } as any);
   });
@@ -55,33 +98,31 @@ describe('AgentProperties', () => {
     expect(screen.getByDisplayValue('manual/custom-model')).toBeInTheDocument();
   });
 
-  it('resets to the first built-in model when the provider changes', () => {
+  it('derives discovered models from the connected Provider node and no longer renders a provider selector', () => {
     const data = createAgentData();
-
-    useGraphStore.setState({
-      nodes: [
-        {
-          id: 'agent-1',
-          type: 'agent',
-          position: { x: 0, y: 0 },
-          data,
+    seedGraph(data);
+    useModelCatalogStore.setState({
+      models: {
+        [openRouterCatalogKey]: {
+          'acme/edge-router-pro': {
+            id: 'acme/edge-router-pro',
+            provider: 'openrouter',
+            inputModalities: ['text'],
+            supportedParameters: ['tools'],
+          },
         },
-      ] as any,
-      edges: [],
-      selectedNodeId: null,
-    });
+      },
+      loading: { [openRouterCatalogKey]: false },
+      errors: { [openRouterCatalogKey]: null },
+      lastSyncedKeys: {},
+    } as any);
 
     render(<AgentProperties nodeId="agent-1" data={data} />);
 
-    fireEvent.change(screen.getAllByRole('combobox')[0], {
-      target: { value: 'anthropic' },
-    });
+    expect(screen.queryByText(/^Provider$/)).not.toBeInTheDocument();
 
-    const node = useGraphStore.getState().nodes.find((n) => n.id === 'agent-1');
-    expect(node?.data.type).toBe('agent');
-    if (node?.data.type === 'agent') {
-      expect(node.data.modelId).toBe('claude-opus-4-20250514');
-    }
+    fireEvent.click(screen.getByRole('button', { name: /model picker/i }));
+    expect(screen.getByText('acme/edge-router-pro')).toBeInTheDocument();
   });
 
   it('renders a system prompt mode selector', () => {
@@ -94,7 +135,7 @@ describe('AgentProperties', () => {
   it('shows a searchable model popover with free and capability filters', () => {
     useModelCatalogStore.setState({
       models: {
-        openrouter: {
+        [openRouterCatalogKey]: {
           'qwen/qwen3.6-plus:free': {
             id: 'qwen/qwen3.6-plus:free',
             provider: 'openrouter',
@@ -119,12 +160,13 @@ describe('AgentProperties', () => {
           },
         },
       },
-      loading: { openrouter: false },
-      errors: { openrouter: null },
+      loading: { [openRouterCatalogKey]: false },
+      errors: { [openRouterCatalogKey]: null },
       lastSyncedKeys: {},
     } as any);
 
     const data = createAgentData({ modelId: 'openai/gpt-4o' });
+    seedGraph(data);
     render(<AgentProperties nodeId="agent-1" data={data} />);
 
     fireEvent.click(screen.getByRole('button', { name: /model picker/i }));
@@ -145,55 +187,6 @@ describe('AgentProperties', () => {
     });
     expect(within(results).getByText('qwen/qwen3.6-plus:free')).toBeInTheDocument();
     expect(within(results).queryByText('openai/gpt-4o')).not.toBeInTheDocument();
-  });
-
-  it('resets to the first tool-capable discovered OpenRouter model when the provider changes', () => {
-    const data = createAgentData({ provider: 'anthropic', modelId: 'claude-opus-4-20250514' });
-
-    useModelCatalogStore.setState({
-      models: {
-        openrouter: {
-          'google/lyria-3-pro-preview': {
-            id: 'google/lyria-3-pro-preview',
-            provider: 'openrouter',
-            supportedParameters: ['max_tokens', 'response_format'],
-          },
-          'openai/gpt-4o': {
-            id: 'openai/gpt-4o',
-            provider: 'openrouter',
-            supportedParameters: ['tools', 'tool_choice'],
-          },
-        },
-      },
-      loading: { openrouter: false },
-      errors: { openrouter: null },
-      lastSyncedKeys: {},
-    } as any);
-
-    useGraphStore.setState({
-      nodes: [
-        {
-          id: 'agent-1',
-          type: 'agent',
-          position: { x: 0, y: 0 },
-          data,
-        },
-      ] as any,
-      edges: [],
-      selectedNodeId: null,
-    });
-
-    render(<AgentProperties nodeId="agent-1" data={data} />);
-
-    fireEvent.change(screen.getAllByRole('combobox')[0], {
-      target: { value: 'openrouter' },
-    });
-
-    const node = useGraphStore.getState().nodes.find((n) => n.id === 'agent-1');
-    expect(node?.data.type).toBe('agent');
-    if (node?.data.type === 'agent') {
-      expect(node.data.modelId).toBe('openai/gpt-4o');
-    }
   });
 
   it('treats legacy auto mode as append mode', () => {
@@ -218,19 +211,7 @@ describe('AgentProperties', () => {
 
   it('shows discovered capability defaults and writes overrides back to the graph store', () => {
     const data = createAgentData();
-
-    useGraphStore.setState({
-      nodes: [
-        {
-          id: 'agent-1',
-          type: 'agent',
-          position: { x: 0, y: 0 },
-          data,
-        },
-      ] as any,
-      edges: [],
-      selectedNodeId: null,
-    });
+    seedGraph(data);
 
     render(<AgentProperties nodeId="agent-1" data={data} />);
 

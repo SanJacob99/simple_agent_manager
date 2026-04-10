@@ -10,8 +10,12 @@ import { handleConnection } from './connections/ws-handler';
 import { getGlobalHookRegistry } from './agents/agent-manager';
 import { HOOK_NAMES, type BackendLifecycleContext } from './hooks/hook-types';
 import { createStartupErrorHandler } from './startup';
-import { OpenRouterModelCatalogStore } from './runtime/openrouter-model-catalog-store';
+import { ProviderPluginRegistry } from './providers/plugin-registry';
+import { ProviderCatalogCache, type ProviderCatalogRequest } from './providers/catalog-cache';
+import { loadProviderPlugins } from './providers/provider-loader';
+import { resolveProviderRuntimeAuth } from './providers/provider-auth';
 import { SettingsFileStore } from './runtime/settings-file-store';
+import path from 'path';
 import type { ResolvedStorageConfig } from '../shared/agent-config';
 import type { SessionRouteRequest, SessionTranscriptResponse } from '../shared/session-routes';
 
@@ -21,9 +25,10 @@ app.use(express.json({ limit: '10mb' }));
 // --- Shared state ---
 
 const apiKeys = new ApiKeyStore();
-const agentManager = new AgentManager(apiKeys);
+const pluginRegistry = new ProviderPluginRegistry();
+const catalogCache = new ProviderCatalogCache();
+const agentManager = new AgentManager(apiKeys, pluginRegistry);
 const settingsFile = new SettingsFileStore();
-const modelCatalogStore = new OpenRouterModelCatalogStore();
 
 // --- Storage engine instances ---
 
@@ -31,8 +36,16 @@ const engines = new Map<string, StorageEngine>();
 const transcriptStores = new Map<string, SessionTranscriptStore>();
 const sessionRouters = new Map<string, SessionRouter>();
 
+function engineKey(config: ResolvedStorageConfig, agentName: string): string {
+  return `${config.storagePath}:${agentName}`;
+}
+
+function sessionRouterKey(config: ResolvedStorageConfig, agentName: string, agentId: string): string {
+  return `${config.storagePath}:${agentName}:${agentId}`;
+}
+
 function getOrCreateEngine(config: ResolvedStorageConfig, agentName: string): StorageEngine {
-  const key = `${config.storagePath}:${agentName}`;
+  const key = engineKey(config, agentName);
   let engine = engines.get(key);
   if (!engine) {
     engine = new StorageEngine(config, agentName);
@@ -45,7 +58,7 @@ function getOrCreateTranscriptStore(
   config: ResolvedStorageConfig,
   agentName: string,
 ): SessionTranscriptStore {
-  const key = `${config.storagePath}:${agentName}`;
+  const key = engineKey(config, agentName);
   let store = transcriptStores.get(key);
   if (!store) {
     store = new SessionTranscriptStore(
@@ -62,7 +75,7 @@ function getOrCreateSessionRouter(
   agentName: string,
   agentId: string,
 ): SessionRouter {
-  const key = `${config.storagePath}:${agentName}:${agentId}`;
+  const key = sessionRouterKey(config, agentName, agentId);
   let router = sessionRouters.get(key);
   if (!router) {
     router = new SessionRouter(
@@ -76,6 +89,18 @@ function getOrCreateSessionRouter(
   return router;
 }
 
+function forgetAgentStorage(config: ResolvedStorageConfig, agentName: string): void {
+  const key = engineKey(config, agentName);
+  engines.delete(key);
+  transcriptStores.delete(key);
+
+  for (const routerKey of sessionRouters.keys()) {
+    if (routerKey.startsWith(`${key}:`)) {
+      sessionRouters.delete(routerKey);
+    }
+  }
+}
+
 // --- Storage initialization ---
 
 app.post('/api/storage/init', async (req, res) => {
@@ -83,6 +108,21 @@ app.post('/api/storage/init', async (req, res) => {
   try {
     const engine = getOrCreateEngine(config, agentName);
     await engine.init();
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.delete('/api/storage/agent-data', async (req, res) => {
+  const { config, agentName } = req.body as {
+    config: ResolvedStorageConfig;
+    agentName: string;
+  };
+  try {
+    const engine = getOrCreateEngine(config, agentName);
+    await engine.deleteAgentData();
+    forgetAgentStorage(config, agentName);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
@@ -393,34 +433,83 @@ app.put('/api/settings', async (req, res) => {
   }
 });
 
-// --- Model catalog cache ---
+// --- Provider registry ---
 
-app.get('/api/model-catalog/openrouter', async (_req, res) => {
+app.get('/api/providers', (_req, res) => {
+  res.json(pluginRegistry.listSummaries());
+});
+
+// --- Provider catalog ---
+
+app.post('/api/providers/catalog/load', async (req, res) => {
+  const { request, apiKeyFingerprint } = req.body as {
+    request: ProviderCatalogRequest;
+    apiKeyFingerprint?: string;
+  };
   try {
-    const apiKey = apiKeys.get('openrouter');
-    res.json(await modelCatalogStore.loadForClient(apiKey));
+    const cached = await catalogCache.load(request, apiKeyFingerprint);
+    if (cached) {
+      res.json(cached);
+    } else {
+      const plugin = pluginRegistry.get(request.pluginId);
+      if (!plugin?.catalog) {
+        res.json({ models: {}, userModels: {}, syncedAt: null, userModelsRequireRefresh: false });
+        return;
+      }
+      const apiKey = apiKeys.get(plugin.id);
+      if (!apiKey) {
+        res.json({ models: {}, userModels: {}, syncedAt: null, userModelsRequireRefresh: false });
+        return;
+      }
+      const auth = resolveProviderRuntimeAuth(
+        { pluginId: request.pluginId, authMethodId: request.authMethodId, envVar: request.envVar, baseUrl: request.baseUrl },
+        plugin,
+        apiKeys,
+      );
+      res.json(await catalogCache.refresh(request, plugin, {
+        apiKey: auth.apiKey!,
+        baseUrl: auth.baseUrl,
+      }));
+    }
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
 });
 
-app.post('/api/model-catalog/openrouter/refresh', async (_req, res) => {
+app.post('/api/providers/catalog/refresh', async (req, res) => {
+  const { request } = req.body as { request: ProviderCatalogRequest };
   try {
-    const apiKey = apiKeys.get('openrouter');
-    if (!apiKey) {
-      res.status(400).json({ error: 'OpenRouter API key is required' });
+    const plugin = pluginRegistry.get(request.pluginId);
+    if (!plugin?.catalog) {
+      res.status(400).json({ error: `Plugin "${request.pluginId}" has no catalog.` });
       return;
     }
-
-    res.json(await modelCatalogStore.refresh(apiKey));
+    const auth = resolveProviderRuntimeAuth(
+      { pluginId: request.pluginId, authMethodId: request.authMethodId, envVar: request.envVar, baseUrl: request.baseUrl },
+      plugin,
+      apiKeys,
+    );
+    if (!auth.apiKey) {
+      res.status(400).json({ error: `No API key available for "${request.pluginId}".` });
+      return;
+    }
+    res.json(await catalogCache.refresh(request, plugin, {
+      apiKey: auth.apiKey,
+      baseUrl: auth.baseUrl,
+    }));
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
 });
 
-app.delete('/api/model-catalog/openrouter', async (_req, res) => {
+app.post('/api/providers/catalog/clear', async (req, res) => {
+  const { request } = req.body as { request?: ProviderCatalogRequest };
   try {
-    await modelCatalogStore.clear();
+    if (request) {
+      await catalogCache.clear(request);
+    } else {
+      await catalogCache.clearAll();
+    }
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
@@ -456,6 +545,16 @@ settingsFile.load().then((s) => {
   }
 }).catch((err) => {
   console.error('[Settings] Failed to load settings file:', err);
+});
+
+// Load provider plugins
+loadProviderPlugins(
+  path.join(process.cwd(), 'providers.json'),
+  pluginRegistry,
+).then(() => {
+  console.log(`[Providers] ${pluginRegistry.list().length} provider(s) available.`);
+}).catch((err) => {
+  console.error('[Providers] Failed to load plugins:', err);
 });
 
 httpServer.listen(PORT, () => {

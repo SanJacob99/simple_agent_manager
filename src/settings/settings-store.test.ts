@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useSettingsStore } from './settings-store';
 import {
   DEFAULT_AGENT_DEFAULTS,
+  DEFAULT_PROVIDER_DEFAULTS,
   DEFAULT_STORAGE_DEFAULTS,
   DEFAULT_CONTEXT_ENGINE_DEFAULTS,
   DEFAULT_MEMORY_DEFAULTS,
@@ -20,6 +21,7 @@ beforeEach(() => {
       return new Response(JSON.stringify({
         apiKeys: {},
         agentDefaults: DEFAULT_AGENT_DEFAULTS,
+        providerDefaults: DEFAULT_PROVIDER_DEFAULTS,
         storageDefaults: DEFAULT_STORAGE_DEFAULTS,
         contextEngineDefaults: DEFAULT_CONTEXT_ENGINE_DEFAULTS,
         memoryDefaults: DEFAULT_MEMORY_DEFAULTS,
@@ -38,6 +40,7 @@ beforeEach(() => {
   useSettingsStore.setState({
     apiKeys: {},
     agentDefaults: DEFAULT_AGENT_DEFAULTS,
+    providerDefaults: DEFAULT_PROVIDER_DEFAULTS,
     storageDefaults: DEFAULT_STORAGE_DEFAULTS,
     contextEngineDefaults: DEFAULT_CONTEXT_ENGINE_DEFAULTS,
     memoryDefaults: DEFAULT_MEMORY_DEFAULTS,
@@ -47,30 +50,37 @@ beforeEach(() => {
 });
 
 describe('settings store', () => {
-  it('persists agent defaults alongside api keys via server API', () => {
+  it('persists agent and provider defaults alongside api keys via server API', () => {
     useSettingsStore.getState().setApiKey('openrouter', 'key-1');
     useSettingsStore.getState().setAgentDefaults({
-      provider: 'openai',
       modelId: 'gpt-4o',
       thinkingLevel: 'high',
       systemPromptMode: 'append',
       systemPrompt: 'Be concise.',
       safetyGuardrails: 'Test guardrails.',
     });
+    useSettingsStore.getState().setProviderDefaults({
+      pluginId: 'openrouter',
+      authMethodId: 'api-key',
+      envVar: 'OPENROUTER_API_KEY',
+      baseUrl: 'https://proxy.example/v1',
+    });
 
-    expect(savedPayloads.length).toBe(2);
-    const lastSaved = savedPayloads[1] as Record<string, any>;
+    expect(savedPayloads.length).toBe(3);
+    const lastSaved = savedPayloads[2] as Record<string, any>;
     expect(lastSaved.apiKeys.openrouter).toBe('key-1');
-    expect(lastSaved.agentDefaults.provider).toBe('openai');
     expect(lastSaved.agentDefaults.systemPrompt).toBe('Be concise.');
+    expect(lastSaved.providerDefaults.baseUrl).toBe('https://proxy.example/v1');
   });
 
   it('resets settings back to defaults', () => {
+    useSettingsStore.getState().setProviderDefaults({ baseUrl: 'https://proxy.example/v1' });
     useSettingsStore.getState().setContextEngineDefaults({ tokenBudget: 64000 });
     useSettingsStore.getState().resetSettings();
 
     expect(useSettingsStore.getState().apiKeys).toEqual({});
     expect(useSettingsStore.getState().agentDefaults).toEqual(DEFAULT_AGENT_DEFAULTS);
+    expect(useSettingsStore.getState().providerDefaults).toEqual(DEFAULT_PROVIDER_DEFAULTS);
     expect(useSettingsStore.getState().contextEngineDefaults).toEqual(DEFAULT_CONTEXT_ENGINE_DEFAULTS);
   });
 
@@ -78,7 +88,8 @@ describe('settings store', () => {
     global.fetch = vi.fn(async () => {
       return new Response(JSON.stringify({
         apiKeys: { anthropic: 'loaded-key' },
-        agentDefaults: { ...DEFAULT_AGENT_DEFAULTS, provider: 'anthropic' },
+        agentDefaults: { ...DEFAULT_AGENT_DEFAULTS, modelId: 'claude-sonnet-4-20250514' },
+        providerDefaults: { ...DEFAULT_PROVIDER_DEFAULTS, pluginId: 'openrouter', baseUrl: 'https://proxy.example/v1' },
         storageDefaults: DEFAULT_STORAGE_DEFAULTS,
         contextEngineDefaults: { ...DEFAULT_CONTEXT_ENGINE_DEFAULTS, tokenBudget: 64000 },
         memoryDefaults: DEFAULT_MEMORY_DEFAULTS,
@@ -90,17 +101,19 @@ describe('settings store', () => {
 
     expect(useSettingsStore.getState().loaded).toBe(true);
     expect(useSettingsStore.getState().apiKeys.anthropic).toBe('loaded-key');
-    expect(useSettingsStore.getState().agentDefaults.provider).toBe('anthropic');
+    expect(useSettingsStore.getState().providerDefaults.baseUrl).toBe('https://proxy.example/v1');
     expect(useSettingsStore.getState().contextEngineDefaults.tokenBudget).toBe(64000);
   });
 
   it('persists per-node-type defaults', () => {
+    useSettingsStore.getState().setProviderDefaults({ baseUrl: 'https://proxy.example/v1' });
     useSettingsStore.getState().setContextEngineDefaults({ tokenBudget: 64000 });
     useSettingsStore.getState().setMemoryDefaults({ maxSessionMessages: 50 });
     useSettingsStore.getState().setCronDefaults({ retentionDays: 14 });
 
-    expect(savedPayloads.length).toBe(3);
-    const last = savedPayloads[2] as Record<string, any>;
+    expect(savedPayloads.length).toBe(4);
+    const last = savedPayloads[3] as Record<string, any>;
+    expect(last.providerDefaults.baseUrl).toBe('https://proxy.example/v1');
     expect(last.contextEngineDefaults.tokenBudget).toBe(64000);
     expect(last.memoryDefaults.maxSessionMessages).toBe(50);
     expect(last.cronDefaults.retentionDays).toBe(14);

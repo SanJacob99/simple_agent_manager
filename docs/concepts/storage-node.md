@@ -3,7 +3,7 @@
 > Provides filesystem-based persistence for agent sessions, routed transcripts, and memory files.
 
 <!-- source: src/types/nodes.ts#StorageNodeData -->
-<!-- last-verified: 2026-04-09 -->
+<!-- last-verified: 2026-04-10 -->
 
 ## Overview
 
@@ -53,6 +53,8 @@ The resulting directory layout is:
 - `<storagePath>/<agent-name>/memory/YYYY-MM-DD.md`
 
 The frontend session store caches metadata and transcript messages by `sessionKey`. It keeps optimistic messages locally during streaming, then refreshes transcript state from the backend when a run settles. When a user switches sessions, the store hydrates transcripts for sessions that have not been loaded yet, but reuses already-cached messages for previously opened sessions so switching back does not require another full transcript fetch.
+
+When a user deletes an agent from the canvas and confirms "delete agent and data", the frontend now calls a dedicated backend endpoint that removes the entire `<storagePath>/<agent-name>/` directory, including `sessions/`, transcript files, and any `memory/` documents. The server also clears cached `StorageEngine`, `SessionTranscriptStore`, and `SessionRouter` instances for that agent so a future agent with the same name starts from a clean filesystem state.
 
 ## Connections
 
