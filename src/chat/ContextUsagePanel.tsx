@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
+import { PieChart, Pie, Cell } from 'recharts';
 import { ChevronDown, ChevronUp, AlertCircle, Cpu, Wrench, BookOpen, Layers, Plug } from 'lucide-react';
 import type { Message } from '../store/session-store';
 import type { ContextWindowInfo, PeripheralReservation, ContextSource } from './useContextWindow';
@@ -28,6 +28,7 @@ const USED_COLOR = '#3b82f6';       // blue-500
 const RESERVED_COLOR = '#f59e0b';   // amber-500
 const AVAILABLE_COLOR = '#1e293b';  // slate-800
 const EMPTY_BG_COLOR = '#0f172a';   // slate-900 for truly empty
+const MINI_DONUT_SIZE = 36;
 
 const peripheralIcon = (type: string) => {
   switch (type) {
@@ -95,27 +96,25 @@ export default function ContextUsagePanel({
       {/* Compact always-visible bar with donut */}
       <div className="flex items-center gap-2.5 px-3 py-1.5">
         {/* Mini donut */}
-        <div className="h-[36px] w-[36px] flex-shrink-0 relative">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie
-                data={chartData}
-                dataKey="value"
-                cx="50%"
-                cy="50%"
-                innerRadius={11}
-                outerRadius={17}
-                startAngle={90}
-                endAngle={-270}
-                strokeWidth={0}
-                isAnimationActive={false}
-              >
-                {chartData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
-                ))}
-              </Pie>
-            </PieChart>
-          </ResponsiveContainer>
+        <div className="relative flex-shrink-0" style={{ width: MINI_DONUT_SIZE, height: MINI_DONUT_SIZE }}>
+          <PieChart width={MINI_DONUT_SIZE} height={MINI_DONUT_SIZE}>
+            <Pie
+              data={chartData}
+              dataKey="value"
+              cx="50%"
+              cy="50%"
+              innerRadius={11}
+              outerRadius={17}
+              startAngle={90}
+              endAngle={-270}
+              strokeWidth={0}
+              isAnimationActive={false}
+            >
+              {chartData.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={entry.color} />
+              ))}
+            </Pie>
+          </PieChart>
           {/* Center percentage */}
           <span
             className="absolute inset-0 flex items-center justify-center text-[7px] font-bold tabular-nums"
