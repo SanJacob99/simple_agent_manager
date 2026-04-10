@@ -1,6 +1,10 @@
-import { useState, useMemo } from 'react';
-import { RefreshCw, Search, Check, X, Database, Globe } from 'lucide-react';
-import { useModelCatalogStore } from '../../store/model-catalog-store';
+import { useEffect, useMemo, useState } from 'react';
+import { RefreshCw, Search, Check, Database, Globe } from 'lucide-react';
+import {
+  buildProviderCatalogKey,
+  useModelCatalogStore,
+} from '../../store/model-catalog-store';
+import { useProviderRegistryStore } from '../../store/provider-registry-store';
 import { useSettingsStore } from '../settings-store';
 import type { DiscoveredModelMetadata } from '../../types/model-metadata';
 import ModelDetailsModal from './ModelDetailsModal';
@@ -16,52 +20,103 @@ function formatNumber(num: number | undefined): string {
 
 function formatCost(cost: number | undefined): string {
   if (cost === undefined || cost === null) return '-';
-  // Cost is provided per token. We want to display per million tokens.
   const perMillion = cost * 1_000_000;
-  // Format cleanly (e.g. $0.50 or $15.00 or $0.00)
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
     minimumFractionDigits: 2,
-    maximumFractionDigits: 6, // Some costs are extremely small
+    maximumFractionDigits: 6,
   }).format(perMillion);
 }
 
 export default function ModelCatalogSection() {
-  const openRouterKey = useSettingsStore((state) => state.apiKeys.openrouter);
-  const modelsMap = useModelCatalogStore((state) => state.models.openrouter);
-  const userModelsMap = useModelCatalogStore((state) => state.userModels.openrouter);
-  const syncedAt = useModelCatalogStore((state) => state.syncedAt.openrouter);
-  const userModelsRequireRefresh = useModelCatalogStore(
-    (state) => state.userModelsRequireRefresh.openrouter,
+  const apiKeys = useSettingsStore((state) => state.apiKeys);
+  const providerDefaults = useSettingsStore((state) => state.providerDefaults);
+  const registryProviders = useProviderRegistryStore((state) => state.providers);
+  const catalogRequest = useMemo(
+    () => ({
+      pluginId: providerDefaults.pluginId,
+      authMethodId: providerDefaults.authMethodId,
+      envVar: providerDefaults.envVar,
+      baseUrl: providerDefaults.baseUrl,
+    }),
+    [
+      providerDefaults.authMethodId,
+      providerDefaults.baseUrl,
+      providerDefaults.envVar,
+      providerDefaults.pluginId,
+    ],
   );
-  const loading = useModelCatalogStore((state) => state.loading.openrouter);
-  const error = useModelCatalogStore((state) => state.errors.openrouter);
-  const refreshOpenRouterCatalog = useModelCatalogStore(
-    (state) => state.refreshOpenRouterCatalog,
+  const catalogKey = useMemo(
+    () => buildProviderCatalogKey(catalogRequest),
+    [catalogRequest],
   );
+
+  const currentProvider = useMemo(
+    () =>
+      registryProviders.find(
+        (provider) => provider.id === providerDefaults.pluginId,
+      ),
+    [providerDefaults.pluginId, registryProviders],
+  );
+  const providerLabel =
+    currentProvider?.name ?? providerDefaults.pluginId ?? 'Provider';
+  const providerApiKey = apiKeys[providerDefaults.pluginId] ?? '';
+
+  const models = useModelCatalogStore((state) => state.models);
+  const userModels = useModelCatalogStore((state) => state.userModels);
+  const syncedAtMap = useModelCatalogStore((state) => state.syncedAt);
+  const userModelsRequireRefreshMap = useModelCatalogStore(
+    (state) => state.userModelsRequireRefresh,
+  );
+  const loadingMap = useModelCatalogStore((state) => state.loading);
+  const errorMap = useModelCatalogStore((state) => state.errors);
+  const refreshCatalog = useModelCatalogStore((state) => state.refreshCatalog);
+
+  const modelsMap = models[catalogKey] ?? {};
+  const userModelsMap = userModels[catalogKey] ?? {};
+  const syncedAt = syncedAtMap[catalogKey] ?? null;
+  const userModelsRequireRefresh =
+    userModelsRequireRefreshMap[catalogKey] ?? false;
+  const loading = loadingMap[catalogKey] ?? false;
+  const error = errorMap[catalogKey] ?? null;
 
   const [viewMode, setViewMode] = useState<'all' | 'user'>('user');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [selectedModel, setSelectedModel] = useState<DiscoveredModelMetadata | null>(null);
+  const [selectedModel, setSelectedModel] =
+    useState<DiscoveredModelMetadata | null>(null);
 
-  const currentMap = viewMode === 'all' ? modelsMap : userModelsMap;
-  
+  const showUserModelsToggle =
+    Object.keys(userModelsMap).length > 0 || userModelsRequireRefresh;
+  const effectiveViewMode = showUserModelsToggle ? viewMode : 'all';
+  const currentMap =
+    effectiveViewMode === 'user' ? userModelsMap : modelsMap;
+
+  useEffect(() => {
+    if (!showUserModelsToggle && viewMode !== 'all') {
+      setViewMode('all');
+    }
+  }, [showUserModelsToggle, viewMode]);
+
   const filteredModels = useMemo(() => {
     const arr = Object.values(currentMap);
     if (!searchQuery) return arr;
-    
+
     const query = searchQuery.toLowerCase();
-    return arr.filter((m) => m.id.toLowerCase().includes(query));
+    return arr.filter((model) => model.id.toLowerCase().includes(query));
   }, [currentMap, searchQuery]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredModels.length / ITEMS_PER_PAGE));
-  
-  // Ensure current page is valid when filtering changes
-  if (currentPage > totalPages && totalPages > 0) {
-    setCurrentPage(totalPages);
-  }
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredModels.length / ITEMS_PER_PAGE),
+  );
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   const paginatedModels = useMemo(() => {
     const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
@@ -69,14 +124,22 @@ export default function ModelCatalogSection() {
   }, [filteredModels, currentPage]);
 
   const totalFound = Object.keys(modelsMap).length;
+  const canSync = Boolean(
+    providerDefaults.pluginId &&
+      providerApiKey &&
+      currentProvider?.supportsCatalog,
+  );
 
   return (
     <div className="space-y-6">
-      {/* Header & Controls */}
       <div className="flex items-center justify-between">
-        {!openRouterKey ? (
+        {!providerDefaults.pluginId ? (
           <div className="flex-1 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
-            Add an OpenRouter API key in Providers &amp; API Keys to enable discovery.
+            Choose a default provider in Defaults to enable model discovery.
+          </div>
+        ) : !providerApiKey ? (
+          <div className="flex-1 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
+            Add a {providerLabel} API key in Providers &amp; API Keys to enable discovery.
           </div>
         ) : error ? (
           <div className="flex-1 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">
@@ -84,17 +147,17 @@ export default function ModelCatalogSection() {
           </div>
         ) : (
           <div className="flex-1 space-y-1">
-            <h3 className="text-sm border-slate-800 font-semibold text-slate-100">
-              OpenRouter Model Catalog
+            <h3 className="text-sm font-semibold text-slate-100">
+              {providerLabel} Model Catalog
             </h3>
             <p className="text-xs text-slate-400">
               {loading
-                ? 'Refreshing OpenRouter models...'
+                ? `Refreshing ${providerLabel} models...`
                 : syncedAt
-                ? `Cached OpenRouter catalog last updated ${new Date(syncedAt).toLocaleString()}.`
-                : totalFound === 0
-                ? 'No models synchronized.'
-                : `Discovered ${totalFound} OpenRouter models.`}
+                  ? `Cached ${providerLabel} catalog last updated ${new Date(syncedAt).toLocaleString()}.`
+                  : totalFound === 0
+                    ? 'No models synchronized.'
+                    : `Discovered ${totalFound} ${providerLabel} models.`}
             </p>
           </div>
         )}
@@ -102,8 +165,8 @@ export default function ModelCatalogSection() {
         <div className="ml-4 flex items-center gap-2">
           <button
             type="button"
-            disabled={!openRouterKey || loading}
-            onClick={() => void refreshOpenRouterCatalog()}
+            disabled={!canSync || loading}
+            onClick={() => void refreshCatalog(catalogRequest)}
             className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
@@ -114,43 +177,55 @@ export default function ModelCatalogSection() {
 
       {userModelsRequireRefresh && (
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
-          Your OpenRouter API key changed. Refresh to repopulate My Enabled Models for this account.
+          Your {providerLabel} API key changed. Refresh to repopulate My Enabled Models for this account.
         </div>
       )}
 
       {totalFound > 0 && (
         <div className="space-y-4">
-          {/* Filters Bar */}
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            {/* View Mode Toggle */}
-            <div className="flex items-center rounded-lg bg-slate-900 border border-slate-800 p-1">
-              <button
-                onClick={() => { setViewMode('user'); setCurrentPage(1); }}
-                className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium transition ${
-                  viewMode === 'user'
-                    ? 'bg-slate-700 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <Database size={14} />
-                My Enabled Models
-              </button>
-              <button
-                onClick={() => { setViewMode('all'); setCurrentPage(1); }}
-                className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium transition ${
-                  viewMode === 'all'
-                    ? 'bg-slate-700 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <Globe size={14} />
-                All Models
-              </button>
-            </div>
+            {showUserModelsToggle ? (
+              <div className="flex items-center rounded-lg bg-slate-900 border border-slate-800 p-1">
+                <button
+                  onClick={() => {
+                    setViewMode('user');
+                    setCurrentPage(1);
+                  }}
+                  className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                    effectiveViewMode === 'user'
+                      ? 'bg-slate-700 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Database size={14} />
+                  My Enabled Models
+                </button>
+                <button
+                  onClick={() => {
+                    setViewMode('all');
+                    setCurrentPage(1);
+                  }}
+                  className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                    effectiveViewMode === 'all'
+                      ? 'bg-slate-700 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Globe size={14} />
+                  All Models
+                </button>
+              </div>
+            ) : (
+              <div className="text-xs text-slate-500">
+                Browsing the full cached catalog for {providerLabel}.
+              </div>
+            )}
 
-            {/* Search Input */}
             <div className="relative w-full sm:w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
+              <Search
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
+                size={14}
+              />
               <input
                 type="text"
                 placeholder="Search models by ID..."
@@ -164,7 +239,6 @@ export default function ModelCatalogSection() {
             </div>
           </div>
 
-          {/* Table */}
           <div className="rounded-xl border border-slate-800 bg-slate-900/50 overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs text-slate-300">
@@ -179,9 +253,9 @@ export default function ModelCatalogSection() {
                 </thead>
                 <tbody className="divide-y divide-slate-800/50">
                   {paginatedModels.length > 0 ? (
-                    paginatedModels.map((model: DiscoveredModelMetadata) => (
-                      <tr 
-                        key={model.id} 
+                    paginatedModels.map((model) => (
+                      <tr
+                        key={model.id}
                         onClick={() => setSelectedModel(model)}
                         className="transition hover:bg-slate-800/30 cursor-pointer"
                       >
@@ -219,7 +293,6 @@ export default function ModelCatalogSection() {
               </table>
             </div>
 
-            {/* Pagination Controls */}
             {filteredModels.length > 0 && (
               <div className="flex items-center justify-between border-t border-slate-800 bg-slate-900/80 px-4 py-3">
                 <div className="text-xs text-slate-400">
@@ -227,18 +300,18 @@ export default function ModelCatalogSection() {
                   <span className="font-medium text-slate-200">{Math.min(currentPage * ITEMS_PER_PAGE, filteredModels.length)}</span> of{' '}
                   <span className="font-medium text-slate-200">{filteredModels.length}</span> models
                 </div>
-                
+
                 <div className="flex items-center gap-2">
                   <button
                     disabled={currentPage === 1}
-                    onClick={() => setCurrentPage(p => p - 1)}
+                    onClick={() => setCurrentPage((page) => page - 1)}
                     className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1 text-xs font-medium text-slate-300 transition hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Previous
                   </button>
                   <button
                     disabled={currentPage === totalPages}
-                    onClick={() => setCurrentPage(p => p + 1)}
+                    onClick={() => setCurrentPage((page) => page + 1)}
                     className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1 text-xs font-medium text-slate-300 transition hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Next
@@ -251,7 +324,10 @@ export default function ModelCatalogSection() {
       )}
 
       {selectedModel && (
-        <ModelDetailsModal model={selectedModel} onClose={() => setSelectedModel(null)} />
+        <ModelDetailsModal
+          model={selectedModel}
+          onClose={() => setSelectedModel(null)}
+        />
       )}
     </div>
   );

@@ -1,6 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { useGraphStore } from '../store/graph-store';
-import { useModelCatalogStore } from '../store/model-catalog-store';
+import {
+  buildProviderCatalogKey,
+  useModelCatalogStore,
+} from '../store/model-catalog-store';
 import type { ContextEngineNodeData, AgentNodeData } from '../types/nodes';
 
 export const KNOWN_CONTEXT_WINDOWS: Record<string, number> = {
@@ -29,11 +32,25 @@ export function useContextEngineSync(nodeId: string, data: ContextEngineNodeData
     : undefined;
 
   const agentData = connectedAgent?.data as AgentNodeData | undefined;
-  const provider = agentData?.provider;
   const modelId = agentData?.modelId;
+  const connectedProviderNode = connectedAgent
+    ? edges
+      .filter((e) => e.target === connectedAgent.id)
+      .map((e) => nodes.find((n) => n.id === e.source))
+      .find((node) => node?.data.type === 'provider')
+    : undefined;
+  const providerCatalogKey =
+    connectedProviderNode?.data.type === 'provider'
+      ? buildProviderCatalogKey({
+          pluginId: connectedProviderNode.data.pluginId,
+          baseUrl: connectedProviderNode.data.baseUrl,
+        })
+      : '';
 
   // Try catalog first, then agent overrides, then well-known defaults
-  const catalogMeta = provider && modelId ? getModelMetadata(provider, modelId) : undefined;
+  const catalogMeta = providerCatalogKey && modelId
+    ? getModelMetadata(providerCatalogKey, modelId)
+    : undefined;
   const modelContextWindow =
     catalogMeta?.contextWindow ??
     agentData?.modelCapabilities?.contextWindow ??

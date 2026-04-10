@@ -1,6 +1,11 @@
 import { Type, type TSchema } from '@sinclair/typebox';
 import type { AgentTool, AgentToolResult } from '@mariozechner/pi-agent-core';
 import { SESSION_TOOL_NAMES } from '../../shared/resolve-tool-names';
+import type {
+  ProviderPluginDefinition,
+  WebFetchToolContext,
+  WebSearchToolContext,
+} from '../../shared/plugin-sdk';
 
 // Re-export resolveToolNames from shared (used by agent-runtime.ts)
 export { resolveToolNames } from '../../shared/resolve-tool-names';
@@ -136,6 +141,12 @@ const TOOL_CREATORS: Record<string, () => AgentTool<TSchema>> = {
 
 const SESSION_TOOL_NAME_SET = new Set<string>(SESSION_TOOL_NAMES);
 
+interface ProviderWebToolContext {
+  plugin: ProviderPluginDefinition;
+  apiKey: string;
+  baseUrl: string;
+}
+
 /**
  * Create AgentTool instances from a list of tool names.
  * Additional tools (e.g. memory tools) can be appended.
@@ -143,6 +154,7 @@ const SESSION_TOOL_NAME_SET = new Set<string>(SESSION_TOOL_NAMES);
 export function createAgentTools(
   names: string[],
   extraTools: AgentTool<TSchema>[] = [],
+  providerWebContext?: ProviderWebToolContext,
 ): AgentTool<TSchema>[] {
   const tools: AgentTool<TSchema>[] = [];
 
@@ -150,6 +162,24 @@ export function createAgentTools(
     // Skip memory and session tools - provided separately
     if (['memory_search', 'memory_get', 'memory_save'].includes(name)) continue;
     if (SESSION_TOOL_NAME_SET.has(name)) continue;
+
+    if (name === 'web_search' && providerWebContext?.plugin.webSearch) {
+      const ctx: WebSearchToolContext = {
+        apiKey: providerWebContext.apiKey,
+        baseUrl: providerWebContext.baseUrl,
+      };
+      tools.push(providerWebContext.plugin.webSearch.createTool(ctx));
+      continue;
+    }
+
+    if (name === 'web_fetch' && providerWebContext?.plugin.webFetch) {
+      const ctx: WebFetchToolContext = {
+        apiKey: providerWebContext.apiKey,
+        baseUrl: providerWebContext.baseUrl,
+      };
+      tools.push(providerWebContext.plugin.webFetch.createTool(ctx));
+      continue;
+    }
 
     const creator = TOOL_CREATORS[name];
     if (creator) {

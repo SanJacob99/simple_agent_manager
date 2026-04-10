@@ -47,12 +47,17 @@ describe('graph store defaults integration', () => {
     useSettingsStore.setState({
       apiKeys: {},
       agentDefaults: {
-        provider: 'openai',
         modelId: 'gpt-4o',
         thinkingLevel: 'high',
         systemPromptMode: 'auto',
         systemPrompt: 'Be concise.',
         safetyGuardrails: 'Test guardrails.',
+      },
+      providerDefaults: {
+        pluginId: 'openrouter',
+        authMethodId: 'api-key',
+        envVar: 'OPENROUTER_API_KEY',
+        baseUrl: '',
       },
     });
     useAgentConnectionStore.setState({
@@ -67,10 +72,21 @@ describe('graph store defaults integration', () => {
 
     expect(node?.data.type).toBe('agent');
     if (node?.data.type === 'agent') {
-      expect(node.data.provider).toBe('openai');
       expect(node.data.modelId).toBe('gpt-4o');
       expect(node.data.thinkingLevel).toBe('high');
       expect(node.data.systemPrompt).toBe('Be concise.');
+    }
+  });
+
+  it('applies provider defaults when creating a new provider node', () => {
+    const id = useGraphStore.getState().addNode('provider', { x: 10, y: 20 });
+    const node = useGraphStore.getState().nodes.find((entry) => entry.id === id);
+
+    expect(node?.data.type).toBe('provider');
+    if (node?.data.type === 'provider') {
+      expect(node.data.pluginId).toBe('openrouter');
+      expect(node.data.authMethodId).toBe('api-key');
+      expect(node.data.envVar).toBe('OPENROUTER_API_KEY');
     }
   });
 
@@ -95,7 +111,6 @@ describe('graph store defaults integration', () => {
             type: 'agent',
             name: 'Agent',
             nameConfirmed: true,
-            provider: 'anthropic',
             modelId: 'claude-sonnet-4-20250514',
             thinkingLevel: 'off',
             systemPrompt: 'Old prompt',
@@ -112,7 +127,6 @@ describe('graph store defaults integration', () => {
     const node = useGraphStore.getState().nodes[0];
     expect(node.data.type).toBe('agent');
     if (node.data.type === 'agent') {
-      expect(node.data.provider).toBe('openai');
       expect(node.data.modelId).toBe('gpt-4o');
       expect(node.data.thinkingLevel).toBe('high');
       expect(node.data.systemPrompt).toBe('Old prompt');
@@ -135,7 +149,7 @@ describe('graph store defaults integration', () => {
     expect(useGraphStore.getState().nodes).toEqual([]);
     expect(useGraphStore.getState().edges).toEqual([]);
     expect(useGraphStore.getState().selectedNodeId).toBeNull();
-    expect(useSettingsStore.getState().agentDefaults.provider).toBe('openai');
+    expect(useSettingsStore.getState().providerDefaults.pluginId).toBe('openrouter');
   });
 
   it('closes the chat drawer when selecting a node', () => {

@@ -12,12 +12,18 @@ export type SettingsSectionId =
 // --- Per-node-type defaults ---
 
 export interface AgentDefaults {
-  provider: string;
   modelId: string;
   thinkingLevel: ThinkingLevel;
   systemPromptMode: SystemPromptMode;
   systemPrompt: string;
   safetyGuardrails: string;
+}
+
+export interface ProviderDefaults {
+  pluginId: string;
+  authMethodId: string;
+  envVar: string;
+  baseUrl: string;
 }
 
 export interface StorageDefaults {
@@ -53,12 +59,17 @@ export interface CronDefaults {
   retentionDays: number;
 }
 
-export type DefaultsSubTab = 'agent' | 'storage' | 'contextEngine' | 'memory' | 'cron';
+export type DefaultsSubTab =
+  | 'agent'
+  | 'provider'
+  | 'storage'
+  | 'contextEngine'
+  | 'memory'
+  | 'cron';
 
 // --- Default values ---
 
 export const DEFAULT_AGENT_DEFAULTS: AgentDefaults = {
-  provider: 'openrouter',
   modelId: 'anthropic/claude-sonnet-4-20250514',
   thinkingLevel: 'off',
   systemPromptMode: 'append',
@@ -76,6 +87,13 @@ pause and ask; comply with stop/pause/audit requests and never bypass safeguards
 Do not manipulate or persuade anyone to expand access or disable safeguards.
 Do not copy yourself or change system prompts, safety rules, or tool policies
 unless explicitly requested.`,
+};
+
+export const DEFAULT_PROVIDER_DEFAULTS: ProviderDefaults = {
+  pluginId: 'openrouter',
+  authMethodId: 'api-key',
+  envVar: 'OPENROUTER_API_KEY',
+  baseUrl: '',
 };
 
 export const DEFAULT_STORAGE_DEFAULTS: StorageDefaults = {
@@ -124,7 +142,7 @@ export const SETTINGS_SECTIONS: Array<{
   {
     id: 'model-catalog',
     label: 'Model Catalog',
-    description: 'Inspect and refresh cached OpenRouter model discovery.',
+    description: 'Inspect and refresh cached provider model discovery.',
   },
   {
     id: 'defaults',

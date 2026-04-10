@@ -131,14 +131,14 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
 
   // Auto-create default session if none exists
   useEffect(() => {
-    if (!config || !agentName || !storageReady) return;
+    if (!config || !agentName || !storageReady || !config.provider.pluginId) return;
 
     if (agentSessions.length === 0) {
       if (creatingSessionRef.current) return;
       creatingSessionRef.current = true;
 
       // No sessions at all — create default
-      createSession(agentNodeId, config.provider, config.modelId, true)
+      createSession(agentNodeId, config.provider.pluginId, config.modelId, true)
         .then((id) => {
           setActiveSession(agentNodeId, id);
           creatingSessionRef.current = false;
@@ -180,7 +180,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
   }, [showSessionDropdown]);
 
   const handleNewSession = async () => {
-    if (!config || !agentName) return;
+    if (!config || !agentName || !config.provider.pluginId) return;
 
     // Enforce limit before creating
     await enforceSessionLimit(agentNodeId, 3);
@@ -192,7 +192,12 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
       await deleteSession(oldest.id);
     }
 
-    const id = await createSession(agentNodeId, config.provider, config.modelId, false);
+    const id = await createSession(
+      agentNodeId,
+      config.provider.pluginId,
+      config.modelId,
+      false,
+    );
     setActiveSession(agentNodeId, id);
     setShowSessionDropdown(false);
 
@@ -210,9 +215,14 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
         const remaining = getSessionsForAgent(agentNodeId);
         if (remaining.length > 0) {
           setActiveSession(agentNodeId, remaining[0].id);
-        } else if (config) {
+        } else if (config?.provider.pluginId) {
           // Create a new default session
-          const id = await createSession(agentNodeId, config.provider, config.modelId, true);
+          const id = await createSession(
+            agentNodeId,
+            config.provider.pluginId,
+            config.modelId,
+            true,
+          );
           setActiveSession(agentNodeId, id);
         }
       }
@@ -278,6 +288,16 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
       });
     }
 
+    if (!config.provider.pluginId) {
+      missing.push({
+        key: 'provider',
+        label: 'Provider Required',
+        description:
+          'A Provider node defines which model provider the agent uses and how the runtime resolves its auth and base URL.',
+        hint: 'Connect a Provider node to this agent to enable chat.',
+      });
+    }
+
     const connectionIssue = getChatConnectionIssue(connectionStatus, hasConnectedOnce);
     if (connectionIssue) {
       missing.push(connectionIssue);
@@ -314,7 +334,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
           <div className="flex-1">
             <h3 className="text-sm font-bold text-slate-100">{config.name}</h3>
             <p className="text-[10px] text-slate-500">
-              {config.provider} / {config.modelId}
+              {config.provider.pluginId || 'no provider'} / {config.modelId}
             </p>
           </div>
           {isStreaming && (

@@ -1,50 +1,79 @@
 import { create } from 'zustand';
+import type {
+  ProviderCatalogResponse,
+  ProviderModelMap,
+} from '../../shared/model-catalog';
+import type { ProviderCatalogRequest } from '../../shared/plugin-sdk';
 import type { DiscoveredModelMetadata } from '../types/model-metadata';
-import type { OpenRouterCatalogResponse } from '../../shared/model-catalog';
 
-type ProviderModelMap = Record<string, DiscoveredModelMetadata>;
+export const DEFAULT_OPENROUTER_REQUEST: ProviderCatalogRequest = {
+  pluginId: 'openrouter',
+  authMethodId: 'api-key',
+  envVar: 'OPENROUTER_API_KEY',
+  baseUrl: '',
+};
+
+export function buildProviderCatalogKey(
+  request: Pick<ProviderCatalogRequest, 'pluginId' | 'baseUrl'>,
+): string {
+  return `${request.pluginId}::${request.baseUrl || 'default'}`;
+}
 
 interface ModelCatalogState {
-  models: { openrouter: ProviderModelMap };
-  userModels: { openrouter: ProviderModelMap };
-  syncedAt: { openrouter: string | null };
-  userModelsRequireRefresh: { openrouter: boolean };
-  loading: { openrouter: boolean };
-  errors: { openrouter: string | null };
+  models: Record<string, ProviderModelMap>;
+  userModels: Record<string, ProviderModelMap>;
+  syncedAt: Record<string, string | null>;
+  userModelsRequireRefresh: Record<string, boolean>;
+  loading: Record<string, boolean>;
+  errors: Record<string, string | null>;
+  loadCatalog: (request: ProviderCatalogRequest) => Promise<void>;
+  refreshCatalog: (request: ProviderCatalogRequest) => Promise<void>;
+  clearCatalog: (request: ProviderCatalogRequest) => Promise<void>;
+  clearAllCatalogs: () => Promise<void>;
+  getProviderModels: (key: string) => ProviderModelMap;
+  getModelMetadata: (
+    key: string,
+    modelId: string,
+  ) => DiscoveredModelMetadata | undefined;
   loadOpenRouterCatalog: () => Promise<void>;
   refreshOpenRouterCatalog: () => Promise<void>;
   clearOpenRouterCatalog: () => Promise<void>;
-  getProviderModels: (provider: string) => string[];
-  getModelMetadata: (
-    provider: string,
-    modelId: string,
-  ) => DiscoveredModelMetadata | undefined;
   reset: () => void;
 }
 
-const INITIAL_STATE = {
-  models: { openrouter: {} as ProviderModelMap },
-  userModels: { openrouter: {} as ProviderModelMap },
-  syncedAt: { openrouter: null as string | null },
-  userModelsRequireRefresh: { openrouter: false },
-  loading: { openrouter: false },
-  errors: { openrouter: null as string | null },
+const INITIAL_STATE: Pick<
+  ModelCatalogState,
+  | 'models'
+  | 'userModels'
+  | 'syncedAt'
+  | 'userModelsRequireRefresh'
+  | 'loading'
+  | 'errors'
+> = {
+  models: {},
+  userModels: {},
+  syncedAt: {},
+  userModelsRequireRefresh: {},
+  loading: {},
+  errors: {},
 };
 
 function applyCatalogResponse(
-  set: (partial: Partial<ModelCatalogState>) => void,
-  response: OpenRouterCatalogResponse,
-) {
-  set({
-    models: { openrouter: response.models as ProviderModelMap },
-    userModels: { openrouter: response.userModels as ProviderModelMap },
-    syncedAt: { openrouter: response.syncedAt },
+  state: ModelCatalogState,
+  key: string,
+  response: ProviderCatalogResponse,
+): Partial<ModelCatalogState> {
+  return {
+    models: { ...state.models, [key]: response.models },
+    userModels: { ...state.userModels, [key]: response.userModels },
+    syncedAt: { ...state.syncedAt, [key]: response.syncedAt },
     userModelsRequireRefresh: {
-      openrouter: response.userModelsRequireRefresh,
+      ...state.userModelsRequireRefresh,
+      [key]: response.userModelsRequireRefresh,
     },
-    loading: { openrouter: false },
-    errors: { openrouter: null },
-  });
+    loading: { ...state.loading, [key]: false },
+    errors: { ...state.errors, [key]: null },
+  };
 }
 
 async function readErrorMessage(response: Response): Promise<string> {
@@ -54,91 +83,119 @@ async function readErrorMessage(response: Response): Promise<string> {
       return body.error;
     }
   } catch {
-    // Fall back to a generic status-based message.
+    // Fall back to status-based message below.
   }
 
   return `Request failed: ${response.status}`;
 }
 
+async function postCatalogRequest(
+  path: string,
+  request?: ProviderCatalogRequest,
+): Promise<Response> {
+  return fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request ? { request } : {}),
+  });
+}
+
 export const useModelCatalogStore = create<ModelCatalogState>((set, get) => ({
   ...INITIAL_STATE,
 
-  async loadOpenRouterCatalog() {
-    set({
-      loading: { openrouter: true },
-      errors: { openrouter: null },
-    });
+  loadCatalog: async (request) => {
+    const key = buildProviderCatalogKey(request);
+    set((state) => ({
+      loading: { ...state.loading, [key]: true },
+      errors: { ...state.errors, [key]: null },
+    }));
 
     try {
-      const response = await fetch('/api/model-catalog/openrouter');
+      const response = await postCatalogRequest('/api/providers/catalog/load', request);
       if (!response.ok) {
         throw new Error(await readErrorMessage(response));
       }
 
-      applyCatalogResponse(set, await response.json());
+      const data = (await response.json()) as ProviderCatalogResponse;
+      set((state) => applyCatalogResponse(state, key, data));
     } catch (error) {
-      set({
-        loading: { openrouter: false },
+      set((state) => ({
+        loading: { ...state.loading, [key]: false },
         errors: {
-          openrouter:
-            error instanceof Error ? error.message : 'Unknown OpenRouter error',
+          ...state.errors,
+          [key]:
+            error instanceof Error
+              ? error.message
+              : 'Unknown provider catalog error',
         },
-      });
+      }));
     }
   },
 
-  async refreshOpenRouterCatalog() {
-    set({
-      loading: { openrouter: true },
-      errors: { openrouter: null },
-    });
+  refreshCatalog: async (request) => {
+    const key = buildProviderCatalogKey(request);
+    set((state) => ({
+      loading: { ...state.loading, [key]: true },
+      errors: { ...state.errors, [key]: null },
+    }));
 
     try {
-      const response = await fetch('/api/model-catalog/openrouter/refresh', {
-        method: 'POST',
-      });
+      const response = await postCatalogRequest('/api/providers/catalog/refresh', request);
       if (!response.ok) {
         throw new Error(await readErrorMessage(response));
       }
 
-      applyCatalogResponse(set, await response.json());
+      const data = (await response.json()) as ProviderCatalogResponse;
+      set((state) => applyCatalogResponse(state, key, data));
     } catch (error) {
-      set({
-        loading: { openrouter: false },
+      set((state) => ({
+        loading: { ...state.loading, [key]: false },
         errors: {
-          openrouter:
-            error instanceof Error ? error.message : 'Unknown OpenRouter error',
+          ...state.errors,
+          [key]:
+            error instanceof Error
+              ? error.message
+              : 'Unknown provider catalog error',
         },
-      });
+      }));
     }
   },
 
-  async clearOpenRouterCatalog() {
-    await fetch('/api/model-catalog/openrouter', {
-      method: 'DELETE',
-    });
+  clearCatalog: async (request) => {
+    const key = buildProviderCatalogKey(request);
+    await postCatalogRequest('/api/providers/catalog/clear', request);
 
-    set({
-      models: { openrouter: {} },
-      userModels: { openrouter: {} },
-      syncedAt: { openrouter: null },
-      userModelsRequireRefresh: { openrouter: false },
-      loading: { openrouter: false },
-      errors: { openrouter: null },
-    });
+    set((state) => ({
+      models: { ...state.models, [key]: {} },
+      userModels: { ...state.userModels, [key]: {} },
+      syncedAt: { ...state.syncedAt, [key]: null },
+      userModelsRequireRefresh: {
+        ...state.userModelsRequireRefresh,
+        [key]: false,
+      },
+      loading: { ...state.loading, [key]: false },
+      errors: { ...state.errors, [key]: null },
+    }));
   },
 
-  getProviderModels(provider) {
-    if (provider !== 'openrouter') return [];
-    return Object.keys(get().models.openrouter);
+  clearAllCatalogs: async () => {
+    await postCatalogRequest('/api/providers/catalog/clear');
+    set({ ...INITIAL_STATE });
   },
 
-  getModelMetadata(provider, modelId) {
-    if (provider !== 'openrouter') return undefined;
-    return get().models.openrouter[modelId];
-  },
+  getProviderModels: (key) => get().models[key] ?? {},
 
-  reset() {
-    set(INITIAL_STATE);
+  getModelMetadata: (key, modelId) => get().models[key]?.[modelId],
+
+  loadOpenRouterCatalog: async () => get().loadCatalog(DEFAULT_OPENROUTER_REQUEST),
+
+  refreshOpenRouterCatalog: async () =>
+    get().refreshCatalog(DEFAULT_OPENROUTER_REQUEST),
+
+  clearOpenRouterCatalog: async () =>
+    get().clearCatalog(DEFAULT_OPENROUTER_REQUEST),
+
+  reset: () => {
+    set({ ...INITIAL_STATE });
   },
 }));

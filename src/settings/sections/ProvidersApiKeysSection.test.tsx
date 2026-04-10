@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import ProvidersApiKeysSection from './ProvidersApiKeysSection';
 import { useSettingsStore } from '../settings-store';
 import { DEFAULT_AGENT_DEFAULTS } from '../types';
+import { useProviderRegistryStore } from '../../store/provider-registry-store';
 
 describe('ProvidersApiKeysSection', () => {
   beforeEach(() => {
@@ -10,23 +11,60 @@ describe('ProvidersApiKeysSection', () => {
     useSettingsStore.setState({
       apiKeys: {},
       agentDefaults: DEFAULT_AGENT_DEFAULTS,
+      providerDefaults: {
+        pluginId: 'openrouter',
+        authMethodId: 'api-key',
+        envVar: 'OPENROUTER_API_KEY',
+        baseUrl: '',
+      },
+    });
+    useProviderRegistryStore.setState({
+      providers: [
+        {
+          id: 'openrouter',
+          name: 'OpenRouter',
+          description: 'OpenRouter provider',
+          defaultBaseUrl: 'https://openrouter.ai/api/v1',
+          auth: [
+            {
+              methodId: 'api-key',
+              label: 'API Key',
+              type: 'api-key',
+              envVar: 'OPENROUTER_API_KEY',
+            },
+          ],
+          supportsCatalog: true,
+          supportsWebSearch: false,
+          supportsWebFetch: false,
+        },
+        {
+          id: 'sandbox-provider',
+          name: 'Sandbox Provider',
+          description: 'Sandbox provider',
+          defaultBaseUrl: 'https://sandbox.example/v1',
+          auth: [
+            {
+              methodId: 'api-key',
+              label: 'API Key',
+              type: 'api-key',
+              envVar: 'SANDBOX_PROVIDER_API_KEY',
+            },
+          ],
+          supportsCatalog: false,
+          supportsWebSearch: false,
+          supportsWebFetch: false,
+        },
+      ],
+      loading: false,
+      error: null,
     });
   });
 
-  it('renders setup guidance and docs links for newly supported providers', () => {
+  it('renders plugin-managed providers from the registry and keeps static provider guidance', () => {
     render(<ProvidersApiKeysSection />);
 
-    expect(screen.getByText('Azure OpenAI')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Get Azure OpenAI key/i })).toHaveAttribute(
-      'href',
-      'https://ai.azure.com/',
-    );
-
-    expect(screen.getByText('Cerebras')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Get Cerebras key/i })).toHaveAttribute(
-      'href',
-      'https://cloud.cerebras.ai/platform/api-keys',
-    );
+    expect(screen.getByText('Sandbox Provider')).toBeInTheDocument();
+    expect(screen.getByText('OpenAI')).toBeInTheDocument();
   });
 
   it('updates provider key values in settings store', () => {

@@ -4,6 +4,11 @@ import DefaultsSection from './DefaultsSection';
 import { useSettingsStore } from '../settings-store';
 import { useGraphStore } from '../../store/graph-store';
 import { useModelCatalogStore } from '../../store/model-catalog-store';
+import {
+  DEFAULT_OPENROUTER_REQUEST,
+  buildProviderCatalogKey,
+} from '../../store/model-catalog-store';
+import { useProviderRegistryStore } from '../../store/provider-registry-store';
 
 describe('DefaultsSection', () => {
   beforeEach(() => {
@@ -11,12 +16,17 @@ describe('DefaultsSection', () => {
     useSettingsStore.setState({
       apiKeys: {},
       agentDefaults: {
-        provider: 'anthropic',
         modelId: 'claude-sonnet-4-20250514',
         thinkingLevel: 'off',
         systemPromptMode: 'append',
         systemPrompt: 'You are a helpful assistant.',
         safetyGuardrails: 'Default guardrails.',
+      },
+      providerDefaults: {
+        pluginId: 'openrouter',
+        authMethodId: 'api-key',
+        envVar: 'OPENROUTER_API_KEY',
+        baseUrl: '',
       },
     });
     useGraphStore.setState({
@@ -29,24 +39,68 @@ describe('DefaultsSection', () => {
             type: 'agent',
             name: 'Agent',
             nameConfirmed: true,
-            provider: 'anthropic',
             modelId: 'claude-sonnet-4-20250514',
             thinkingLevel: 'off',
             systemPrompt: 'Old prompt',
             description: '',
             tags: [],
             modelCapabilities: {},
+            systemPromptMode: 'append',
+            showReasoning: false,
+            verbose: false,
           },
         },
       ],
     } as any);
+    useProviderRegistryStore.setState({
+      providers: [
+        {
+          id: 'openrouter',
+          name: 'OpenRouter',
+          description: 'OpenRouter provider',
+          defaultBaseUrl: 'https://openrouter.ai/api/v1',
+          auth: [
+            {
+              methodId: 'api-key',
+              label: 'API Key',
+              type: 'api-key',
+              envVar: 'OPENROUTER_API_KEY',
+            },
+          ],
+          supportsCatalog: true,
+          supportsWebSearch: false,
+          supportsWebFetch: false,
+        },
+        {
+          id: 'mock-provider',
+          name: 'Mock Provider',
+          description: 'Mock provider',
+          defaultBaseUrl: 'https://mock.example/v1',
+          auth: [
+            {
+              methodId: 'api-key',
+              label: 'API Key',
+              type: 'api-key',
+              envVar: 'MOCK_PROVIDER_API_KEY',
+            },
+          ],
+          supportsCatalog: false,
+          supportsWebSearch: false,
+          supportsWebFetch: false,
+        },
+      ],
+      loading: false,
+      error: null,
+    });
     useModelCatalogStore.setState({
-      models: { openrouter: {} },
-      userModels: { openrouter: {} },
-      syncedAt: { openrouter: null },
-      userModelsRequireRefresh: { openrouter: false },
-      loading: { openrouter: false },
-      errors: { openrouter: null },
+      models: { [buildProviderCatalogKey(DEFAULT_OPENROUTER_REQUEST)]: {} },
+      userModels: { [buildProviderCatalogKey(DEFAULT_OPENROUTER_REQUEST)]: {} },
+      syncedAt: { [buildProviderCatalogKey(DEFAULT_OPENROUTER_REQUEST)]: null },
+      userModelsRequireRefresh: {
+        [buildProviderCatalogKey(DEFAULT_OPENROUTER_REQUEST)]: false,
+      },
+      loading: { [buildProviderCatalogKey(DEFAULT_OPENROUTER_REQUEST)]: false },
+      errors: { [buildProviderCatalogKey(DEFAULT_OPENROUTER_REQUEST)]: null },
     } as any);
   });
 
@@ -74,15 +128,17 @@ describe('DefaultsSection', () => {
     expect(useSettingsStore.getState().agentDefaults.systemPromptMode).toBe('append');
   });
 
-  it('resets the default model when the default provider changes', () => {
+  it('updates provider defaults in the dedicated provider sub-section', () => {
     render(<DefaultsSection />);
 
-    fireEvent.change(screen.getByLabelText('Provider'), {
-      target: { value: 'openai' },
+    fireEvent.click(screen.getByRole('button', { name: 'Provider' }));
+    fireEvent.change(screen.getByLabelText('Provider Plugin'), {
+      target: { value: 'mock-provider' },
     });
 
-    expect(useSettingsStore.getState().agentDefaults.provider).toBe('openai');
-    expect(useSettingsStore.getState().agentDefaults.modelId).toBe('gpt-4o');
+    expect(useSettingsStore.getState().providerDefaults.pluginId).toBe('mock-provider');
+    expect(useSettingsStore.getState().providerDefaults.authMethodId).toBe('api-key');
+    expect(useSettingsStore.getState().providerDefaults.envVar).toBe('MOCK_PROVIDER_API_KEY');
   });
 
   it('requires confirmation before applying defaults to existing agents and does not overwrite systemPrompt', () => {
@@ -95,7 +151,7 @@ describe('DefaultsSection', () => {
 
     expect(confirmSpy).toHaveBeenCalledWith(
       expect.stringContaining(
-        'provider, model, and thinking level',
+        'model and thinking level',
       ),
     );
     expect(useGraphStore.getState().nodes[0].data.type).toBe('agent');
@@ -120,7 +176,6 @@ describe('DefaultsSection', () => {
       ...state,
       agentDefaults: {
         ...state.agentDefaults,
-        provider: 'openrouter',
         modelId: 'manual/custom-model',
       },
     }));
@@ -135,17 +190,17 @@ describe('DefaultsSection', () => {
       ...state,
       agentDefaults: {
         ...state.agentDefaults,
-        provider: 'openrouter',
         modelId: 'anthropic/claude-sonnet-4-20250514',
       },
     }));
     useModelCatalogStore.setState({
       models: {
-        openrouter: {
+        [buildProviderCatalogKey(DEFAULT_OPENROUTER_REQUEST)]: {
           'xiaomi/mimo-v2-pro': {
             id: 'xiaomi/mimo-v2-pro',
             provider: 'openrouter',
             name: 'Mimo V2 Pro',
+            supportedParameters: ['tools'],
           },
         },
       },

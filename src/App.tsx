@@ -10,6 +10,7 @@ import { useGraphStore } from './store/graph-store';
 import { useAgentConnectionStore } from './store/agent-connection-store';
 import { useSettingsStore } from './settings/settings-store';
 import { useModelCatalogStore } from './store/model-catalog-store';
+import { useProviderRegistryStore } from './store/provider-registry-store';
 import { useSessionStore } from './store/session-store';
 import SettingsWorkspace from './settings/SettingsWorkspace';
 import type { AppView, SettingsSectionId } from './settings/types';
@@ -25,11 +26,13 @@ export default function App() {
   const settingsLoaded = useSettingsStore((s) => s.loaded);
   const loadFromServer = useSettingsStore((s) => s.loadFromServer);
   const loadOpenRouterCatalog = useModelCatalogStore((s) => s.loadOpenRouterCatalog);
+  const loadProviders = useProviderRegistryStore((s) => s.loadProviders);
 
   // Load persisted settings from server on mount
   useEffect(() => {
     void loadFromServer();
-  }, [loadFromServer]);
+    void loadProviders();
+  }, [loadFromServer, loadProviders]);
 
   // Agent naming dialog
   const pendingNameNodeId = useGraphStore((s) => s.pendingNameNodeId);
@@ -42,7 +45,7 @@ export default function App() {
   const nodes = useGraphStore((s) => s.nodes);
 
   useEffect(() => {
-    if (!settingsLoaded) {
+    if (!settingsLoaded || !openRouterKey) {
       return;
     }
 

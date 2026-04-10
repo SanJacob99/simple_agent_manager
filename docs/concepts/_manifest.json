@@ -46,6 +46,11 @@
       "doc": "vector-database-node.md",
       "type": "src/types/nodes.ts#VectorDatabaseNodeData",
       "runtime": null
+    },
+    "provider": {
+      "doc": "provider-node.md",
+      "type": "src/types/nodes.ts#ProviderNodeData",
+      "runtime": "server/providers/plugin-registry.ts"
     }
   }
 }
