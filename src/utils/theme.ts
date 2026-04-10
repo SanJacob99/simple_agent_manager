@@ -11,6 +11,7 @@ export const NODE_COLORS: Record<NodeType, string> = {
   storage: '#ef4444',
   vectorDatabase: '#14b8a6',
   cron: '#8b5cf6',
+  provider: '#6366f1',
 };
 
 export const NODE_LABELS: Record<NodeType, string> = {
@@ -24,4 +25,5 @@ export const NODE_LABELS: Record<NodeType, string> = {
   storage: 'Storage',
   vectorDatabase: 'Vector DB',
   cron: 'Cron',
+  provider: 'Provider',
 };

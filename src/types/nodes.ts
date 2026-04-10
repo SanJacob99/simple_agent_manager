@@ -12,7 +12,8 @@ export type NodeType =
   | 'connectors'
   | 'storage'
   | 'vectorDatabase'
-  | 'cron';
+  | 'cron'
+  | 'provider';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -24,7 +25,6 @@ export interface AgentNodeData {
   name: string;
   nameConfirmed: boolean;
   systemPrompt: string;
-  provider: string;
   modelId: string;
   thinkingLevel: ThinkingLevel;
   description: string;
@@ -204,6 +204,18 @@ export interface CronNodeData {
   retentionDays: number;
 }
 
+// --- Provider Node ---
+
+export interface ProviderNodeData {
+  [key: string]: unknown;
+  type: 'provider';
+  label: string;
+  pluginId: string;
+  authMethodId: string;
+  envVar: string;
+  baseUrl: string;
+}
+
 // --- Union Types ---
 
 export type FlowNodeData =
@@ -216,6 +228,7 @@ export type FlowNodeData =
   | ConnectorsNodeData
   | StorageNodeData
   | VectorDatabaseNodeData
-  | CronNodeData;
+  | CronNodeData
+  | ProviderNodeData;
 
 export type AppNode = Node<FlowNodeData>;
