@@ -8,6 +8,7 @@ import {
   Plug,
   Database,
   Container,
+  Cpu,
 } from 'lucide-react';
 import type { NodeType } from '../types/nodes';
 import { NODE_COLORS, NODE_LABELS } from '../utils/theme';
@@ -34,6 +35,7 @@ const PERIPHERAL_ITEMS: PaletteItem[] = [
   { type: 'connectors', icon: <Plug size={16} /> },
   { type: 'storage', icon: <Database size={16} /> },
   { type: 'vectorDatabase', icon: <Container size={16} /> },
+  { type: 'provider' as NodeType, icon: <Cpu size={16} /> },
 ];
 
 function DraggableItem({ item }: { item: PaletteItem }) {
