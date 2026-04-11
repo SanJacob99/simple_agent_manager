@@ -12,3 +12,8 @@
 **Vulnerability:** The StorageEngine improperly joined base directories with user-supplied inputs such as `agentName`, `date`, and `sessionId` without validation, allowing attackers to read/write arbitrary files via inputs like `../../../etc/passwd`.
 **Learning:** `path.join` natively accepts `..` navigation, meaning an attacker-supplied string can escape intended boundaries.
 **Prevention:** Never use bare `path.join` on untrusted inputs. Always resolve absolute paths and enforce prefix boundary checks (e.g. `!resolvedTarget.startsWith(resolvedBase + path.sep)`) to confirm the target path exists strictly inside the base directory.
+
+## 2026-04-11 - [CRITICAL] Fix DoS vulnerability in WebhookHandler HMAC validation
+**Vulnerability:** The WebhookHandler used string length comparison `signature.length !== expected.length` before calling `crypto.timingSafeEqual()`. However, `timingSafeEqual` strictly checks `Buffer.byteLength`. An attacker could send a signature with multi-byte characters (e.g. emojis) that had the correct string length but an invalid byte length, causing `timingSafeEqual` to throw a `RangeError` (ERR_CRYPTO_TIMING_SAFE_EQUAL_LENGTH) and crashing the entire server.
+**Learning:** Checking string length does not guarantee matching Buffer byte lengths when using UTF-8 encodings. `crypto.timingSafeEqual` throws fatal synchronous errors on length mismatch.
+**Prevention:** Always convert strings to Buffers first and compare `Buffer.byteLength` explicitly before invoking `crypto.timingSafeEqual`.

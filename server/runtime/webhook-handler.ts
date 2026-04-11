@@ -34,9 +34,12 @@ export class WebhookHandler {
             .update(JSON.stringify(req.body))
             .digest('hex');
 
+          const sigBuffer = Buffer.from(signature);
+          const expBuffer = Buffer.from(expected);
+
           if (
-            signature.length !== expected.length ||
-            !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))
+            sigBuffer.byteLength !== expBuffer.byteLength ||
+            !crypto.timingSafeEqual(sigBuffer, expBuffer)
           ) {
             res.status(401).json({ error: 'Invalid signature' });
             return;
