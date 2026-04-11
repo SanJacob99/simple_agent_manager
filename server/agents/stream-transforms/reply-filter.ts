@@ -15,11 +15,15 @@ function extractAssistantText(message: { content?: unknown }): string {
     return '';
   }
 
-  return content
-    .filter((block): block is { type: string; text?: string } => !!block && typeof block === 'object')
-    .filter((block) => block.type === 'text' && typeof block.text === 'string')
-    .map((block) => block.text ?? '')
-    .join('');
+  // ⚡ Bolt Optimization: Use a single-pass loop instead of chained .filter().map().join('')
+  // This avoids multiple intermediate array allocations during high-frequency text extraction.
+  let result = '';
+  for (const block of content) {
+    if (block && typeof block === 'object' && 'type' in block && block.type === 'text' && 'text' in block && typeof block.text === 'string') {
+      result += block.text;
+    }
+  }
+  return result;
 }
 
 export class ReplyFilter implements StreamTransform {
