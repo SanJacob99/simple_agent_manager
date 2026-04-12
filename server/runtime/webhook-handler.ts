@@ -34,9 +34,15 @@ export class WebhookHandler {
             .update(JSON.stringify(req.body))
             .digest('hex');
 
+          // SECURITY: Prevent Denial of Service (DoS) attacks
+          // Convert both signatures to buffers first, then compare their byte lengths
+          // before calling timingSafeEqual, which throws a RangeError on unequal lengths
+          const sigBuffer = Buffer.from(signature);
+          const expBuffer = Buffer.from(expected);
+
           if (
-            signature.length !== expected.length ||
-            !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))
+            sigBuffer.byteLength !== expBuffer.byteLength ||
+            !crypto.timingSafeEqual(sigBuffer, expBuffer)
           ) {
             res.status(401).json({ error: 'Invalid signature' });
             return;
