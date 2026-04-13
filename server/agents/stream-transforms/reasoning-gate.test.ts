@@ -34,7 +34,9 @@ describe('ReasoningGate', () => {
       emit,
     );
 
-    expect(emit).not.toHaveBeenCalled();
+    expect(emit).toHaveBeenCalledTimes(2);
+    expect(emit).toHaveBeenCalledWith({ type: 'reasoning:start', agentId: '', runId: 'run-1' });
+    expect(emit).toHaveBeenCalledWith({ type: 'reasoning:end', agentId: '', runId: 'run-1', content: '' });
     expect(ctx.reasoningBuffer).toBe('');
   });
 
