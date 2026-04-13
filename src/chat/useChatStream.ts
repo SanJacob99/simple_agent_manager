@@ -192,6 +192,9 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
 
           case 'agent:end':
           case 'lifecycle:end':
+            if (assistantContentRef.current.trim() === '' && assistantMsgIdRef.current) {
+              deleteMessage(sessionKeyRef.current, assistantMsgIdRef.current);
+            }
             setIsStreaming(false);
             setIsReasoning(false);
             setCompacting(false);

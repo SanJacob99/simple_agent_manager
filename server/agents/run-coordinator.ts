@@ -33,6 +33,7 @@ import type {
 import {
   RUN_DIAGNOSTIC_CUSTOM_TYPE,
   type RunDiagnosticData,
+  type RunErrorDiagnosticData,
 } from '../../shared/session-diagnostics';
 import { RunConcurrencyController } from './run-concurrency-controller';
 import { SubAgentRegistry } from '../runtime/sub-agent-registry';
@@ -70,6 +71,8 @@ interface TranscriptState {
   assistantText: string;
   assistantSuppressed: boolean;
   compactionCount: number;
+  assistantPersisted: boolean;
+  toolInvoked: boolean;
 }
 
 interface NormalizedUsage {
@@ -417,6 +420,8 @@ export class RunCoordinator {
       assistantText: '',
       assistantSuppressed: false,
       compactionCount: 0,
+      assistantPersisted: false,
+      toolInvoked: false,
     };
     let transcriptWrites = Promise.resolve();
     let transcriptFinalized = false;
@@ -670,6 +675,17 @@ export class RunCoordinator {
       if (record.status !== 'running') {
         return;
       }
+      await transcriptWrites;
+      if (!transcriptState.assistantPersisted && !transcriptState.toolInvoked) {
+        record.pendingDiagnostic ??= {
+          kind: 'empty_reply',
+          runId: record.runId,
+          sessionId: record.sessionId,
+          provider: this.config.provider.pluginId,
+          modelId: this.config.modelId,
+          createdAt: Date.now(),
+        };
+      }
       await finalizeTranscript();
       this.concurrency.release(record.runId, record.sessionId);
       this.finalizeRunSuccess(record);
@@ -760,6 +776,7 @@ export class RunCoordinator {
       const assistantMessage = this.buildAssistantMessage(raw.message, fallbackText);
       transcriptManager.appendMessage(assistantMessage);
       await this.applyAssistantUsage(record.sessionKey, assistantMessage);
+      transcriptState.assistantPersisted = true;
 
       transcriptState.assistantText = '';
       transcriptState.assistantSuppressed = false;
@@ -767,6 +784,7 @@ export class RunCoordinator {
     }
 
     if (raw.type === 'tool_execution_end') {
+      transcriptState.toolInvoked = true;
       const toolMessage: ToolResultMessage = {
         role: 'toolResult',
         toolCallId: raw.toolCallId ?? randomUUID(),
@@ -948,7 +966,7 @@ export class RunCoordinator {
     return reopened;
   }
 
-  private buildRunDiagnostic(record: RunRecord, error: StructuredError): RunDiagnosticData {
+  private buildRunDiagnostic(record: RunRecord, error: StructuredError): RunErrorDiagnosticData {
     return {
       kind: 'run_error',
       runId: record.runId,
