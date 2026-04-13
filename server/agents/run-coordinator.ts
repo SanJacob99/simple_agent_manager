@@ -631,14 +631,29 @@ export class RunCoordinator {
     let _apiCallCount = 0;
     let _firstTextDeltaLogged = false;
     let _firstThinkingDeltaLogged = false;
-    
+    let _thinkingChars = 0;
+    let _textChars = 0;
+    const _assistantEventTypes = new Set<string>();
+    const logStreamSummary = (reason: 'message_end' | 'run_end') => {
+      log(
+        'stream',
+        `[${this.agentId}] ${reason} pass=${_apiCallCount} ` +
+          `model=${this.config.modelId} ` +
+          `thinking_chars=${_thinkingChars} text_chars=${_textChars} ` +
+          `events=[${[..._assistantEventTypes].join(',')}]`,
+      );
+    };
+
     const unsubscribe = this.runtime.subscribe((event: RuntimeEvent) => {
       if ('type' in event) {
         if (event.type === 'message_start' && (event as any).message?.role === 'assistant') {
           _apiCallCount++;
           _firstTextDeltaLogged = false;
           _firstThinkingDeltaLogged = false;
-          
+          _thinkingChars = 0;
+          _textChars = 0;
+          _assistantEventTypes.clear();
+
           let passInfo = `pass=${_apiCallCount}`;
           if (_apiCallCount === 2) {
             passInfo += `, fallback_or_retry`;
@@ -646,22 +661,40 @@ export class RunCoordinator {
             passInfo += `, tool_retry`;
           }
           _lap(`api:message_start [${passInfo}]`);
+          log(
+            'stream',
+            `[${this.agentId}] message_start ${passInfo} model=${this.config.modelId} ` +
+              `thinkingLevel=${this.config.thinkingLevel ?? 'unset'} ` +
+              `showReasoning=${this.config.showReasoning ?? false}`,
+          );
         }
-        else if (
-          !_firstTextDeltaLogged &&
-          event.type === 'message_update' &&
-          (event as any).assistantMessageEvent?.type === 'text_delta'
-        ) {
-          _lap(`api:first_text_delta [pass=${_apiCallCount}]`);
-          _firstTextDeltaLogged = true;
+        else if (event.type === 'message_update') {
+          const assistantEvent = (event as any).assistantMessageEvent;
+          if (assistantEvent?.type) {
+            _assistantEventTypes.add(assistantEvent.type);
+          }
+          if (assistantEvent?.type === 'text_delta') {
+            _textChars += (assistantEvent.delta ?? '').length;
+            if (!_firstTextDeltaLogged) {
+              _lap(`api:first_text_delta [pass=${_apiCallCount}]`);
+              _firstTextDeltaLogged = true;
+            }
+          }
+          else if (assistantEvent?.type === 'thinking_delta') {
+            _thinkingChars += (assistantEvent.delta ?? '').length;
+            if (!_firstThinkingDeltaLogged) {
+              _lap(`api:first_thinking_delta [pass=${_apiCallCount}]`);
+              log(
+                'stream',
+                `[${this.agentId}] first_thinking_delta pass=${_apiCallCount} ` +
+                  `model=${this.config.modelId}`,
+              );
+              _firstThinkingDeltaLogged = true;
+            }
+          }
         }
-        else if (
-          !_firstThinkingDeltaLogged &&
-          event.type === 'message_update' &&
-          (event as any).assistantMessageEvent?.type === 'thinking_delta'
-        ) {
-          _lap(`api:first_thinking_delta [pass=${_apiCallCount}]`);
-          _firstThinkingDeltaLogged = true;
+        else if (event.type === 'message_end' && (event as any).message?.role === 'assistant') {
+          logStreamSummary('message_end');
         }
       }
       queueTranscriptWrite(() => this.persistRuntimeEvent(record, transcriptManager, event, transcriptState));
