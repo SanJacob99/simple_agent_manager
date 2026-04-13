@@ -12,3 +12,8 @@
 **Vulnerability:** The StorageEngine improperly joined base directories with user-supplied inputs such as `agentName`, `date`, and `sessionId` without validation, allowing attackers to read/write arbitrary files via inputs like `../../../etc/passwd`.
 **Learning:** `path.join` natively accepts `..` navigation, meaning an attacker-supplied string can escape intended boundaries.
 **Prevention:** Never use bare `path.join` on untrusted inputs. Always resolve absolute paths and enforce prefix boundary checks (e.g. `!resolvedTarget.startsWith(resolvedBase + path.sep)`) to confirm the target path exists strictly inside the base directory.
+
+## 2026-04-10 - [CRITICAL] Fix DoS vulnerability in Webhook Handler signature validation
+**Vulnerability:** The WebhookHandler used `crypto.timingSafeEqual` directly on user-provided signatures without checking their byte lengths, causing a RangeError crash when the lengths mismatched, leading to a Denial of Service (DoS) vulnerability.
+**Learning:** `crypto.timingSafeEqual` throws a `RangeError` if the two buffers passed to it are of different sizes. Passing unverified inputs directly to this function can crash the node process.
+**Prevention:** Always compare the `.byteLength` property of both Buffers before passing them to `crypto.timingSafeEqual`.
