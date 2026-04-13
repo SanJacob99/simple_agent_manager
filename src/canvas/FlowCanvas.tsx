@@ -11,6 +11,8 @@ import { useGraphStore } from '../store/graph-store';
 import { nodeTypes } from '../nodes/node-registry';
 import { edgeTypes } from '../edges/DataEdge';
 import { useDragAndDrop } from './useDragAndDrop';
+import LottieAnimation from '../components/LottieAnimation';
+import HelloSquid from '../animations/HelloSquid.json';
 
 export default function FlowCanvas() {
   const nodes = useGraphStore((s) => s.nodes);
@@ -62,6 +64,12 @@ export default function FlowCanvas() {
         nodeColor="#334155"
         maskColor="#0f172a80"
       />
+      {nodes.length === 0 && (
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3">
+          <LottieAnimation animationData={HelloSquid} size={220} />
+          <p className="text-sm text-slate-500">Drag an agent onto the canvas to get started</p>
+        </div>
+      )}
     </ReactFlow>
   );
 }
