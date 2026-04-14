@@ -126,3 +126,89 @@ describe('streaming-markdown-scanner — code fences', () => {
     expect(blocks[0].contentSource).toBe('print(1)');
   });
 });
+
+describe('streaming-markdown-scanner — blockquote, hr, image', () => {
+  it('recognises a blockquote line', () => {
+    const s = createScanner();
+    s.append('> quoted text\n');
+    const blocks = s.getBlocks();
+    expect(blocks[0].type).toBe('blockquote');
+    expect(blocks[0].frameSource).toBe('> ');
+    expect(blocks[0].contentSource).toBe('quoted text');
+  });
+
+  it('continues a blockquote across consecutive `>` lines', () => {
+    const s = createScanner();
+    s.append('> line 1\n> line 2\n');
+    const blocks = s.getBlocks();
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].contentSource).toBe('line 1\nline 2');
+  });
+
+  it('recognises a horizontal rule', () => {
+    const s = createScanner();
+    s.append('---\n');
+    const blocks = s.getBlocks();
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].type).toBe('hr');
+    expect(blocks[0].status).toBe('closed');
+  });
+
+  it('recognises a standalone image', () => {
+    const s = createScanner();
+    s.append('![alt](http://example.com/a.png)\n');
+    const blocks = s.getBlocks();
+    expect(blocks[0].type).toBe('image');
+    expect(blocks[0].frameSource).toBe('![alt](http://example.com/a.png)');
+    expect(blocks[0].status).toBe('closed');
+  });
+});
+
+describe('streaming-markdown-scanner — lists', () => {
+  it('opens a list block with a single item', () => {
+    const s = createScanner();
+    s.append('- alpha\n');
+    const blocks = s.getBlocks();
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].type).toBe('list');
+    expect(blocks[0].children).toBeDefined();
+    expect(blocks[0].children!).toHaveLength(1);
+    const item = blocks[0].children![0];
+    expect(item.type).toBe('list_item');
+    expect(item.frameSource).toBe('- ');
+    expect(item.contentSource).toBe('alpha');
+  });
+
+  it('adds subsequent items to the same list', () => {
+    const s = createScanner();
+    s.append('- alpha\n- beta\n- gamma\n');
+    const blocks = s.getBlocks();
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].children).toHaveLength(3);
+    expect(blocks[0].children!.map((c) => c.contentSource)).toEqual([
+      'alpha',
+      'beta',
+      'gamma',
+    ]);
+  });
+
+  it('recognises ordered list items', () => {
+    const s = createScanner();
+    s.append('1. first\n2. second\n');
+    const blocks = s.getBlocks();
+    expect(blocks[0].type).toBe('list');
+    expect(blocks[0].children![0].frameSource).toBe('1. ');
+    expect(blocks[0].children![1].frameSource).toBe('2. ');
+  });
+
+  it('closes a list on a blank line and starts a new paragraph after', () => {
+    const s = createScanner();
+    s.append('- alpha\n\nafter\n');
+    const blocks = s.getBlocks();
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0].type).toBe('list');
+    expect(blocks[0].status).toBe('closed');
+    expect(blocks[1].type).toBe('paragraph');
+    expect(blocks[1].contentSource).toBe('after');
+  });
+});

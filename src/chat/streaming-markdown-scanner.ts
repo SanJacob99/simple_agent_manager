@@ -73,9 +73,34 @@ export function createScanner(): Scanner {
     return b;
   }
 
+  function openList(): Block {
+    closeOpen();
+    const list: Block = {
+      id: mkId(),
+      type: 'list',
+      status: 'open',
+      frameSource: '',
+      contentSource: '',
+      children: [],
+    };
+    internalBlocks.push(list);
+    openBlock = list;
+    return list;
+  }
+
+  function appendListItem(list: Block, frame: string, content: string) {
+    const item: Block = {
+      id: mkId(),
+      type: 'list_item',
+      status: 'closed',
+      frameSource: frame,
+      contentSource: content,
+    };
+    list.children!.push(item);
+  }
+
   function classifyLine(line: string) {
-    // Inside an open code fence, lines are appended verbatim until the
-    // matching closing fence.
+    // Inside an open code fence, lines are appended verbatim until the fence closes.
     if (openBlock && openBlock.type === 'code_fence') {
       const fenceChar = openBlock.frameSource.startsWith('~~~') ? '~~~' : '```';
       if (line.trim() === fenceChar) {
@@ -93,14 +118,30 @@ export function createScanner(): Scanner {
       return;
     }
 
-    // Opening code fence: ``` or ~~~ optionally followed by a language tag.
+    // Opening code fence.
     const fenceMatch = /^(```|~~~)([^\s`~]*)\s*$/.exec(line);
     if (fenceMatch) {
       startBlock('code_fence', `${fenceMatch[1]}${fenceMatch[2]}\n`, '');
       return;
     }
 
-    // ATX heading: 1-6 hashes + space + text
+    // Horizontal rule — 3+ of -, *, or _ alone on a line.
+    if (/^(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
+      const block = startBlock('hr', `${line}\n`, '');
+      block.status = 'closed';
+      openBlock = null;
+      return;
+    }
+
+    // Standalone image.
+    if (/^!\[[^\]]*\]\([^)]+\)\s*$/.test(line)) {
+      const block = startBlock('image', line.trim(), '');
+      block.status = 'closed';
+      openBlock = null;
+      return;
+    }
+
+    // ATX heading.
     const headingMatch = /^(#{1,6}) (.*)$/.exec(line);
     if (headingMatch) {
       const block = startBlock('heading', `${headingMatch[1]} `, headingMatch[2]);
@@ -109,7 +150,36 @@ export function createScanner(): Scanner {
       return;
     }
 
-    // Default: paragraph. Append to open paragraph if one exists, else start.
+    // Blockquote.
+    const quoteMatch = /^> (.*)$/.exec(line);
+    if (quoteMatch) {
+      if (openBlock && openBlock.type === 'blockquote') {
+        openBlock.contentSource += '\n' + quoteMatch[1];
+      } else {
+        startBlock('blockquote', '> ', quoteMatch[1]);
+      }
+      return;
+    }
+
+    // Unordered list item.
+    const ulMatch = /^([-*+]) (.*)$/.exec(line);
+    if (ulMatch) {
+      const list =
+        openBlock && openBlock.type === 'list' ? openBlock : openList();
+      appendListItem(list, `${ulMatch[1]} `, ulMatch[2]);
+      return;
+    }
+
+    // Ordered list item.
+    const olMatch = /^(\d+\.) (.*)$/.exec(line);
+    if (olMatch) {
+      const list =
+        openBlock && openBlock.type === 'list' ? openBlock : openList();
+      appendListItem(list, `${olMatch[1]} `, olMatch[2]);
+      return;
+    }
+
+    // Default: paragraph.
     if (openBlock && openBlock.type === 'paragraph') {
       openBlock.contentSource += '\n' + line;
       return;
