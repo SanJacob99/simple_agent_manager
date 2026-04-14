@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { autoClose } from './autoClose';
+import { autoClose, findSafeRevealCount } from './autoClose';
 
 describe('autoClose', () => {
   it('returns already-closed input unchanged', () => {
@@ -51,5 +51,59 @@ describe('autoClose', () => {
 
   it('does not treat tokens inside inline code as open', () => {
     expect(autoClose('code `**not-bold', 'paragraph')).toBe('code `**not-bold`');
+  });
+});
+
+describe('findSafeRevealCount', () => {
+  it('returns cursor when no inline tokens are open', () => {
+    expect(findSafeRevealCount('hello world', 5, 'paragraph')).toBe(5);
+    expect(findSafeRevealCount('**bold** text', 8, 'paragraph')).toBe(8);
+  });
+
+  it('rolls back to the position of an open italic opener', () => {
+    // `*hel` — cursor inside italic, no closer yet
+    expect(findSafeRevealCount('*hello*', 4, 'paragraph')).toBe(0);
+  });
+
+  it('rolls back to the position of an open bold opener', () => {
+    // `**hel` — cursor inside bold, no closer yet
+    expect(findSafeRevealCount('**hello**', 5, 'paragraph')).toBe(0);
+  });
+
+  it('advances past a closed token', () => {
+    // `*hello*` fully revealed — safe == cursor
+    expect(findSafeRevealCount('*hello*', 7, 'paragraph')).toBe(7);
+  });
+
+  it('holds at the earliest unclosed token (nested)', () => {
+    // `**bold and *ital` — `**` still open, roll back to position 0
+    expect(findSafeRevealCount('**bold and *italic***', 16, 'paragraph')).toBe(0);
+  });
+
+  it('advances safely after an earlier closed pair', () => {
+    // `**done** and *par` — `**done**` closed, `*par` open → safe at position 13
+    const text = '**done** and *partial*';
+    expect(findSafeRevealCount(text, 17, 'paragraph')).toBe(13);
+  });
+
+  it('holds at an open inline code span', () => {
+    expect(findSafeRevealCount('use `foo', 8, 'paragraph')).toBe(4);
+  });
+
+  it('treats code_fence blocks as fully revealable', () => {
+    // Inline asterisks inside code should not hold the reveal.
+    expect(findSafeRevealCount('const x = "*hi"', 12, 'code_fence')).toBe(12);
+  });
+
+  it('holds at an open link bracket', () => {
+    expect(findSafeRevealCount('see [click', 10, 'paragraph')).toBe(4);
+  });
+
+  it('handles cursor beyond text length by clamping to length', () => {
+    expect(findSafeRevealCount('hello', 100, 'paragraph')).toBe(5);
+  });
+
+  it('advances at a strikethrough closing pair', () => {
+    expect(findSafeRevealCount('~~gone~~ text', 13, 'paragraph')).toBe(13);
   });
 });

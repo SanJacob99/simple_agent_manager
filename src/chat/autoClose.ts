@@ -109,3 +109,92 @@ function toggle(stack: InlineToken[], token: InlineToken) {
   if (top === token) stack.pop();
   else stack.push(token);
 }
+
+/**
+ * Returns the largest k ≤ cursor such that `text.slice(0, k)` has no open
+ * inline markdown token. Used by the streaming reveal cursor to hold the
+ * displayed slice at a safe boundary — so `*hel` inside `*hello*` never
+ * renders as literal punctuation; the whole `*hello*` appears at once when
+ * the closer enters the revealed range.
+ *
+ * For `code_fence` blocks, inline parsing is inert — returns `cursor` as-is.
+ */
+export function findSafeRevealCount(
+  text: string,
+  cursor: number,
+  blockType: BlockType,
+): number {
+  if (blockType === 'code_fence') return cursor;
+
+  const limit = Math.min(cursor, text.length);
+  const stack: Array<{ token: InlineToken; pos: number }> = [];
+  let inCode = false;
+  let i = 0;
+
+  const toggleAt = (token: InlineToken, pos: number) => {
+    const top = stack[stack.length - 1];
+    if (top && top.token === token) stack.pop();
+    else stack.push({ token, pos });
+  };
+
+  while (i < limit) {
+    const c = text[i];
+    const c2 = text.slice(i, i + 2);
+
+    if (c === '`') {
+      if (inCode) {
+        inCode = false;
+        stack.pop();
+      } else {
+        inCode = true;
+        stack.push({ token: '`', pos: i });
+      }
+      i += 1;
+      continue;
+    }
+    if (inCode) {
+      i += 1;
+      continue;
+    }
+
+    if (c2 === '**') {
+      toggleAt('**', i);
+      i += 2;
+      continue;
+    }
+    if (c2 === '__') {
+      toggleAt('__', i);
+      i += 2;
+      continue;
+    }
+    if (c2 === '~~') {
+      toggleAt('~~', i);
+      i += 2;
+      continue;
+    }
+    if (c === '*') {
+      toggleAt('*', i);
+      i += 1;
+      continue;
+    }
+    if (c === '_') {
+      toggleAt('_', i);
+      i += 1;
+      continue;
+    }
+    if (c === '[') {
+      stack.push({ token: '[', pos: i });
+      i += 1;
+      continue;
+    }
+    if (c === ']') {
+      const top = stack[stack.length - 1];
+      if (top && top.token === '[') stack.pop();
+      i += 1;
+      continue;
+    }
+    i += 1;
+  }
+
+  return stack.length === 0 ? limit : stack[0].pos;
+}

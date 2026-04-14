@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useSettingsStore } from '../settings/settings-store';
 import { markdownComponents } from './markdown-components';
-import { autoClose } from './autoClose';
+import { autoClose, findSafeRevealCount } from './autoClose';
 import type { Block } from './streaming-markdown-scanner';
 
 interface StreamingBlockProps {
@@ -75,7 +75,8 @@ function StreamingBlockImpl({ block }: StreamingBlockProps) {
     );
   }
 
-  const visibleContent = block.contentSource.slice(0, displayCount);
+  const safeCount = findSafeRevealCount(block.contentSource, displayCount, block.type);
+  const visibleContent = block.contentSource.slice(0, safeCount);
   const merged = block.frameSource + visibleContent;
   const closedInput = autoClose(merged, block.type);
 
