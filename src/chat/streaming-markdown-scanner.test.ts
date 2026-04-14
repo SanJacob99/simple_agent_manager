@@ -308,3 +308,44 @@ describe('streaming-markdown-scanner — disambiguation', () => {
     expect(committed[0].frameSource).toBe('Title\n---\n');
   });
 });
+
+describe('streaming-markdown-scanner — chunk invariance', () => {
+  const FIXTURES = [
+    '# Heading\n\nA paragraph with **bold** and *italics*.\n\n- one\n- two\n- three\n\n```js\nconst x = 1;\n```\n\n> a quote\n\n---\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |\n',
+    'Title\n===\n\nbody line one\nbody line two\n\n![img](http://x/y.png)\n',
+  ];
+
+  function serialize(blocks: readonly Block[]): string {
+    return JSON.stringify(
+      blocks.map((b) => ({
+        type: b.type,
+        status: b.status,
+        frame: b.frameSource,
+        content: b.contentSource,
+        children: b.children?.map((c) => ({
+          type: c.type,
+          frame: c.frameSource,
+          content: c.contentSource,
+        })),
+      })),
+    );
+  }
+
+  function runWithChunks(input: string, chunkSize: number): string {
+    const s = createScanner();
+    for (let i = 0; i < input.length; i += chunkSize) {
+      s.append(input.slice(i, i + chunkSize));
+    }
+    s.finalize();
+    return serialize(s.getBlocks());
+  }
+
+  it('produces identical block lists regardless of delta chunk size', () => {
+    for (const fixture of FIXTURES) {
+      const baseline = runWithChunks(fixture, fixture.length);
+      for (const size of [1, 3, 7, 50]) {
+        expect(runWithChunks(fixture, size)).toBe(baseline);
+      }
+    }
+  });
+});
