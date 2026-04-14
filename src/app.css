@@ -49,3 +49,18 @@ html, body, #root {
   animation-timing-function: ease-out;
   animation-fill-mode: forwards;
 }
+
+@keyframes streamBlockIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.stream-block-in {
+  animation: streamBlockIn 200ms ease-out both;
+}
