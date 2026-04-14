@@ -1,17 +1,184 @@
 @import "tailwindcss";
 @import "@xyflow/react/dist/style.css";
 
-@theme {
-  --color-slate-925: #0b1222;
-  --color-node-agent: #3b82f6;
-  --color-node-memory: #22c55e;
-  --color-node-tools: #f97316;
-  --color-node-skills: #a855f7;
-  --color-node-context: #06b6d4;
-  --color-node-comm: #ec4899;
-  --color-node-connectors: #eab308;
-  --color-node-storage: #ef4444;
-  --color-node-vectordb: #14b8a6;
+/*
+  Theming
+  -------
+  Every color used across the app is routed through a CSS variable in this
+  file, so the whole palette can be changed from one place. The `@theme
+  inline` block reroutes Tailwind's default palette utilities (bg-slate-900,
+  text-blue-400, border-amber-500, ...) through our `--c-*` variables, which
+  means existing className usages across the codebase are themeable without
+  per-file edits.
+
+  To switch to light mode, add `class="theme-light"` to the <html> element.
+  The slate scale is flipped in `:root.theme-light` below. Accent palettes
+  (brand/danger/warning/success/info) currently use the same values in both
+  modes -- override them under `:root.theme-light` if you want to tune them
+  for a light background.
+*/
+
+@theme inline {
+  /* Neutral scale (slate) */
+  --color-slate-50: var(--c-slate-50);
+  --color-slate-100: var(--c-slate-100);
+  --color-slate-200: var(--c-slate-200);
+  --color-slate-300: var(--c-slate-300);
+  --color-slate-400: var(--c-slate-400);
+  --color-slate-500: var(--c-slate-500);
+  --color-slate-600: var(--c-slate-600);
+  --color-slate-700: var(--c-slate-700);
+  --color-slate-800: var(--c-slate-800);
+  --color-slate-900: var(--c-slate-900);
+  --color-slate-925: var(--c-slate-925);
+  --color-slate-950: var(--c-slate-950);
+
+  /* Brand / primary (blue) */
+  --color-blue-200: var(--c-blue-200);
+  --color-blue-300: var(--c-blue-300);
+  --color-blue-400: var(--c-blue-400);
+  --color-blue-500: var(--c-blue-500);
+  --color-blue-600: var(--c-blue-600);
+
+  /* Danger (red + rose) */
+  --color-red-200: var(--c-red-200);
+  --color-red-300: var(--c-red-300);
+  --color-red-400: var(--c-red-400);
+  --color-red-500: var(--c-red-500);
+  --color-red-600: var(--c-red-600);
+  --color-rose-400: var(--c-rose-400);
+
+  /* Warning (amber + orange) */
+  --color-amber-50: var(--c-amber-50);
+  --color-amber-200: var(--c-amber-200);
+  --color-amber-300: var(--c-amber-300);
+  --color-amber-400: var(--c-amber-400);
+  --color-amber-500: var(--c-amber-500);
+  --color-amber-600: var(--c-amber-600);
+  --color-orange-500: var(--c-orange-500);
+
+  /* Success (green + emerald) */
+  --color-green-400: var(--c-green-400);
+  --color-emerald-200: var(--c-emerald-200);
+  --color-emerald-400: var(--c-emerald-400);
+  --color-emerald-500: var(--c-emerald-500);
+  --color-emerald-600: var(--c-emerald-600);
+
+  /* Info (purple + violet + indigo) */
+  --color-purple-50: var(--c-purple-50);
+  --color-purple-100: var(--c-purple-100);
+  --color-purple-200: var(--c-purple-200);
+  --color-purple-300: var(--c-purple-300);
+  --color-purple-400: var(--c-purple-400);
+  --color-purple-500: var(--c-purple-500);
+  --color-violet-200: var(--c-violet-200);
+  --color-violet-500: var(--c-violet-500);
+  --color-violet-600: var(--c-violet-600);
+  --color-indigo-400: var(--c-indigo-400);
+
+  /* Node accent colors (unchanged) */
+  --color-node-agent: var(--c-node-agent);
+  --color-node-memory: var(--c-node-memory);
+  --color-node-tools: var(--c-node-tools);
+  --color-node-skills: var(--c-node-skills);
+  --color-node-context: var(--c-node-context);
+  --color-node-comm: var(--c-node-comm);
+  --color-node-connectors: var(--c-node-connectors);
+  --color-node-storage: var(--c-node-storage);
+  --color-node-vectordb: var(--c-node-vectordb);
+}
+
+:root {
+  /* === Dark mode (default) === */
+
+  /* Neutral scale -- backgrounds, borders, text */
+  --c-slate-50: oklch(98.4% 0.003 247.858);
+  --c-slate-100: oklch(96.8% 0.007 247.896);
+  --c-slate-200: oklch(92.9% 0.013 255.508);
+  --c-slate-300: oklch(86.9% 0.022 252.894);
+  --c-slate-400: oklch(70.4% 0.04 256.788);
+  --c-slate-500: oklch(55.4% 0.046 257.417);
+  --c-slate-600: oklch(44.6% 0.043 257.281);
+  --c-slate-700: oklch(37.2% 0.044 257.287);
+  --c-slate-800: oklch(27.9% 0.041 260.031);
+  --c-slate-900: oklch(20.8% 0.042 265.755);
+  --c-slate-925: #0b1222;
+  --c-slate-950: oklch(12.9% 0.042 264.695);
+
+  /* Brand (blue) */
+  --c-blue-200: oklch(88.2% 0.059 254.128);
+  --c-blue-300: oklch(80.9% 0.105 251.813);
+  --c-blue-400: oklch(70.7% 0.165 254.624);
+  --c-blue-500: oklch(62.3% 0.214 259.815);
+  --c-blue-600: oklch(54.6% 0.245 262.881);
+
+  /* Danger (red + rose) */
+  --c-red-200: oklch(88.5% 0.062 18.334);
+  --c-red-300: oklch(80.8% 0.114 19.571);
+  --c-red-400: oklch(70.4% 0.191 22.216);
+  --c-red-500: oklch(63.7% 0.237 25.331);
+  --c-red-600: oklch(57.7% 0.245 27.325);
+  --c-rose-400: oklch(71.2% 0.194 13.428);
+
+  /* Warning (amber + orange) */
+  --c-amber-50: oklch(98.7% 0.022 95.277);
+  --c-amber-200: oklch(92.4% 0.12 95.746);
+  --c-amber-300: oklch(87.9% 0.169 91.605);
+  --c-amber-400: oklch(82.8% 0.189 84.429);
+  --c-amber-500: oklch(76.9% 0.188 70.08);
+  --c-amber-600: oklch(66.6% 0.179 58.318);
+  --c-orange-500: oklch(70.5% 0.213 47.604);
+
+  /* Success (green + emerald) */
+  --c-green-400: oklch(79.2% 0.209 151.711);
+  --c-emerald-200: oklch(90.5% 0.093 164.15);
+  --c-emerald-400: oklch(76.5% 0.177 163.223);
+  --c-emerald-500: oklch(69.6% 0.17 162.48);
+  --c-emerald-600: oklch(59.6% 0.145 163.225);
+
+  /* Info (purple + violet + indigo) */
+  --c-purple-50: oklch(97.7% 0.014 308.299);
+  --c-purple-100: oklch(94.6% 0.033 307.174);
+  --c-purple-200: oklch(90.2% 0.063 306.703);
+  --c-purple-300: oklch(82.7% 0.119 306.383);
+  --c-purple-400: oklch(71.4% 0.203 305.504);
+  --c-purple-500: oklch(62.7% 0.265 303.9);
+  --c-violet-200: oklch(89.4% 0.057 293.283);
+  --c-violet-500: oklch(60.6% 0.25 292.717);
+  --c-violet-600: oklch(54.1% 0.281 293.009);
+  --c-indigo-400: oklch(67.3% 0.182 276.935);
+
+  /* Node accent colors */
+  --c-node-agent: #3b82f6;
+  --c-node-memory: #22c55e;
+  --c-node-tools: #f97316;
+  --c-node-skills: #a855f7;
+  --c-node-context: #06b6d4;
+  --c-node-comm: #ec4899;
+  --c-node-connectors: #eab308;
+  --c-node-storage: #ef4444;
+  --c-node-vectordb: #14b8a6;
+}
+
+:root.theme-light {
+  /* === Light mode ===
+     The slate scale is flipped so dark-by-default classes (bg-slate-900,
+     text-slate-300) render sensibly on a light background. Accent palettes
+     fall through to the :root defaults; override any of them below to tune
+     for light-mode contrast. */
+
+  --c-slate-50: oklch(12.9% 0.042 264.695);
+  --c-slate-100: oklch(20.8% 0.042 265.755);
+  --c-slate-200: oklch(27.9% 0.041 260.031);
+  --c-slate-300: oklch(37.2% 0.044 257.287);
+  --c-slate-400: oklch(44.6% 0.043 257.281);
+  --c-slate-500: oklch(55.4% 0.046 257.417);
+  --c-slate-600: oklch(70.4% 0.04 256.788);
+  --c-slate-700: oklch(86.9% 0.022 252.894);
+  --c-slate-800: oklch(92.9% 0.013 255.508);
+  --c-slate-900: oklch(96.8% 0.007 247.896);
+  --c-slate-925: #edf2f7;
+  --c-slate-950: oklch(98.4% 0.003 247.858);
 }
 
 html, body, #root {
@@ -26,10 +193,10 @@ html, body, #root {
   --xy-node-background-color: transparent;
   --xy-node-border: none;
   --xy-node-border-radius: 0;
-  --xy-minimap-background-color: #0f172a;
-  --xy-controls-button-background-color: #1e293b;
-  --xy-controls-button-color: #94a3b8;
-  --xy-controls-button-border-color: #334155;
+  --xy-minimap-background-color: var(--c-slate-900);
+  --xy-controls-button-background-color: var(--c-slate-800);
+  --xy-controls-button-color: var(--c-slate-400);
+  --xy-controls-button-border-color: var(--c-slate-700);
 }
 
 .react-flow__attribution {
