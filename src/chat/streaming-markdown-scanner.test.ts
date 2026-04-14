@@ -86,3 +86,43 @@ describe('streaming-markdown-scanner — paragraphs and headings', () => {
     expect(count).toBeGreaterThan(0);
   });
 });
+
+describe('streaming-markdown-scanner — code fences', () => {
+  it('opens a code_fence block on triple-backtick', () => {
+    const s = createScanner();
+    s.append('```js\nconst x = 1\n');
+    const blocks = s.getBlocks();
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].type).toBe('code_fence');
+    expect(blocks[0].frameSource).toBe('```js\n');
+    expect(blocks[0].contentSource).toBe('const x = 1');
+    expect(blocks[0].status).toBe('open');
+  });
+
+  it('closes the code_fence on the matching closing fence', () => {
+    const s = createScanner();
+    s.append('```js\nconst x = 1\n```\n');
+    const blocks = s.getBlocks();
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].status).toBe('closed');
+    expect(blocks[0].contentSource).toBe('const x = 1');
+  });
+
+  it('does not classify markdown inside a code fence', () => {
+    const s = createScanner();
+    s.append('```\n# not a heading\n> not a quote\n```\n');
+    const blocks = s.getBlocks();
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].type).toBe('code_fence');
+    expect(blocks[0].contentSource).toBe('# not a heading\n> not a quote');
+  });
+
+  it('supports tildes as fence', () => {
+    const s = createScanner();
+    s.append('~~~python\nprint(1)\n~~~\n');
+    const blocks = s.getBlocks();
+    expect(blocks[0].type).toBe('code_fence');
+    expect(blocks[0].frameSource).toBe('~~~python\n');
+    expect(blocks[0].contentSource).toBe('print(1)');
+  });
+});

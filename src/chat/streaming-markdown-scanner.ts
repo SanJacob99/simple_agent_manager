@@ -74,9 +74,29 @@ export function createScanner(): Scanner {
   }
 
   function classifyLine(line: string) {
+    // Inside an open code fence, lines are appended verbatim until the
+    // matching closing fence.
+    if (openBlock && openBlock.type === 'code_fence') {
+      const fenceChar = openBlock.frameSource.startsWith('~~~') ? '~~~' : '```';
+      if (line.trim() === fenceChar) {
+        openBlock.status = 'closed';
+        openBlock = null;
+        return;
+      }
+      openBlock.contentSource += (openBlock.contentSource ? '\n' : '') + line;
+      return;
+    }
+
     // Blank line closes an open block.
     if (line.trim() === '') {
       closeOpen();
+      return;
+    }
+
+    // Opening code fence: ``` or ~~~ optionally followed by a language tag.
+    const fenceMatch = /^(```|~~~)([^\s`~]*)\s*$/.exec(line);
+    if (fenceMatch) {
+      startBlock('code_fence', `${fenceMatch[1]}${fenceMatch[2]}\n`, '');
       return;
     }
 
@@ -118,6 +138,17 @@ export function createScanner(): Scanner {
    */
   function projectedBlocks(): Block[] {
     if (lineBuffer.length === 0) return internalBlocks;
+
+    if (openBlock && openBlock.type === 'code_fence') {
+      const view = internalBlocks.slice();
+      const idx = view.indexOf(openBlock);
+      view[idx] = {
+        ...openBlock,
+        contentSource:
+          openBlock.contentSource + (openBlock.contentSource ? '\n' : '') + lineBuffer,
+      };
+      return view;
+    }
 
     if (openBlock && openBlock.type === 'paragraph') {
       const view = internalBlocks.slice();
