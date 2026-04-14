@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { ReactFlowProvider } from '@xyflow/react';
 import App from './App';
 import './app.css';
+import 'katex/dist/katex.min.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -129,6 +129,13 @@ export function findSafeRevealCount(
   const limit = Math.min(cursor, text.length);
   const stack: Array<{ token: InlineToken; pos: number }> = [];
   let inCode = false;
+  // Math delimiter tracking: position of the opening `$` / `$$`, or null.
+  // While inside math, we skip inline-markdown token scanning — math has its
+  // own syntax. Heuristics for single-`$` follow remark-math: an opening `$`
+  // cannot be followed by whitespace, and literal "$5" style money isn't
+  // treated as math because the next char is a digit. `$$` is unconditional.
+  let mathOpenPos: number | null = null;
+  let mathIsDisplay = false;
   let i = 0;
 
   const toggleAt = (token: InlineToken, pos: number) => {
@@ -153,6 +160,51 @@ export function findSafeRevealCount(
       continue;
     }
     if (inCode) {
+      i += 1;
+      continue;
+    }
+
+    // Math: `$$` display delimiter.
+    if (c2 === '$$') {
+      if (mathOpenPos === null) {
+        mathOpenPos = i;
+        mathIsDisplay = true;
+        i += 2;
+        continue;
+      }
+      if (mathIsDisplay) {
+        mathOpenPos = null;
+        mathIsDisplay = false;
+        i += 2;
+        continue;
+      }
+      // Inside inline math: the first `$` closes, second opens anew.
+      mathOpenPos = i + 1;
+      i += 2;
+      continue;
+    }
+    // Math: single `$` inline delimiter.
+    if (c === '$') {
+      if (mathOpenPos !== null && !mathIsDisplay) {
+        mathOpenPos = null;
+        i += 1;
+        continue;
+      }
+      if (mathOpenPos !== null && mathIsDisplay) {
+        i += 1;
+        continue;
+      }
+      const next = text[i + 1];
+      const isOpener = next !== undefined && next !== ' ' && next !== '\t' && next !== '\n';
+      if (isOpener) {
+        mathOpenPos = i;
+        mathIsDisplay = false;
+      }
+      i += 1;
+      continue;
+    }
+    // Inside math, suspend markdown inline scanning until the closer arrives.
+    if (mathOpenPos !== null) {
       i += 1;
       continue;
     }
@@ -196,5 +248,8 @@ export function findSafeRevealCount(
     i += 1;
   }
 
-  return stack.length === 0 ? limit : stack[0].pos;
+  const firstUnclosed =
+    stack.length === 0 ? limit : stack[0].pos;
+  if (mathOpenPos !== null) return Math.min(firstUnclosed, mathOpenPos);
+  return firstUnclosed;
 }

@@ -1,6 +1,8 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import { useSettingsStore } from '../settings/settings-store';
 import { markdownComponents } from './markdown-components';
 import { autoClose, findSafeRevealCount } from './autoClose';
@@ -65,7 +67,11 @@ function StreamingBlockImpl({ block }: StreamingBlockProps) {
     const slice = block.frameSource;
     return (
       <div className="stream-block-in">
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm, remarkMath]}
+          rehypePlugins={[rehypeKatex]}
+          components={markdownComponents}
+        >
           {slice}
         </ReactMarkdown>
         {block.children.map((child) => (

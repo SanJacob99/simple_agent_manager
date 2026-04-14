@@ -1,6 +1,8 @@
 import { memo, useCallback, useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import { Brain, ChevronDown, Wrench } from 'lucide-react';
 import type { Message } from '../store/session-store';
 import StreamingText from './StreamingText';
@@ -105,7 +107,11 @@ function MessageBubble({
                     </pre>
                   ) : (
                     <div className="prose-sm max-w-none break-words text-purple-100/80">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={thinkingMarkdownComponents}>
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm, remarkMath]}
+                        rehypePlugins={[rehypeKatex]}
+                        components={thinkingMarkdownComponents}
+                      >
                         {msg.thinking}
                       </ReactMarkdown>
                     </div>
@@ -148,7 +154,11 @@ function MessageBubble({
               ) : preferPlainText ? (
                 <span className="whitespace-pre-wrap">{msg.content}</span>
               ) : (
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm, remarkMath]}
+                  rehypePlugins={[rehypeKatex]}
+                  components={markdownComponents}
+                >
                   {msg.content}
                 </ReactMarkdown>
               )}
