@@ -15,7 +15,8 @@ export default function AppearanceSection() {
   const chatUIDefaults = useSettingsStore((s) => s.chatUIDefaults);
   const setChatUIDefaults = useSettingsStore((s) => s.setChatUIDefaults);
 
-  const { textRevealCharsPerSec, textRevealFadeMs, textRevealEnabled } = chatUIDefaults;
+  const { textRevealCharsPerSec, textRevealFadeMs, textRevealEnabled, textRevealStructure } =
+    chatUIDefaults;
 
   return (
     <div className="max-w-2xl space-y-8">
@@ -29,6 +30,45 @@ export default function AppearanceSection() {
         </header>
 
         <div className="space-y-6">
+          <div>
+            <div className="mb-2 text-sm font-medium text-slate-200">Streaming layout</div>
+            <div className="space-y-2">
+              <label className="flex items-start gap-3">
+                <input
+                  type="radio"
+                  name="text-reveal-structure"
+                  value="blocks"
+                  checked={textRevealStructure === 'blocks'}
+                  onChange={() => setChatUIDefaults({ textRevealStructure: 'blocks' })}
+                  className="mt-0.5 h-4 w-4"
+                />
+                <span className="flex-1">
+                  <span className="block text-sm text-slate-200">Structural (blocks)</span>
+                  <span className="mt-0.5 block text-xs text-slate-500">
+                    Headers, paragraphs, code, tables, and lists appear as framed
+                    blocks; text fills each block char-by-char.
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-3">
+                <input
+                  type="radio"
+                  name="text-reveal-structure"
+                  value="flat"
+                  checked={textRevealStructure === 'flat'}
+                  onChange={() => setChatUIDefaults({ textRevealStructure: 'flat' })}
+                  className="mt-0.5 h-4 w-4"
+                />
+                <span className="flex-1">
+                  <span className="block text-sm text-slate-200">Flat (characters only)</span>
+                  <span className="mt-0.5 block text-xs text-slate-500">
+                    Legacy behavior: plain text fades in character by character; markdown renders once after the stream ends.
+                  </span>
+                </span>
+              </label>
+            </div>
+          </div>
+
           <label className="flex items-start gap-3">
             <input
               type="checkbox"

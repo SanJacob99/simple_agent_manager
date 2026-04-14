@@ -53,10 +53,10 @@ describe('SettingsWorkspace', () => {
     );
 
     expect(
-      screen.getByText('Inspect and refresh cached OpenRouter model discovery.'),
+      screen.getByText('Inspect and refresh cached provider model discovery.'),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/Add an OpenRouter API key/i),
+      screen.getByText(/Add a.*API key/i),
     ).toBeInTheDocument();
   });
 });

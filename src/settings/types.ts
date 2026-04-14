@@ -67,6 +67,8 @@ export interface ChatUIDefaults {
   textRevealFadeMs: number;
   /** Whether to animate the character reveal at all. */
   textRevealEnabled: boolean;
+  /** Rendering strategy while streaming: per-block structural reveal, or flat char reveal. */
+  textRevealStructure: 'blocks' | 'flat';
 }
 
 export type DefaultsSubTab =
@@ -143,6 +145,7 @@ export const DEFAULT_CHAT_UI_DEFAULTS: ChatUIDefaults = {
   textRevealCharsPerSec: 90,
   textRevealFadeMs: 320,
   textRevealEnabled: true,
+  textRevealStructure: 'blocks',
 };
 
 export const SETTINGS_SECTIONS: Array<{
