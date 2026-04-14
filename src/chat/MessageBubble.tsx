@@ -4,7 +4,9 @@ import remarkGfm from 'remark-gfm';
 import { Brain, ChevronDown, Wrench } from 'lucide-react';
 import type { Message } from '../store/session-store';
 import StreamingText from './StreamingText';
+import StreamingMarkdownRenderer from './StreamingMarkdownRenderer';
 import { markdownComponents } from './markdown-components';
+import { useSettingsStore } from '../settings/settings-store';
 
 function formatTokenBadge(count: number): string {
   if (count >= 1000) return `${(count / 1000).toFixed(1)}K`;
@@ -67,6 +69,7 @@ function MessageBubble({
   }, [isStreamingThis]);
   const handleRevealComplete = useCallback(() => setRevealComplete(true), []);
   const useStreamingRenderer = msg.role === 'assistant' && (isStreamingThis || !revealComplete);
+  const textRevealStructure = useSettingsStore((s) => s.chatUIDefaults.textRevealStructure);
 
   return (
     <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -129,11 +132,19 @@ function MessageBubble({
             <div className={`prose-sm max-w-none break-words ${isDiagnostic ? 'text-amber-50' : 'text-slate-200'}`}>
               {/* Skip ReactMarkdown while streaming — parse once when done */}
               {useStreamingRenderer ? (
-                <StreamingText
-                  text={msg.content}
-                  isStreaming={isStreamingThis}
-                  onRevealComplete={handleRevealComplete}
-                />
+                textRevealStructure === 'blocks' ? (
+                  <StreamingMarkdownRenderer
+                    text={msg.content}
+                    isStreaming={isStreamingThis}
+                    onRevealComplete={handleRevealComplete}
+                  />
+                ) : (
+                  <StreamingText
+                    text={msg.content}
+                    isStreaming={isStreamingThis}
+                    onRevealComplete={handleRevealComplete}
+                  />
+                )
               ) : preferPlainText ? (
                 <span className="whitespace-pre-wrap">{msg.content}</span>
               ) : (
