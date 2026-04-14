@@ -8,6 +8,7 @@ export interface PersistedSettings {
   apiKeys: Record<string, string>;
   agentDefaults: Record<string, unknown>;
   storageDefaults: Record<string, unknown>;
+  [key: string]: unknown;
 }
 
 const EMPTY_SETTINGS: PersistedSettings = {
@@ -28,6 +29,7 @@ export class SettingsFileStore {
       const raw = await fs.readFile(this.filePath, 'utf-8');
       const parsed = JSON.parse(raw) as Partial<PersistedSettings>;
       return {
+        ...parsed,
         apiKeys: parsed.apiKeys ?? {},
         agentDefaults: parsed.agentDefaults ?? {},
         storageDefaults: parsed.storageDefaults ?? {},

@@ -35,3 +35,17 @@ html, body, #root {
 .react-flow__attribution {
   display: none;
 }
+
+@keyframes streamCharFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.stream-char-fade {
+  display: inline;
+  opacity: 0;
+  animation-name: streamCharFade;
+  animation-duration: var(--stream-fade-ms, 320ms);
+  animation-timing-function: ease-out;
+  animation-fill-mode: forwards;
+}

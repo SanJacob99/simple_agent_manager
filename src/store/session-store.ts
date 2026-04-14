@@ -26,6 +26,7 @@ export interface Message {
   tokenCount?: number;
   usage?: MessageUsage;
   kind?: 'diagnostic';
+  thinking?: string;
 }
 
 export interface ChatSession {
@@ -59,6 +60,24 @@ function extractMessageContent(content: unknown): string {
   }
 
   return '';
+}
+
+function extractThinkingContent(content: unknown): string | undefined {
+  if (!Array.isArray(content)) return undefined;
+
+  const parts = content
+    .map((part) => {
+      if (part && typeof part === 'object' && part !== null) {
+        const p = part as { type?: unknown; thinking?: unknown; text?: unknown };
+        if (p.type === 'thinking' && typeof p.thinking === 'string') {
+          return p.thinking;
+        }
+      }
+      return '';
+    })
+    .filter((t) => t.length > 0);
+
+  return parts.length > 0 ? parts.join('\n\n') : undefined;
 }
 
 function toStoredMessage(entry: SessionEntry): Message | null {
@@ -100,6 +119,7 @@ function toStoredMessage(entry: SessionEntry): Message | null {
     timestamp: raw.timestamp ?? new Date(entry.timestamp).getTime(),
     tokenCount: raw.role === 'assistant' ? raw.usage?.output : undefined,
     usage: raw.role === 'assistant' ? raw.usage : undefined,
+    thinking: raw.role === 'assistant' ? extractThinkingContent(raw.content) : undefined,
   };
 }
 
