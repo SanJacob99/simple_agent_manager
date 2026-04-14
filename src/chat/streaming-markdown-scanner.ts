@@ -38,6 +38,12 @@ export interface Scanner {
  * `lineBuffer` holds the current partial line and is projected onto the open
  * block (or a speculative paragraph) at read time — this keeps classification
  * stable while still letting the renderer show text as it arrives.
+ *
+ * Tentative lines (table header candidates) are stored in `internalBlocks`
+ * with `status: 'tentative'` and held until the next line resolves their type.
+ * Setext heading detection works by retroactively promoting an open paragraph
+ * when `===` or `---` underlines arrive. A 150ms idle timer commits tentative
+ * blocks to their paragraph fallback when the stream pauses.
  */
 export function createScanner(): Scanner {
   let nextId = 0;
@@ -46,6 +52,12 @@ export function createScanner(): Scanner {
   const internalBlocks: Block[] = [];
   let openBlock: Block | null = null;
   let lineBuffer = '';
+
+  // Tentative-line state for table disambiguation.
+  // The tentative block lives in internalBlocks with status 'tentative'.
+  let idleTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const IDLE_COMMIT_MS = 150;
 
   const subs = new Set<() => void>();
   const notify = () => {
@@ -99,6 +111,33 @@ export function createScanner(): Scanner {
     list.children!.push(item);
   }
 
+  function clearIdle() {
+    if (idleTimer !== null) {
+      clearTimeout(idleTimer);
+      idleTimer = null;
+    }
+  }
+
+  function hasTentativeBlock(): boolean {
+    return openBlock !== null && openBlock.status === 'tentative';
+  }
+
+  function commitTentativeFallback() {
+    if (!hasTentativeBlock()) return;
+    // Promote tentative block to a committed paragraph.
+    openBlock!.type = 'paragraph';
+    openBlock!.status = 'open';
+  }
+
+  function scheduleIdle() {
+    clearIdle();
+    idleTimer = setTimeout(() => {
+      idleTimer = null;
+      commitTentativeFallback();
+      notify();
+    }, IDLE_COMMIT_MS);
+  }
+
   function classifyLine(line: string) {
     // Inside an open code fence, lines are appended verbatim until the fence closes.
     if (openBlock && openBlock.type === 'code_fence') {
@@ -112,20 +151,48 @@ export function createScanner(): Scanner {
       return;
     }
 
-    // Blank line closes an open block.
+    // Tentative table-header lookahead resolution.
+    if (hasTentativeBlock()) {
+      const tentativeContent = openBlock!.contentSource;
+      if (/^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line)) {
+        // Promote tentative block to a table.
+        openBlock!.type = 'table';
+        openBlock!.status = 'open';
+        openBlock!.frameSource = `${tentativeContent}\n${line}\n`;
+        openBlock!.contentSource = '';
+        openBlock!.children = [];
+        return;
+      }
+      // Not a separator — commit tentative as a paragraph and fall through.
+      commitTentativeFallback();
+      // fall through to classify this line normally
+    }
+
+    // Setext underline: promote an open paragraph to setext_heading.
+    if (openBlock && openBlock.type === 'paragraph' && /^(={3,}|-{3,})\s*$/.test(line)) {
+      // Only treat as setext if the paragraph is a single-line (no \n in contentSource).
+      if (!openBlock.contentSource.includes('\n')) {
+        const title = openBlock.contentSource;
+        openBlock.type = 'setext_heading';
+        openBlock.frameSource = `${title}\n${line}\n`;
+        openBlock.contentSource = '';
+        openBlock.status = 'closed';
+        openBlock = null;
+        return;
+      }
+    }
+
     if (line.trim() === '') {
       closeOpen();
       return;
     }
 
-    // Opening code fence.
     const fenceMatch = /^(```|~~~)([^\s`~]*)\s*$/.exec(line);
     if (fenceMatch) {
       startBlock('code_fence', `${fenceMatch[1]}${fenceMatch[2]}\n`, '');
       return;
     }
 
-    // Horizontal rule — 3+ of -, *, or _ alone on a line.
     if (/^(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
       const block = startBlock('hr', `${line}\n`, '');
       block.status = 'closed';
@@ -133,7 +200,6 @@ export function createScanner(): Scanner {
       return;
     }
 
-    // Standalone image.
     if (/^!\[[^\]]*\]\([^)]+\)\s*$/.test(line)) {
       const block = startBlock('image', line.trim(), '');
       block.status = 'closed';
@@ -141,7 +207,6 @@ export function createScanner(): Scanner {
       return;
     }
 
-    // ATX heading.
     const headingMatch = /^(#{1,6}) (.*)$/.exec(line);
     if (headingMatch) {
       const block = startBlock('heading', `${headingMatch[1]} `, headingMatch[2]);
@@ -150,7 +215,6 @@ export function createScanner(): Scanner {
       return;
     }
 
-    // Blockquote.
     const quoteMatch = /^> (.*)$/.exec(line);
     if (quoteMatch) {
       if (openBlock && openBlock.type === 'blockquote') {
@@ -161,25 +225,49 @@ export function createScanner(): Scanner {
       return;
     }
 
-    // Unordered list item.
     const ulMatch = /^([-*+]) (.*)$/.exec(line);
     if (ulMatch) {
-      const list =
-        openBlock && openBlock.type === 'list' ? openBlock : openList();
+      const list = openBlock && openBlock.type === 'list' ? openBlock : openList();
       appendListItem(list, `${ulMatch[1]} `, ulMatch[2]);
       return;
     }
-
-    // Ordered list item.
     const olMatch = /^(\d+\.) (.*)$/.exec(line);
     if (olMatch) {
-      const list =
-        openBlock && openBlock.type === 'list' ? openBlock : openList();
+      const list = openBlock && openBlock.type === 'list' ? openBlock : openList();
       appendListItem(list, `${olMatch[1]} `, olMatch[2]);
       return;
     }
 
-    // Default: paragraph.
+    // Table row appended to an open table.
+    if (openBlock && openBlock.type === 'table' && /^\|.*\|\s*$/.test(line)) {
+      const row: Block = {
+        id: mkId(),
+        type: 'table_row',
+        status: 'closed',
+        frameSource: '',
+        contentSource: line,
+      };
+      openBlock.children!.push(row);
+      return;
+    }
+
+    // Tentative table-header candidate: a `|`-starting line with no open block or table.
+    if (line.startsWith('|') && !openBlock) {
+      const tentative: Block = {
+        id: mkId(),
+        type: 'table',
+        status: 'tentative',
+        frameSource: '',
+        contentSource: line,
+        children: [],
+      };
+      internalBlocks.push(tentative);
+      openBlock = tentative;
+      scheduleIdle();
+      return;
+    }
+
+    // Default: paragraph (also handles continuation of open paragraph).
     if (openBlock && openBlock.type === 'paragraph') {
       openBlock.contentSource += '\n' + line;
       return;
@@ -248,8 +336,10 @@ export function createScanner(): Scanner {
 
   return {
     append(chars: string) {
+      clearIdle();
       lineBuffer += chars;
       processCompletedLines();
+      if (hasTentativeBlock()) scheduleIdle();
       notify();
     },
     getBlocks() {
@@ -260,10 +350,12 @@ export function createScanner(): Scanner {
       return () => subs.delete(cb);
     },
     finalize() {
+      clearIdle();
       if (lineBuffer.length > 0) {
         classifyLine(lineBuffer);
         lineBuffer = '';
       }
+      commitTentativeFallback();
       closeOpen();
       notify();
     },

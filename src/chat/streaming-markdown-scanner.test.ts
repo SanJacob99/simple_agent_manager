@@ -212,3 +212,63 @@ describe('streaming-markdown-scanner — lists', () => {
     expect(blocks[1].contentSource).toBe('after');
   });
 });
+
+import { vi } from 'vitest';
+
+describe('streaming-markdown-scanner — disambiguation', () => {
+  it('promotes a tentative `|`-line to a table when separator arrives', () => {
+    const s = createScanner();
+    s.append('| a | b |\n');
+    expect(s.getBlocks().filter((b) => b.status !== 'tentative')).toHaveLength(0);
+    s.append('| --- | --- |\n| 1 | 2 |\n');
+    const committed = s.getBlocks().filter((b) => b.status !== 'tentative');
+    expect(committed).toHaveLength(1);
+    expect(committed[0].type).toBe('table');
+    expect(committed[0].frameSource).toBe('| a | b |\n| --- | --- |\n');
+    expect(committed[0].children).toBeDefined();
+    expect(committed[0].children![0].type).toBe('table_row');
+    expect(committed[0].children![0].contentSource).toBe('| 1 | 2 |');
+  });
+
+  it('falls back a tentative `|` line to a paragraph when next line is not a separator', () => {
+    const s = createScanner();
+    s.append('| not a table\nplain text after\n');
+    const committed = s.getBlocks().filter((b) => b.status !== 'tentative');
+    expect(committed).toHaveLength(1);
+    expect(committed[0].type).toBe('paragraph');
+    expect(committed[0].contentSource).toBe('| not a table\nplain text after');
+  });
+
+  it('promotes a paragraph line to a setext heading when followed by `===`', () => {
+    const s = createScanner();
+    s.append('Title\n===\n');
+    const committed = s.getBlocks().filter((b) => b.status !== 'tentative');
+    expect(committed).toHaveLength(1);
+    expect(committed[0].type).toBe('setext_heading');
+    expect(committed[0].frameSource).toBe('Title\n===\n');
+  });
+
+  it('commits a tentative block to its fallback after the idle timeout', () => {
+    vi.useFakeTimers();
+    try {
+      const s = createScanner();
+      s.append('| maybe a table\n');
+      expect(s.getBlocks().filter((b) => b.status !== 'tentative')).toHaveLength(0);
+      vi.advanceTimersByTime(200);
+      const committed = s.getBlocks().filter((b) => b.status !== 'tentative');
+      expect(committed).toHaveLength(1);
+      expect(committed[0].type).toBe('paragraph');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('finalize() force-commits tentative blocks and closes open ones', () => {
+    const s = createScanner();
+    s.append('| pending\n');
+    s.finalize();
+    const blocks = s.getBlocks();
+    expect(blocks.every((b) => b.status === 'closed')).toBe(true);
+    expect(blocks[0].type).toBe('paragraph');
+  });
+});
