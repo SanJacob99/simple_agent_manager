@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createScanner, type Block } from './streaming-markdown-scanner';
 
 function feed(input: string) {
@@ -213,8 +213,6 @@ describe('streaming-markdown-scanner — lists', () => {
   });
 });
 
-import { vi } from 'vitest';
-
 describe('streaming-markdown-scanner — disambiguation', () => {
   it('promotes a tentative `|`-line to a table when separator arrives', () => {
     const s = createScanner();
@@ -270,5 +268,43 @@ describe('streaming-markdown-scanner — disambiguation', () => {
     const blocks = s.getBlocks();
     expect(blocks.every((b) => b.status === 'closed')).toBe(true);
     expect(blocks[0].type).toBe('paragraph');
+  });
+
+  it('finalize() cancels idle timer when lineBuffer had a partial tentative line', () => {
+    vi.useFakeTimers();
+    try {
+      const s = createScanner();
+      s.append('| pending');  // no trailing newline
+      s.finalize();
+      const blocks = s.getBlocks();
+      expect(blocks.every((b) => b.status === 'closed')).toBe(true);
+      expect(blocks[0].type).toBe('paragraph');
+
+      // Verify no leaked timer fires after finalize.
+      let notified = false;
+      s.onChange(() => { notified = true; });
+      vi.advanceTimersByTime(500);
+      expect(notified).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('setext fallback: plain line followed by non-underline stays as paragraph', () => {
+    const s = createScanner();
+    s.append('Title\nnot an underline\n');
+    const committed = s.getBlocks().filter((b) => b.status !== 'tentative');
+    expect(committed).toHaveLength(1);
+    expect(committed[0].type).toBe('paragraph');
+    expect(committed[0].contentSource).toBe('Title\nnot an underline');
+  });
+
+  it('promotes a paragraph line to a setext heading when followed by `---`', () => {
+    const s = createScanner();
+    s.append('Title\n---\n');
+    const committed = s.getBlocks().filter((b) => b.status !== 'tentative');
+    expect(committed).toHaveLength(1);
+    expect(committed[0].type).toBe('setext_heading');
+    expect(committed[0].frameSource).toBe('Title\n---\n');
   });
 });

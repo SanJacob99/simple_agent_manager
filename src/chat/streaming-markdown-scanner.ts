@@ -154,6 +154,9 @@ export function createScanner(): Scanner {
     // Tentative table-header lookahead resolution.
     if (hasTentativeBlock()) {
       const tentativeContent = openBlock!.contentSource;
+      // Deliberate: require at least 2 cells. Single-column tables are rare
+      // in LLM output and the downstream remarkGfm renderer handles them
+      // gracefully as paragraphs if they slip through.
       if (/^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line)) {
         // Promote tentative block to a table.
         openBlock!.type = 'table';
@@ -169,6 +172,8 @@ export function createScanner(): Scanner {
     }
 
     // Setext underline: promote an open paragraph to setext_heading.
+    // Deliberate: require 3+ `=`/`-` to avoid false positives on short
+    // lines that happen to start with `=` or `-`.
     if (openBlock && openBlock.type === 'paragraph' && /^(={3,}|-{3,})\s*$/.test(line)) {
       // Only treat as setext if the paragraph is a single-line (no \n in contentSource).
       if (!openBlock.contentSource.includes('\n')) {
@@ -331,6 +336,9 @@ export function createScanner(): Scanner {
       ];
     }
 
+    // Tentative blocks: lineBuffer is not projected into them. The renderer
+    // filters tentative blocks out, so the user sees nothing for that line
+    // until disambiguation resolves or the idle timer commits.
     return internalBlocks;
   }
 
@@ -353,6 +361,7 @@ export function createScanner(): Scanner {
       clearIdle();
       if (lineBuffer.length > 0) {
         classifyLine(lineBuffer);
+        clearIdle();   // cancel any idle timer classifyLine just installed
         lineBuffer = '';
       }
       commitTentativeFallback();
