@@ -1,14 +1,14 @@
 import {
-  Bot,
-  BrainCircuit,
-  Wrench,
-  Sparkles,
-  BookOpen,
   MessageSquare,
-  Plug,
-  Database,
-  Container,
-  Cpu,
+  BrainCircuit,
+  PocketKnife,
+  GraduationCap,
+  ScrollText,
+  Radio,
+  Cable,
+  HardDrive,
+  Blocks,
+  Cloud,
 } from 'lucide-react';
 import type { NodeType } from '../types/nodes';
 import { NODE_COLORS, NODE_LABELS } from '../utils/theme';
@@ -24,18 +24,20 @@ interface PaletteItem {
   icon: ReactNode;
 }
 
-const CORE_ITEMS: PaletteItem[] = [{ type: 'agent', icon: <Bot size={16} /> }];
+const CORE_ITEMS: PaletteItem[] = [
+  { type: 'agent', icon: <MessageSquare size={16} /> },
+];
 
 const PERIPHERAL_ITEMS: PaletteItem[] = [
   { type: 'memory', icon: <BrainCircuit size={16} /> },
-  { type: 'tools', icon: <Wrench size={16} /> },
-  { type: 'skills', icon: <Sparkles size={16} /> },
-  { type: 'contextEngine', icon: <BookOpen size={16} /> },
-  { type: 'agentComm', icon: <MessageSquare size={16} /> },
-  { type: 'connectors', icon: <Plug size={16} /> },
-  { type: 'storage', icon: <Database size={16} /> },
-  { type: 'vectorDatabase', icon: <Container size={16} /> },
-  { type: 'provider' as NodeType, icon: <Cpu size={16} /> },
+  { type: 'tools', icon: <PocketKnife size={16} /> },
+  { type: 'skills', icon: <GraduationCap size={16} /> },
+  { type: 'contextEngine', icon: <ScrollText size={16} /> },
+  { type: 'agentComm', icon: <Radio size={16} /> },
+  { type: 'connectors', icon: <Cable size={16} /> },
+  { type: 'storage', icon: <HardDrive size={16} /> },
+  { type: 'vectorDatabase', icon: <Blocks size={16} /> },
+  { type: 'provider' as NodeType, icon: <Cloud size={16} /> },
 ];
 
 function DraggableItem({ item }: { item: PaletteItem }) {
@@ -120,8 +122,8 @@ export default function Sidebar({
                 key={section.id}
                 onClick={() => onSettingsSectionChange(section.id)}
                 className={`w-full rounded-lg border px-3 py-2 text-left text-xs transition ${activeSettingsSection === section.id
-                    ? 'border-blue-500/60 bg-blue-500/10 text-blue-200'
-                    : 'border-slate-800 bg-slate-900 text-slate-300 hover:border-slate-600 hover:bg-slate-800'
+                  ? 'border-blue-500/60 bg-blue-500/10 text-blue-200'
+                  : 'border-slate-800 bg-slate-900 text-slate-300 hover:border-slate-600 hover:bg-slate-800'
                   }`}
               >
                 <div className="font-medium">{section.label}</div>
