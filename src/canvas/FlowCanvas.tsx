@@ -57,7 +57,8 @@ export default function FlowCanvas() {
         variant={BackgroundVariant.Dots}
         gap={20}
         size={1}
-        color={cssVar('--c-slate-800')}
+        color={cssVar('--c-canvas-pattern')}
+        bgColor={cssVar('--c-canvas-bg')}
       />
       <Controls className="!border-slate-700 !bg-slate-800" />
       <MiniMap
