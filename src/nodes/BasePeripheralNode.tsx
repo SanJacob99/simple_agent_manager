@@ -9,6 +9,7 @@ interface BasePeripheralNodeProps {
   label: string;
   icon: ReactNode;
   selected?: boolean;
+  hints?: ReactNode;
 }
 
 function BasePeripheralNodeInner({
@@ -16,6 +17,7 @@ function BasePeripheralNodeInner({
   label,
   icon,
   selected,
+  hints,
 }: BasePeripheralNodeProps) {
   const color = NODE_COLORS[nodeType];
 
@@ -23,6 +25,7 @@ function BasePeripheralNodeInner({
     <HexNode
       color={color}
       selected={selected}
+      hints={hints}
       handles={
         <Handle
           type="source"

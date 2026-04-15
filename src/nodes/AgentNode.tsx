@@ -1,12 +1,74 @@
 import { memo } from 'react';
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
-import { MessageSquare } from 'lucide-react';
-import type { AgentNodeData } from '../types/nodes';
+import { MessageSquare, Brain } from 'lucide-react';
+import type { AgentNodeData, ProviderNodeData, ThinkingLevel } from '../types/nodes';
 import { NODE_COLORS } from '../utils/theme';
 import { useAgentConnectionStore } from '../store/agent-connection-store';
+import { useGraphStore } from '../store/graph-store';
 import HexNode from './HexNode';
+import HexHint from './HexHint';
 
 type AgentNode = Node<AgentNodeData>;
+
+interface BrandInfo {
+  label: string;
+  color: string;
+}
+
+const PROVIDER_BRANDS: Record<string, BrandInfo> = {
+  openrouter: { label: 'OR', color: '#f472b6' },
+  anthropic: { label: 'A', color: '#d97706' },
+  openai: { label: 'O', color: '#10a37f' },
+  google: { label: 'G', color: '#4285f4' },
+  xai: { label: 'X', color: '#94a3b8' },
+  mistral: { label: 'M', color: '#fb923c' },
+  deepseek: { label: 'D', color: '#a855f7' },
+};
+
+const LLM_BRANDS: Record<string, BrandInfo> = {
+  anthropic: { label: 'A', color: '#d97706' },
+  openai: { label: 'O', color: '#10a37f' },
+  google: { label: 'G', color: '#4285f4' },
+  'x-ai': { label: 'X', color: '#94a3b8' },
+  xai: { label: 'X', color: '#94a3b8' },
+  meta: { label: 'M', color: '#1877f2' },
+  'meta-llama': { label: 'M', color: '#1877f2' },
+  mistralai: { label: 'M', color: '#fb923c' },
+  mistral: { label: 'M', color: '#fb923c' },
+  deepseek: { label: 'D', color: '#a855f7' },
+  qwen: { label: 'Q', color: '#8b5cf6' },
+};
+
+const THINKING_COLORS: Record<ThinkingLevel, string | null> = {
+  off: null,
+  minimal: '#4ade80',
+  low: '#a3e635',
+  medium: '#facc15',
+  high: '#fb923c',
+  xhigh: '#f87171',
+};
+
+function resolveProviderBrand(pluginId: string): BrandInfo {
+  const key = pluginId.toLowerCase();
+  return (
+    PROVIDER_BRANDS[key] ?? {
+      label: pluginId.slice(0, 2).toUpperCase() || '?',
+      color: 'var(--c-slate-400)',
+    }
+  );
+}
+
+function resolveLlmBrand(modelId: string): BrandInfo | null {
+  if (!modelId) return null;
+  const prefix = modelId.includes('/') ? modelId.split('/')[0] : modelId;
+  const key = prefix.toLowerCase();
+  return (
+    LLM_BRANDS[key] ?? {
+      label: prefix.charAt(0).toUpperCase() || '?',
+      color: 'var(--c-slate-400)',
+    }
+  );
+}
 
 function AgentNodeComponent({ id, data, selected }: NodeProps<AgentNode>) {
   const color = NODE_COLORS.agent;
@@ -14,10 +76,54 @@ function AgentNodeComponent({ id, data, selected }: NodeProps<AgentNode>) {
   const chatAgentId = useAgentConnectionStore((s) => s.chatAgentNodeId);
   const isActive = chatAgentId === id;
 
+  const providerPluginId = useGraphStore((s) => {
+    for (const edge of s.edges) {
+      if (edge.target !== id) continue;
+      const src = s.nodes.find((n) => n.id === edge.source);
+      if (src?.data.type === 'provider') {
+        return (src.data as ProviderNodeData).pluginId ?? '';
+      }
+    }
+    return null;
+  });
+
+  const llmBrand = resolveLlmBrand(data.modelId);
+  const thinkingColor = THINKING_COLORS[data.thinkingLevel];
+
+  const hints = (
+    <>
+      {providerPluginId !== null && (() => {
+        const brand = resolveProviderBrand(providerPluginId);
+        return (
+          <HexHint
+            color={brand.color}
+            title={`Provider: ${providerPluginId || 'unset'}`}
+          >
+            {brand.label}
+          </HexHint>
+        );
+      })()}
+      {llmBrand && (
+        <HexHint color={llmBrand.color} title={`Model: ${data.modelId}`}>
+          {llmBrand.label}
+        </HexHint>
+      )}
+      {thinkingColor && (
+        <HexHint
+          color={thinkingColor}
+          title={`Thinking: ${data.thinkingLevel}`}
+        >
+          <Brain size={9} strokeWidth={2.5} />
+        </HexHint>
+      )}
+    </>
+  );
+
   return (
     <HexNode
       color={color}
       selected={selected}
+      hints={hints}
       handles={
         <Handle
           type="target"

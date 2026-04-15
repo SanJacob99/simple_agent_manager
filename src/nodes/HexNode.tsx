@@ -66,6 +66,7 @@ interface HexNodeProps {
   children: ReactNode;
   cornerSlot?: ReactNode;
   handles?: ReactNode;
+  hints?: ReactNode;
 }
 
 export default function HexNode({
@@ -74,6 +75,7 @@ export default function HexNode({
   children,
   cornerSlot,
   handles,
+  hints,
 }: HexNodeProps) {
   const uid = useId().replace(/:/g, '');
   const clipId = `hex-clip-${uid}`;
@@ -139,6 +141,23 @@ export default function HexNode({
           }}
         >
           {cornerSlot}
+        </div>
+      )}
+      {hints && (
+        <div
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: HEX_HEIGHT * 0.2,
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            gap: 3,
+            pointerEvents: 'none',
+          }}
+        >
+          {hints}
         </div>
       )}
       {handles}
