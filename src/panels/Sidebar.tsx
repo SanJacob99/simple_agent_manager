@@ -71,7 +71,7 @@ export default function Sidebar({
   onSettingsSectionChange,
 }: SidebarProps) {
   return (
-    <aside className="flex w-56 shrink-0 flex-col border-r border-slate-800 bg-slate-925">
+    <aside className="flex w-56 shrink-0 flex-col border-r border-slate-800 bg-canvas-bg">
       {/* Header */}
       <div className="border-b border-slate-800 px-4 py-3">
         <h1 className="text-sm font-bold text-slate-100">Agent Manager</h1>

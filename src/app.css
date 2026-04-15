@@ -76,6 +76,9 @@
   --color-violet-600: var(--c-violet-600);
   --color-indigo-400: var(--c-indigo-400);
 
+  /* Canvas */
+  --color-canvas-bg: var(--c-canvas-bg);
+
   /* Node accent colors (unchanged) */
   --color-node-agent: var(--c-node-agent);
   --color-node-memory: var(--c-node-memory);
@@ -148,6 +151,9 @@
   --c-violet-600: oklch(54.1% 0.281 293.009);
   --c-indigo-400: oklch(67.3% 0.182 276.935);
 
+  /* Canvas */
+  --c-canvas-bg: #ffffff;
+
   /* Node accent colors */
   --c-node-agent: #3b82f6;
   --c-node-memory: #22c55e;
@@ -189,7 +195,7 @@ html, body, #root {
 
 /* React Flow dark theme overrides */
 .react-flow {
-  --xy-background-color: transparent;
+  --xy-background-color: var(--c-canvas-bg);
   --xy-node-background-color: transparent;
   --xy-node-border: none;
   --xy-node-border-radius: 0;

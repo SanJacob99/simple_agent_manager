@@ -50,7 +50,7 @@ export default function FlowCanvas() {
       fitView
       proOptions={{ hideAttribution: true }}
       defaultEdgeOptions={{ type: 'data', animated: true }}
-      className="bg-slate-950"
+      className="bg-canvas-bg"
     >
       <Background
         variant={BackgroundVariant.Dots}
