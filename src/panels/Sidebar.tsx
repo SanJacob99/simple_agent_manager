@@ -164,8 +164,8 @@ export default function Sidebar({
     () =>
       normalizedQuery
         ? CORE_ITEMS.filter((item) =>
-            NODE_LABELS[item.type].toLowerCase().includes(normalizedQuery),
-          )
+          NODE_LABELS[item.type].toLowerCase().includes(normalizedQuery),
+        )
         : CORE_ITEMS,
     [normalizedQuery],
   );
@@ -174,8 +174,8 @@ export default function Sidebar({
     () =>
       normalizedQuery
         ? PERIPHERAL_ITEMS.filter((item) =>
-            NODE_LABELS[item.type].toLowerCase().includes(normalizedQuery),
-          )
+          NODE_LABELS[item.type].toLowerCase().includes(normalizedQuery),
+        )
         : PERIPHERAL_ITEMS,
     [normalizedQuery],
   );

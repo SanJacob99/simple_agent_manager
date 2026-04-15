@@ -157,18 +157,18 @@
   --c-canvas-bg: #0b1222;
   --c-canvas-pattern: var(--c-slate-700);
 
-  /* Node accent colors */
-  --c-node-agent: #9e4ad8;
-  --c-node-memory: #22c55e;
-  --c-node-tools: #f97316;
-  --c-node-skills: #a855f7;
-  --c-node-context: #06b6d4;
-  --c-node-comm: #ec4899;
-  --c-node-connectors: #eab308;
-  --c-node-storage: #ef4444;
-  --c-node-vectordb: #14b8a6;
-  --c-node-cron: #8b5cf6;
-  --c-node-provider: #6366f1;
+  /* Node accent colors — chosen to be visually distinct around the hue wheel */
+  --c-node-agent: #9e4ad8;      /* purple */
+  --c-node-memory: #22c55e;     /* emerald */
+  --c-node-tools: #f97316;      /* orange */
+  --c-node-skills: #0ea5e9;     /* sky blue */
+  --c-node-context: #b8860b;    /* golden brown (darkgoldenrod) */
+  --c-node-comm: #ec4899;       /* pink */
+  --c-node-connectors: #eab308; /* gold */
+  --c-node-storage: #ef4444;    /* red */
+  --c-node-vectordb: #14b8a6;   /* teal */
+  --c-node-cron: #84cc16;       /* lime */
+  --c-node-provider: #6366f1;   /* indigo */
 
   /* Surface colors that bypass the Tailwind palette */
   --c-code-bg: #0d1117;
