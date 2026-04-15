@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
-import { Bot, MessageSquare } from 'lucide-react';
+import { MessageSquare } from 'lucide-react';
 import type { AgentNodeData } from '../types/nodes';
 import { NODE_COLORS } from '../utils/theme';
 import { useAgentConnectionStore } from '../store/agent-connection-store';
@@ -22,8 +22,8 @@ function AgentNodeComponent({ id, data, selected }: NodeProps<AgentNode>) {
         <Handle
           type="target"
           position={Position.Left}
-          className="!h-3 !w-3 !border-2 !border-slate-700 !bg-blue-400"
-          style={{ left: -6 }}
+          className="!h-3 !w-3 !border-2 !border-slate-700"
+          style={{ left: -6, backgroundColor: color }}
         />
       }
       cornerSlot={
@@ -44,7 +44,7 @@ function AgentNodeComponent({ id, data, selected }: NodeProps<AgentNode>) {
         </button>
       }
     >
-      <Bot size={26} style={{ color }} />
+      <img src="/img/agent.png" alt="" width={26} height={26} />
       <span
         className="text-[12px] font-bold text-slate-100"
         style={{

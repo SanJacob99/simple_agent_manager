@@ -4,16 +4,20 @@ import {
   EdgeLabelRenderer,
   getBezierPath,
   useReactFlow,
+  useStore,
   type EdgeProps,
   type Edge,
 } from '@xyflow/react';
 import { X } from 'lucide-react';
+import { NODE_COLORS } from '../utils/theme';
+import type { NodeType } from '../types/nodes';
 
 type DataEdgeData = { label?: string };
 type DataEdge = Edge<DataEdgeData, 'data'>;
 
 function DataEdgeComponent({
   id,
+  source,
   sourceX,
   sourceY,
   targetX,
@@ -25,6 +29,12 @@ function DataEdgeComponent({
   data,
 }: EdgeProps<DataEdge>) {
   const { setEdges } = useReactFlow();
+  const sourceNodeType = useStore(
+    (s) => s.nodeLookup.get(source)?.type as NodeType | undefined,
+  );
+  const strokeColor = sourceNodeType
+    ? NODE_COLORS[sourceNodeType]
+    : 'var(--c-slate-600)';
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
     sourceY,
@@ -45,7 +55,7 @@ function DataEdgeComponent({
         markerEnd={markerEnd}
         style={{
           ...style,
-          stroke: 'var(--c-slate-600)',
+          stroke: strokeColor,
           strokeWidth: 2,
         }}
       />
