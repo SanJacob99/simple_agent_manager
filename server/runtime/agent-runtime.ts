@@ -14,6 +14,7 @@ import { MemoryEngine } from './memory-engine';
 import { ContextEngine } from './context-engine';
 import { resolveToolNames, createAgentTools } from './tool-factory';
 import { resolveRuntimeModel } from './model-resolver';
+import { isToolErrorDetails } from './tool-adapter';
 import { log } from '../logger';
 
 export type RuntimeEvent =
@@ -264,7 +265,7 @@ export class AgentRuntime {
           toolName: tool.name,
           params: beforeCtx.params,
           result: resultText,
-          isError: false,
+          isError: isToolErrorDetails(result.details),
           transformedResult: undefined,
         };
 

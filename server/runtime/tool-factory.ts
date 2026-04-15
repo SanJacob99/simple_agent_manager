@@ -6,6 +6,9 @@ import type {
   WebFetchToolContext,
   WebSearchToolContext,
 } from '../../shared/plugin-sdk';
+import { adaptAgentTools } from './tool-adapter';
+import { findToolNameConflicts } from './tool-name-policy';
+import { logError } from '../logger';
 
 // Re-export resolveToolNames from shared (used by agent-runtime.ts)
 export { resolveToolNames } from '../../shared/resolve-tool-names';
@@ -187,5 +190,15 @@ export function createAgentTools(
     }
   }
 
-  return [...tools, ...extraTools];
+  const combined = [...tools, ...extraTools];
+
+  const conflicts = findToolNameConflicts(combined.map((t) => t.name));
+  if (conflicts.length > 0) {
+    logError(
+      'tools',
+      `tool name conflicts detected after resolution: ${conflicts.join(', ')}`,
+    );
+  }
+
+  return adaptAgentTools(combined);
 }
