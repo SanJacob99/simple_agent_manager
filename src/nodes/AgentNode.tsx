@@ -13,10 +13,15 @@ type AgentNode = Node<AgentNodeData>;
 interface BrandInfo {
   label: string;
   color: string;
+  iconSrc?: string;
 }
 
 const PROVIDER_BRANDS: Record<string, BrandInfo> = {
-  openrouter: { label: 'OR', color: '#f472b6' },
+  openrouter: {
+    label: 'OR',
+    color: '#f472b6',
+    iconSrc: '/svg/openrouter.svg',
+  },
   anthropic: { label: 'A', color: '#d97706' },
   openai: { label: 'O', color: '#10a37f' },
   google: { label: 'G', color: '#4285f4' },
@@ -99,7 +104,26 @@ function AgentNodeComponent({ id, data, selected }: NodeProps<AgentNode>) {
             color={brand.color}
             title={`Provider: ${providerPluginId || 'unset'}`}
           >
-            {brand.label}
+            {brand.iconSrc ? (
+              <span
+                style={{
+                  display: 'block',
+                  width: 11,
+                  height: 11,
+                  backgroundColor: brand.color,
+                  WebkitMaskImage: `url(${brand.iconSrc})`,
+                  maskImage: `url(${brand.iconSrc})`,
+                  WebkitMaskRepeat: 'no-repeat',
+                  maskRepeat: 'no-repeat',
+                  WebkitMaskPosition: 'center',
+                  maskPosition: 'center',
+                  WebkitMaskSize: 'contain',
+                  maskSize: 'contain',
+                }}
+              />
+            ) : (
+              brand.label
+            )}
           </HexHint>
         );
       })()}
