@@ -1,5 +1,4 @@
 import {
-  MessageSquare,
   BrainCircuit,
   PocketKnife,
   GraduationCap,
@@ -47,7 +46,10 @@ interface PaletteItem {
 }
 
 const CORE_ITEMS: PaletteItem[] = [
-  { type: 'agent', icon: <MessageSquare size={18} /> },
+  {
+    type: 'agent',
+    icon: <img src="/svg/favicon.svg" alt="" width={20} height={20} />,
+  },
 ];
 
 const PERIPHERAL_ITEMS: PaletteItem[] = [
