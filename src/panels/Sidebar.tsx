@@ -13,7 +13,28 @@ import {
 } from 'lucide-react';
 import type { NodeType } from '../types/nodes';
 import { NODE_COLORS, NODE_LABELS } from '../utils/theme';
-import { useMemo, useState, type DragEvent, type ReactNode } from 'react';
+import {
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+  type ReactNode,
+} from 'react';
+import { useReactFlow } from '@xyflow/react';
+import {
+  HEX_HEIGHT,
+  HEX_WIDTH,
+  roundedHexPathPointyTop,
+  HEX_SIDE,
+  HEX_CORNER_RADIUS,
+} from '../nodes/HexNode';
+
+const HEX_PREVIEW_PATH = roundedHexPathPointyTop(
+  HEX_WIDTH / 2,
+  HEX_HEIGHT / 2,
+  HEX_SIDE,
+  HEX_CORNER_RADIUS,
+);
 import {
   SETTINGS_SECTIONS,
   type AppView,
@@ -44,31 +65,83 @@ const PERIPHERAL_ITEMS: PaletteItem[] = [
 function DraggableItem({ item }: { item: PaletteItem }) {
   const color = NODE_COLORS[item.type];
   const label = NODE_LABELS[item.type];
+  const previewRef = useRef<HTMLDivElement | null>(null);
+  const { getViewport } = useReactFlow();
 
   const onDragStart = (event: DragEvent) => {
     event.dataTransfer.setData('application/reactflow', item.type);
     event.dataTransfer.effectAllowed = 'move';
+
+    const preview = previewRef.current;
+    if (preview) {
+      const zoom = getViewport().zoom;
+      const w = HEX_WIDTH * zoom;
+      const h = HEX_HEIGHT * zoom;
+      preview.style.width = `${w}px`;
+      preview.style.height = `${h}px`;
+      event.dataTransfer.setDragImage(preview, w / 2, h / 2);
+    }
   };
 
   return (
-    <div
-      draggable
-      onDragStart={onDragStart}
-      className="group flex cursor-grab items-center gap-3 rounded-lg px-2.5 py-2.5 transition-colors hover:bg-slate-800/60 active:cursor-grabbing"
-    >
-      <span
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
+    <>
+      <div
+        draggable
+        onDragStart={onDragStart}
+        className="group flex cursor-grab items-center gap-3 rounded-lg px-2.5 py-2.5 transition-colors hover:bg-slate-800/60 active:cursor-grabbing"
+      >
+        <span
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
+          style={{
+            backgroundColor: `color-mix(in srgb, ${color} 18%, transparent)`,
+            color,
+          }}
+        >
+          {item.icon}
+        </span>
+        <span className="text-sm font-medium text-slate-300 group-hover:text-slate-100">
+          {label}
+        </span>
+      </div>
+      {/* Hidden hex preview used as the HTML5 drag image */}
+      <div
+        ref={previewRef}
+        aria-hidden
         style={{
-          backgroundColor: `color-mix(in srgb, ${color} 18%, transparent)`,
-          color,
+          position: 'fixed',
+          top: -9999,
+          left: -9999,
+          width: HEX_WIDTH,
+          height: HEX_HEIGHT,
+          pointerEvents: 'none',
+          filter: 'drop-shadow(0 4px 10px var(--c-node-shadow))',
         }}
       >
-        {item.icon}
-      </span>
-      <span className="text-sm font-medium text-slate-300 group-hover:text-slate-100">
-        {label}
-      </span>
-    </div>
+        <svg
+          width="100%"
+          height="100%"
+          viewBox={`0 0 ${HEX_WIDTH} ${HEX_HEIGHT}`}
+          style={{ display: 'block' }}
+        >
+          <path d={HEX_PREVIEW_PATH} fill="var(--c-slate-900)" />
+          <rect
+            x={0}
+            y={0}
+            width={HEX_WIDTH * 0.1}
+            height={HEX_HEIGHT}
+            fill={color}
+            clipPath={`path('${HEX_PREVIEW_PATH}')`}
+          />
+          <path
+            d={HEX_PREVIEW_PATH}
+            fill="none"
+            stroke="var(--c-node-border-default)"
+            strokeWidth={4}
+            strokeLinejoin="round"
+          />
+        </svg>
+      </div>
+    </>
   );
 }
 
@@ -108,7 +181,7 @@ export default function Sidebar({
   );
 
   return (
-    <aside className="flex w-56 shrink-0 flex-col border-r border-slate-800 bg-canvas-bg">
+    <aside className="flex w-56 shrink-0 flex-col border-r border-slate-700 bg-canvas-bg">
       {/* Header */}
       <div className="px-4 pb-3 pt-4">
         <h1 className="text-sm font-bold text-slate-100">Agent Manager</h1>
