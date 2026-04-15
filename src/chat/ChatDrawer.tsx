@@ -382,7 +382,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
             {/* Dropdown */}
             {showSessionDropdown && (
               <div className="absolute left-0 right-0 top-full z-10 mt-1 rounded-lg border border-slate-700 bg-slate-850 shadow-xl overflow-hidden"
-                style={{ backgroundColor: '#1a2332' }}>
+                style={{ backgroundColor: 'var(--c-chat-input-bg)' }}>
                 {agentSessions.map((session) => (
                   <div
                     key={session.id}

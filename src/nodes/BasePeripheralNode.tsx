@@ -24,14 +24,16 @@ function BasePeripheralNodeInner({
     <div
       className="min-w-[160px] rounded-lg border bg-slate-900 shadow-lg transition-shadow"
       style={{
-        borderColor: selected ? color : '#334155',
-        boxShadow: selected ? `0 0 16px ${color}40` : undefined,
+        borderColor: selected ? color : 'var(--c-node-border-default)',
+        boxShadow: selected
+          ? `0 0 16px color-mix(in srgb, ${color} 25%, transparent)`
+          : undefined,
       }}
     >
       {/* Header */}
       <div
         className="flex items-center gap-2 rounded-t-lg px-3 py-2"
-        style={{ backgroundColor: `${color}15` }}
+        style={{ backgroundColor: `color-mix(in srgb, ${color} 8%, transparent)` }}
       >
         <span style={{ color }}>{icon}</span>
         <span className="text-xs font-semibold text-slate-200">{label}</span>

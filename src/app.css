@@ -89,6 +89,8 @@
   --color-node-connectors: var(--c-node-connectors);
   --color-node-storage: var(--c-node-storage);
   --color-node-vectordb: var(--c-node-vectordb);
+  --color-node-cron: var(--c-node-cron);
+  --color-node-provider: var(--c-node-provider);
 }
 
 :root {
@@ -164,6 +166,15 @@
   --c-node-connectors: #eab308;
   --c-node-storage: #ef4444;
   --c-node-vectordb: #14b8a6;
+  --c-node-cron: #8b5cf6;
+  --c-node-provider: #6366f1;
+
+  /* Surface colors that bypass the Tailwind palette */
+  --c-code-bg: #0d1117;
+  --c-chat-input-bg: #1a2332;
+  --c-node-shadow: rgb(0 0 0 / 0.25);
+  --c-node-border-default: var(--c-slate-700);
+  --c-minimap-mask: color-mix(in srgb, var(--c-slate-900) 50%, transparent);
 }
 
 :root.theme-light {

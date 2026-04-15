@@ -17,7 +17,7 @@ export const markdownComponents: Components = {
     const { children, className, node, ...rest } = props;
     const match = /language-(\w+)/.exec(className || '');
     return match ? (
-      <div className="rounded-md bg-[#0d1117] border border-slate-700/60 my-3 overflow-hidden shadow-sm">
+      <div className="rounded-md bg-[var(--c-code-bg)] border border-slate-700/60 my-3 overflow-hidden shadow-sm">
         <div className="bg-slate-800/80 px-3 py-1.5 text-[10px] text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-700/60">
           {match[1]}
         </div>

@@ -45,7 +45,7 @@ function DataEdgeComponent({
         markerEnd={markerEnd}
         style={{
           ...style,
-          stroke: '#475569',
+          stroke: 'var(--c-slate-600)',
           strokeWidth: 2,
         }}
       />

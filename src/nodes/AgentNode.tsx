@@ -30,8 +30,10 @@ function AgentNodeComponent({ id, data, selected }: NodeProps<AgentNode>) {
     <div
       className="min-w-[220px] rounded-xl border-2 bg-slate-900 shadow-xl transition-shadow"
       style={{
-        borderColor: selected ? color : '#334155',
-        boxShadow: selected ? `0 0 20px ${color}50` : `0 4px 16px #00000040`,
+        borderColor: selected ? color : 'var(--c-node-border-default)',
+        boxShadow: selected
+          ? `0 0 20px color-mix(in srgb, ${color} 32%, transparent)`
+          : `0 4px 16px var(--c-node-shadow)`,
       }}
     >
       {/* Target handle (receives connections from peripherals) */}
@@ -45,7 +47,7 @@ function AgentNodeComponent({ id, data, selected }: NodeProps<AgentNode>) {
       {/* Header */}
       <div
         className="flex items-center gap-2 rounded-t-[10px] px-4 py-2.5"
-        style={{ backgroundColor: `${color}20` }}
+        style={{ backgroundColor: `color-mix(in srgb, ${color} 12%, transparent)` }}
       >
         <Bot size={18} style={{ color }} />
         <span className="flex-1 text-sm font-bold text-slate-100">
@@ -61,7 +63,7 @@ function AgentNodeComponent({ id, data, selected }: NodeProps<AgentNode>) {
           }}
           className="nodrag flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-semibold transition"
           style={{
-            backgroundColor: `${color}30`,
+            backgroundColor: `color-mix(in srgb, ${color} 19%, transparent)`,
             color: color,
           }}
           title="Open Chat"

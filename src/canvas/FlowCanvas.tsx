@@ -13,6 +13,7 @@ import { edgeTypes } from '../edges/DataEdge';
 import { useDragAndDrop } from './useDragAndDrop';
 import LottieAnimation from '../components/LottieAnimation';
 import HelloSquid from '../animations/HelloSquid.json';
+import { cssVar } from '../utils/css-var';
 
 export default function FlowCanvas() {
   const nodes = useGraphStore((s) => s.nodes);
@@ -56,13 +57,13 @@ export default function FlowCanvas() {
         variant={BackgroundVariant.Dots}
         gap={20}
         size={1}
-        color="#1e293b"
+        color={cssVar('--c-slate-800')}
       />
       <Controls className="!border-slate-700 !bg-slate-800" />
       <MiniMap
         className="!border-slate-700 !bg-slate-900"
-        nodeColor="#334155"
-        maskColor="#0f172a80"
+        nodeColor={cssVar('--c-slate-700')}
+        maskColor={cssVar('--c-minimap-mask')}
       />
       {nodes.length === 0 && (
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3">
