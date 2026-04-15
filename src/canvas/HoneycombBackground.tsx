@@ -4,7 +4,8 @@ import { HEX_CORNER_RADIUS, roundedHexPathPointyTop } from '../nodes/HexNode';
 type Props = {
   side?: number;
   color?: string;
-  strokeWidth?: number;
+  bgColor?: string;
+  gutter?: number;
 };
 
 const transformSelector = (s: { transform: [number, number, number] }) => s.transform;
@@ -12,7 +13,8 @@ const transformSelector = (s: { transform: [number, number, number] }) => s.tran
 export default function HoneycombBackground({
   side = 14,
   color,
-  strokeWidth = 1,
+  bgColor,
+  gutter = 2,
 }: Props) {
   const [tx, ty, zoom] = useStore(transformSelector);
 
@@ -20,7 +22,9 @@ export default function HoneycombBackground({
   const w = Math.sqrt(3) * ss;
   const h = 3 * ss;
   const halfW = w / 2;
-  const radius = HEX_CORNER_RADIUS * zoom;
+  const inset = (gutter * zoom) / 2;
+  const hexSide = Math.max(0, ss - inset);
+  const radius = Math.max(0, HEX_CORNER_RADIUS * zoom - inset);
 
   const hexCenters: Array<[number, number]> = [
     [0, 0],
@@ -51,14 +55,12 @@ export default function HoneycombBackground({
         height={h}
         patternUnits="userSpaceOnUse"
       >
+        <rect width={w} height={h} fill={color} />
         {hexCenters.map(([cx, cy], i) => (
           <path
             key={i}
-            d={roundedHexPathPointyTop(cx, cy, ss, radius)}
-            fill="none"
-            stroke={color}
-            strokeWidth={strokeWidth}
-            strokeLinejoin="round"
+            d={roundedHexPathPointyTop(cx, cy, hexSide, radius)}
+            fill={bgColor}
           />
         ))}
       </pattern>

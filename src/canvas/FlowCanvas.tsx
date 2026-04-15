@@ -145,7 +145,8 @@ export default function FlowCanvas() {
       <HoneycombBackground
         side={HEX_SIDE}
         color={cssVar('--c-canvas-pattern')}
-        strokeWidth={1}
+        bgColor={cssVar('--c-canvas-bg')}
+        gutter={2}
       />
       <SnapHighlight
         center={snapPreview?.center ?? null}

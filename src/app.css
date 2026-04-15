@@ -220,7 +220,7 @@
 
   /* Warm cream canvas + visible stone dots */
   --c-canvas-bg: #f1e8d9;
-  --c-canvas-pattern: oklch(88% 0.02 78);
+  --c-canvas-pattern: oklch(72% 0.06 78);
 
   /* Surfaces that bypass the palette */
   --c-chat-input-bg: #f4eee4;
