@@ -1,8 +1,6 @@
 import { useCallback } from 'react';
 import {
   ReactFlow,
-  Background,
-  BackgroundVariant,
   Controls,
   MiniMap,
   type IsValidConnection,
@@ -14,6 +12,7 @@ import { useDragAndDrop } from './useDragAndDrop';
 import LottieAnimation from '../components/LottieAnimation';
 import HelloSquid from '../animations/HelloSquid.json';
 import { cssVar } from '../utils/css-var';
+import HoneycombBackground from './HoneycombBackground';
 
 export default function FlowCanvas() {
   const nodes = useGraphStore((s) => s.nodes);
@@ -53,13 +52,7 @@ export default function FlowCanvas() {
       defaultEdgeOptions={{ type: 'data', animated: true }}
       className="bg-canvas-bg"
     >
-      <Background
-        variant={BackgroundVariant.Dots}
-        gap={20}
-        size={1}
-        color={cssVar('--c-canvas-pattern')}
-        bgColor={cssVar('--c-canvas-bg')}
-      />
+      <HoneycombBackground side={14} color={cssVar('--c-canvas-pattern')} />
       <Controls className="!border-slate-700 !bg-slate-800" />
       <MiniMap
         className="!border-slate-700 !bg-slate-900"
