@@ -56,7 +56,7 @@ describe('SettingsWorkspace', () => {
       screen.getByText('Inspect and refresh cached provider model discovery.'),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/Add a.*API key/i),
+      screen.getByText(/Add a openrouter API key in Providers/i),
     ).toBeInTheDocument();
   });
 });
