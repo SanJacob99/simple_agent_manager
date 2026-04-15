@@ -1,4 +1,5 @@
 import { useStore } from '@xyflow/react';
+import { HEX_CORNER_RADIUS, roundedHexPathPointyTop } from '../nodes/HexNode';
 
 type Props = {
   side?: number;
@@ -19,6 +20,7 @@ export default function HoneycombBackground({
   const w = Math.sqrt(3) * ss;
   const h = 3 * ss;
   const halfW = w / 2;
+  const radius = HEX_CORNER_RADIUS * zoom;
 
   const hexCenters: Array<[number, number]> = [
     [0, 0],
@@ -27,18 +29,6 @@ export default function HoneycombBackground({
     [w, h],
     [halfW, h / 2],
   ];
-
-  const hexPoints = (cx: number, cy: number) =>
-    [
-      [cx, cy - ss],
-      [cx + halfW, cy - ss / 2],
-      [cx + halfW, cy + ss / 2],
-      [cx, cy + ss],
-      [cx - halfW, cy + ss / 2],
-      [cx - halfW, cy - ss / 2],
-    ]
-      .map(([x, y]) => `${x},${y}`)
-      .join(' ');
 
   const patternId = 'honeycomb-pattern';
 
@@ -62,12 +52,13 @@ export default function HoneycombBackground({
         patternUnits="userSpaceOnUse"
       >
         {hexCenters.map(([cx, cy], i) => (
-          <polygon
+          <path
             key={i}
-            points={hexPoints(cx, cy)}
+            d={roundedHexPathPointyTop(cx, cy, ss, radius)}
             fill="none"
             stroke={color}
             strokeWidth={strokeWidth}
+            strokeLinejoin="round"
           />
         ))}
       </pattern>
