@@ -76,9 +76,9 @@ export default function HexNode({
   handles,
 }: HexNodeProps) {
   const uid = useId().replace(/:/g, '');
-  const gradientId = `hex-grad-${uid}`;
   const clipId = `hex-clip-${uid}`;
   const borderColor = selected ? color : 'var(--c-node-border-default)';
+  const accentWidth = HEX_WIDTH * 0.1;
 
   return (
     <div
@@ -97,24 +97,13 @@ export default function HexNode({
         style={{ position: 'absolute', inset: 0, display: 'block' }}
       >
         <defs>
-          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-            <stop
-              offset="0%"
-              style={{
-                stopColor: `color-mix(in srgb, ${color} 14%, var(--c-slate-900))`,
-              }}
-            />
-            <stop
-              offset="55%"
-              style={{ stopColor: 'var(--c-slate-900)' }}
-            />
-          </linearGradient>
           <clipPath id={clipId}>
             <path d={HEX_PATH_DATA} />
           </clipPath>
         </defs>
         <g clipPath={`url(#${clipId})`}>
-          <path d={HEX_PATH_DATA} fill={`url(#${gradientId})`} />
+          <path d={HEX_PATH_DATA} fill="var(--c-slate-900)" />
+          <rect x={0} y={0} width={accentWidth} height={HEX_HEIGHT} fill={color} />
           <path
             d={HEX_PATH_DATA}
             fill="none"
