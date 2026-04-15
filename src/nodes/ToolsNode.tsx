@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { type NodeProps, type Node } from '@xyflow/react';
-import { Wrench } from 'lucide-react';
+import { PocketKnife } from 'lucide-react';
 import BasePeripheralNode from './BasePeripheralNode';
 import type { ToolsNodeData } from '../types/nodes';
 
@@ -11,12 +11,9 @@ function ToolsNodeComponent({ data, selected }: NodeProps<ToolsNode>) {
     <BasePeripheralNode
       nodeType="tools"
       label={data.label}
-      icon={<Wrench size={14} />}
+      icon={<PocketKnife size={22} />}
       selected={selected}
-    >
-      <div>{data.enabledTools.length} tools enabled</div>
-      <div className="truncate">{data.enabledTools.join(', ')}</div>
-    </BasePeripheralNode>
+    />
   );
 }
 

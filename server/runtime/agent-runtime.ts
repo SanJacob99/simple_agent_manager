@@ -42,7 +42,18 @@ function summarizePayload(payload: any): string {
       }
     }
   }
-  return `model=${model} | messages=${messages.length} | tools=${tools.length} | last_user=${lastUserText}`;
+  const reasoning = payload.reasoning !== undefined
+    ? JSON.stringify(payload.reasoning)
+    : '(absent)';
+  const reasoningEffort = payload.reasoning_effort !== undefined
+    ? String(payload.reasoning_effort)
+    : '(absent)';
+  const topLevelKeys = Object.keys(payload).join(',');
+  return (
+    `model=${model} | messages=${messages.length} | tools=${tools.length} | ` +
+    `reasoning=${reasoning} | reasoning_effort=${reasoningEffort} | ` +
+    `keys=[${topLevelKeys}] | last_user=${lastUserText}`
+  );
 }
 
 /**

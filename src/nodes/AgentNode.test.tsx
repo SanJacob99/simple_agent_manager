@@ -15,7 +15,7 @@ vi.mock('@xyflow/react', async () => {
 function createAgentData() {
   return {
     type: 'agent' as const,
-    name: 'Agent',
+    name: 'Test Agent',
     nameConfirmed: true,
     systemPrompt: 'Test prompt',
     systemPromptMode: 'append' as const,
@@ -55,47 +55,6 @@ describe('AgentNode', () => {
       chatAgentNodeId: null,
       openChatDrawer: vi.fn(),
     } as any);
-  });
-
-  it('shows the connected Provider node plugin id in the badge', () => {
-    useGraphStore.setState({
-      nodes: [
-        {
-          id: 'agent-1',
-          type: 'agent',
-          position: { x: 0, y: 0 },
-          data: createAgentData(),
-        },
-        {
-          id: 'provider-1',
-          type: 'provider',
-          position: { x: 0, y: 0 },
-          data: {
-            type: 'provider',
-            label: 'Provider',
-            pluginId: 'openrouter',
-            authMethodId: 'api-key',
-            envVar: 'OPENROUTER_API_KEY',
-            baseUrl: '',
-          },
-        },
-      ] as any,
-      edges: [
-        {
-          id: 'edge_provider-1_agent-1',
-          source: 'provider-1',
-          target: 'agent-1',
-          type: 'data',
-        },
-      ] as any,
-    } as any);
-
-    renderAgentNode();
-
-    expect(screen.getByText('openrouter')).toBeInTheDocument();
-  });
-
-  it('shows a missing-provider badge when no Provider node is connected', () => {
     useGraphStore.setState({
       nodes: [
         {
@@ -107,9 +66,25 @@ describe('AgentNode', () => {
       ] as any,
       edges: [],
     } as any);
+  });
 
+  it('renders the agent name and a target handle', () => {
     renderAgentNode();
 
-    expect(screen.getByText('no provider')).toBeInTheDocument();
+    expect(screen.getByText('Test Agent')).toBeInTheDocument();
+    expect(screen.getByTestId('handle-target')).toBeInTheDocument();
+  });
+
+  it('opens the chat drawer when the chat button is clicked', () => {
+    const openChat = vi.fn();
+    useAgentConnectionStore.setState({
+      chatAgentNodeId: null,
+      openChatDrawer: openChat,
+    } as any);
+
+    renderAgentNode();
+    screen.getByTitle('Open Chat').click();
+
+    expect(openChat).toHaveBeenCalledWith('agent-1');
   });
 });

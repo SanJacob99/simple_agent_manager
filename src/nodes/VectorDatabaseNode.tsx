@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { type NodeProps, type Node } from '@xyflow/react';
-import { Container } from 'lucide-react';
+import { Blocks } from 'lucide-react';
 import BasePeripheralNode from './BasePeripheralNode';
 import type { VectorDatabaseNodeData } from '../types/nodes';
 
@@ -11,12 +11,9 @@ function VectorDatabaseNodeComponent({ data, selected }: NodeProps<VectorDatabas
     <BasePeripheralNode
       nodeType="vectorDatabase"
       label={data.label}
-      icon={<Container size={14} />}
+      icon={<Blocks size={22} />}
       selected={selected}
-    >
-      <div>Provider: {data.provider}</div>
-      <div>Collection: {data.collectionName}</div>
-    </BasePeripheralNode>
+    />
   );
 }
 

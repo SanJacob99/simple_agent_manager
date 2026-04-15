@@ -1,17 +1,17 @@
 import type { NodeType } from '../types/nodes';
 
 export const NODE_COLORS: Record<NodeType, string> = {
-  agent: '#3b82f6',
-  memory: '#22c55e',
-  tools: '#f97316',
-  skills: '#a855f7',
-  contextEngine: '#06b6d4',
-  agentComm: '#ec4899',
-  connectors: '#eab308',
-  storage: '#ef4444',
-  vectorDatabase: '#14b8a6',
-  cron: '#8b5cf6',
-  provider: '#6366f1',
+  agent: 'var(--c-node-agent)',
+  memory: 'var(--c-node-memory)',
+  tools: 'var(--c-node-tools)',
+  skills: 'var(--c-node-skills)',
+  contextEngine: 'var(--c-node-context)',
+  agentComm: 'var(--c-node-comm)',
+  connectors: 'var(--c-node-connectors)',
+  storage: 'var(--c-node-storage)',
+  vectorDatabase: 'var(--c-node-vectordb)',
+  cron: 'var(--c-node-cron)',
+  provider: 'var(--c-node-provider)',
 };
 
 export const NODE_LABELS: Record<NodeType, string> = {

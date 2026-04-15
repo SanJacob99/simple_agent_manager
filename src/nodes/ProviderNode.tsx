@@ -1,33 +1,75 @@
 import { memo } from 'react';
 import { type NodeProps, type Node } from '@xyflow/react';
-import { Cpu } from 'lucide-react';
+import { Cloud } from 'lucide-react';
 import BasePeripheralNode from './BasePeripheralNode';
+import HexHint from './HexHint';
 import type { ProviderNodeData } from '../types/nodes';
 
 type ProviderNode = Node<ProviderNodeData>;
 
+interface ProviderBrand {
+  label: string;
+  color: string;
+  iconSrc?: string;
+}
+
+const PROVIDER_BRANDS: Record<string, ProviderBrand> = {
+  openrouter: {
+    label: 'OR',
+    color: '#f472b6',
+    iconSrc: '/svg/openrouter.svg',
+  },
+};
+
+function resolveProviderBrand(pluginId: string): ProviderBrand {
+  const key = pluginId.toLowerCase();
+  return (
+    PROVIDER_BRANDS[key] ?? {
+      label: pluginId.slice(0, 2).toUpperCase() || '?',
+      color: 'var(--c-slate-400)',
+    }
+  );
+}
+
 function ProviderNodeComponent({ data, selected }: NodeProps<ProviderNode>) {
+  const brand = resolveProviderBrand(data.pluginId ?? '');
+
+  const hints = (
+    <HexHint
+      color={brand.color}
+      title={`Provider: ${data.pluginId || 'unset'}`}
+    >
+      {brand.iconSrc ? (
+        <span
+          style={{
+            display: 'block',
+            width: 11,
+            height: 11,
+            backgroundColor: brand.color,
+            WebkitMaskImage: `url(${brand.iconSrc})`,
+            maskImage: `url(${brand.iconSrc})`,
+            WebkitMaskRepeat: 'no-repeat',
+            maskRepeat: 'no-repeat',
+            WebkitMaskPosition: 'center',
+            maskPosition: 'center',
+            WebkitMaskSize: 'contain',
+            maskSize: 'contain',
+          }}
+        />
+      ) : (
+        brand.label
+      )}
+    </HexHint>
+  );
+
   return (
     <BasePeripheralNode
       nodeType="provider"
       label={data.label}
-      icon={<Cpu size={14} />}
+      icon={<Cloud size={22} />}
       selected={selected}
-    >
-      <div className="flex items-center gap-1.5">
-        <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-medium text-slate-300">
-          {data.pluginId || 'none'}
-        </span>
-        {data.baseUrl && (
-          <span
-            className="truncate text-[10px] text-slate-500"
-            title={data.baseUrl}
-          >
-            {data.baseUrl}
-          </span>
-        )}
-      </div>
-    </BasePeripheralNode>
+      hints={hints}
+    />
   );
 }
 

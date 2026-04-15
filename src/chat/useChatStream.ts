@@ -39,9 +39,13 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
   const unsubRef = useRef<(() => void) | null>(null);
   const assistantMsgIdRef = useRef<string>('');
   const assistantContentRef = useRef<string>('');
+  const assistantThinkingRef = useRef<string>('');
+  const assistantMsgCreatedRef = useRef<boolean>(false);
   const sessionKeyRef = useRef<string>('');
   const pendingDeltaRef = useRef<string>('');
+  const pendingThinkingDeltaRef = useRef<string>('');
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const thinkingFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flushDelta = useCallback(() => {
     flushTimerRef.current = null;
     if (!pendingDeltaRef.current) return;
@@ -53,15 +57,34 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
     }));
   }, [updateMessage]);
 
+  const flushThinkingDelta = useCallback(() => {
+    thinkingFlushTimerRef.current = null;
+    if (!pendingThinkingDeltaRef.current) return;
+    assistantThinkingRef.current += pendingThinkingDeltaRef.current;
+    pendingThinkingDeltaRef.current = '';
+    updateMessage(sessionKeyRef.current, assistantMsgIdRef.current, (m) => ({
+      ...m,
+      thinking: assistantThinkingRef.current,
+    }));
+  }, [updateMessage]);
+
   const cleanup = useCallback(() => {
     if (flushTimerRef.current !== null) {
       clearTimeout(flushTimerRef.current);
       flushTimerRef.current = null;
     }
-    // Flush any buffered delta before tearing down
+    if (thinkingFlushTimerRef.current !== null) {
+      clearTimeout(thinkingFlushTimerRef.current);
+      thinkingFlushTimerRef.current = null;
+    }
+    // Flush any buffered deltas before tearing down
     if (pendingDeltaRef.current) {
       assistantContentRef.current += pendingDeltaRef.current;
       pendingDeltaRef.current = '';
+    }
+    if (pendingThinkingDeltaRef.current) {
+      assistantThinkingRef.current += pendingThinkingDeltaRef.current;
+      pendingThinkingDeltaRef.current = '';
     }
     unsubRef.current?.();
     unsubRef.current = null;
@@ -77,6 +100,8 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
       const msgId = `msg_${Date.now()}_a`;
       assistantMsgIdRef.current = msgId;
       assistantContentRef.current = '';
+      assistantThinkingRef.current = '';
+      assistantMsgCreatedRef.current = false;
       sessionKeyRef.current = sessionKey;
 
       setIsStreaming(true);
@@ -93,12 +118,16 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
             assistantContentRef.current = '';
             setReasoning(null);
             setIsReasoning(false);
-            addMessage(sessionKeyRef.current, {
-              id: assistantMsgIdRef.current,
-              role: 'assistant',
-              content: '',
-              timestamp: Date.now(),
-            });
+            if (!assistantMsgCreatedRef.current) {
+              addMessage(sessionKeyRef.current, {
+                id: assistantMsgIdRef.current,
+                role: 'assistant',
+                content: '',
+                timestamp: Date.now(),
+                thinking: assistantThinkingRef.current || undefined,
+              });
+              assistantMsgCreatedRef.current = true;
+            }
             break;
 
           case 'message:delta':
@@ -132,13 +161,41 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
           case 'reasoning:start':
             setIsReasoning(true);
             setReasoning('');
+            assistantThinkingRef.current = '';
+            if (!assistantMsgCreatedRef.current) {
+              addMessage(sessionKeyRef.current, {
+                id: assistantMsgIdRef.current,
+                role: 'assistant',
+                content: '',
+                timestamp: Date.now(),
+              });
+              assistantMsgCreatedRef.current = true;
+            }
             break;
 
-          case 'reasoning:delta':
-            setReasoning((prev) => (prev ?? '') + (event as any).delta);
+          case 'reasoning:delta': {
+            const delta = (event as any).delta as string;
+            setReasoning((prev) => (prev ?? '') + delta);
+            pendingThinkingDeltaRef.current += delta;
+            if (thinkingFlushTimerRef.current === null) {
+              thinkingFlushTimerRef.current = setTimeout(flushThinkingDelta, 64);
+            }
             break;
+          }
 
           case 'reasoning:end':
+            if (thinkingFlushTimerRef.current !== null) {
+              clearTimeout(thinkingFlushTimerRef.current);
+              thinkingFlushTimerRef.current = null;
+            }
+            if (pendingThinkingDeltaRef.current) {
+              assistantThinkingRef.current += pendingThinkingDeltaRef.current;
+              pendingThinkingDeltaRef.current = '';
+              updateMessage(sessionKeyRef.current, assistantMsgIdRef.current, (m) => ({
+                ...m,
+                thinking: assistantThinkingRef.current,
+              }));
+            }
             setIsReasoning(false);
             break;
 
@@ -192,6 +249,9 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
 
           case 'agent:end':
           case 'lifecycle:end':
+            if (assistantContentRef.current.trim() === '' && assistantMsgIdRef.current) {
+              deleteMessage(sessionKeyRef.current, assistantMsgIdRef.current);
+            }
             setIsStreaming(false);
             setIsReasoning(false);
             setCompacting(false);

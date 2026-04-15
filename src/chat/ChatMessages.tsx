@@ -1,5 +1,5 @@
 import { memo, useRef, useEffect, useCallback, useMemo, useLayoutEffect, useState } from 'react';
-import { Brain, RefreshCw, MessageSquareMore } from 'lucide-react';
+import { RefreshCw, MessageSquareMore } from 'lucide-react';
 import { useSessionStore, type Message } from '../store/session-store';
 import type { ContextWindowInfo, PeripheralReservation } from './useContextWindow';
 import ContextUsagePanel from './ContextUsagePanel';
@@ -180,20 +180,18 @@ function ChatMessages({
             <p className="text-xs text-slate-600">Send a message to start the conversation</p>
           </div>
         )}
-        {!isTranscriptLoading && messages.map((msg) => (
-          <MessageBubble
-            key={msg.id}
-            msg={msg}
-            isStreamingThis={isStreaming && msg.id === streamingMsgId}
-            preferPlainText={msg.role === 'assistant' && !richMarkdownIds.has(msg.id)}
-          />
-        ))}
-        {!isTranscriptLoading && isReasoning && (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-purple-500/10 border border-purple-500/20">
-            <Brain size={12} className="text-purple-400 animate-pulse" />
-            <span className="text-[10px] text-purple-300">Thinking...</span>
-          </div>
-        )}
+        {!isTranscriptLoading && messages.map((msg) => {
+          const isStreamingThis = isStreaming && msg.id === streamingMsgId;
+          return (
+            <MessageBubble
+              key={msg.id}
+              msg={msg}
+              isStreamingThis={isStreamingThis}
+              isReasoningThis={isStreamingThis && isReasoning}
+              preferPlainText={msg.role === 'assistant' && !richMarkdownIds.has(msg.id)}
+            />
+          );
+        })}
         {!isTranscriptLoading && compacting && (
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-amber-500/10 border border-amber-500/20">
             <RefreshCw size={12} className="text-amber-400 animate-spin" />

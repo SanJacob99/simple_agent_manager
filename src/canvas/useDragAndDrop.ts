@@ -2,6 +2,11 @@ import { useCallback, type DragEvent } from 'react';
 import { useReactFlow } from '@xyflow/react';
 import { useGraphStore } from '../store/graph-store';
 import type { NodeType } from '../types/nodes';
+import {
+  buildOccupiedCellSet,
+  snapNodePositionToFreeCell,
+} from '../utils/hex-snap';
+import { HEX_HEIGHT, HEX_WIDTH } from '../nodes/HexNode';
 
 export function useDragAndDrop() {
   const { screenToFlowPosition } = useReactFlow();
@@ -21,10 +26,16 @@ export function useDragAndDrop() {
       ) as NodeType;
       if (!nodeType) return;
 
-      const position = screenToFlowPosition({
+      const cursor = screenToFlowPosition({
         x: event.clientX,
         y: event.clientY,
       });
+      const topLeft = {
+        x: cursor.x - HEX_WIDTH / 2,
+        y: cursor.y - HEX_HEIGHT / 2,
+      };
+      const occupied = buildOccupiedCellSet(useGraphStore.getState().nodes);
+      const { position } = snapNodePositionToFreeCell(topLeft, occupied);
 
       addNode(nodeType, position);
     },

@@ -86,11 +86,19 @@ function buildAutoSections(input: SystemPromptBuilderInput): SystemPromptSection
   }
 
   // 6. Runtime
-  const { host, os, model, thinkingLevel } = input.runtimeMeta;
+  // Intentionally omits `thinking=<level>` — Gemini 3 reads plain-text thinking
+  // directives in the system prompt literally and switches to "think silently" mode.
+  // The API `reasoning.effort` parameter carries the level to the provider.
+  const { host, os, model } = input.runtimeMeta;
+  const runtimeFields = [
+    `host=${host}`,
+    `os=${os}`,
+    `model=${model}`,
+  ].join(' | ');
   sections.push(makeSection(
     'runtime',
     'Runtime',
-    `## Runtime\n\n${host} | ${os} | ${model} | thinking: ${thinkingLevel}`,
+    `## Runtime\n\nRuntime: ${runtimeFields}`,
   ));
 
   return sections;

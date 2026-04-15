@@ -1,17 +1,232 @@
 @import "tailwindcss";
 @import "@xyflow/react/dist/style.css";
 
-@theme {
-  --color-slate-925: #0b1222;
-  --color-node-agent: #3b82f6;
-  --color-node-memory: #22c55e;
-  --color-node-tools: #f97316;
-  --color-node-skills: #a855f7;
-  --color-node-context: #06b6d4;
-  --color-node-comm: #ec4899;
-  --color-node-connectors: #eab308;
-  --color-node-storage: #ef4444;
-  --color-node-vectordb: #14b8a6;
+/*
+  Theming
+  -------
+  Every color used across the app is routed through a CSS variable in this
+  file, so the whole palette can be changed from one place. The `@theme
+  inline` block reroutes Tailwind's default palette utilities (bg-slate-900,
+  text-blue-400, border-amber-500, ...) through our `--c-*` variables, which
+  means existing className usages across the codebase are themeable without
+  per-file edits.
+
+  To switch to light mode, add `class="theme-light"` to the <html> element.
+  The slate scale is flipped in `:root.theme-light` below. Accent palettes
+  (brand/danger/warning/success/info) currently use the same values in both
+  modes -- override them under `:root.theme-light` if you want to tune them
+  for a light background.
+*/
+
+@theme inline {
+  /* Neutral scale (slate) */
+  --color-slate-50: var(--c-slate-50);
+  --color-slate-100: var(--c-slate-100);
+  --color-slate-200: var(--c-slate-200);
+  --color-slate-300: var(--c-slate-300);
+  --color-slate-400: var(--c-slate-400);
+  --color-slate-500: var(--c-slate-500);
+  --color-slate-600: var(--c-slate-600);
+  --color-slate-700: var(--c-slate-700);
+  --color-slate-800: var(--c-slate-800);
+  --color-slate-900: var(--c-slate-900);
+  --color-slate-925: var(--c-slate-925);
+  --color-slate-950: var(--c-slate-950);
+
+  /* Brand / primary (blue) */
+  --color-blue-200: var(--c-blue-200);
+  --color-blue-300: var(--c-blue-300);
+  --color-blue-400: var(--c-blue-400);
+  --color-blue-500: var(--c-blue-500);
+  --color-blue-600: var(--c-blue-600);
+
+  /* Danger (red + rose) */
+  --color-red-200: var(--c-red-200);
+  --color-red-300: var(--c-red-300);
+  --color-red-400: var(--c-red-400);
+  --color-red-500: var(--c-red-500);
+  --color-red-600: var(--c-red-600);
+  --color-rose-400: var(--c-rose-400);
+
+  /* Warning (amber + orange) */
+  --color-amber-50: var(--c-amber-50);
+  --color-amber-200: var(--c-amber-200);
+  --color-amber-300: var(--c-amber-300);
+  --color-amber-400: var(--c-amber-400);
+  --color-amber-500: var(--c-amber-500);
+  --color-amber-600: var(--c-amber-600);
+  --color-orange-500: var(--c-orange-500);
+
+  /* Success (green + emerald) */
+  --color-green-400: var(--c-green-400);
+  --color-emerald-200: var(--c-emerald-200);
+  --color-emerald-400: var(--c-emerald-400);
+  --color-emerald-500: var(--c-emerald-500);
+  --color-emerald-600: var(--c-emerald-600);
+
+  /* Info (purple + violet + indigo) */
+  --color-purple-50: var(--c-purple-50);
+  --color-purple-100: var(--c-purple-100);
+  --color-purple-200: var(--c-purple-200);
+  --color-purple-300: var(--c-purple-300);
+  --color-purple-400: var(--c-purple-400);
+  --color-purple-500: var(--c-purple-500);
+  --color-violet-200: var(--c-violet-200);
+  --color-violet-500: var(--c-violet-500);
+  --color-violet-600: var(--c-violet-600);
+  --color-indigo-400: var(--c-indigo-400);
+
+  /* Canvas */
+  --color-canvas-bg: var(--c-canvas-bg);
+
+  /* Node accent colors (unchanged) */
+  --color-node-agent: var(--c-node-agent);
+  --color-node-memory: var(--c-node-memory);
+  --color-node-tools: var(--c-node-tools);
+  --color-node-skills: var(--c-node-skills);
+  --color-node-context: var(--c-node-context);
+  --color-node-comm: var(--c-node-comm);
+  --color-node-connectors: var(--c-node-connectors);
+  --color-node-storage: var(--c-node-storage);
+  --color-node-vectordb: var(--c-node-vectordb);
+  --color-node-cron: var(--c-node-cron);
+  --color-node-provider: var(--c-node-provider);
+}
+
+:root {
+  /* === Dark mode (default) === */
+
+  /* Neutral scale -- backgrounds, borders, text */
+  --c-slate-50: oklch(98.4% 0.003 247.858);
+  --c-slate-100: oklch(96.8% 0.007 247.896);
+  --c-slate-200: oklch(92.9% 0.013 255.508);
+  --c-slate-300: oklch(86.9% 0.022 252.894);
+  --c-slate-400: oklch(70.4% 0.04 256.788);
+  --c-slate-500: oklch(55.4% 0.046 257.417);
+  --c-slate-600: oklch(44.6% 0.043 257.281);
+  --c-slate-700: oklch(37.2% 0.044 257.287);
+  --c-slate-800: oklch(27.9% 0.041 260.031);
+  --c-slate-900: oklch(20.8% 0.042 265.755);
+  --c-slate-925: #0b1222;
+  --c-slate-950: oklch(12.9% 0.042 264.695);
+
+  /* Brand (blue) */
+  --c-blue-200: oklch(88.2% 0.059 254.128);
+  --c-blue-300: oklch(80.9% 0.105 251.813);
+  --c-blue-400: oklch(70.7% 0.165 254.624);
+  --c-blue-500: oklch(62.3% 0.214 259.815);
+  --c-blue-600: oklch(54.6% 0.245 262.881);
+
+  /* Danger (red + rose) */
+  --c-red-200: oklch(88.5% 0.062 18.334);
+  --c-red-300: oklch(80.8% 0.114 19.571);
+  --c-red-400: oklch(70.4% 0.191 22.216);
+  --c-red-500: oklch(63.7% 0.237 25.331);
+  --c-red-600: oklch(57.7% 0.245 27.325);
+  --c-rose-400: oklch(71.2% 0.194 13.428);
+
+  /* Warning (amber + orange) */
+  --c-amber-50: oklch(98.7% 0.022 95.277);
+  --c-amber-200: oklch(92.4% 0.12 95.746);
+  --c-amber-300: oklch(87.9% 0.169 91.605);
+  --c-amber-400: oklch(82.8% 0.189 84.429);
+  --c-amber-500: oklch(76.9% 0.188 70.08);
+  --c-amber-600: oklch(66.6% 0.179 58.318);
+  --c-orange-500: oklch(70.5% 0.213 47.604);
+
+  /* Success (green + emerald) */
+  --c-green-400: oklch(79.2% 0.209 151.711);
+  --c-emerald-200: oklch(90.5% 0.093 164.15);
+  --c-emerald-400: oklch(76.5% 0.177 163.223);
+  --c-emerald-500: oklch(69.6% 0.17 162.48);
+  --c-emerald-600: oklch(59.6% 0.145 163.225);
+
+  /* Info (purple + violet + indigo) */
+  --c-purple-50: oklch(97.7% 0.014 308.299);
+  --c-purple-100: oklch(94.6% 0.033 307.174);
+  --c-purple-200: oklch(90.2% 0.063 306.703);
+  --c-purple-300: oklch(82.7% 0.119 306.383);
+  --c-purple-400: oklch(71.4% 0.203 305.504);
+  --c-purple-500: oklch(62.7% 0.265 303.9);
+  --c-violet-200: oklch(89.4% 0.057 293.283);
+  --c-violet-500: oklch(60.6% 0.25 292.717);
+  --c-violet-600: oklch(54.1% 0.281 293.009);
+  --c-indigo-400: oklch(67.3% 0.182 276.935);
+
+  /* Canvas */
+  --c-canvas-bg: #0b1222;
+  --c-canvas-pattern: var(--c-slate-700);
+
+  /* Node accent colors — chosen to be visually distinct around the hue wheel */
+  --c-node-agent: #9e4ad8;      /* purple */
+  --c-node-memory: #22c55e;     /* emerald */
+  --c-node-tools: #f97316;      /* orange */
+  --c-node-skills: #0ea5e9;     /* sky blue */
+  --c-node-context: #b8860b;    /* golden brown (darkgoldenrod) */
+  --c-node-comm: #ec4899;       /* pink */
+  --c-node-connectors: #eab308; /* gold */
+  --c-node-storage: #ef4444;    /* red */
+  --c-node-vectordb: #14b8a6;   /* teal */
+  --c-node-cron: #84cc16;       /* lime */
+  --c-node-provider: #6366f1;   /* indigo */
+
+  /* Surface colors that bypass the Tailwind palette */
+  --c-code-bg: #0d1117;
+  --c-chat-input-bg: #1a2332;
+  --c-node-shadow: rgb(0 0 0 / 0.25);
+  --c-node-border-default: var(--c-slate-700);
+  --c-minimap-mask: color-mix(in srgb, var(--c-slate-900) 50%, transparent);
+}
+
+:root.theme-light {
+  /* === Light mode — warm & organic ===
+     The neutral scale is flipped *and* rehued toward warm stone/cream
+     (hue ~70–85°, low chroma) so dark-by-default classes (bg-slate-900,
+     text-slate-300) render as warm neutrals on a cream background. Accent
+     palettes are nudged toward earthier tones below. */
+
+  /* Warm neutral scale (replaces cool slate) */
+  --c-slate-50:  oklch(18% 0.012 75);
+  --c-slate-100: oklch(25% 0.014 75);
+  --c-slate-200: oklch(32% 0.015 75);
+  --c-slate-300: oklch(40% 0.016 75);
+  --c-slate-400: oklch(48% 0.017 75);
+  --c-slate-500: oklch(58% 0.018 78);
+  --c-slate-600: oklch(72% 0.02 80);
+  --c-slate-700: oklch(86% 0.022 82);
+  --c-slate-800: oklch(92% 0.018 84);
+  --c-slate-900: oklch(96% 0.014 85);
+  --c-slate-925: #f4eee4;
+  --c-slate-950: oklch(98.5% 0.01 85);
+
+  /* Warmer brand (terracotta-leaning blue -> teal/clay) */
+  --c-blue-200: oklch(88% 0.05 220);
+  --c-blue-300: oklch(80% 0.09 215);
+  --c-blue-400: oklch(68% 0.13 210);
+  --c-blue-500: oklch(58% 0.16 210);
+  --c-blue-600: oklch(50% 0.17 215);
+
+  /* Earthier warning (deeper amber) */
+  --c-amber-400: oklch(78% 0.17 68);
+  --c-amber-500: oklch(72% 0.17 58);
+  --c-amber-600: oklch(63% 0.17 50);
+  --c-orange-500: oklch(68% 0.2 45);
+
+  /* Mossy success */
+  --c-green-400: oklch(74% 0.16 145);
+  --c-emerald-400: oklch(72% 0.15 155);
+  --c-emerald-500: oklch(64% 0.14 155);
+  --c-emerald-600: oklch(55% 0.12 155);
+
+  /* Warm cream canvas + visible stone dots */
+  --c-canvas-bg: #f1e8d9;
+  --c-canvas-pattern: oklch(72% 0.06 78);
+
+  /* Surfaces that bypass the palette */
+  --c-chat-input-bg: #f4eee4;
+  --c-node-shadow: rgb(60 40 20 / 0.15);
+  --c-node-border-default: var(--c-slate-700);
+  --c-minimap-mask: color-mix(in srgb, var(--c-slate-900) 50%, transparent);
 }
 
 html, body, #root {
@@ -22,16 +237,45 @@ html, body, #root {
 
 /* React Flow dark theme overrides */
 .react-flow {
-  --xy-background-color: transparent;
+  --xy-background-color: var(--c-canvas-bg);
   --xy-node-background-color: transparent;
   --xy-node-border: none;
   --xy-node-border-radius: 0;
-  --xy-minimap-background-color: #0f172a;
-  --xy-controls-button-background-color: #1e293b;
-  --xy-controls-button-color: #94a3b8;
-  --xy-controls-button-border-color: #334155;
+  --xy-minimap-background-color: var(--c-slate-900);
+  --xy-controls-button-background-color: var(--c-slate-800);
+  --xy-controls-button-color: var(--c-slate-400);
+  --xy-controls-button-border-color: var(--c-slate-700);
 }
 
 .react-flow__attribution {
   display: none;
+}
+
+@keyframes streamCharFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.stream-char-fade {
+  display: inline;
+  opacity: 0;
+  animation-name: streamCharFade;
+  animation-duration: var(--stream-fade-ms, 320ms);
+  animation-timing-function: ease-out;
+  animation-fill-mode: forwards;
+}
+
+@keyframes streamBlockIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.stream-block-in {
+  animation: streamBlockIn 200ms ease-out both;
 }

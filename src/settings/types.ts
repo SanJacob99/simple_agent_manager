@@ -7,6 +7,8 @@ export type SettingsSectionId =
   | 'api-keys'
   | 'model-catalog'
   | 'defaults'
+  | 'appearance'
+  | 'colors'
   | 'data-maintenance';
 
 // --- Per-node-type defaults ---
@@ -57,6 +59,17 @@ export interface CronDefaults {
   timezone: string;
   maxRunDurationMs: number;
   retentionDays: number;
+}
+
+export interface ChatUIDefaults {
+  /** Characters per second revealed while an assistant message is streaming. */
+  textRevealCharsPerSec: number;
+  /** Duration in ms of the per-character opacity fade. */
+  textRevealFadeMs: number;
+  /** Whether to animate the character reveal at all. */
+  textRevealEnabled: boolean;
+  /** Rendering strategy while streaming: per-block structural reveal, or flat char reveal. */
+  textRevealStructure: 'blocks' | 'flat';
 }
 
 export type DefaultsSubTab =
@@ -129,6 +142,13 @@ export const DEFAULT_CRON_DEFAULTS: CronDefaults = {
   retentionDays: 7,
 };
 
+export const DEFAULT_CHAT_UI_DEFAULTS: ChatUIDefaults = {
+  textRevealCharsPerSec: 90,
+  textRevealFadeMs: 320,
+  textRevealEnabled: true,
+  textRevealStructure: 'blocks',
+};
+
 export const SETTINGS_SECTIONS: Array<{
   id: SettingsSectionId;
   label: string;
@@ -148,6 +168,16 @@ export const SETTINGS_SECTIONS: Array<{
     id: 'defaults',
     label: 'Defaults',
     description: 'Choose the defaults applied to newly created nodes.',
+  },
+  {
+    id: 'appearance',
+    label: 'Appearance',
+    description: 'Chat UI preferences like text reveal animation speed.',
+  },
+  {
+    id: 'colors',
+    label: 'Colors',
+    description: 'Override any routed CSS color variable used across the app.',
   },
   {
     id: 'data-maintenance',

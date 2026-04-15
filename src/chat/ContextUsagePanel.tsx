@@ -3,6 +3,7 @@ import { PieChart, Pie, Cell } from 'recharts';
 import { ChevronDown, ChevronUp, AlertCircle, Cpu, Wrench, BookOpen, Layers, Plug } from 'lucide-react';
 import type { Message } from '../store/session-store';
 import type { ContextWindowInfo, PeripheralReservation, ContextSource } from './useContextWindow';
+import { cssVar } from '../utils/css-var';
 
 interface ContextUsagePanelProps {
   messages: Message[];
@@ -24,10 +25,6 @@ function sourceLabel(source: ContextSource): string {
   }
 }
 
-const USED_COLOR = '#3b82f6';       // blue-500
-const RESERVED_COLOR = '#f59e0b';   // amber-500
-const AVAILABLE_COLOR = '#1e293b';  // slate-800
-const EMPTY_BG_COLOR = '#0f172a';   // slate-900 for truly empty
 const MINI_DONUT_SIZE = 36;
 
 const peripheralIcon = (type: string) => {
@@ -71,22 +68,25 @@ export default function ContextUsagePanel({
   const available = Math.max(0, contextWindow - usedTokens - reservedTokens);
   const usedPercent = Math.round((usedTokens / contextWindow) * 100);
 
-  // Donut chart data
+  // Donut chart data — colors resolved from CSS vars at render
   const chartData = useMemo(() => {
+    const usedColor = cssVar('--c-blue-500');
+    const reservedColor = cssVar('--c-amber-500');
+    const availableColor = cssVar('--c-slate-800');
+    const emptyColor = cssVar('--c-slate-900');
     const data = [];
     if (usedTokens > 0) {
-      data.push({ name: 'Used', value: usedTokens, color: USED_COLOR });
+      data.push({ name: 'Used', value: usedTokens, color: usedColor });
     }
     if (reservedTokens > 0) {
-      data.push({ name: 'Reserved', value: reservedTokens, color: RESERVED_COLOR });
+      data.push({ name: 'Reserved', value: reservedTokens, color: reservedColor });
     }
     const avail = Math.max(0, contextWindow - usedTokens - reservedTokens);
     if (avail > 0) {
-      data.push({ name: 'Available', value: avail, color: AVAILABLE_COLOR });
+      data.push({ name: 'Available', value: avail, color: availableColor });
     }
-    // If nothing, show a full empty ring
     if (data.length === 0) {
-      data.push({ name: 'Empty', value: 1, color: EMPTY_BG_COLOR });
+      data.push({ name: 'Empty', value: 1, color: emptyColor });
     }
     return data;
   }, [usedTokens, reservedTokens, contextWindow]);
@@ -118,7 +118,7 @@ export default function ContextUsagePanel({
           {/* Center percentage */}
           <span
             className="absolute inset-0 flex items-center justify-center text-[7px] font-bold tabular-nums"
-            style={{ color: usedPercent > 80 ? '#f87171' : usedPercent > 50 ? '#fbbf24' : '#94a3b8' }}
+            style={{ color: usedPercent > 80 ? 'var(--c-red-400)' : usedPercent > 50 ? 'var(--c-amber-400)' : 'var(--c-slate-400)' }}
           >
             {usedPercent}%
           </span>

@@ -6,12 +6,14 @@ import {
   DEFAULT_CONTEXT_ENGINE_DEFAULTS,
   DEFAULT_MEMORY_DEFAULTS,
   DEFAULT_CRON_DEFAULTS,
+  DEFAULT_CHAT_UI_DEFAULTS,
   type AgentDefaults,
   type ProviderDefaults,
   type StorageDefaults,
   type ContextEngineDefaults,
   type MemoryDefaults,
   type CronDefaults,
+  type ChatUIDefaults,
 } from './types';
 
 interface PersistedSettings {
@@ -22,6 +24,7 @@ interface PersistedSettings {
   contextEngineDefaults: ContextEngineDefaults;
   memoryDefaults: MemoryDefaults;
   cronDefaults: CronDefaults;
+  chatUIDefaults: ChatUIDefaults;
 }
 
 interface SettingsStore extends PersistedSettings {
@@ -35,6 +38,7 @@ interface SettingsStore extends PersistedSettings {
   setContextEngineDefaults: (updates: Partial<ContextEngineDefaults>) => void;
   setMemoryDefaults: (updates: Partial<MemoryDefaults>) => void;
   setCronDefaults: (updates: Partial<CronDefaults>) => void;
+  setChatUIDefaults: (updates: Partial<ChatUIDefaults>) => void;
   resetSettings: () => void;
   loadFromServer: () => Promise<void>;
 }
@@ -46,6 +50,7 @@ const INITIAL_DEFAULTS: Omit<PersistedSettings, 'apiKeys'> = {
   contextEngineDefaults: DEFAULT_CONTEXT_ENGINE_DEFAULTS,
   memoryDefaults: DEFAULT_MEMORY_DEFAULTS,
   cronDefaults: DEFAULT_CRON_DEFAULTS,
+  chatUIDefaults: DEFAULT_CHAT_UI_DEFAULTS,
 };
 
 async function fetchSettings(): Promise<PersistedSettings> {
@@ -60,6 +65,7 @@ async function fetchSettings(): Promise<PersistedSettings> {
     contextEngineDefaults: { ...DEFAULT_CONTEXT_ENGINE_DEFAULTS, ...(data.contextEngineDefaults ?? {}) },
     memoryDefaults: { ...DEFAULT_MEMORY_DEFAULTS, ...(data.memoryDefaults ?? {}) },
     cronDefaults: { ...DEFAULT_CRON_DEFAULTS, ...(data.cronDefaults ?? {}) },
+    chatUIDefaults: { ...DEFAULT_CHAT_UI_DEFAULTS, ...(data.chatUIDefaults ?? {}) },
   };
 }
 
@@ -84,6 +90,7 @@ function getSnapshot(state: SettingsStore): PersistedSettings {
     contextEngineDefaults: state.contextEngineDefaults,
     memoryDefaults: state.memoryDefaults,
     cronDefaults: state.cronDefaults,
+    chatUIDefaults: state.chatUIDefaults,
   };
 }
 
@@ -152,6 +159,12 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     const next = { ...get().cronDefaults, ...updates };
     set({ cronDefaults: next });
     saveSettings({ ...getSnapshot(get()), cronDefaults: next });
+  },
+
+  setChatUIDefaults: (updates) => {
+    const next = { ...get().chatUIDefaults, ...updates };
+    set({ chatUIDefaults: next });
+    saveSettings({ ...getSnapshot(get()), chatUIDefaults: next });
   },
 
   resetSettings: () => {
