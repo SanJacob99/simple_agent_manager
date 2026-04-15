@@ -8,6 +8,7 @@ export type SettingsSectionId =
   | 'model-catalog'
   | 'defaults'
   | 'appearance'
+  | 'colors'
   | 'data-maintenance';
 
 // --- Per-node-type defaults ---
@@ -172,6 +173,11 @@ export const SETTINGS_SECTIONS: Array<{
     id: 'appearance',
     label: 'Appearance',
     description: 'Chat UI preferences like text reveal animation speed.',
+  },
+  {
+    id: 'colors',
+    label: 'Colors',
+    description: 'Override any routed CSS color variable used across the app.',
   },
   {
     id: 'data-maintenance',

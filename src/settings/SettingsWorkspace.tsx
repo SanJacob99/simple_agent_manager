@@ -4,6 +4,7 @@ import ProvidersApiKeysSection from './sections/ProvidersApiKeysSection';
 import ModelCatalogSection from './sections/ModelCatalogSection';
 import DefaultsSection from './sections/DefaultsSection';
 import AppearanceSection from './sections/AppearanceSection';
+import ColorsSection from './sections/ColorsSection';
 import DataMaintenanceSection from './sections/DataMaintenanceSection';
 
 interface SettingsWorkspaceProps {
@@ -47,6 +48,8 @@ export default function SettingsWorkspace({
           <DefaultsSection />
         ) : activeSection === 'appearance' ? (
           <AppearanceSection />
+        ) : activeSection === 'colors' ? (
+          <ColorsSection />
         ) : activeSection === 'data-maintenance' ? (
           <DataMaintenanceSection />
         ) : (

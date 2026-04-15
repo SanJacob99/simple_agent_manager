@@ -4,6 +4,9 @@ import { ReactFlowProvider } from '@xyflow/react';
 import App from './App';
 import './app.css';
 import 'katex/dist/katex.min.css';
+import { applyColorOverrides, loadColorOverrides } from './settings/color-config';
+
+applyColorOverrides(loadColorOverrides());
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
