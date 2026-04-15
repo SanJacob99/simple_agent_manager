@@ -154,7 +154,7 @@
   --c-indigo-400: oklch(67.3% 0.182 276.935);
 
   /* Canvas */
-  --c-canvas-bg: #ffffff;
+  --c-canvas-bg: #0b1222;
 
   /* Node accent colors */
   --c-node-agent: #3b82f6;
@@ -196,6 +196,8 @@
   --c-slate-900: oklch(96.8% 0.007 247.896);
   --c-slate-925: #edf2f7;
   --c-slate-950: oklch(98.4% 0.003 247.858);
+
+  --c-canvas-bg: #ffffff;
 }
 
 html, body, #root {

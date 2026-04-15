@@ -119,11 +119,10 @@ export default function Sidebar({
               <button
                 key={section.id}
                 onClick={() => onSettingsSectionChange(section.id)}
-                className={`w-full rounded-lg border px-3 py-2 text-left text-xs transition ${
-                  activeSettingsSection === section.id
+                className={`w-full rounded-lg border px-3 py-2 text-left text-xs transition ${activeSettingsSection === section.id
                     ? 'border-blue-500/60 bg-blue-500/10 text-blue-200'
                     : 'border-slate-800 bg-slate-900 text-slate-300 hover:border-slate-600 hover:bg-slate-800'
-                }`}
+                  }`}
               >
                 <div className="font-medium">{section.label}</div>
                 <div className="mt-0.5 text-[10px] text-slate-500">
