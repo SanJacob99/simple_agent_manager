@@ -178,26 +178,53 @@
 }
 
 :root.theme-light {
-  /* === Light mode ===
-     The slate scale is flipped so dark-by-default classes (bg-slate-900,
-     text-slate-300) render sensibly on a light background. Accent palettes
-     fall through to the :root defaults; override any of them below to tune
-     for light-mode contrast. */
+  /* === Light mode — warm & organic ===
+     The neutral scale is flipped *and* rehued toward warm stone/cream
+     (hue ~70–85°, low chroma) so dark-by-default classes (bg-slate-900,
+     text-slate-300) render as warm neutrals on a cream background. Accent
+     palettes are nudged toward earthier tones below. */
 
-  --c-slate-50: oklch(12.9% 0.042 264.695);
-  --c-slate-100: oklch(20.8% 0.042 265.755);
-  --c-slate-200: oklch(27.9% 0.041 260.031);
-  --c-slate-300: oklch(37.2% 0.044 257.287);
-  --c-slate-400: oklch(44.6% 0.043 257.281);
-  --c-slate-500: oklch(55.4% 0.046 257.417);
-  --c-slate-600: oklch(70.4% 0.04 256.788);
-  --c-slate-700: oklch(86.9% 0.022 252.894);
-  --c-slate-800: oklch(92.9% 0.013 255.508);
-  --c-slate-900: oklch(96.8% 0.007 247.896);
-  --c-slate-925: #edf2f7;
-  --c-slate-950: oklch(98.4% 0.003 247.858);
+  /* Warm neutral scale (replaces cool slate) */
+  --c-slate-50:  oklch(18% 0.012 75);
+  --c-slate-100: oklch(25% 0.014 75);
+  --c-slate-200: oklch(32% 0.015 75);
+  --c-slate-300: oklch(40% 0.016 75);
+  --c-slate-400: oklch(48% 0.017 75);
+  --c-slate-500: oklch(58% 0.018 78);
+  --c-slate-600: oklch(72% 0.02 80);
+  --c-slate-700: oklch(86% 0.022 82);
+  --c-slate-800: oklch(92% 0.018 84);
+  --c-slate-900: oklch(96% 0.014 85);
+  --c-slate-925: #f4eee4;
+  --c-slate-950: oklch(98.5% 0.01 85);
 
-  --c-canvas-bg: #ffffff;
+  /* Warmer brand (terracotta-leaning blue -> teal/clay) */
+  --c-blue-200: oklch(88% 0.05 220);
+  --c-blue-300: oklch(80% 0.09 215);
+  --c-blue-400: oklch(68% 0.13 210);
+  --c-blue-500: oklch(58% 0.16 210);
+  --c-blue-600: oklch(50% 0.17 215);
+
+  /* Earthier warning (deeper amber) */
+  --c-amber-400: oklch(78% 0.17 68);
+  --c-amber-500: oklch(72% 0.17 58);
+  --c-amber-600: oklch(63% 0.17 50);
+  --c-orange-500: oklch(68% 0.2 45);
+
+  /* Mossy success */
+  --c-green-400: oklch(74% 0.16 145);
+  --c-emerald-400: oklch(72% 0.15 155);
+  --c-emerald-500: oklch(64% 0.14 155);
+  --c-emerald-600: oklch(55% 0.12 155);
+
+  /* Warm cream canvas */
+  --c-canvas-bg: #faf6ef;
+
+  /* Surfaces that bypass the palette */
+  --c-chat-input-bg: #f4eee4;
+  --c-node-shadow: rgb(60 40 20 / 0.15);
+  --c-node-border-default: var(--c-slate-700);
+  --c-minimap-mask: color-mix(in srgb, var(--c-slate-900) 50%, transparent);
 }
 
 html, body, #root {
