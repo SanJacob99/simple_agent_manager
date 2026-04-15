@@ -11,12 +11,9 @@ function MemoryNodeComponent({ data, selected }: NodeProps<MemoryNode>) {
     <BasePeripheralNode
       nodeType="memory"
       label={data.label}
-      icon={<BrainCircuit size={14} />}
+      icon={<BrainCircuit size={22} />}
       selected={selected}
-    >
-      <div>{data.backend} / {data.maxSessionMessages} msgs</div>
-      <div>{data.persistAcrossSessions ? 'Persistent' : 'Session only'}</div>
-    </BasePeripheralNode>
+    />
   );
 }
 

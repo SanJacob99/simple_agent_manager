@@ -15,12 +15,9 @@ function ContextEngineNodeComponent({ id, data, selected }: NodeProps<ContextEng
     <BasePeripheralNode
       nodeType="contextEngine"
       label={data.label}
-      icon={<BookOpen size={14} />}
+      icon={<BookOpen size={22} />}
       selected={selected}
-    >
-      <div>Strategy: {data.compactionStrategy}</div>
-      <div>Budget: {data.tokenBudget.toLocaleString()} tokens</div>
-    </BasePeripheralNode>
+    />
   );
 }
 

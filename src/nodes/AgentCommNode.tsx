@@ -11,12 +11,9 @@ function AgentCommNodeComponent({ data, selected }: NodeProps<AgentCommNode>) {
     <BasePeripheralNode
       nodeType="agentComm"
       label={data.label}
-      icon={<MessageSquare size={14} />}
+      icon={<MessageSquare size={22} />}
       selected={selected}
-    >
-      <div>Protocol: {data.protocol}</div>
-      <div>{data.targetAgentNodeId ? 'Linked' : 'No target'}</div>
-    </BasePeripheralNode>
+    />
   );
 }
 

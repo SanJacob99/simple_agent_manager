@@ -11,12 +11,9 @@ function VectorDatabaseNodeComponent({ data, selected }: NodeProps<VectorDatabas
     <BasePeripheralNode
       nodeType="vectorDatabase"
       label={data.label}
-      icon={<Container size={14} />}
+      icon={<Container size={22} />}
       selected={selected}
-    >
-      <div>Provider: {data.provider}</div>
-      <div>Collection: {data.collectionName}</div>
-    </BasePeripheralNode>
+    />
   );
 }
 

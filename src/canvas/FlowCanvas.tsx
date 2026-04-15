@@ -13,6 +13,7 @@ import LottieAnimation from '../components/LottieAnimation';
 import HelloSquid from '../animations/HelloSquid.json';
 import { cssVar } from '../utils/css-var';
 import HoneycombBackground from './HoneycombBackground';
+import { HEX_SIDE } from '../nodes/HexNode';
 
 export default function FlowCanvas() {
   const nodes = useGraphStore((s) => s.nodes);
@@ -52,7 +53,7 @@ export default function FlowCanvas() {
       defaultEdgeOptions={{ type: 'data', animated: true }}
       className="bg-canvas-bg"
     >
-      <HoneycombBackground side={14} color={cssVar('--c-canvas-pattern')} />
+      <HoneycombBackground side={HEX_SIDE} color={cssVar('--c-canvas-pattern')} />
       <Controls className="!border-slate-700 !bg-slate-800" />
       <MiniMap
         className="!border-slate-700 !bg-slate-900"

@@ -11,12 +11,9 @@ function SkillsNodeComponent({ data, selected }: NodeProps<SkillsNode>) {
     <BasePeripheralNode
       nodeType="skills"
       label={data.label}
-      icon={<Sparkles size={14} />}
+      icon={<Sparkles size={22} />}
       selected={selected}
-    >
-      <div>{data.enabledSkills.length} skills</div>
-      <div className="truncate">{data.enabledSkills.join(', ')}</div>
-    </BasePeripheralNode>
+    />
   );
 }
 

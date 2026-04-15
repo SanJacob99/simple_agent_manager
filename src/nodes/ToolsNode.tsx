@@ -11,12 +11,9 @@ function ToolsNodeComponent({ data, selected }: NodeProps<ToolsNode>) {
     <BasePeripheralNode
       nodeType="tools"
       label={data.label}
-      icon={<Wrench size={14} />}
+      icon={<Wrench size={22} />}
       selected={selected}
-    >
-      <div>{data.enabledTools.length} tools enabled</div>
-      <div className="truncate">{data.enabledTools.join(', ')}</div>
-    </BasePeripheralNode>
+    />
   );
 }
 

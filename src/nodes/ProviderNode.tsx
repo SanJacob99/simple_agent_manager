@@ -11,23 +11,9 @@ function ProviderNodeComponent({ data, selected }: NodeProps<ProviderNode>) {
     <BasePeripheralNode
       nodeType="provider"
       label={data.label}
-      icon={<Cpu size={14} />}
+      icon={<Cpu size={22} />}
       selected={selected}
-    >
-      <div className="flex items-center gap-1.5">
-        <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-medium text-slate-300">
-          {data.pluginId || 'none'}
-        </span>
-        {data.baseUrl && (
-          <span
-            className="truncate text-[10px] text-slate-500"
-            title={data.baseUrl}
-          >
-            {data.baseUrl}
-          </span>
-        )}
-      </div>
-    </BasePeripheralNode>
+    />
   );
 }
 

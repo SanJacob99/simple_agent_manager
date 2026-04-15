@@ -11,14 +11,9 @@ function StorageNodeComponent({ data, selected }: NodeProps<StorageNode>) {
     <BasePeripheralNode
       nodeType="storage"
       label={data.label}
-      icon={<Database size={14} />}
+      icon={<Database size={22} />}
       selected={selected}
-    >
-      <div>Backend: {data.backendType}</div>
-      <div className="truncate">
-        {data.storagePath || 'Not configured'}
-      </div>
-    </BasePeripheralNode>
+    />
   );
 }
 
