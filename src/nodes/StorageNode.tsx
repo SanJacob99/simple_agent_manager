@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { type NodeProps, type Node } from '@xyflow/react';
-import { Database } from 'lucide-react';
+import { HardDrive } from 'lucide-react';
 import BasePeripheralNode from './BasePeripheralNode';
 import type { StorageNodeData } from '../types/nodes';
 
@@ -11,7 +11,7 @@ function StorageNodeComponent({ data, selected }: NodeProps<StorageNode>) {
     <BasePeripheralNode
       nodeType="storage"
       label={data.label}
-      icon={<Database size={22} />}
+      icon={<HardDrive size={22} />}
       selected={selected}
     />
   );

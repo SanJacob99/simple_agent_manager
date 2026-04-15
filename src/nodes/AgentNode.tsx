@@ -44,7 +44,7 @@ function AgentNodeComponent({ id, data, selected }: NodeProps<AgentNode>) {
         </button>
       }
     >
-      <img src="/img/agent.png" alt="" width={26} height={26} />
+      <img src="/svg/favicon.svg" alt="" width={26} height={26} />
       <span
         className="text-[12px] font-bold text-slate-100"
         style={{

@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { type NodeProps, type Node } from '@xyflow/react';
-import { BookOpen } from 'lucide-react';
+import { ScrollText } from 'lucide-react';
 import BasePeripheralNode from './BasePeripheralNode';
 import type { ContextEngineNodeData } from '../types/nodes';
 import { useContextEngineSync } from './useContextEngineSync';
@@ -15,7 +15,7 @@ function ContextEngineNodeComponent({ id, data, selected }: NodeProps<ContextEng
     <BasePeripheralNode
       nodeType="contextEngine"
       label={data.label}
-      icon={<BookOpen size={22} />}
+      icon={<ScrollText size={22} />}
       selected={selected}
     />
   );

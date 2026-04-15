@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { type NodeProps, type Node } from '@xyflow/react';
-import { Sparkles } from 'lucide-react';
+import { GraduationCap } from 'lucide-react';
 import BasePeripheralNode from './BasePeripheralNode';
 import type { SkillsNodeData } from '../types/nodes';
 
@@ -11,7 +11,7 @@ function SkillsNodeComponent({ data, selected }: NodeProps<SkillsNode>) {
     <BasePeripheralNode
       nodeType="skills"
       label={data.label}
-      icon={<Sparkles size={22} />}
+      icon={<GraduationCap size={22} />}
       selected={selected}
     />
   );

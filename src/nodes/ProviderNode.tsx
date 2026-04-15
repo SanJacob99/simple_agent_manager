@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { type NodeProps, type Node } from '@xyflow/react';
-import { Cpu } from 'lucide-react';
+import { Cloud } from 'lucide-react';
 import BasePeripheralNode from './BasePeripheralNode';
 import type { ProviderNodeData } from '../types/nodes';
 
@@ -11,7 +11,7 @@ function ProviderNodeComponent({ data, selected }: NodeProps<ProviderNode>) {
     <BasePeripheralNode
       nodeType="provider"
       label={data.label}
-      icon={<Cpu size={22} />}
+      icon={<Cloud size={22} />}
       selected={selected}
     />
   );

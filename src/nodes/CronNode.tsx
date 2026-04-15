@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { type NodeProps, type Node } from '@xyflow/react';
-import { Clock } from 'lucide-react';
+import { CalendarClock } from 'lucide-react';
 import BasePeripheralNode from './BasePeripheralNode';
 import type { CronNodeData } from '../types/nodes';
 
@@ -11,7 +11,7 @@ function CronNodeComponent({ data, selected }: NodeProps<CronNode>) {
     <BasePeripheralNode
       nodeType="cron"
       label={data.label}
-      icon={<Clock size={22} />}
+      icon={<CalendarClock size={22} />}
       selected={selected}
     />
   );

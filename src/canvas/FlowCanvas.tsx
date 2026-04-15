@@ -12,7 +12,7 @@ import { nodeTypes } from '../nodes/node-registry';
 import { edgeTypes } from '../edges/DataEdge';
 import { useDragAndDrop } from './useDragAndDrop';
 import LottieAnimation from '../components/LottieAnimation';
-import HelloSquid from '../animations/HelloSquid.json';
+import TheSquid from '../animations/TheSquid.json';
 import { cssVar } from '../utils/css-var';
 import HoneycombBackground from './HoneycombBackground';
 import SnapHighlight from './SnapHighlight';
@@ -165,7 +165,9 @@ export default function FlowCanvas() {
       />
       {nodes.length === 0 && (
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3">
-          <LottieAnimation animationData={HelloSquid} size={220} />
+          <div style={{ transform: 'rotate(45deg)' }}>
+            <LottieAnimation animationData={TheSquid} size={220} />
+          </div>
           <p className="text-sm text-slate-500">Drag an agent onto the canvas to get started</p>
         </div>
       )}
