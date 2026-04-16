@@ -77,6 +77,8 @@ export interface ToolFactoryContext {
   xaiModel?: string;
   /** Tavily API key for web_search. When absent, falls back to DuckDuckGo. */
   tavilyApiKey?: string;
+  /** Model ID — used to apply provider-specific schema cleaning (e.g. Gemini) */
+  modelId?: string;
 }
 
 /**
@@ -165,5 +167,5 @@ export function createAgentTools(
     );
   }
 
-  return adaptAgentTools(combined);
+  return adaptAgentTools(combined, factoryContext?.modelId);
 }

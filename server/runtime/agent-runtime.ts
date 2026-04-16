@@ -116,6 +116,7 @@ export class AgentRuntime {
         xaiApiKey,
         xaiModel: config.xaiModel,
         tavilyApiKey,
+        modelId: config.modelId,
       },
     );
 

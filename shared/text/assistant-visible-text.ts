@@ -82,15 +82,23 @@ function findEndOfInstructionBlock(text: string): number {
     const line = lines[i].trim();
     if (
       line.startsWith('CRITICAL INSTRUCTION') ||
+      line.startsWith('ALWAYS START') ||
+      line.startsWith('Available tools:') ||
+      line.startsWith('Tool to use:') ||
+      line.startsWith('We need to ') ||
+      line.startsWith('We will use ') ||
       line.startsWith('Wait,') ||
       line.startsWith('Ah,') ||
       line.startsWith('Let me ') ||
       line.startsWith('I will ') ||
       line.startsWith("I'll ") ||
       line.startsWith('I should ') ||
+      line.startsWith('I am now ') ||
+      line.startsWith('I\'m now ') ||
       line.startsWith('The ') && line.includes(' tool') && line.includes('not') ||
       line.startsWith('Since ') && line.includes('tool') ||
-      /^(?:Wait|Hmm|Ok|Looking|Actually),?\s/i.test(line)
+      /^(?:Wait|Hmm|Ok|Looking|Actually),?\s/i.test(line) ||
+      /^In particular,/.test(line)
     ) {
       lastThinkingLine = i;
     }
@@ -110,6 +118,49 @@ function findEndOfInstructionBlock(text: string): number {
   }
 
   return offset;
+}
+
+// ---------------------------------------------------------------------------
+// Stage 4: Undelimited thought blocks (Gemini customtools)
+// ---------------------------------------------------------------------------
+
+/**
+ * Some Gemini models emit chain-of-thought as a plain text block with no
+ * delimiter tokens or XML tags. The fingerprint is a training-time instruction
+ * recap like "ALWAYS START your thought with recalling critical instructions".
+ *
+ * Also catches internal monologue concatenated with the visible answer, e.g.:
+ * "The file has been written. I can now inform the user.Here is your answer."
+ */
+const INSTRUCTION_RECAP_RE =
+  /^ALWAYS\s+START\s+your\s+thought/i;
+
+const INTERNAL_MONOLOGUE_BRIDGE_RE =
+  /I (?:can now|will now|should now|need to) (?:inform|tell|respond|reply|let|update) the user[.:]\s*/i;
+
+export function stripUndelimitedThought(text: string): string {
+  if (!text) return text;
+
+  // Case 1: entire text block starts with the instruction recap
+  if (INSTRUCTION_RECAP_RE.test(text)) {
+    const end = findEndOfInstructionBlock(text);
+    if (end > 0 && end < text.length) {
+      return text.slice(end).trim();
+    }
+    // Entire block is thought — return empty (the content block will be dropped)
+    return '';
+  }
+
+  // Case 2: internal monologue bridge — "I can now inform the user.Actual answer"
+  const bridgeMatch = INTERNAL_MONOLOGUE_BRIDGE_RE.exec(text);
+  if (bridgeMatch) {
+    const afterBridge = text.slice(bridgeMatch.index + bridgeMatch[0].length);
+    if (afterBridge.trim()) {
+      return afterBridge.trim();
+    }
+  }
+
+  return text;
 }
 
 // ---------------------------------------------------------------------------
@@ -133,6 +184,9 @@ export function sanitizeAssistantVisibleText(text: string): string {
 
   // Stage 3: Strip Gemini preview thought-channel preamble (SAM-specific)
   cleaned = stripThoughtChannelPreamble(cleaned);
+
+  // Stage 4: Strip undelimited thought blocks and internal monologue bridges
+  cleaned = stripUndelimitedThought(cleaned);
 
   return cleaned.trim();
 }

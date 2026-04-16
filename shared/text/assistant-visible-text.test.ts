@@ -3,6 +3,7 @@ import {
   sanitizeAssistantVisibleText,
   sanitizeAssistantContentBlocks,
   stripThoughtChannelPreamble,
+  stripUndelimitedThought,
 } from './assistant-visible-text';
 
 describe('stripThoughtChannelPreamble', () => {
@@ -58,6 +59,35 @@ describe('sanitizeAssistantVisibleText', () => {
 
   it('handles empty string', () => {
     expect(sanitizeAssistantVisibleText('')).toBe('');
+  });
+});
+
+describe('stripUndelimitedThought', () => {
+  it('strips instruction-recap thought block', () => {
+    const input =
+      'ALWAYS START your thought with recalling critical instructions 1 and 2.\n' +
+      'We need to save the results.\n' +
+      'Tool to use: write_file.\n' +
+      'Here is the answer.';
+    expect(stripUndelimitedThought(input)).toBe('Here is the answer.');
+  });
+
+  it('returns empty when entire block is thought', () => {
+    const input =
+      'ALWAYS START your thought with recalling critical instructions.\n' +
+      'Available tools: exec, write_file.\n' +
+      'Tool to use: exec.';
+    expect(stripUndelimitedThought(input)).toBe('');
+  });
+
+  it('strips internal monologue bridge', () => {
+    const input =
+      'The file has been successfully written. I can now inform the user.Here is your answer.';
+    expect(stripUndelimitedThought(input)).toBe('Here is your answer.');
+  });
+
+  it('passes clean text through', () => {
+    expect(stripUndelimitedThought('Normal response text.')).toBe('Normal response text.');
   });
 });
 

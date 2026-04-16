@@ -3,6 +3,7 @@ import type { TSchema } from '@sinclair/typebox';
 import { logError } from '../logger';
 import { formatToolParamPreview } from './tool-redact';
 import { normalizeToolName } from './tool-name-policy';
+import { cleanSchemaForGemini } from './schema/clean-for-gemini';
 
 export interface ToolErrorDetails {
   status: 'error';
@@ -130,8 +131,25 @@ export function adaptAgentTool(tool: AgentTool<TSchema>): AgentTool<TSchema> {
   return { ...tool, execute };
 }
 
-export function adaptAgentTools(tools: AgentTool<TSchema>[]): AgentTool<TSchema>[] {
-  return tools.map(adaptAgentTool);
+function isGeminiModel(modelId?: string): boolean {
+  if (!modelId) return false;
+  const lower = modelId.toLowerCase();
+  return lower.includes('gemini') || lower.includes('gemma') || lower.startsWith('google/');
+}
+
+export function adaptAgentTools(
+  tools: AgentTool<TSchema>[],
+  modelId?: string,
+): AgentTool<TSchema>[] {
+  const adapted = tools.map(adaptAgentTool);
+  // Clean tool schemas for Gemini's restricted JSON Schema subset
+  if (isGeminiModel(modelId)) {
+    return adapted.map((tool) => ({
+      ...tool,
+      parameters: cleanSchemaForGemini(tool.parameters) as TSchema,
+    }));
+  }
+  return adapted;
 }
 
 export function isToolErrorDetails(value: unknown): value is ToolErrorDetails {
