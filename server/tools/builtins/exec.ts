@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import os from 'os';
 import path from 'path';
 import { Type, type TSchema } from '@sinclair/typebox';
 import type { AgentTool, AgentToolResult } from '@mariozechner/pi-agent-core';
@@ -94,13 +95,32 @@ export interface ExecToolContext {
   sandboxWorkdir?: boolean;
 }
 
+function buildExecDescription(cwd: string): string {
+  const platform = os.platform();
+  const arch = os.arch();
+  const release = os.release();
+  const shell = process.env.SHELL || '/bin/bash';
+  const isWSL = release.toLowerCase().includes('microsoft') || release.toLowerCase().includes('wsl');
+
+  const lines = [
+    `Execute a shell command via ${path.basename(shell)} on ${platform}${isWSL ? ' (WSL)' : ''} ${arch}.`,
+    `OS: ${platform} ${release}.`,
+    `Working directory: ${cwd}.`,
+    'Returns stdout + stderr (interleaved) and exit code.',
+    'Use for file operations, git, package managers, build tools, and general system tasks.',
+  ];
+
+  if (platform === 'win32') {
+    lines.push('Run executables directly — do NOT wrap in cmd /c or powershell -Command.');
+  }
+
+  return lines.join(' ');
+}
+
 export function createExecTool(ctx: ExecToolContext): AgentTool<TSchema> {
   return {
     name: 'exec',
-    description:
-      'Execute a shell command. Runs in bash on the workspace directory. ' +
-      'Returns stdout, stderr (interleaved), and exit code. ' +
-      'Use for file operations, git, package managers, build tools, and general system tasks.',
+    description: buildExecDescription(ctx.cwd),
     label: 'Shell',
     parameters: Type.Object({
       command: Type.String({ description: 'Shell command to execute' }),
