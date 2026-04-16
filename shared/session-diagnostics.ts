@@ -19,6 +19,8 @@ export interface EmptyReplyDiagnosticData {
   sessionId: string;
   provider: string;
   modelId: string;
+  /** The error message returned by the provider API, if any. */
+  apiError?: string;
   createdAt: number;
 }
 
@@ -59,6 +61,15 @@ export function isRunDiagnosticData(value: unknown): value is RunDiagnosticData 
 
 export function formatRunDiagnostic(data: RunDiagnosticData): string {
   if (data.kind === 'empty_reply') {
+    if (data.apiError) {
+      return [
+        '**No reply received from the model.**',
+        '',
+        `The provider (\`${data.provider}\`) returned an error for \`${data.modelId}\`:`,
+        '',
+        `> ${data.apiError}`,
+      ].join('\n');
+    }
     return [
       '**No reply received from the model.**',
       '',

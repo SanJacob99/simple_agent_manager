@@ -73,6 +73,9 @@ export class AgentRuntime {
   private getApiKeyFn: (provider: string) => Promise<string | undefined> | string | undefined;
   private getDiscoveredModelFn: (provider: string, modelId: string) => DiscoveredModelMetadata | undefined;
 
+  /** Last API-level error message from a non-2xx response. Cleared on each `prompt()` call. */
+  lastApiError: string | null = null;
+
   constructor(
     config: AgentConfig,
     getApiKey: (provider: string) => Promise<string | undefined> | string | undefined,
@@ -306,22 +309,38 @@ export class AgentRuntime {
   }
 
   async prompt(text: string, attachments?: ImageAttachment[]): Promise<void> {
+    this.lastApiError = null;
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async (...args) => {
       log('pi-ai Fetch', `[START] URL: ${args[0]}`);
       try {
         const response = await originalFetch(...args);
         log('pi-ai Fetch', `[STATUS] ${response.status} ${response.statusText}`);
-        const clone = response.clone();
-        // Never await the cloned body here: doing so buffers the full stream
-        // before returning the Response and breaks live token streaming.
-        void clone.text()
-          .then((bodyText) => {
+        if (!response.ok) {
+          // Non-2xx: small error body, safe to await without blocking a stream.
+          const clone = response.clone();
+          try {
+            const bodyText = await clone.text();
             log('pi-ai Fetch', `[BODY] ${bodyText.substring(0, 1000)}`);
-          })
-          .catch((err) => {
-            log('pi-ai Fetch', `[BODY_ERROR] ${err instanceof Error ? err.message : String(err)}`);
-          });
+            const parsed = JSON.parse(bodyText);
+            if (typeof parsed?.error?.message === 'string') {
+              this.lastApiError = parsed.error.message;
+            }
+          } catch {
+            // ignore parse failures
+          }
+        } else {
+          const clone = response.clone();
+          // Never await the cloned body here: doing so buffers the full stream
+          // before returning the Response and breaks live token streaming.
+          void clone.text()
+            .then((bodyText) => {
+              log('pi-ai Fetch', `[BODY] ${bodyText.substring(0, 1000)}`);
+            })
+            .catch((err) => {
+              log('pi-ai Fetch', `[BODY_ERROR] ${err instanceof Error ? err.message : String(err)}`);
+            });
+        }
         return response;
       } catch (err) {
         log('pi-ai Fetch', `[ERROR] ${err instanceof Error ? err.message : String(err)}`);

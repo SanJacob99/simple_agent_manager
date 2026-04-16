@@ -130,12 +130,12 @@ function MessageBubble({
               : msg.role === 'tool'
                 ? 'border border-slate-700 bg-slate-800/50 text-slate-400 italic'
                 : isDiagnostic
-                  ? 'border border-amber-500/30 bg-amber-500/10 text-amber-50'
-                  : 'bg-slate-800 text-slate-200'
+                  ? 'border border-amber-500/30 bg-amber-500/10 text-slate-100'
+                  : 'bg-slate-800 text-slate-100'
           }`}
         >
           {msg.role === 'assistant' ? (
-            <div className={`prose-sm max-w-none break-words ${isDiagnostic ? 'text-amber-50' : 'text-slate-200'}`}>
+            <div className={`prose-sm max-w-none break-words text-slate-100`}>
               {/* Skip ReactMarkdown while streaming — parse once when done */}
               {useStreamingRenderer ? (
                 textRevealStructure === 'blocks' ? (

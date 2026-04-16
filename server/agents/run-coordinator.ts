@@ -11,6 +11,10 @@ import { log } from '../logger';
 import { SessionRouter, type RouteRequest, type RouteResult } from '../runtime/session-router';
 import { SessionTranscriptStore } from '../runtime/session-transcript-store';
 import {
+  sanitizeAssistantVisibleText,
+  sanitizeAssistantContentBlocks,
+} from '../../shared/text/assistant-visible-text';
+import {
   HOOK_NAMES,
   type BeforeModelResolveContext,
   type BeforePromptBuildContext,
@@ -716,6 +720,7 @@ export class RunCoordinator {
           sessionId: record.sessionId,
           provider: this.config.provider.pluginId,
           modelId: this.config.modelId,
+          apiError: this.runtime.lastApiError ?? undefined,
           createdAt: Date.now(),
         };
       }
@@ -783,9 +788,10 @@ export class RunCoordinator {
       }
 
       if (assistantEvent.type === 'text_end') {
-        const content = typeof assistantEvent.content === 'string'
+        const rawContent = typeof assistantEvent.content === 'string'
           ? assistantEvent.content
           : transcriptState.assistantText;
+        const content = sanitizeAssistantVisibleText(rawContent);
         transcriptState.assistantText = content;
         transcriptState.assistantSuppressed = NO_REPLY_PATTERN.test(content.trim());
       }
@@ -907,11 +913,13 @@ export class RunCoordinator {
 
   private buildAssistantMessage(rawMessage: any, fallbackText: string): AssistantMessage {
     const normalized = this.normalizeUsage(rawMessage?.usage);
+    const rawContent = Array.isArray(rawMessage?.content) && rawMessage.content.length > 0
+      ? rawMessage.content
+      : [{ type: 'text', text: fallbackText }];
+    const content = sanitizeAssistantContentBlocks(rawContent);
     return {
       role: 'assistant',
-      content: Array.isArray(rawMessage?.content) && rawMessage.content.length > 0
-        ? rawMessage.content
-        : [{ type: 'text', text: fallbackText }],
+      content,
       api: rawMessage?.api ?? (this.runtime.state.model as any)?.api ?? 'openai-completions',
       provider: rawMessage?.provider ?? this.config.provider.pluginId,
       model: rawMessage?.model ?? this.config.modelId,
