@@ -247,6 +247,7 @@ export function resolveAgentConfig(
     storage,
     vectorDatabases,
     crons,
+    workspacePath: null, // set at runtime by the server based on agent config
     exportedAt: Date.now(),
     sourceGraphId: agentNodeId,
     runTimeoutMs: 172800000,

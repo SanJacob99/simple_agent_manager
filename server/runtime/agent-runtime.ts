@@ -103,15 +103,28 @@ export class AgentRuntime {
     const toolNames = config.tools
       ? resolveToolNames(config.tools)
       : [];
-    let tools = createAgentTools(toolNames, memoryTools as AgentTool<TSchema>[]);
+    const workspaceCwd = config.workspacePath ?? process.cwd();
+    let tools = createAgentTools(
+      toolNames,
+      memoryTools as AgentTool<TSchema>[],
+      undefined,
+      { cwd: workspaceCwd, sandboxWorkdir: config.sandboxWorkdir },
+    );
 
     // Wrap tools with hook invocation if registry is provided
     if (this.hookRegistry) {
       tools = this.wrapToolsWithHooks(tools, config.id);
     }
 
-    // Build system prompt
-    const systemPrompt = config.systemPrompt.assembled;
+    // Build system prompt — patch workspace path to reflect the actual exec cwd,
+    // not the storage path that was baked in at graph-export time.
+    let systemPrompt = config.systemPrompt.assembled;
+    if (workspaceCwd) {
+      systemPrompt = systemPrompt.replace(
+        /Working directory: .+/,
+        `Working directory: ${workspaceCwd}`,
+      );
+    }
 
     const plugin = this.pluginRegistry?.get(config.provider.pluginId);
     const runtimeProviderId = plugin?.runtimeProviderId ?? config.provider.pluginId;

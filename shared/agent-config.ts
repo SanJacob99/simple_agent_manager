@@ -133,6 +133,11 @@ export interface AgentConfig {
   vectorDatabases: ResolvedVectorDatabaseConfig[];
   crons: ResolvedCronConfig[];
 
+  /** Working directory for shell commands (exec tool). Independent of storage path. */
+  workspacePath: string | null;
+  /** When true, exec workdir is constrained to stay within workspacePath. Defaults to false. */
+  sandboxWorkdir?: boolean;
+
   exportedAt: number;
   sourceGraphId: string;
   runTimeoutMs: number;
