@@ -104,11 +104,17 @@ export class AgentRuntime {
       ? resolveToolNames(config.tools)
       : [];
     const workspaceCwd = config.workspacePath ?? process.cwd();
+    const xaiApiKey = config.xaiApiKey || process.env.XAI_API_KEY;
     let tools = createAgentTools(
       toolNames,
       memoryTools as AgentTool<TSchema>[],
       undefined,
-      { cwd: workspaceCwd, sandboxWorkdir: config.sandboxWorkdir },
+      {
+        cwd: workspaceCwd,
+        sandboxWorkdir: config.sandboxWorkdir,
+        xaiApiKey,
+        xaiModel: config.xaiModel,
+      },
     );
 
     // Wrap tools with hook invocation if registry is provided

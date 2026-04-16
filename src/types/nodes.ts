@@ -92,8 +92,16 @@ export interface ExecToolSettings {
   sandboxWorkdir: boolean;
 }
 
+export interface CodeExecutionToolSettings {
+  /** xAI API key (or env var name). Empty = reads XAI_API_KEY from environment */
+  apiKey: string;
+  /** xAI model override (defaults to grok-4-1-fast) */
+  model: string;
+}
+
 export interface ToolSettings {
   exec: ExecToolSettings;
+  codeExecution: CodeExecutionToolSettings;
 }
 
 export interface ToolsNodeData {

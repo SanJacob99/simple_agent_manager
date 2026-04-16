@@ -9,9 +9,10 @@ import type {
 import { adaptAgentTools } from './tool-adapter';
 import { findToolNameConflicts } from './tool-name-policy';
 import { logError } from '../logger';
-import { createCalculatorTool } from './builtins/calculator';
-import { createWebFetchTool } from './builtins/web-fetch';
-import { createExecTool, type ExecToolContext } from './builtins/exec';
+import { createCalculatorTool } from './builtins/calculator/calculator';
+import { createWebFetchTool } from './builtins/web/web-fetch';
+import { createExecTool, type ExecToolContext } from './builtins/exec/exec';
+import { createCodeExecutionTool } from './builtins/code-execution/code-execution';
 
 // Re-export resolveToolNames from shared (used by agent-runtime.ts)
 export { resolveToolNames } from '../../shared/resolve-tool-names';
@@ -41,6 +42,7 @@ export const ALL_TOOL_NAMES = [
 // Only these are registered with the model.
 export const IMPLEMENTED_TOOL_NAMES = new Set<string>([
   'exec',
+  'code_execution',
   'calculator',
   'web_fetch',
   // Memory tools are built separately by MemoryEngine
@@ -81,6 +83,10 @@ export interface ToolFactoryContext {
   cwd?: string;
   /** When true, exec workdir is constrained to stay within cwd. Defaults to false. */
   sandboxWorkdir?: boolean;
+  /** xAI API key for code_execution tool */
+  xaiApiKey?: string;
+  /** xAI model override for code_execution (defaults to grok-4-1-fast) */
+  xaiModel?: string;
 }
 
 /**
@@ -105,6 +111,14 @@ export function createAgentTools(
       tools.push(createExecTool({
         cwd: factoryContext.cwd,
         sandboxWorkdir: factoryContext.sandboxWorkdir,
+      }));
+      continue;
+    }
+
+    if (name === 'code_execution' && factoryContext?.xaiApiKey) {
+      tools.push(createCodeExecutionTool({
+        apiKey: factoryContext.xaiApiKey,
+        model: factoryContext.xaiModel,
       }));
       continue;
     }

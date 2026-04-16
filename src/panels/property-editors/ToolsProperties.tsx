@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useGraphStore } from '../../store/graph-store';
-import type { ToolsNodeData, ToolProfile, ToolGroup, ToolSettings } from '../../types/nodes';
+import type { ToolsNodeData, ToolProfile, ToolGroup } from '../../types/nodes';
 import { Field, inputClass, selectClass, textareaClass } from './shared';
 import { ALL_TOOL_NAMES, TOOL_GROUPS } from '../../../shared/resolve-tool-names';
 
@@ -165,6 +165,57 @@ export default function ToolsProperties({ nodeId, data }: Props) {
               <p className="text-[9px] text-slate-600">
                 When enabled, the agent cannot set workdir outside of the configured cwd.
               </p>
+            </div>
+          </div>
+
+          {/* code_execution */}
+          <div className="rounded border border-slate-700 p-2">
+            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1.5">
+              code_execution
+            </p>
+            <div className="space-y-1.5">
+              <div>
+                <label className="text-[10px] text-slate-500">xAI API Key</label>
+                <input
+                  className={inputClass}
+                  type="password"
+                  value={data.toolSettings?.codeExecution?.apiKey ?? ''}
+                  onChange={(e) =>
+                    update(nodeId, {
+                      toolSettings: {
+                        ...(data.toolSettings ?? { exec: { cwd: '', sandboxWorkdir: false }, codeExecution: { apiKey: '', model: '' } }),
+                        codeExecution: {
+                          ...(data.toolSettings?.codeExecution ?? { apiKey: '', model: '' }),
+                          apiKey: e.target.value,
+                        },
+                      },
+                    })
+                  }
+                  placeholder="Empty = reads XAI_API_KEY from env"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-500">Model</label>
+                <input
+                  className={inputClass}
+                  value={data.toolSettings?.codeExecution?.model ?? ''}
+                  onChange={(e) =>
+                    update(nodeId, {
+                      toolSettings: {
+                        ...(data.toolSettings ?? { exec: { cwd: '', sandboxWorkdir: false }, codeExecution: { apiKey: '', model: '' } }),
+                        codeExecution: {
+                          ...(data.toolSettings?.codeExecution ?? { apiKey: '', model: '' }),
+                          model: e.target.value,
+                        },
+                      },
+                    })
+                  }
+                  placeholder="grok-4-1-fast (default)"
+                />
+                <p className="mt-0.5 text-[9px] text-slate-600">
+                  Runs sandboxed Python on xAI. For calculations, statistics, data analysis.
+                </p>
+              </div>
             </div>
           </div>
         </div>

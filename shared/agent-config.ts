@@ -137,6 +137,10 @@ export interface AgentConfig {
   workspacePath: string | null;
   /** When true, exec workdir is constrained to stay within workspacePath. Defaults to false. */
   sandboxWorkdir?: boolean;
+  /** xAI API key for code_execution tool */
+  xaiApiKey?: string;
+  /** xAI model for code_execution (defaults to grok-4-1-fast) */
+  xaiModel?: string;
 
   exportedAt: number;
   sourceGraphId: string;

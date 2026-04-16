@@ -253,6 +253,12 @@ export function resolveAgentConfig(
     sandboxWorkdir: toolsNode?.data.type === 'tools'
       ? toolsNode.data.toolSettings?.exec?.sandboxWorkdir ?? false
       : false,
+    xaiApiKey: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.codeExecution?.apiKey
+      ? toolsNode.data.toolSettings.codeExecution.apiKey
+      : undefined,
+    xaiModel: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.codeExecution?.model
+      ? toolsNode.data.toolSettings.codeExecution.model
+      : undefined,
     exportedAt: Date.now(),
     sourceGraphId: agentNodeId,
     runTimeoutMs: 172800000,

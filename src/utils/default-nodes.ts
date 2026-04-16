@@ -51,6 +51,10 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
             cwd: '',
             sandboxWorkdir: false,
           },
+          codeExecution: {
+            apiKey: '',
+            model: '',
+          },
         },
       };
     case 'skills':
