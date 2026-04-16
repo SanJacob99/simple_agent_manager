@@ -5,7 +5,7 @@ export const TOOL_GROUPS: Record<string, string[]> = {
   runtime: ['bash', 'code_interpreter'],
   fs: ['read_file', 'write_file', 'edit_file', 'list_directory'],
   web: ['web_search', 'web_fetch'],
-  memory: ['memory_search', 'memory_get', 'memory_save'],
+  // memory tools are managed by the memory node, not the tools node
   coding: ['bash', 'read_file', 'write_file', 'code_interpreter'],
   communication: ['send_message'],
   sessions: [
@@ -30,9 +30,9 @@ export const SESSION_TOOL_NAMES = [
 ] as const;
 
 export const TOOL_PROFILES: Record<string, string[]> = {
-  full: ['runtime', 'fs', 'web', 'memory', 'coding', 'communication'],
-  coding: ['runtime', 'fs', 'coding', 'memory'],
-  messaging: ['web', 'communication', 'memory'],
+  full: ['runtime', 'fs', 'web', 'coding', 'communication'],
+  coding: ['runtime', 'fs', 'coding'],
+  messaging: ['web', 'communication'],
   minimal: ['web'],
   custom: [],
 };
@@ -49,9 +49,6 @@ export const ALL_TOOL_NAMES = [
   'web_search',
   'web_fetch',
   'calculator',
-  'memory_search',
-  'memory_get',
-  'memory_save',
   'send_message',
   'image_generation',
   'text_to_speech',
@@ -74,9 +71,7 @@ export const IMPLEMENTED_TOOL_NAMES = new Set<string>([
   'write_file',
   'edit_file',
   'list_directory',
-  'memory_search',
-  'memory_get',
-  'memory_save',
+  // memory tools are managed by the memory node, not the tools node
   ...SESSION_TOOL_NAMES,
 ]);
 

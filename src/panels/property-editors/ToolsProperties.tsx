@@ -6,7 +6,7 @@ import { Field, inputClass, selectClass, textareaClass } from './shared';
 import { ALL_TOOL_NAMES, TOOL_GROUPS, TOOL_PROFILES } from '../../../shared/resolve-tool-names';
 
 const PROFILES: ToolProfile[] = ['full', 'coding', 'messaging', 'minimal', 'custom'];
-const GROUPS: ToolGroup[] = ['runtime', 'fs', 'web', 'memory', 'coding', 'communication'];
+const GROUPS: ToolGroup[] = ['runtime', 'fs', 'web', 'coding', 'communication'];
 
 type Page = 'main' | 'exec' | 'code_execution' | 'web_search' | 'sub_agents';
 

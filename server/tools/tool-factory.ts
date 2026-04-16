@@ -94,8 +94,7 @@ export function createAgentTools(
   const tools: AgentTool<TSchema>[] = [];
 
   for (const name of names) {
-    // Skip memory and session tools - provided separately
-    if (['memory_search', 'memory_get', 'memory_save'].includes(name)) continue;
+    // Skip session tools — provided separately by session-tools.ts
     if (SESSION_TOOL_NAME_SET.has(name)) continue;
 
     // Context-dependent tools
