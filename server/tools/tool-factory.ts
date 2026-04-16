@@ -13,6 +13,10 @@ import { createCalculatorTool } from './builtins/calculator/calculator';
 import { createWebFetchTool } from './builtins/web/web-fetch';
 import { createExecTool, type ExecToolContext } from './builtins/exec/exec';
 import { createCodeExecutionTool } from './builtins/code-execution/code-execution';
+import { createReadFileTool } from './builtins/fs/read-file';
+import { createWriteFileTool } from './builtins/fs/write-file';
+import { createEditFileTool } from './builtins/fs/edit-file';
+import { createListDirectoryTool } from './builtins/fs/list-directory';
 
 // Re-export resolveToolNames from shared (used by agent-runtime.ts)
 export { resolveToolNames } from '../../shared/resolve-tool-names';
@@ -44,10 +48,6 @@ export { IMPLEMENTED_TOOL_NAMES } from '../../shared/resolve-tool-names';
 // Only real (implemented) tools are registered with the model.
 // Stub tools are NOT included — the model should never see a tool it can't use.
 // TODO: Uncomment as each tool gets a real implementation:
-//   code_interpreter: () => createTool('code_interpreter', 'Execute code in a sandboxed environment'),
-//   read_file: () => createTool('read_file', 'Read a file from the filesystem'),
-//   write_file: () => createTool('write_file', 'Write content to a file'),
-//   list_directory: () => createTool('list_directory', 'List files in a directory'),
 //   web_search: () => createTool('web_search', 'Search the web for information'),
 //   send_message: () => createTool('send_message', 'Send a message to another agent or user'),
 //   image_generation: () => createTool('image_generation', 'Generate an image from a text prompt'),
@@ -100,6 +100,16 @@ export function createAgentTools(
         cwd: factoryContext.cwd,
         sandboxWorkdir: factoryContext.sandboxWorkdir,
       }));
+      continue;
+    }
+
+    // File I/O tools — share the same context as exec
+    if ((name === 'read_file' || name === 'write_file' || name === 'edit_file' || name === 'list_directory') && factoryContext?.cwd) {
+      const fsCtx = { cwd: factoryContext.cwd, sandboxWorkdir: factoryContext.sandboxWorkdir };
+      if (name === 'read_file') tools.push(createReadFileTool(fsCtx));
+      else if (name === 'write_file') tools.push(createWriteFileTool(fsCtx));
+      else if (name === 'edit_file') tools.push(createEditFileTool(fsCtx));
+      else if (name === 'list_directory') tools.push(createListDirectoryTool(fsCtx));
       continue;
     }
 
