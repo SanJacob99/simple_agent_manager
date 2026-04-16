@@ -2,7 +2,7 @@ import { AgentRuntime } from '../runtime/agent-runtime';
 import { RunCoordinator } from './run-coordinator';
 import { StreamProcessor } from './stream-processor';
 import { EventBridge } from './event-bridge';
-import { StorageEngine } from '../runtime/storage-engine';
+import { StorageEngine } from '../storage/storage-engine';
 import { HookRegistry } from '../hooks/hook-registry';
 import { PluginLoader } from '../hooks/plugin-loader';
 import { registerInternalHooks } from '../hooks/internal-hooks';

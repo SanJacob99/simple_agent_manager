@@ -12,9 +12,9 @@ import { resolveProviderRuntimeAuth } from '../providers/provider-auth';
 import { resolveProviderStreamFn } from '../providers/stream-resolver';
 import { MemoryEngine } from './memory-engine';
 import { ContextEngine } from './context-engine';
-import { resolveToolNames, createAgentTools } from './tool-factory';
+import { resolveToolNames, createAgentTools } from '../tools/tool-factory';
 import { resolveRuntimeModel } from './model-resolver';
-import { isToolErrorDetails } from './tool-adapter';
+import { isToolErrorDetails } from '../tools/tool-adapter';
 import { log } from '../logger';
 
 export type RuntimeEvent =

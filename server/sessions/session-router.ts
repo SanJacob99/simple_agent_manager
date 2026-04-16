@@ -1,7 +1,7 @@
 import path from 'path';
 import type { ResolvedStorageConfig } from '../../shared/agent-config';
 import type { SessionStoreEntry } from '../../shared/storage-types';
-import { StorageEngine } from './storage-engine';
+import { StorageEngine } from '../storage/storage-engine';
 import { SessionTranscriptStore } from './session-transcript-store';
 
 export interface RouteRequest {

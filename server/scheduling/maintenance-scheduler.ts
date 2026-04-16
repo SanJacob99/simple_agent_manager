@@ -1,4 +1,4 @@
-import type { StorageEngine } from './storage-engine';
+import type { StorageEngine } from '../storage/storage-engine';
 import type { MaintenanceReport } from '../../shared/storage-types';
 
 export class MaintenanceScheduler {

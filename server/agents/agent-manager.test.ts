@@ -28,7 +28,7 @@ vi.mock('../runtime/agent-runtime', () => {
 });
 
 // Mock StorageEngine to avoid filesystem
-vi.mock('../runtime/storage-engine', () => {
+vi.mock('../storage/storage-engine', () => {
   const os = require('os');
   const path = require('path');
   class MockStorageEngine {

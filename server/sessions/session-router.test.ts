@@ -3,7 +3,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import { SessionManager } from '@mariozechner/pi-coding-agent';
-import { StorageEngine } from './storage-engine';
+import { StorageEngine } from '../storage/storage-engine';
 import { SessionTranscriptStore } from './session-transcript-store';
 import { SessionRouter } from './session-router';
 import type { ResolvedStorageConfig } from '../../shared/agent-config';

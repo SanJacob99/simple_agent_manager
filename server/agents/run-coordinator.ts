@@ -3,13 +3,13 @@ import type { SessionManager } from '@mariozechner/pi-coding-agent';
 import type { AgentMessage } from '@mariozechner/pi-agent-core';
 import type { AssistantMessage, ToolResultMessage, Usage, UserMessage } from '@mariozechner/pi-ai';
 import type { AgentRuntime, RuntimeEvent } from '../runtime/agent-runtime';
-import type { StorageEngine } from '../runtime/storage-engine';
+import type { StorageEngine } from '../storage/storage-engine';
 import type { AgentConfig } from '../../shared/agent-config';
 import type { SessionStoreEntry } from '../../shared/storage-types';
 import type { HookRegistry } from '../hooks/hook-registry';
 import { log } from '../logger';
-import { SessionRouter, type RouteRequest, type RouteResult } from '../runtime/session-router';
-import { SessionTranscriptStore } from '../runtime/session-transcript-store';
+import { SessionRouter, type RouteRequest, type RouteResult } from '../sessions/session-router';
+import { SessionTranscriptStore } from '../sessions/session-transcript-store';
 import {
   sanitizeAssistantVisibleText,
   sanitizeAssistantContentBlocks,
@@ -40,8 +40,8 @@ import {
   type RunErrorDiagnosticData,
 } from '../../shared/session-diagnostics';
 import { RunConcurrencyController } from './run-concurrency-controller';
-import { SubAgentRegistry } from '../runtime/sub-agent-registry';
-import { createSessionTools, type SessionToolContext } from '../runtime/session-tools';
+import { SubAgentRegistry } from './sub-agent-registry';
+import { createSessionTools, type SessionToolContext } from '../sessions/session-tools';
 import { SESSION_TOOL_NAMES } from '../../shared/resolve-tool-names';
 
 export type RunStatus = 'pending' | 'running' | 'completed' | 'error';

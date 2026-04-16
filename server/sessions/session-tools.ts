@@ -2,9 +2,9 @@ import { randomUUID } from 'crypto';
 import { Type, type TSchema } from '@sinclair/typebox';
 import type { AgentTool, AgentToolResult } from '@mariozechner/pi-agent-core';
 import type { SessionRouter } from './session-router';
-import type { StorageEngine } from './storage-engine';
+import type { StorageEngine } from '../storage/storage-engine';
 import type { SessionTranscriptStore } from './session-transcript-store';
-import type { SubAgentRegistry } from './sub-agent-registry';
+import type { SubAgentRegistry } from '../agents/sub-agent-registry';
 import type { RunCoordinator } from '../agents/run-coordinator';
 import { SESSION_TOOL_NAMES } from '../../shared/resolve-tool-names';
 
