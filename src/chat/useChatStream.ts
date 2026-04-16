@@ -211,18 +211,20 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
             addMessage(sessionKeyRef.current, {
               id: `tool_${(event as any).toolCallId}`,
               role: 'tool',
-              content: `Calling tool: ${(event as any).toolName}`,
+              content: '',
+              toolName: (event as any).toolName,
               timestamp: Date.now(),
             });
             break;
 
           case 'tool:end': {
             const te = event as any;
-            const toolContent = `${te.toolName}: ${te.result}${te.isError ? ' (error)' : ''}`;
             updateMessage(sessionKeyRef.current, `tool_${te.toolCallId}`, (m) => ({
               ...m,
-              content: toolContent,
-              tokenCount: estimateTokens(toolContent),
+              content: te.result ?? '',
+              toolName: te.toolName,
+              isToolError: Boolean(te.isError),
+              tokenCount: estimateTokens(te.result ?? ''),
             }));
             void flushSession(sessionKeyRef.current);
             break;

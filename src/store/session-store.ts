@@ -27,6 +27,8 @@ export interface Message {
   usage?: MessageUsage;
   kind?: 'diagnostic';
   thinking?: string;
+  toolName?: string;
+  isToolError?: boolean;
 }
 
 export interface ChatSession {
@@ -102,7 +104,14 @@ function toStoredMessage(entry: SessionEntry): Message | null {
     return null;
   }
 
-  const raw = entry.message as { role?: string; content?: unknown; timestamp?: number; usage?: MessageUsage } | undefined;
+  const raw = entry.message as {
+    role?: string;
+    content?: unknown;
+    timestamp?: number;
+    usage?: MessageUsage;
+    toolName?: string;
+    isError?: boolean;
+  } | undefined;
   if (!raw?.role) {
     return null;
   }
@@ -120,6 +129,8 @@ function toStoredMessage(entry: SessionEntry): Message | null {
     tokenCount: raw.role === 'assistant' ? raw.usage?.output : undefined,
     usage: raw.role === 'assistant' ? raw.usage : undefined,
     thinking: raw.role === 'assistant' ? extractThinkingContent(raw.content) : undefined,
+    toolName: role === 'tool' ? raw.toolName : undefined,
+    isToolError: role === 'tool' ? raw.isError : undefined,
   };
 }
 

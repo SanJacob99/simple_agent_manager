@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import { Brain, ChevronDown, Wrench } from 'lucide-react';
+import { AlertTriangle, Brain, ChevronDown, Wrench } from 'lucide-react';
 import type { Message } from '../store/session-store';
 import StreamingText from './StreamingText';
 import StreamingMarkdownRenderer from './StreamingMarkdownRenderer';
@@ -60,6 +60,7 @@ function MessageBubble({
 }: MessageBubbleProps) {
   const isDiagnostic = msg.kind === 'diagnostic';
   const [thinkingExpanded, setThinkingExpanded] = useState(false);
+  const [toolExpanded, setToolExpanded] = useState(false);
   const hasThinking =
     msg.role === 'assistant' && ((msg.thinking && msg.thinking.length > 0) || isReasoningThis);
 
@@ -72,6 +73,56 @@ function MessageBubble({
   const handleRevealComplete = useCallback(() => setRevealComplete(true), []);
   const useStreamingRenderer = msg.role === 'assistant' && (isStreamingThis || !revealComplete);
   const textRevealStructure = useSettingsStore((s) => s.chatUIDefaults.textRevealStructure);
+
+  // Tool results render as a collapsible section (like thinking), not a chat bubble
+  if (msg.role === 'tool') {
+    const toolLabel = msg.toolName ?? 'tool';
+    const isWaiting = !msg.content;
+    const borderColor = msg.isToolError ? 'border-red-500/20' : 'border-slate-600/30';
+    const bgColor = msg.isToolError ? 'bg-red-500/10' : 'bg-slate-800/40';
+    const iconColor = msg.isToolError ? 'text-red-400' : 'text-slate-400';
+    return (
+      <div className="flex justify-start">
+        <div className="max-w-[85%] w-full">
+          <div className={`rounded-md border ${borderColor} ${bgColor}`}>
+            <button
+              type="button"
+              onClick={() => setToolExpanded((v) => !v)}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left"
+            >
+              {msg.isToolError ? (
+                <AlertTriangle size={12} className={iconColor} />
+              ) : (
+                <Wrench
+                  size={12}
+                  className={`${iconColor} ${isWaiting ? 'animate-pulse' : ''}`}
+                />
+              )}
+              <span className="flex-1 text-[10px] text-slate-300 font-mono">
+                {isWaiting ? `${toolLabel}…` : toolLabel}
+              </span>
+              {msg.tokenCount != null && msg.tokenCount > 0 && (
+                <span className="text-[8px] tabular-nums text-slate-500 font-mono">
+                  {formatTokenBadge(msg.tokenCount)}
+                </span>
+              )}
+              <ChevronDown
+                size={12}
+                className={`text-slate-500 transition-transform ${toolExpanded ? 'rotate-180' : ''}`}
+              />
+            </button>
+            {toolExpanded && msg.content && (
+              <div className={`border-t ${borderColor} px-3 py-2 text-[10px] leading-relaxed`}>
+                <pre className="whitespace-pre-wrap break-words font-mono text-slate-300 max-h-60 overflow-y-auto">
+                  {msg.content}
+                </pre>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -98,9 +149,6 @@ function MessageBubble({
             {thinkingExpanded && (
               <div className="border-t border-purple-500/20 px-3 py-2 text-[10px] leading-relaxed">
                 {msg.thinking ? (
-                  // Skip markdown parsing while reasoning is still streaming —
-                  // parse once when it settles. Collapsed-by-default means the
-                  // parse doesn't happen at all until the user opens the panel.
                   isReasoningThis ? (
                     <pre className="whitespace-pre-wrap break-words font-sans text-slate-200">
                       {msg.thinking}
@@ -127,16 +175,13 @@ function MessageBubble({
           className={`rounded-lg px-3 py-2 text-xs leading-relaxed ${
             msg.role === 'user'
               ? 'bg-blue-600 text-white'
-              : msg.role === 'tool'
-                ? 'border border-slate-700 bg-slate-800/50 text-slate-400 italic'
-                : isDiagnostic
-                  ? 'border border-amber-500/30 bg-amber-500/10 text-slate-100'
-                  : 'bg-slate-800 text-slate-100'
+              : isDiagnostic
+                ? 'border border-amber-500/30 bg-amber-500/10 text-slate-100'
+                : 'bg-slate-800 text-slate-100'
           }`}
         >
           {msg.role === 'assistant' ? (
             <div className={`prose-sm max-w-none break-words text-slate-100`}>
-              {/* Skip ReactMarkdown while streaming — parse once when done */}
               {useStreamingRenderer ? (
                 textRevealStructure === 'blocks' ? (
                   <StreamingMarkdownRenderer
@@ -173,7 +218,6 @@ function MessageBubble({
 
         {msg.tokenCount != null && msg.tokenCount > 0 && (
           <div className={`flex items-center gap-1 mt-0.5 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            {msg.role === 'tool' && <Wrench size={8} className="text-slate-600" />}
             <span className="text-[8px] tabular-nums text-slate-600 font-mono">
               {formatTokenBadge(msg.tokenCount)} tokens
             </span>
