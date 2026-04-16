@@ -103,11 +103,16 @@ function extractTextContent(content: unknown): string {
     return '';
   }
 
-  return content
-    .filter((block): block is { type?: string; text?: string } => !!block && typeof block === 'object')
-    .filter((block) => block.type === 'text' && typeof block.text === 'string')
-    .map((block) => block.text ?? '')
-    .join('');
+  // ⚡ Bolt Optimization: Use a single-pass loop to avoid intermediate array allocations
+  // from chained .filter().map().join() in this high-frequency text extraction path.
+  let result = '';
+  for (let i = 0; i < content.length; i++) {
+    const block = content[i] as any;
+    if (block && typeof block === 'object' && block.type === 'text' && typeof block.text === 'string') {
+      result += block.text;
+    }
+  }
+  return result;
 }
 
 function hasThinkingContent(content: unknown): boolean {
@@ -1460,10 +1465,14 @@ export class RunCoordinator {
 
     // Notify SubAgentRegistry if this was a sub-agent run
     if (record.sessionKey.startsWith('sub:')) {
-      const assistantText = record.payloads
-        .filter((p) => p.type === 'text')
-        .map((p) => p.content)
-        .join('');
+      // ⚡ Bolt Optimization: Single-pass loop to extract text without allocating intermediate arrays
+      let assistantText = '';
+      for (let i = 0; i < record.payloads.length; i++) {
+        const p = record.payloads[i];
+        if (p.type === 'text') {
+          assistantText += p.content;
+        }
+      }
       this.subAgentRegistry.onComplete(record.runId, assistantText);
     }
 
