@@ -25,27 +25,27 @@ interface MessageBubbleProps {
 }
 
 const thinkingMarkdownComponents = {
-  p: (props: any) => { const { node, ...rest } = props; return <p className="mb-1.5 last:mb-0 leading-snug text-purple-100/80" {...rest} />; },
-  a: (props: any) => { const { node, ...rest } = props; return <a className="text-purple-300 hover:text-purple-200 underline underline-offset-2" target="_blank" rel="noopener noreferrer" {...rest} />; },
+  p: (props: any) => { const { node, ...rest } = props; return <p className="mb-1.5 last:mb-0 leading-snug text-slate-200" {...rest} />; },
+  a: (props: any) => { const { node, ...rest } = props; return <a className="text-blue-300 hover:text-blue-200 underline underline-offset-2" target="_blank" rel="noopener noreferrer" {...rest} />; },
   ul: (props: any) => { const { node, ...rest } = props; return <ul className="list-disc pl-3.5 mb-1.5 space-y-0.5" {...rest} />; },
   ol: (props: any) => { const { node, ...rest } = props; return <ol className="list-decimal pl-3.5 mb-1.5 space-y-0.5" {...rest} />; },
-  li: (props: any) => { const { node, ...rest } = props; return <li className="marker:text-purple-400/60" {...rest} />; },
-  h1: (props: any) => { const { node, ...rest } = props; return <h1 className="text-[11px] font-bold mt-2 mb-1 text-purple-100" {...rest} />; },
-  h2: (props: any) => { const { node, ...rest } = props; return <h2 className="text-[11px] font-bold mt-2 mb-1 text-purple-100" {...rest} />; },
-  h3: (props: any) => { const { node, ...rest } = props; return <h3 className="text-[10px] font-semibold mt-1.5 mb-0.5 text-purple-200 uppercase tracking-wide" {...rest} />; },
-  strong: (props: any) => { const { node, ...rest } = props; return <strong className="font-semibold text-purple-50" {...rest} />; },
-  em: (props: any) => { const { node, ...rest } = props; return <em className="italic text-purple-200/90" {...rest} />; },
-  blockquote: (props: any) => { const { node, ...rest } = props; return <blockquote className="border-l-2 border-purple-400/40 pl-2 my-1.5 italic text-purple-200/70" {...rest} />; },
+  li: (props: any) => { const { node, ...rest } = props; return <li className="marker:text-purple-400" {...rest} />; },
+  h1: (props: any) => { const { node, ...rest } = props; return <h1 className="text-[11px] font-bold mt-2 mb-1 text-slate-100" {...rest} />; },
+  h2: (props: any) => { const { node, ...rest } = props; return <h2 className="text-[11px] font-bold mt-2 mb-1 text-slate-100" {...rest} />; },
+  h3: (props: any) => { const { node, ...rest } = props; return <h3 className="text-[10px] font-semibold mt-1.5 mb-0.5 text-slate-200 uppercase tracking-wide" {...rest} />; },
+  strong: (props: any) => { const { node, ...rest } = props; return <strong className="font-semibold text-slate-50" {...rest} />; },
+  em: (props: any) => { const { node, ...rest } = props; return <em className="italic text-slate-300" {...rest} />; },
+  blockquote: (props: any) => { const { node, ...rest } = props; return <blockquote className="border-l-2 border-purple-400/40 pl-2 my-1.5 italic text-slate-300" {...rest} />; },
   hr: () => <hr className="my-2 border-purple-500/20" />,
   code(props: any) {
     const { children, className, node, ...rest } = props;
     const match = /language-(\w+)/.exec(className || '');
     return match ? (
-      <pre className="rounded bg-slate-950/60 border border-purple-500/20 p-2 my-1.5 overflow-x-auto text-[10px] font-mono text-purple-100/90 leading-snug">
+      <pre className="rounded bg-slate-950/60 border border-purple-500/20 p-2 my-1.5 overflow-x-auto text-[10px] font-mono text-slate-200 leading-snug">
         <code className={className} {...rest}>{children}</code>
       </pre>
     ) : (
-      <code className="bg-slate-950/60 px-1 py-px rounded border border-purple-500/20 text-purple-100/90 font-mono text-[10px]" {...rest}>
+      <code className="bg-slate-950/60 px-1 py-px rounded border border-purple-500/20 text-slate-200 font-mono text-[10px]" {...rest}>
         {children}
       </code>
     );
@@ -87,7 +87,7 @@ function MessageBubble({
                 size={12}
                 className={`text-purple-400 ${isReasoningThis ? 'animate-pulse' : ''}`}
               />
-              <span className="flex-1 text-[10px] text-purple-300">
+              <span className="flex-1 text-[10px] text-slate-300">
                 {isReasoningThis ? 'Thinking...' : 'Thinking'}
               </span>
               <ChevronDown
@@ -102,11 +102,11 @@ function MessageBubble({
                   // parse once when it settles. Collapsed-by-default means the
                   // parse doesn't happen at all until the user opens the panel.
                   isReasoningThis ? (
-                    <pre className="whitespace-pre-wrap break-words font-sans text-purple-100/80">
+                    <pre className="whitespace-pre-wrap break-words font-sans text-slate-200">
                       {msg.thinking}
                     </pre>
                   ) : (
-                    <div className="prose-sm max-w-none break-words text-purple-100/80">
+                    <div className="prose-sm max-w-none break-words text-slate-200">
                       <ReactMarkdown
                         remarkPlugins={[remarkGfm, remarkMath]}
                         rehypePlugins={[rehypeKatex]}
@@ -117,7 +117,7 @@ function MessageBubble({
                     </div>
                   )
                 ) : (
-                  <p className="italic text-purple-300/60">Waiting for reasoning…</p>
+                  <p className="italic text-slate-400">Waiting for reasoning…</p>
                 )}
               </div>
             )}

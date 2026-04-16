@@ -100,6 +100,17 @@ function extractTextContent(content: unknown): string {
     .join('');
 }
 
+function hasThinkingContent(content: unknown): boolean {
+  if (!Array.isArray(content)) return false;
+  return content.some(
+    (block) =>
+      block && typeof block === 'object' &&
+      (block as { type?: string }).type === 'thinking' &&
+      typeof (block as { thinking?: unknown }).thinking === 'string' &&
+      ((block as { thinking: string }).thinking).trim().length > 0,
+  );
+}
+
 export class RunCoordinator {
   private readonly runs = new Map<string, RunRecord>();
   private readonly waiters = new Map<string, Array<(result: WaitResult) => void>>();
@@ -801,18 +812,19 @@ export class RunCoordinator {
     if (raw.type === 'message_end' && raw.message?.role === 'assistant') {
       const fallbackText =
         transcriptState.assistantText || extractTextContent(raw.message.content);
+      const thinkingOnly = !fallbackText && hasThinkingContent(raw.message.content);
 
       if (
-        !fallbackText
+        !fallbackText && !thinkingOnly
         || transcriptState.assistantSuppressed
-        || NO_REPLY_PATTERN.test(fallbackText.trim())
+        || (!thinkingOnly && NO_REPLY_PATTERN.test((fallbackText ?? '').trim()))
       ) {
         transcriptState.assistantText = '';
         transcriptState.assistantSuppressed = false;
         return;
       }
 
-      const assistantMessage = this.buildAssistantMessage(raw.message, fallbackText);
+      const assistantMessage = this.buildAssistantMessage(raw.message, fallbackText || '');
       transcriptManager.appendMessage(assistantMessage);
       await this.applyAssistantUsage(record.sessionKey, assistantMessage);
       transcriptState.assistantPersisted = true;

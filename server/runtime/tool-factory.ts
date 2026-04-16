@@ -13,7 +13,7 @@ import { logError } from '../logger';
 // Re-export resolveToolNames from shared (used by agent-runtime.ts)
 export { resolveToolNames } from '../../shared/resolve-tool-names';
 
-// --- All available tool names ---
+// --- All known tool names (including unimplemented) ---
 
 export const ALL_TOOL_NAMES = [
   'bash',
@@ -32,6 +32,19 @@ export const ALL_TOOL_NAMES = [
   'text_to_speech',
   ...SESSION_TOOL_NAMES,
 ];
+
+// Tool names that have a real implementation (not stubs).
+// Only these are registered with the model.
+export const IMPLEMENTED_TOOL_NAMES = new Set<string>([
+  'calculator',
+  'web_fetch',
+  // Memory tools are built separately by MemoryEngine
+  'memory_search',
+  'memory_get',
+  'memory_save',
+  // Session tools are built separately by session-tools.ts
+  ...SESSION_TOOL_NAMES,
+]);
 
 // --- Tool implementations (server-side stubs/real) ---
 
@@ -123,23 +136,16 @@ function createStubTool(name: string, description: string): AgentTool<TSchema> {
       input: Type.Optional(Type.String({ description: 'Input parameter' })),
     }),
     execute: async () => {
-      return textResult(`[${name}] This tool is not yet implemented.`);
+      throw new Error(`Tool "${name}" is not yet implemented. Do not retry this tool — use an alternative approach.`);
     },
   };
 }
 
+// Only real (implemented) tools are registered with the model.
+// Stub tools are NOT included — the model should never see a tool it can't use.
 const TOOL_CREATORS: Record<string, () => AgentTool<TSchema>> = {
   calculator: createCalculatorTool,
   web_fetch: createWebFetchTool,
-  bash: () => createStubTool('bash', 'Execute shell commands'),
-  code_interpreter: () => createStubTool('code_interpreter', 'Execute code in a sandboxed environment'),
-  read_file: () => createStubTool('read_file', 'Read a file from the filesystem'),
-  write_file: () => createStubTool('write_file', 'Write content to a file'),
-  list_directory: () => createStubTool('list_directory', 'List files in a directory'),
-  web_search: () => createStubTool('web_search', 'Search the web for information'),
-  send_message: () => createStubTool('send_message', 'Send a message to another agent or user'),
-  image_generation: () => createStubTool('image_generation', 'Generate an image from a text prompt'),
-  text_to_speech: () => createStubTool('text_to_speech', 'Convert text to speech'),
 };
 
 const SESSION_TOOL_NAME_SET = new Set<string>(SESSION_TOOL_NAMES);

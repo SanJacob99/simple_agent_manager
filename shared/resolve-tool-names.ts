@@ -57,22 +57,21 @@ export const ALL_TOOL_NAMES = [
 
 /**
  * Expand profile + groups + custom enabledTools into a flat deduplicated list.
+ *
+ * `enabledGroups` is the source of truth for which groups are active.
+ * The profile is a UI preset that pre-populates enabledGroups; it is only
+ * used as a fallback when no groups are explicitly enabled.
  */
 export function resolveToolNames(config: ResolvedToolsConfig): string[] {
   const names = new Set<string>();
 
-  if (config.profile !== 'custom') {
-    const groups = TOOL_PROFILES[config.profile];
-    if (groups) {
-      for (const group of groups) {
-        for (const tool of TOOL_GROUPS[group] ?? []) {
-          names.add(tool);
-        }
-      }
-    }
-  }
+  // Use enabledGroups as the source of truth when present.
+  // Fall back to profile expansion only when no groups are explicitly enabled.
+  const activeGroups = config.enabledGroups.length > 0
+    ? config.enabledGroups
+    : TOOL_PROFILES[config.profile] ?? [];
 
-  for (const group of config.enabledGroups) {
+  for (const group of activeGroups) {
     for (const tool of TOOL_GROUPS[group] ?? []) {
       names.add(tool);
     }

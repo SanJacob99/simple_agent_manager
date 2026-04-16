@@ -80,15 +80,8 @@ export function resolveAgentConfig(
   const toolsConfig = toolsNode && toolsNode.data.type === 'tools'
     ? {
         profile: toolsNode.data.profile,
-        resolvedTools: resolveToolNames({
-          profile: toolsNode.data.profile,
-          resolvedTools: toolsNode.data.enabledTools,
-          enabledGroups: toolsNode.data.enabledGroups,
-          skills: allSkills,
-          plugins: toolsNode.data.plugins,
-          subAgentSpawning: toolsNode.data.subAgentSpawning,
-          maxSubAgents: toolsNode.data.maxSubAgents,
-        }),
+        // Store raw per-tool selections; full resolution happens once at runtime
+        resolvedTools: toolsNode.data.enabledTools,
         enabledGroups: toolsNode.data.enabledGroups,
         skills: allSkills,
         plugins: toolsNode.data.plugins,
@@ -200,7 +193,7 @@ export function resolveAgentConfig(
   const mode: SystemPromptMode = agentMode === 'manual' ? 'manual' : 'append';
 
   const toolsSummary = toolsConfig
-    ? toolsConfig.resolvedTools.join(', ')
+    ? resolveToolNames(toolsConfig).join(', ')
     : null;
 
   const skillsSummary = allSkills.length > 0
