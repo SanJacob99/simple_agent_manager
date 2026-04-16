@@ -96,6 +96,14 @@ export function resolveAgentConfig(
         injectAs: 'system-prompt' as const,
       });
     }
+    if (ts?.webSearch?.skill?.trim()) {
+      allSkills.push({
+        id: 'tool-skill-web-search',
+        name: 'web_search tool guidance',
+        content: ts.webSearch.skill,
+        injectAs: 'system-prompt' as const,
+      });
+    }
   }
 
   const toolsConfig = toolsNode && toolsNode.data.type === 'tools'
@@ -281,6 +289,9 @@ export function resolveAgentConfig(
       : undefined,
     xaiModel: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.codeExecution?.model
       ? toolsNode.data.toolSettings.codeExecution.model
+      : undefined,
+    tavilyApiKey: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.webSearch?.tavilyApiKey
+      ? toolsNode.data.toolSettings.webSearch.tavilyApiKey
       : undefined,
     exportedAt: Date.now(),
     sourceGraphId: agentNodeId,

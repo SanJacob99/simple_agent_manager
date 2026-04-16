@@ -105,9 +105,17 @@ export interface CodeExecutionToolSettings {
   skill: string;
 }
 
+export interface WebSearchToolSettings {
+  /** Tavily API key. Empty = reads TAVILY_API_KEY from env. No key = DuckDuckGo fallback. */
+  tavilyApiKey: string;
+  /** Markdown guidance injected into the system prompt for this tool */
+  skill: string;
+}
+
 export interface ToolSettings {
   exec: ExecToolSettings;
   codeExecution: CodeExecutionToolSettings;
+  webSearch: WebSearchToolSettings;
 }
 
 export interface ToolsNodeData {

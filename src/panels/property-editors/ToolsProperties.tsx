@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronLeft, ChevronRight, Terminal, Code2, Users } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Terminal, Code2, Globe, Users } from 'lucide-react';
 import { useGraphStore } from '../../store/graph-store';
 import type { ToolsNodeData, ToolProfile, ToolGroup } from '../../types/nodes';
 import { Field, inputClass, selectClass, textareaClass } from './shared';
@@ -8,7 +8,7 @@ import { ALL_TOOL_NAMES, TOOL_GROUPS, TOOL_PROFILES } from '../../../shared/reso
 const PROFILES: ToolProfile[] = ['full', 'coding', 'messaging', 'minimal', 'custom'];
 const GROUPS: ToolGroup[] = ['runtime', 'fs', 'web', 'memory', 'coding', 'communication'];
 
-type Page = 'main' | 'exec' | 'code_execution' | 'sub_agents';
+type Page = 'main' | 'exec' | 'code_execution' | 'web_search' | 'sub_agents';
 
 interface Props {
   nodeId: string;
@@ -127,6 +127,15 @@ export default function ToolsProperties({ nodeId, data }: Props) {
     });
   };
 
+  const updateWebSearch = (patch: Record<string, unknown>) => {
+    update(nodeId, {
+      toolSettings: {
+        ...data.toolSettings,
+        webSearch: { ...(data.toolSettings?.webSearch ?? { tavilyApiKey: '', skill: '' }), ...patch },
+      },
+    });
+  };
+
   // -------------------------------------------------------------------------
   // Page: exec settings
   // -------------------------------------------------------------------------
@@ -220,6 +229,44 @@ export default function ToolsProperties({ nodeId, data }: Props) {
           />
           <p className="mt-0.5 text-[9px] text-slate-600">
             Injected into the system prompt to guide code_execution usage.
+          </p>
+        </Field>
+      </div>
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Page: web_search settings
+  // -------------------------------------------------------------------------
+  if (page === 'web_search') {
+    return (
+      <div className="space-y-1">
+        <PageHeader title="web_search" onBack={() => setPage('main')} />
+
+        <Field label="Tavily API Key">
+          <input
+            className={inputClass}
+            type="password"
+            value={data.toolSettings?.webSearch?.tavilyApiKey ?? ''}
+            onChange={(e) => updateWebSearch({ tavilyApiKey: e.target.value })}
+            placeholder="Empty = TAVILY_API_KEY env or DuckDuckGo fallback"
+          />
+          <p className="mt-0.5 text-[9px] text-slate-600">
+            With a Tavily key: AI-summarized results (free tier: 500/month).
+            Without: basic DuckDuckGo HTML scrape.
+          </p>
+        </Field>
+
+        <Field label="Skill">
+          <textarea
+            className={textareaClass}
+            rows={4}
+            value={data.toolSettings?.webSearch?.skill ?? ''}
+            onChange={(e) => updateWebSearch({ skill: e.target.value })}
+            placeholder="Markdown guidance for how the agent should use web_search..."
+          />
+          <p className="mt-0.5 text-[9px] text-slate-600">
+            Injected into the system prompt to guide web_search usage.
           </p>
         </Field>
       </div>
@@ -373,6 +420,12 @@ export default function ToolsProperties({ nodeId, data }: Props) {
             label="code_execution"
             hint={data.toolSettings?.codeExecution?.apiKey ? 'key set' : undefined}
             onClick={() => setPage('code_execution')}
+          />
+          <PageLink
+            icon={<Globe size={14} />}
+            label="web_search"
+            hint={data.toolSettings?.webSearch?.tavilyApiKey ? 'tavily' : 'duckduckgo'}
+            onClick={() => setPage('web_search')}
           />
           <PageLink
             icon={<Users size={14} />}

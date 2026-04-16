@@ -11,12 +11,13 @@ import { findToolNameConflicts } from './tool-name-policy';
 import { logError } from '../logger';
 import { createCalculatorTool } from './builtins/calculator/calculator';
 import { createWebFetchTool } from './builtins/web/web-fetch';
-import { createExecTool, type ExecToolContext } from './builtins/exec/exec';
+import { createExecTool } from './builtins/exec/exec';
 import { createCodeExecutionTool } from './builtins/code-execution/code-execution';
 import { createReadFileTool } from './builtins/fs/read-file';
 import { createWriteFileTool } from './builtins/fs/write-file';
 import { createEditFileTool } from './builtins/fs/edit-file';
 import { createListDirectoryTool } from './builtins/fs/list-directory';
+import { createWebSearchTool } from './builtins/web/web-search';
 
 // Re-export resolveToolNames from shared (used by agent-runtime.ts)
 export { resolveToolNames } from '../../shared/resolve-tool-names';
@@ -48,7 +49,6 @@ export { IMPLEMENTED_TOOL_NAMES } from '../../shared/resolve-tool-names';
 // Only real (implemented) tools are registered with the model.
 // Stub tools are NOT included — the model should never see a tool it can't use.
 // TODO: Uncomment as each tool gets a real implementation:
-//   web_search: () => createTool('web_search', 'Search the web for information'),
 //   send_message: () => createTool('send_message', 'Send a message to another agent or user'),
 //   image_generation: () => createTool('image_generation', 'Generate an image from a text prompt'),
 //   text_to_speech: () => createTool('text_to_speech', 'Convert text to speech'),
@@ -75,6 +75,8 @@ export interface ToolFactoryContext {
   xaiApiKey?: string;
   /** xAI model override for code_execution (defaults to grok-4-1-fast) */
   xaiModel?: string;
+  /** Tavily API key for web_search. When absent, falls back to DuckDuckGo. */
+  tavilyApiKey?: string;
 }
 
 /**
@@ -121,12 +123,20 @@ export function createAgentTools(
       continue;
     }
 
-    if (name === 'web_search' && providerWebContext?.plugin.webSearch) {
-      const ctx: WebSearchToolContext = {
-        apiKey: providerWebContext.apiKey,
-        baseUrl: providerWebContext.baseUrl,
-      };
-      tools.push(providerWebContext.plugin.webSearch.createTool(ctx));
+    if (name === 'web_search') {
+      // Provider plugin takes priority if available
+      if (providerWebContext?.plugin.webSearch) {
+        const ctx: WebSearchToolContext = {
+          apiKey: providerWebContext.apiKey,
+          baseUrl: providerWebContext.baseUrl,
+        };
+        tools.push(providerWebContext.plugin.webSearch.createTool(ctx));
+      } else {
+        // Built-in: Tavily (if key set) or DuckDuckGo fallback
+        tools.push(createWebSearchTool({
+          tavilyApiKey: factoryContext?.tavilyApiKey,
+        }));
+      }
       continue;
     }
 

@@ -141,6 +141,8 @@ export interface AgentConfig {
   xaiApiKey?: string;
   /** xAI model for code_execution (defaults to grok-4-1-fast) */
   xaiModel?: string;
+  /** Tavily API key for web_search. No key = DuckDuckGo fallback. */
+  tavilyApiKey?: string;
 
   exportedAt: number;
   sourceGraphId: string;

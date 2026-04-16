@@ -58,6 +58,10 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
             model: '',
             skill: '',
           },
+          webSearch: {
+            tavilyApiKey: '',
+            skill: '',
+          },
         },
       };
     case 'skills':

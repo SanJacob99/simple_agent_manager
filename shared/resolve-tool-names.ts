@@ -68,6 +68,7 @@ export const IMPLEMENTED_TOOL_NAMES = new Set<string>([
   'bash', // alias for exec
   'code_execution',
   'calculator',
+  'web_search',
   'web_fetch',
   'read_file',
   'write_file',
