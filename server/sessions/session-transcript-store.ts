@@ -45,6 +45,28 @@ export class SessionTranscriptStore {
     return this.openSession(sessionFile).getEntries();
   }
 
+  async clearTranscript(sessionFile: string): Promise<void> {
+    const manager = this.openSession(sessionFile);
+    const header = manager.getHeader();
+    if (!header) {
+      throw new Error('Cannot clear a transcript without a valid header');
+    }
+    await this.writeSnapshot(sessionFile, header, []);
+  }
+
+  async deleteEntry(sessionFile: string, entryId: string): Promise<boolean> {
+    const manager = this.openSession(sessionFile);
+    const header = manager.getHeader();
+    if (!header) {
+      throw new Error('Cannot delete entry from a transcript without a valid header');
+    }
+    const entries = manager.getEntries();
+    const filtered = entries.filter((e) => e.id !== entryId);
+    if (filtered.length === entries.length) return false;
+    await this.writeSnapshot(sessionFile, header, filtered);
+    return true;
+  }
+
   buildBranchTree(sessionFile: string): BranchTree {
     const entries = this.readTranscript(sessionFile);
     const messageEntries = entries.filter((e) => e.type === 'message' || e.type === 'compaction');

@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import { AlertTriangle, Brain, ChevronDown, Wrench } from 'lucide-react';
+import { AlertTriangle, Brain, ChevronDown, Trash2, Wrench } from 'lucide-react';
 import type { Message } from '../store/session-store';
 import StreamingText from './StreamingText';
 import StreamingMarkdownRenderer from './StreamingMarkdownRenderer';
@@ -22,6 +22,7 @@ interface MessageBubbleProps {
   /** True when this streaming message is currently receiving reasoning deltas. */
   isReasoningThis?: boolean;
   preferPlainText?: boolean;
+  onDelete?: (messageId: string) => void;
 }
 
 const thinkingMarkdownComponents = {
@@ -57,6 +58,7 @@ function MessageBubble({
   isStreamingThis,
   isReasoningThis = false,
   preferPlainText = false,
+  onDelete,
 }: MessageBubbleProps) {
   const isDiagnostic = msg.kind === 'diagnostic';
   const [thinkingExpanded, setThinkingExpanded] = useState(false);
@@ -82,8 +84,8 @@ function MessageBubble({
     const bgColor = msg.isToolError ? 'bg-red-500/10' : 'bg-slate-800/40';
     const iconColor = msg.isToolError ? 'text-red-400' : 'text-slate-400';
     return (
-      <div className="flex justify-start">
-        <div className="max-w-[85%] w-full">
+      <div className="group/msg flex justify-start">
+        <div className="max-w-[85%] w-full relative">
           <div className={`rounded-md border ${borderColor} ${bgColor}`}>
             <button
               type="button"
@@ -119,14 +121,24 @@ function MessageBubble({
               </div>
             )}
           </div>
+          {onDelete && !isStreamingThis && (
+            <button
+              type="button"
+              onClick={() => onDelete(msg.id)}
+              className="absolute -right-1 -top-1 rounded p-0.5 bg-slate-800 border border-slate-700 text-slate-500 opacity-0 transition group-hover/msg:opacity-100 hover:text-red-400 hover:border-red-500/30"
+              title="Delete message"
+            >
+              <Trash2 size={10} />
+            </button>
+          )}
         </div>
       </div>
     );
   }
 
   return (
-    <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-      <div className="max-w-[85%]">
+    <div className={`group/msg flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+      <div className="max-w-[85%] relative">
         {hasThinking && (
           <div className="mb-1 rounded-md border border-purple-500/20 bg-purple-500/10">
             <button
@@ -227,6 +239,18 @@ function MessageBubble({
               </span>
             )}
           </div>
+        )}
+        {onDelete && !isStreamingThis && (
+          <button
+            type="button"
+            onClick={() => onDelete(msg.id)}
+            className={`absolute -top-1 rounded p-0.5 bg-slate-800 border border-slate-700 text-slate-500 opacity-0 transition group-hover/msg:opacity-100 hover:text-red-400 hover:border-red-500/30 ${
+              msg.role === 'user' ? '-left-1' : '-right-1'
+            }`}
+            title="Delete message"
+          >
+            <Trash2 size={10} />
+          </button>
         )}
       </div>
     </div>

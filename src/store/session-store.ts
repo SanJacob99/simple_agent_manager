@@ -199,7 +199,7 @@ interface SessionStore {
     messageId: string,
     updater: (msg: Message) => Message,
   ) => void;
-  deleteMessage: (sessionKey: string, messageId: string) => void;
+  deleteMessage: (sessionKey: string, messageId: string) => Promise<void>;
   clearSessionMessages: (sessionKey: string) => Promise<void>;
   flushSession: (sessionKey: string) => Promise<void>;
 
@@ -433,7 +433,11 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     });
   },
 
-  deleteMessage: (sessionKey, messageId) => {
+  deleteMessage: async (sessionKey, messageId) => {
+    const session = get().sessions[sessionKey];
+    if (!session) return;
+
+    // Remove from in-memory store immediately
     set((state) => {
       const session = state.sessions[sessionKey];
       if (!session) return state;
@@ -447,6 +451,16 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         },
       };
     });
+
+    // Persist deletion to disk
+    const storageEngine = get().storageEngines[session.agentId] ?? get().storageEngine;
+    if (storageEngine) {
+      try {
+        await storageEngine.deleteMessage(sessionKey, messageId);
+      } catch {
+        // In-memory state already updated; log but don't revert
+      }
+    }
   },
 
   clearSessionMessages: async (sessionKey) => {
@@ -455,20 +469,24 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       ? get().storageEngines[session.agentId] ?? get().storageEngine
       : get().storageEngine;
     if (storageEngine) {
-      const routed = await storageEngine.resetSession(sessionKey);
-      const meta = await storageEngine.getSession(routed.sessionKey);
-      if (meta) {
-        set((state) => ({
-          sessions: {
-            ...state.sessions,
-            [sessionKey]: toChatSession(meta),
-          },
-          transcriptStatus: {
-            ...state.transcriptStatus,
-            [sessionKey]: 'ready',
-          },
-        }));
-        return;
+      try {
+        await storageEngine.clearSessionMessages(sessionKey);
+        const meta = await storageEngine.getSession(sessionKey);
+        if (meta) {
+          set((state) => ({
+            sessions: {
+              ...state.sessions,
+              [sessionKey]: toChatSession(meta),
+            },
+            transcriptStatus: {
+              ...state.transcriptStatus,
+              [sessionKey]: 'ready',
+            },
+          }));
+          return;
+        }
+      } catch {
+        // Fall through to in-memory-only clear
       }
     }
 

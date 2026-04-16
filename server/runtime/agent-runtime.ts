@@ -105,6 +105,7 @@ export class AgentRuntime {
       : [];
     const workspaceCwd = config.workspacePath ?? process.cwd();
     const xaiApiKey = config.xaiApiKey || process.env.XAI_API_KEY;
+    const tavilyApiKey = config.tavilyApiKey || process.env.TAVILY_API_KEY;
     let tools = createAgentTools(
       toolNames,
       memoryTools as AgentTool<TSchema>[],
@@ -114,6 +115,7 @@ export class AgentRuntime {
         sandboxWorkdir: config.sandboxWorkdir,
         xaiApiKey,
         xaiModel: config.xaiModel,
+        tavilyApiKey,
       },
     );
 

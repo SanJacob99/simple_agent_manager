@@ -62,6 +62,32 @@ export class StorageClient {
     return res.json();
   }
 
+  async deleteMessage(sessionKey: string, messageId: string): Promise<{ deleted: boolean }> {
+    const res = await fetch(
+      `/api/sessions/${encodeURIComponent(this.agentId)}/${encodeURIComponent(sessionKey)}/messages/${encodeURIComponent(messageId)}`,
+      {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config: this.config, agentName: this.agentName }),
+      },
+    );
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  }
+
+  async clearSessionMessages(sessionKey: string): Promise<SessionRouteResponse> {
+    const res = await fetch(
+      `/api/sessions/${encodeURIComponent(this.agentId)}/${encodeURIComponent(sessionKey)}/clear`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config: this.config, agentName: this.agentName }),
+      },
+    );
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  }
+
   async getSession(sessionKey: string): Promise<SessionStoreEntry | null> {
     const res = await fetch(
       `/api/sessions/${encodeURIComponent(this.agentId)}/${encodeURIComponent(sessionKey)}?${this.queryStr()}`,

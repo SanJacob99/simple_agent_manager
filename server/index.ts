@@ -172,6 +172,33 @@ app.post('/api/sessions/:agentId/:sessionKey/reset', async (req, res) => {
   }
 });
 
+app.delete('/api/sessions/:agentId/:sessionKey/messages/:messageId', async (req, res) => {
+  const { config, agentName } = req.body as {
+    config: ResolvedStorageConfig;
+    agentName: string;
+  };
+  try {
+    const router = getOrCreateSessionRouter(config, agentName, req.params.agentId);
+    const result = await router.deleteMessage(req.params.sessionKey, req.params.messageId);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.post('/api/sessions/:agentId/:sessionKey/clear', async (req, res) => {
+  const { config, agentName } = req.body as {
+    config: ResolvedStorageConfig;
+    agentName: string;
+  };
+  try {
+    const router = getOrCreateSessionRouter(config, agentName, req.params.agentId);
+    res.json(await router.clearMessages(req.params.sessionKey));
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 app.get('/api/sessions/:agentId/:sessionKey/transcript', async (req, res) => {
   const { config, agentName } = req.query as { config: string; agentName: string };
   try {

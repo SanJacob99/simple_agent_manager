@@ -45,6 +45,16 @@ function ChatMessages({
   const messages = useSessionStore(
     (s) => s.sessions[activeSessionKey ?? '']?.messages ?? EMPTY,
   );
+  const deleteMessage = useSessionStore((s) => s.deleteMessage);
+
+  const handleDeleteMessage = useCallback(
+    (messageId: string) => {
+      if (activeSessionKey) {
+        deleteMessage(activeSessionKey, messageId);
+      }
+    },
+    [activeSessionKey, deleteMessage],
+  );
 
   // ContextUsagePanel only needs tokenCount/usage — derive a stable array that
   // does NOT change on content-only updates (streaming deltas).
@@ -189,6 +199,7 @@ function ChatMessages({
               isStreamingThis={isStreamingThis}
               isReasoningThis={isStreamingThis && isReasoning}
               preferPlainText={msg.role === 'assistant' && !richMarkdownIds.has(msg.id)}
+              onDelete={handleDeleteMessage}
             />
           );
         })}
