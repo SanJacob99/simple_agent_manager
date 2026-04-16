@@ -3,7 +3,7 @@ import type { ResolvedToolsConfig } from './agent-config';
 // Tool group definitions — shared between frontend UI and server runtime
 export const TOOL_GROUPS: Record<string, string[]> = {
   runtime: ['bash', 'code_interpreter'],
-  fs: ['read_file', 'write_file', 'edit_file', 'list_directory'],
+  fs: ['read_file', 'write_file', 'edit_file', 'list_directory', 'apply_patch'],
   web: ['web_search', 'web_fetch'],
   // memory tools are managed by the memory node, not the tools node
   coding: ['bash', 'read_file', 'write_file', 'code_interpreter'],
@@ -46,6 +46,7 @@ export const ALL_TOOL_NAMES = [
   'write_file',
   'edit_file',
   'list_directory',
+  'apply_patch',
   'web_search',
   'web_fetch',
   'calculator',
@@ -71,6 +72,7 @@ export const IMPLEMENTED_TOOL_NAMES = new Set<string>([
   'write_file',
   'edit_file',
   'list_directory',
+  'apply_patch',
   // memory tools are managed by the memory node, not the tools node
   ...SESSION_TOOL_NAMES,
 ]);

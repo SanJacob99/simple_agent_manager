@@ -17,6 +17,7 @@ import { createReadFileTool } from './builtins/fs/read-file';
 import { createWriteFileTool } from './builtins/fs/write-file';
 import { createEditFileTool } from './builtins/fs/edit-file';
 import { createListDirectoryTool } from './builtins/fs/list-directory';
+import { createApplyPatchTool } from './builtins/fs/apply-patch';
 import { createWebSearchTool } from './builtins/web/web-search';
 
 // Re-export resolveToolNames from shared (used by agent-runtime.ts)
@@ -107,12 +108,13 @@ export function createAgentTools(
     }
 
     // File I/O tools — share the same context as exec
-    if ((name === 'read_file' || name === 'write_file' || name === 'edit_file' || name === 'list_directory') && factoryContext?.cwd) {
+    if ((name === 'read_file' || name === 'write_file' || name === 'edit_file' || name === 'list_directory' || name === 'apply_patch') && factoryContext?.cwd) {
       const fsCtx = { cwd: factoryContext.cwd, sandboxWorkdir: factoryContext.sandboxWorkdir };
       if (name === 'read_file') tools.push(createReadFileTool(fsCtx));
       else if (name === 'write_file') tools.push(createWriteFileTool(fsCtx));
       else if (name === 'edit_file') tools.push(createEditFileTool(fsCtx));
       else if (name === 'list_directory') tools.push(createListDirectoryTool(fsCtx));
+      else if (name === 'apply_patch') tools.push(createApplyPatchTool(fsCtx));
       continue;
     }
 
