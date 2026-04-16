@@ -67,8 +67,18 @@ function PageLink({
 
 export default function ToolsProperties({ nodeId, data }: Props) {
   const update = useGraphStore((s) => s.updateNodeData);
+  const edges = useGraphStore((s) => s.edges);
+  const allNodes = useGraphStore((s) => s.nodes);
   const [page, setPage] = useState<Page>('main');
   const [customTool, setCustomTool] = useState('');
+
+  // Resolve the agent node's workingDirectory that this tools node inherits from
+  const agentWorkingDir = (() => {
+    const outEdge = edges.find((e) => e.source === nodeId);
+    if (!outEdge) return '';
+    const agentNode = allNodes.find((n) => n.id === outEdge.target && n.data.type === 'agent');
+    return (agentNode?.data as { workingDirectory?: string })?.workingDirectory ?? '';
+  })();
 
   // Effective groups
   const profileGroups = (TOOL_PROFILES[data.profile] ?? []) as ToolGroup[];
@@ -125,15 +135,17 @@ export default function ToolsProperties({ nodeId, data }: Props) {
       <div className="space-y-1">
         <PageHeader title="exec / bash" onBack={() => setPage('main')} />
 
-        <Field label="Working directory (cwd)">
+        <Field label="Working directory override">
           <input
             className={inputClass}
             value={data.toolSettings?.exec?.cwd ?? ''}
             onChange={(e) => updateExec({ cwd: e.target.value })}
-            placeholder="Empty = server working directory"
+            placeholder={agentWorkingDir || 'Inherited from agent node'}
           />
           <p className="mt-0.5 text-[9px] text-slate-600">
-            Absolute path where shell commands run. Leave empty for server default.
+            {agentWorkingDir
+              ? `Inherits: ${agentWorkingDir} — set a value here to override.`
+              : 'Leave empty to use the agent node\'s working directory.'}
           </p>
         </Field>
 

@@ -56,6 +56,23 @@ export const ALL_TOOL_NAMES = [
 ];
 
 /**
+ * Tool names that have a real server-side implementation.
+ * Used to filter the system prompt tool summary to only advertise
+ * tools the model can actually call.
+ */
+export const IMPLEMENTED_TOOL_NAMES = new Set<string>([
+  'exec',
+  'bash', // alias for exec
+  'code_execution',
+  'calculator',
+  'web_fetch',
+  'memory_search',
+  'memory_get',
+  'memory_save',
+  ...SESSION_TOOL_NAMES,
+]);
+
+/**
  * Expand profile + groups + custom enabledTools into a flat deduplicated list.
  *
  * `enabledGroups` is the source of truth for which groups are active.

@@ -33,6 +33,8 @@ export interface AgentNodeData {
   systemPromptMode: SystemPromptMode;
   showReasoning: boolean;
   verbose: boolean;
+  /** Working directory for the agent. Empty = server process.cwd() */
+  workingDirectory: string;
 }
 
 // --- Memory Node (OpenClaw-inspired) ---

@@ -17,6 +17,7 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         systemPromptMode: 'append' as SystemPromptMode,
         showReasoning: false,
         verbose: false,
+        workingDirectory: '',
       };
     case 'memory':
       return {

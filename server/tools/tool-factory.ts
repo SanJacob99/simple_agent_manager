@@ -38,20 +38,8 @@ export const ALL_TOOL_NAMES = [
   ...SESSION_TOOL_NAMES,
 ];
 
-// Tool names that have a real implementation (not stubs).
-// Only these are registered with the model.
-export const IMPLEMENTED_TOOL_NAMES = new Set<string>([
-  'exec',
-  'code_execution',
-  'calculator',
-  'web_fetch',
-  // Memory tools are built separately by MemoryEngine
-  'memory_search',
-  'memory_get',
-  'memory_save',
-  // Session tools are built separately by session-tools.ts
-  ...SESSION_TOOL_NAMES,
-]);
+// Re-export for backward compatibility
+export { IMPLEMENTED_TOOL_NAMES } from '../../shared/resolve-tool-names';
 
 // Only real (implemented) tools are registered with the model.
 // Stub tools are NOT included — the model should never see a tool it can't use.

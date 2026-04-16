@@ -122,14 +122,11 @@ export class AgentRuntime {
       tools = this.wrapToolsWithHooks(tools, config.id);
     }
 
-    // Build system prompt — patch workspace path to reflect the actual exec cwd,
-    // not the storage path that was baked in at graph-export time.
+    // Build system prompt — inject the runtime workspace path when the config
+    // didn't have one (workingDirectory was empty, so no workspace section was built).
     let systemPrompt = config.systemPrompt.assembled;
-    if (workspaceCwd) {
-      systemPrompt = systemPrompt.replace(
-        /Working directory: .+/,
-        `Working directory: ${workspaceCwd}`,
-      );
+    if (workspaceCwd && !/Working directory: /.test(systemPrompt)) {
+      systemPrompt += `\n\n## Workspace\n\nWorking directory: ${workspaceCwd}`;
     }
 
     const plugin = this.pluginRegistry?.get(config.provider.pluginId);

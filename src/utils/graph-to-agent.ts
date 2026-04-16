@@ -1,7 +1,7 @@
 import type { AppNode } from '../types/nodes';
 import type { Edge } from '@xyflow/react';
 import type { AgentConfig, ResolvedProviderConfig, SystemPromptMode } from '../../shared/agent-config';
-import { resolveToolNames } from '../../shared/resolve-tool-names';
+import { resolveToolNames, IMPLEMENTED_TOOL_NAMES } from '../../shared/resolve-tool-names';
 import { buildSystemPrompt } from '../../shared/system-prompt-builder';
 
 export function resolveAgentConfig(
@@ -214,7 +214,7 @@ export function resolveAgentConfig(
   const mode: SystemPromptMode = agentMode === 'manual' ? 'manual' : 'append';
 
   const toolsSummary = toolsConfig
-    ? resolveToolNames(toolsConfig).join(', ')
+    ? resolveToolNames(toolsConfig).filter((t) => IMPLEMENTED_TOOL_NAMES.has(t)).join(', ')
     : null;
 
   const skillsSummary = allSkills.length > 0
@@ -228,7 +228,7 @@ export function resolveAgentConfig(
     ? ((contextNode.data as any).bootstrapTotalMaxChars ?? 150000)
     : 150000;
 
-  const workspacePath = storage ? storage.storagePath : null;
+  const workspacePath = data.workingDirectory || null;
 
   const systemPrompt = buildSystemPrompt({
     mode,
@@ -268,9 +268,11 @@ export function resolveAgentConfig(
     storage,
     vectorDatabases,
     crons,
-    workspacePath: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.exec?.cwd
-      ? toolsNode.data.toolSettings.exec.cwd
-      : null,
+    // Exec tool cwd overrides agent-level workingDirectory when set
+    workspacePath:
+      (toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.exec?.cwd)
+        ? toolsNode.data.toolSettings.exec.cwd
+        : (data.workingDirectory || null),
     sandboxWorkdir: toolsNode?.data.type === 'tools'
       ? toolsNode.data.toolSettings?.exec?.sandboxWorkdir ?? false
       : false,
