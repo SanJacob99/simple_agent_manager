@@ -68,6 +68,7 @@ export interface RunRecord {
 
 const RUN_RECORD_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_WAIT_TIMEOUT_MS = 30_000;
+const STREAM_IDLE_TIMEOUT_MS = 30_000; // abort if no real token within 30s of message_start
 const NO_REPLY_PATTERN = /^no_reply$/i;
 const SESSION_TOOL_NAME_SET = new Set<string>(SESSION_TOOL_NAMES);
 
@@ -659,6 +660,30 @@ export class RunCoordinator {
       );
     };
 
+    // Streaming idle timeout: abort if no real token (thinking_delta, text_delta,
+    // toolcall_delta) arrives within STREAM_IDLE_TIMEOUT_MS of message_start.
+    // This catches OpenRouter's `: OPENROUTER PROCESSING` keep-alive stalls
+    // where the HTTP stream stays open but no model output is produced.
+    let _streamIdleTimer: ReturnType<typeof setTimeout> | null = null;
+    const clearStreamIdleTimer = () => {
+      if (_streamIdleTimer) {
+        clearTimeout(_streamIdleTimer);
+        _streamIdleTimer = null;
+      }
+    };
+    const resetStreamIdleTimer = () => {
+      clearStreamIdleTimer();
+      _streamIdleTimer = setTimeout(() => {
+        if (record.status !== 'running') return;
+        log(
+          'stream',
+          `[${this.agentId}] stream idle timeout after ${STREAM_IDLE_TIMEOUT_MS}ms ` +
+            `pass=${_apiCallCount} — aborting`,
+        );
+        this.runtime.abort();
+      }, STREAM_IDLE_TIMEOUT_MS);
+    };
+
     const unsubscribe = this.runtime.subscribe((event: RuntimeEvent) => {
       if ('type' in event) {
         if (event.type === 'message_start' && (event as any).message?.role === 'assistant') {
@@ -682,12 +707,18 @@ export class RunCoordinator {
               `thinkingLevel=${this.config.thinkingLevel ?? 'unset'} ` +
               `showReasoning=${this.config.showReasoning ?? false}`,
           );
+          resetStreamIdleTimer();
         }
         else if (event.type === 'message_update') {
           const assistantEvent = (event as any).assistantMessageEvent;
           if (assistantEvent?.type) {
             _assistantEventTypes.add(assistantEvent.type);
           }
+          // Any real content delta resets the idle timer
+          if (assistantEvent?.type === 'text_delta' || assistantEvent?.type === 'thinking_delta' || assistantEvent?.type === 'toolcall_delta') {
+            resetStreamIdleTimer();
+          }
+
           if (assistantEvent?.type === 'text_delta') {
             _textChars += (assistantEvent.delta ?? '').length;
             if (!_firstTextDeltaLogged) {
@@ -709,6 +740,7 @@ export class RunCoordinator {
           }
         }
         else if (event.type === 'message_end' && (event as any).message?.role === 'assistant') {
+          clearStreamIdleTimer();
           logStreamSummary('message_end');
         }
       }
@@ -749,6 +781,7 @@ export class RunCoordinator {
       this.finalizeRunError(record, classifyError(error));
       this.tryStartNextRun();
     } finally {
+      clearStreamIdleTimer();
       unsubscribe();
       await finalizeTranscript();
       this.runtime.clearActiveSession();
