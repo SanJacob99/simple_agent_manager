@@ -247,7 +247,12 @@ export function resolveAgentConfig(
     storage,
     vectorDatabases,
     crons,
-    workspacePath: null, // set at runtime by the server based on agent config
+    workspacePath: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.exec?.cwd
+      ? toolsNode.data.toolSettings.exec.cwd
+      : null,
+    sandboxWorkdir: toolsNode?.data.type === 'tools'
+      ? toolsNode.data.toolSettings?.exec?.sandboxWorkdir ?? false
+      : false,
     exportedAt: Date.now(),
     sourceGraphId: agentNodeId,
     runTimeoutMs: 172800000,

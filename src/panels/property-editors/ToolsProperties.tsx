@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useGraphStore } from '../../store/graph-store';
-import type { ToolsNodeData, ToolProfile, ToolGroup } from '../../types/nodes';
+import type { ToolsNodeData, ToolProfile, ToolGroup, ToolSettings } from '../../types/nodes';
 import { Field, inputClass, selectClass, textareaClass } from './shared';
 import { ALL_TOOL_NAMES, TOOL_GROUPS } from '../../../shared/resolve-tool-names';
 
@@ -109,6 +109,64 @@ export default function ToolsProperties({ nodeId, data }: Props) {
               </span>
             </label>
           ))}
+        </div>
+      </Field>
+
+      {/* Per-tool settings */}
+      <Field label="Tool Settings">
+        <div className="space-y-2">
+          {/* exec */}
+          <div className="rounded border border-slate-700 p-2">
+            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1.5">
+              exec / bash
+            </p>
+            <div className="space-y-1.5">
+              <div>
+                <label className="text-[10px] text-slate-500">Working directory (cwd)</label>
+                <input
+                  className={inputClass}
+                  value={data.toolSettings?.exec?.cwd ?? ''}
+                  onChange={(e) =>
+                    update(nodeId, {
+                      toolSettings: {
+                        ...(data.toolSettings ?? { exec: { cwd: '', sandboxWorkdir: false } }),
+                        exec: {
+                          ...(data.toolSettings?.exec ?? { cwd: '', sandboxWorkdir: false }),
+                          cwd: e.target.value,
+                        },
+                      },
+                    })
+                  }
+                  placeholder="Empty = server working directory"
+                />
+                <p className="mt-0.5 text-[9px] text-slate-600">
+                  Absolute path where shell commands run. Leave empty for server default.
+                </p>
+              </div>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={data.toolSettings?.exec?.sandboxWorkdir ?? false}
+                  onChange={(e) =>
+                    update(nodeId, {
+                      toolSettings: {
+                        ...(data.toolSettings ?? { exec: { cwd: '', sandboxWorkdir: false } }),
+                        exec: {
+                          ...(data.toolSettings?.exec ?? { cwd: '', sandboxWorkdir: false }),
+                          sandboxWorkdir: e.target.checked,
+                        },
+                      },
+                    })
+                  }
+                  className="rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500/30"
+                />
+                <span className="text-xs text-slate-300">Sandbox workdir</span>
+              </label>
+              <p className="text-[9px] text-slate-600">
+                When enabled, the agent cannot set workdir outside of the configured cwd.
+              </p>
+            </div>
+          </div>
         </div>
       </Field>
 

@@ -85,6 +85,17 @@ export interface PluginDefinition {
   enabled: boolean;
 }
 
+export interface ExecToolSettings {
+  /** Working directory for shell commands. Empty string = server process.cwd() */
+  cwd: string;
+  /** When true, workdir param is constrained to stay within cwd */
+  sandboxWorkdir: boolean;
+}
+
+export interface ToolSettings {
+  exec: ExecToolSettings;
+}
+
 export interface ToolsNodeData {
   [key: string]: unknown;
   type: 'tools';
@@ -96,6 +107,7 @@ export interface ToolsNodeData {
   plugins: PluginDefinition[];
   subAgentSpawning: boolean;
   maxSubAgents: number;
+  toolSettings: ToolSettings;
 }
 
 // --- Skills Node ---

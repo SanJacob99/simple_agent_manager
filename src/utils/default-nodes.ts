@@ -46,6 +46,12 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         plugins: [],
         subAgentSpawning: false,
         maxSubAgents: 3,
+        toolSettings: {
+          exec: {
+            cwd: '',
+            sandboxWorkdir: false,
+          },
+        },
       };
     case 'skills':
       return {
