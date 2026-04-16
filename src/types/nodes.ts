@@ -90,6 +90,8 @@ export interface ExecToolSettings {
   cwd: string;
   /** When true, workdir param is constrained to stay within cwd */
   sandboxWorkdir: boolean;
+  /** Markdown guidance injected into the system prompt for this tool */
+  skill: string;
 }
 
 export interface CodeExecutionToolSettings {
@@ -97,6 +99,8 @@ export interface CodeExecutionToolSettings {
   apiKey: string;
   /** xAI model override (defaults to grok-4-1-fast) */
   model: string;
+  /** Markdown guidance injected into the system prompt for this tool */
+  skill: string;
 }
 
 export interface ToolSettings {

@@ -77,6 +77,27 @@ export function resolveAgentConfig(
     }
   }
 
+  // Collect per-tool skills from tool settings
+  if (toolsNode && toolsNode.data.type === 'tools') {
+    const ts = toolsNode.data.toolSettings;
+    if (ts?.exec?.skill?.trim()) {
+      allSkills.push({
+        id: 'tool-skill-exec',
+        name: 'exec tool guidance',
+        content: ts.exec.skill,
+        injectAs: 'system-prompt' as const,
+      });
+    }
+    if (ts?.codeExecution?.skill?.trim()) {
+      allSkills.push({
+        id: 'tool-skill-code-execution',
+        name: 'code_execution tool guidance',
+        content: ts.codeExecution.skill,
+        injectAs: 'system-prompt' as const,
+      });
+    }
+  }
+
   const toolsConfig = toolsNode && toolsNode.data.type === 'tools'
     ? {
         profile: toolsNode.data.profile,

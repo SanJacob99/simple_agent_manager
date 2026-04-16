@@ -1,34 +1,94 @@
 import { useState } from 'react';
+import { ChevronLeft, ChevronRight, Terminal, Code2, Users } from 'lucide-react';
 import { useGraphStore } from '../../store/graph-store';
 import type { ToolsNodeData, ToolProfile, ToolGroup } from '../../types/nodes';
 import { Field, inputClass, selectClass, textareaClass } from './shared';
-import { ALL_TOOL_NAMES, TOOL_GROUPS } from '../../../shared/resolve-tool-names';
+import { ALL_TOOL_NAMES, TOOL_GROUPS, TOOL_PROFILES } from '../../../shared/resolve-tool-names';
 
 const PROFILES: ToolProfile[] = ['full', 'coding', 'messaging', 'minimal', 'custom'];
 const GROUPS: ToolGroup[] = ['runtime', 'fs', 'web', 'memory', 'coding', 'communication'];
+
+type Page = 'main' | 'exec' | 'code_execution' | 'sub_agents';
 
 interface Props {
   nodeId: string;
   data: ToolsNodeData;
 }
 
+// ---------------------------------------------------------------------------
+// Page header with back button
+// ---------------------------------------------------------------------------
+
+function PageHeader({ title, onBack }: { title: string; onBack: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onBack}
+      className="flex items-center gap-1.5 mb-2 text-xs text-slate-400 hover:text-slate-200 transition"
+    >
+      <ChevronLeft size={14} />
+      <span className="font-semibold">{title}</span>
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Page link row
+// ---------------------------------------------------------------------------
+
+function PageLink({
+  icon,
+  label,
+  hint,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  hint?: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center gap-2 rounded-md border border-slate-700 bg-slate-800/50 px-2.5 py-2 text-left transition hover:border-slate-600 hover:bg-slate-800"
+    >
+      <span className="text-slate-400">{icon}</span>
+      <span className="flex-1 text-xs text-slate-300">{label}</span>
+      {hint && <span className="text-[9px] text-slate-600">{hint}</span>}
+      <ChevronRight size={12} className="text-slate-600" />
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
+
 export default function ToolsProperties({ nodeId, data }: Props) {
   const update = useGraphStore((s) => s.updateNodeData);
+  const [page, setPage] = useState<Page>('main');
   const [customTool, setCustomTool] = useState('');
-  const [newSkillName, setNewSkillName] = useState('');
+
+  // Effective groups
+  const profileGroups = (TOOL_PROFILES[data.profile] ?? []) as ToolGroup[];
+  const effectiveGroups = data.enabledGroups.length > 0
+    ? data.enabledGroups
+    : profileGroups;
+
+  const toggleGroup = (group: ToolGroup) => {
+    const base = new Set<ToolGroup>(effectiveGroups);
+    if (base.has(group)) base.delete(group);
+    else base.add(group);
+    const newGroups = GROUPS.filter((g) => base.has(g));
+    update(nodeId, { enabledGroups: newGroups, profile: 'custom' as ToolProfile });
+  };
 
   const toggleTool = (tool: string) => {
     const tools = data.enabledTools.includes(tool)
       ? data.enabledTools.filter((t) => t !== tool)
       : [...data.enabledTools, tool];
     update(nodeId, { enabledTools: tools });
-  };
-
-  const toggleGroup = (group: ToolGroup) => {
-    const groups = data.enabledGroups.includes(group)
-      ? data.enabledGroups.filter((g) => g !== group)
-      : [...data.enabledGroups, group];
-    update(nodeId, { enabledGroups: groups });
   };
 
   const addCustomTool = () => {
@@ -38,28 +98,163 @@ export default function ToolsProperties({ nodeId, data }: Props) {
     }
   };
 
-  const addSkill = () => {
-    if (!newSkillName.trim()) return;
-    const skill = {
-      id: `skill_${Date.now()}`,
-      name: newSkillName.trim(),
-      content: '',
-      injectAs: 'system-prompt' as const,
-    };
-    update(nodeId, { skills: [...data.skills, skill] });
-    setNewSkillName('');
-  };
-
-  const updateSkill = (id: string, updates: Record<string, unknown>) => {
+  // Helper for updating nested toolSettings
+  const updateExec = (patch: Record<string, unknown>) => {
     update(nodeId, {
-      skills: data.skills.map((s) => (s.id === id ? { ...s, ...updates } : s)),
+      toolSettings: {
+        ...data.toolSettings,
+        exec: { ...(data.toolSettings?.exec ?? { cwd: '', sandboxWorkdir: false, skill: '' }), ...patch },
+      },
     });
   };
 
-  const removeSkill = (id: string) => {
-    update(nodeId, { skills: data.skills.filter((s) => s.id !== id) });
+  const updateCodeExecution = (patch: Record<string, unknown>) => {
+    update(nodeId, {
+      toolSettings: {
+        ...data.toolSettings,
+        codeExecution: { ...(data.toolSettings?.codeExecution ?? { apiKey: '', model: '', skill: '' }), ...patch },
+      },
+    });
   };
 
+  // -------------------------------------------------------------------------
+  // Page: exec settings
+  // -------------------------------------------------------------------------
+  if (page === 'exec') {
+    return (
+      <div className="space-y-1">
+        <PageHeader title="exec / bash" onBack={() => setPage('main')} />
+
+        <Field label="Working directory (cwd)">
+          <input
+            className={inputClass}
+            value={data.toolSettings?.exec?.cwd ?? ''}
+            onChange={(e) => updateExec({ cwd: e.target.value })}
+            placeholder="Empty = server working directory"
+          />
+          <p className="mt-0.5 text-[9px] text-slate-600">
+            Absolute path where shell commands run. Leave empty for server default.
+          </p>
+        </Field>
+
+        <Field label="Sandbox">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={data.toolSettings?.exec?.sandboxWorkdir ?? false}
+              onChange={(e) => updateExec({ sandboxWorkdir: e.target.checked })}
+              className="rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500/30"
+            />
+            <span className="text-xs text-slate-300">Restrict workdir to cwd</span>
+          </label>
+          <p className="mt-0.5 text-[9px] text-slate-600">
+            When enabled, the agent cannot set workdir outside of the configured cwd.
+          </p>
+        </Field>
+
+        <Field label="Skill">
+          <textarea
+            className={textareaClass}
+            rows={4}
+            value={data.toolSettings?.exec?.skill ?? ''}
+            onChange={(e) => updateExec({ skill: e.target.value })}
+            placeholder="Markdown guidance for how the agent should use exec..."
+          />
+          <p className="mt-0.5 text-[9px] text-slate-600">
+            Injected into the system prompt to guide exec usage.
+          </p>
+        </Field>
+      </div>
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Page: code_execution settings
+  // -------------------------------------------------------------------------
+  if (page === 'code_execution') {
+    return (
+      <div className="space-y-1">
+        <PageHeader title="code_execution" onBack={() => setPage('main')} />
+
+        <Field label="xAI API Key">
+          <input
+            className={inputClass}
+            type="password"
+            value={data.toolSettings?.codeExecution?.apiKey ?? ''}
+            onChange={(e) => updateCodeExecution({ apiKey: e.target.value })}
+            placeholder="Empty = reads XAI_API_KEY from env"
+          />
+        </Field>
+
+        <Field label="Model">
+          <input
+            className={inputClass}
+            value={data.toolSettings?.codeExecution?.model ?? ''}
+            onChange={(e) => updateCodeExecution({ model: e.target.value })}
+            placeholder="grok-4-1-fast (default)"
+          />
+          <p className="mt-0.5 text-[9px] text-slate-600">
+            Runs sandboxed Python on xAI. For calculations, statistics, data analysis.
+          </p>
+        </Field>
+
+        <Field label="Skill">
+          <textarea
+            className={textareaClass}
+            rows={4}
+            value={data.toolSettings?.codeExecution?.skill ?? ''}
+            onChange={(e) => updateCodeExecution({ skill: e.target.value })}
+            placeholder="Markdown guidance for how the agent should use code_execution..."
+          />
+          <p className="mt-0.5 text-[9px] text-slate-600">
+            Injected into the system prompt to guide code_execution usage.
+          </p>
+        </Field>
+      </div>
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Page: sub-agents
+  // -------------------------------------------------------------------------
+  if (page === 'sub_agents') {
+    return (
+      <div className="space-y-1">
+        <PageHeader title="Sub-Agents" onBack={() => setPage('main')} />
+
+        <Field label="Sub-Agent Spawning">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={data.subAgentSpawning}
+              onChange={(e) => update(nodeId, { subAgentSpawning: e.target.checked })}
+              className="rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500/30"
+            />
+            <span className="text-xs text-slate-300">Enable sub-agent spawning</span>
+          </label>
+        </Field>
+
+        {data.subAgentSpawning && (
+          <Field label="Max Sub-Agents">
+            <input
+              className={inputClass}
+              type="number"
+              min={1}
+              max={10}
+              value={data.maxSubAgents}
+              onChange={(e) =>
+                update(nodeId, { maxSubAgents: parseInt(e.target.value) || 3 })
+              }
+            />
+          </Field>
+        )}
+      </div>
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Page: main
+  // -------------------------------------------------------------------------
   return (
     <div className="space-y-1">
       <Field label="Label">
@@ -75,7 +270,13 @@ export default function ToolsProperties({ nodeId, data }: Props) {
         <select
           className={selectClass}
           value={data.profile}
-          onChange={(e) => update(nodeId, { profile: e.target.value as ToolProfile })}
+          onChange={(e) => {
+            const profile = e.target.value as ToolProfile;
+            const groups = profile === 'custom'
+              ? effectiveGroups
+              : (TOOL_PROFILES[profile] ?? []) as ToolGroup[];
+            update(nodeId, { profile, enabledGroups: groups });
+          }}
         >
           {PROFILES.map((p) => (
             <option key={p} value={p}>{p}</option>
@@ -97,7 +298,7 @@ export default function ToolsProperties({ nodeId, data }: Props) {
             <label key={group} className="flex items-center gap-2">
               <input
                 type="checkbox"
-                checked={data.enabledGroups.includes(group)}
+                checked={effectiveGroups.includes(group)}
                 onChange={() => toggleGroup(group)}
                 className="rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500/30"
               />
@@ -109,115 +310,6 @@ export default function ToolsProperties({ nodeId, data }: Props) {
               </span>
             </label>
           ))}
-        </div>
-      </Field>
-
-      {/* Per-tool settings */}
-      <Field label="Tool Settings">
-        <div className="space-y-2">
-          {/* exec */}
-          <div className="rounded border border-slate-700 p-2">
-            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1.5">
-              exec / bash
-            </p>
-            <div className="space-y-1.5">
-              <div>
-                <label className="text-[10px] text-slate-500">Working directory (cwd)</label>
-                <input
-                  className={inputClass}
-                  value={data.toolSettings?.exec?.cwd ?? ''}
-                  onChange={(e) =>
-                    update(nodeId, {
-                      toolSettings: {
-                        ...(data.toolSettings ?? { exec: { cwd: '', sandboxWorkdir: false } }),
-                        exec: {
-                          ...(data.toolSettings?.exec ?? { cwd: '', sandboxWorkdir: false }),
-                          cwd: e.target.value,
-                        },
-                      },
-                    })
-                  }
-                  placeholder="Empty = server working directory"
-                />
-                <p className="mt-0.5 text-[9px] text-slate-600">
-                  Absolute path where shell commands run. Leave empty for server default.
-                </p>
-              </div>
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={data.toolSettings?.exec?.sandboxWorkdir ?? false}
-                  onChange={(e) =>
-                    update(nodeId, {
-                      toolSettings: {
-                        ...(data.toolSettings ?? { exec: { cwd: '', sandboxWorkdir: false } }),
-                        exec: {
-                          ...(data.toolSettings?.exec ?? { cwd: '', sandboxWorkdir: false }),
-                          sandboxWorkdir: e.target.checked,
-                        },
-                      },
-                    })
-                  }
-                  className="rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500/30"
-                />
-                <span className="text-xs text-slate-300">Sandbox workdir</span>
-              </label>
-              <p className="text-[9px] text-slate-600">
-                When enabled, the agent cannot set workdir outside of the configured cwd.
-              </p>
-            </div>
-          </div>
-
-          {/* code_execution */}
-          <div className="rounded border border-slate-700 p-2">
-            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1.5">
-              code_execution
-            </p>
-            <div className="space-y-1.5">
-              <div>
-                <label className="text-[10px] text-slate-500">xAI API Key</label>
-                <input
-                  className={inputClass}
-                  type="password"
-                  value={data.toolSettings?.codeExecution?.apiKey ?? ''}
-                  onChange={(e) =>
-                    update(nodeId, {
-                      toolSettings: {
-                        ...(data.toolSettings ?? { exec: { cwd: '', sandboxWorkdir: false }, codeExecution: { apiKey: '', model: '' } }),
-                        codeExecution: {
-                          ...(data.toolSettings?.codeExecution ?? { apiKey: '', model: '' }),
-                          apiKey: e.target.value,
-                        },
-                      },
-                    })
-                  }
-                  placeholder="Empty = reads XAI_API_KEY from env"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] text-slate-500">Model</label>
-                <input
-                  className={inputClass}
-                  value={data.toolSettings?.codeExecution?.model ?? ''}
-                  onChange={(e) =>
-                    update(nodeId, {
-                      toolSettings: {
-                        ...(data.toolSettings ?? { exec: { cwd: '', sandboxWorkdir: false }, codeExecution: { apiKey: '', model: '' } }),
-                        codeExecution: {
-                          ...(data.toolSettings?.codeExecution ?? { apiKey: '', model: '' }),
-                          model: e.target.value,
-                        },
-                      },
-                    })
-                  }
-                  placeholder="grok-4-1-fast (default)"
-                />
-                <p className="mt-0.5 text-[9px] text-slate-600">
-                  Runs sandboxed Python on xAI. For calculations, statistics, data analysis.
-                </p>
-              </div>
-            </div>
-          </div>
         </div>
       </Field>
 
@@ -255,86 +347,28 @@ export default function ToolsProperties({ nodeId, data }: Props) {
         </Field>
       )}
 
-      {/* Skills */}
-      <Field label="Skills (Markdown Instructions)">
-        <div className="space-y-2">
-          {data.skills.map((skill) => (
-            <div key={skill.id} className="rounded border border-slate-700 p-2">
-              <div className="flex items-center justify-between mb-1">
-                <input
-                  className={inputClass + ' !w-auto flex-1'}
-                  value={skill.name}
-                  onChange={(e) => updateSkill(skill.id, { name: e.target.value })}
-                  placeholder="Skill name"
-                />
-                <button
-                  onClick={() => removeSkill(skill.id)}
-                  className="ml-2 text-xs text-red-400 hover:text-red-300"
-                >
-                  Remove
-                </button>
-              </div>
-              <textarea
-                className={textareaClass}
-                rows={3}
-                value={skill.content}
-                onChange={(e) => updateSkill(skill.id, { content: e.target.value })}
-                placeholder="Markdown instructions for this skill..."
-              />
-              <select
-                className={selectClass + ' mt-1'}
-                value={skill.injectAs}
-                onChange={(e) => updateSkill(skill.id, { injectAs: e.target.value })}
-              >
-                <option value="system-prompt">Inject as system prompt</option>
-                <option value="user-context">Inject as user context</option>
-              </select>
-            </div>
-          ))}
-          <div className="flex gap-1.5">
-            <input
-              className={inputClass}
-              value={newSkillName}
-              onChange={(e) => setNewSkillName(e.target.value)}
-              placeholder="New skill name"
-              onKeyDown={(e) => e.key === 'Enter' && addSkill()}
-            />
-            <button
-              onClick={addSkill}
-              className="shrink-0 rounded-md bg-slate-700 px-2.5 text-xs text-slate-300 transition hover:bg-slate-600"
-            >
-              Add
-            </button>
-          </div>
-        </div>
-      </Field>
-
-      {/* Sub-agent spawning */}
-      <Field label="Sub-Agent Spawning">
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={data.subAgentSpawning}
-            onChange={(e) => update(nodeId, { subAgentSpawning: e.target.checked })}
-            className="rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500/30"
+      {/* Navigation to config pages */}
+      <Field label="Configure">
+        <div className="space-y-1.5">
+          <PageLink
+            icon={<Terminal size={14} />}
+            label="exec / bash"
+            hint={data.toolSettings?.exec?.cwd || undefined}
+            onClick={() => setPage('exec')}
           />
-          <span className="text-xs text-slate-300">Enable sub-agent spawning</span>
-        </label>
-        {data.subAgentSpawning && (
-          <div className="mt-1">
-            <label className="text-[10px] text-slate-500">Max sub-agents</label>
-            <input
-              className={inputClass}
-              type="number"
-              min={1}
-              max={10}
-              value={data.maxSubAgents}
-              onChange={(e) =>
-                update(nodeId, { maxSubAgents: parseInt(e.target.value) || 3 })
-              }
-            />
-          </div>
-        )}
+          <PageLink
+            icon={<Code2 size={14} />}
+            label="code_execution"
+            hint={data.toolSettings?.codeExecution?.apiKey ? 'key set' : undefined}
+            onClick={() => setPage('code_execution')}
+          />
+          <PageLink
+            icon={<Users size={14} />}
+            label="Sub-Agents"
+            hint={data.subAgentSpawning ? 'on' : undefined}
+            onClick={() => setPage('sub_agents')}
+          />
+        </div>
       </Field>
     </div>
   );
