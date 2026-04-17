@@ -20,6 +20,7 @@ import { createListDirectoryTool } from './builtins/fs/list-directory';
 import { createApplyPatchTool } from './builtins/fs/apply-patch';
 import { createImageAnalyzeTool } from './builtins/image/image-analyze';
 import { createImageGenerateTool } from './builtins/image/image-generate';
+import { createShowImageTool } from './builtins/image/show-image';
 import { createWebSearchTool } from './builtins/web/web-search';
 
 // Re-export resolveToolNames from shared (used by agent-runtime.ts)
@@ -130,6 +131,10 @@ export function createAgentTools(
     // Image tools
     if (name === 'image' && factoryContext?.cwd) {
       tools.push(createImageAnalyzeTool({ cwd: factoryContext.cwd }));
+      continue;
+    }
+    if (name === 'show_image' && factoryContext?.cwd) {
+      tools.push(createShowImageTool({ cwd: factoryContext.cwd }));
       continue;
     }
     if (name === 'image_generate' && factoryContext?.cwd) {

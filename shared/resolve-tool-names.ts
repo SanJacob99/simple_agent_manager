@@ -7,7 +7,7 @@ export const TOOL_GROUPS: Record<string, string[]> = {
   web: ['web_search', 'web_fetch'],
   // memory tools are managed by the memory node, not the tools node
   coding: ['bash', 'read_file', 'write_file', 'code_interpreter'],
-  media: ['image', 'image_generate'],
+  media: ['image', 'image_generate', 'show_image'],
   communication: ['send_message'],
   sessions: [
     'sessions_list',
@@ -53,6 +53,7 @@ export const ALL_TOOL_NAMES = [
   'calculator',
   'image',
   'image_generate',
+  'show_image',
   'send_message',
   'text_to_speech',
   ...SESSION_TOOL_NAMES,
@@ -77,6 +78,7 @@ export const IMPLEMENTED_TOOL_NAMES = new Set<string>([
   'apply_patch',
   'image',
   'image_generate',
+  'show_image',
   // memory tools are managed by the memory node, not the tools node
   ...SESSION_TOOL_NAMES,
 ]);
