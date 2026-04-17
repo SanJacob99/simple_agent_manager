@@ -1,3 +1,5 @@
+import dns from 'node:dns/promises';
+import net from 'node:net';
 import { Type, type TSchema } from '@sinclair/typebox';
 import type { AgentTool, AgentToolResult } from '@mariozechner/pi-agent-core';
 import { SESSION_TOOL_NAMES } from '../../shared/resolve-tool-names';
@@ -85,15 +87,45 @@ function createWebFetchTool(): AgentTool<TSchema> {
 
         // Block internal and reserved IP addresses/hostnames
         const hostname = parsedUrl.hostname.toLowerCase();
-        if (
-          hostname === 'localhost' ||
-          hostname === '127.0.0.1' ||
-          hostname === '0.0.0.0' ||
-          hostname === '::1' ||
-          hostname === '169.254.169.254' ||
-          hostname.endsWith('.internal') ||
-          hostname.endsWith('.local')
-        ) {
+        if (hostname.endsWith('.internal') || hostname.endsWith('.local')) {
+          return textResult('Error: Access to internal or restricted hosts is not permitted.');
+        }
+
+        let lookup;
+        if (net.isIP(hostname)) {
+          lookup = { address: hostname };
+        } else {
+          try {
+            lookup = await dns.lookup(hostname);
+          } catch (err) {
+            return textResult('Error: Could not resolve hostname.');
+          }
+        }
+
+        const ip = lookup.address;
+        let isInternal = false;
+
+        if (net.isIP(ip) === 4) {
+          const parts = ip.split('.').map(Number);
+          isInternal = (
+            parts[0] === 10 ||
+            (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
+            (parts[0] === 192 && parts[1] === 168) ||
+            parts[0] === 127 ||
+            (parts[0] === 169 && parts[1] === 254) ||
+            parts[0] === 0
+          );
+        } else if (net.isIP(ip) === 6) {
+          isInternal = (
+            ip === '::1' ||
+            ip.startsWith('fc00:') ||
+            ip.startsWith('fd00:') ||
+            ip.startsWith('fe80:') ||
+            ip === '::'
+          );
+        }
+
+        if (isInternal) {
           return textResult('Error: Access to internal or restricted hosts is not permitted.');
         }
 

@@ -17,3 +17,8 @@
 **Vulnerability:** The WebhookHandler used `crypto.timingSafeEqual` directly on user-provided signatures without checking their byte lengths, causing a RangeError crash when the lengths mismatched, leading to a Denial of Service (DoS) vulnerability.
 **Learning:** `crypto.timingSafeEqual` throws a `RangeError` if the two buffers passed to it are of different sizes. Passing unverified inputs directly to this function can crash the node process.
 **Prevention:** Always compare the `.byteLength` property of both Buffers before passing them to `crypto.timingSafeEqual`.
+
+## 2025-02-24 - SSRF Protection By DNS Resolution
+**Vulnerability:** The `web_fetch` tool blocked SSRF attempts using a strict string check on the hostname (`hostname === 'localhost' || hostname === '127.0.0.1'`). This could be bypassed using alternative IP formats (e.g., `127.1`, `0x7f000001`) or domains that resolve to loopback IPs (e.g., `localtest.me`), potentially exposing internal services to SSRF.
+**Learning:** String comparisons of hostnames are insufficient to prevent SSRF because an attacker can use DNS rebinding or simply use a public DNS record that points to an internal IP address to bypass the check.
+**Prevention:** Always perform a DNS lookup (`dns.lookup`) to resolve the hostname to an IP address before performing the fetch, and check the resolved IP against a list of restricted internal IP blocks.
