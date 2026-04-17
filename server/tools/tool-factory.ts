@@ -22,6 +22,7 @@ import { createImageAnalyzeTool } from './builtins/image/image-analyze';
 import { createImageGenerateTool } from './builtins/image/image-generate';
 import { createShowImageTool } from './builtins/image/show-image';
 import { createWebSearchTool } from './builtins/web/web-search';
+import { createCanvaTool } from './builtins/canva/canva';
 
 // Re-export resolveToolNames from shared (used by agent-runtime.ts)
 export { resolveToolNames } from '../../shared/resolve-tool-names';
@@ -38,6 +39,7 @@ export const ALL_TOOL_NAMES = [
   'web_search',
   'web_fetch',
   'calculator',
+  'canva',
   'memory_search',
   'memory_get',
   'memory_save',
@@ -88,6 +90,10 @@ export interface ToolFactoryContext {
   getOpenrouterApiKey?: () => Promise<string | undefined> | string | undefined;
   /** Preferred image generation model */
   imageModel?: string;
+  /** Start of the port range canva will auto-pick from */
+  canvaPortRangeStart?: number;
+  /** End of the port range canva will auto-pick from */
+  canvaPortRangeEnd?: number;
   /** Model ID — used to apply provider-specific schema cleaning (e.g. Gemini) */
   modelId?: string;
 }
@@ -125,6 +131,17 @@ export function createAgentTools(
       else if (name === 'edit_file') tools.push(createEditFileTool(fsCtx));
       else if (name === 'list_directory') tools.push(createListDirectoryTool(fsCtx));
       else if (name === 'apply_patch') tools.push(createApplyPatchTool(fsCtx));
+      continue;
+    }
+
+    // Canva (HTML/CSS/JS visualizations) — needs the agent workspace for file output
+    if (name === 'canva' && factoryContext?.cwd) {
+      tools.push(createCanvaTool({
+        cwd: factoryContext.cwd,
+        sandboxWorkdir: factoryContext.sandboxWorkdir,
+        portRangeStart: factoryContext.canvaPortRangeStart,
+        portRangeEnd: factoryContext.canvaPortRangeEnd,
+      }));
       continue;
     }
 

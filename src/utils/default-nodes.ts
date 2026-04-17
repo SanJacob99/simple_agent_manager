@@ -68,6 +68,11 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
             preferredModel: '',
             skill: '',
           },
+          canva: {
+            portRangeStart: 5173,
+            portRangeEnd: 5273,
+            skill: '',
+          },
         },
       };
     case 'skills':

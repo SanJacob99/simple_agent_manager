@@ -112,6 +112,14 @@ export function resolveAgentConfig(
         injectAs: 'system-prompt' as const,
       });
     }
+    if (ts?.canva?.skill?.trim()) {
+      allSkills.push({
+        id: 'tool-skill-canva',
+        name: 'canva tool guidance',
+        content: ts.canva.skill,
+        injectAs: 'system-prompt' as const,
+      });
+    }
   }
 
   const toolsConfig = toolsNode && toolsNode.data.type === 'tools'
@@ -309,6 +317,12 @@ export function resolveAgentConfig(
       : undefined,
     imageModel: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.image?.preferredModel
       ? toolsNode.data.toolSettings.image.preferredModel
+      : undefined,
+    canvaPortRangeStart: toolsNode?.data.type === 'tools'
+      ? toolsNode.data.toolSettings?.canva?.portRangeStart
+      : undefined,
+    canvaPortRangeEnd: toolsNode?.data.type === 'tools'
+      ? toolsNode.data.toolSettings?.canva?.portRangeEnd
       : undefined,
     exportedAt: Date.now(),
     sourceGraphId: agentNodeId,

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Terminal, Code2, Globe, Image, Users } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Terminal, Code2, Globe, Image, Users, LayoutDashboard } from 'lucide-react';
 import { useGraphStore } from '../../store/graph-store';
 import { buildProviderCatalogKey, useModelCatalogStore } from '../../store/model-catalog-store';
 import type { ToolsNodeData, ToolProfile, ToolGroup } from '../../types/nodes';
@@ -9,7 +9,7 @@ import { ALL_TOOL_NAMES, TOOL_GROUPS, TOOL_PROFILES } from '../../../shared/reso
 const PROFILES: ToolProfile[] = ['full', 'coding', 'messaging', 'minimal', 'custom'];
 const GROUPS: ToolGroup[] = ['runtime', 'fs', 'web', 'coding', 'media', 'communication'];
 
-type Page = 'main' | 'exec' | 'code_execution' | 'web_search' | 'image' | 'sub_agents';
+type Page = 'main' | 'exec' | 'code_execution' | 'web_search' | 'image' | 'canva' | 'sub_agents';
 
 interface Props {
   nodeId: string;
@@ -177,6 +177,18 @@ export default function ToolsProperties({ nodeId, data }: Props) {
       toolSettings: {
         ...data.toolSettings,
         image: { ...(data.toolSettings?.image ?? { openaiApiKey: '', geminiApiKey: '', preferredModel: '', skill: '' }), ...patch },
+      },
+    });
+  };
+
+  const updateCanva = (patch: Record<string, unknown>) => {
+    update(nodeId, {
+      toolSettings: {
+        ...data.toolSettings,
+        canva: {
+          ...(data.toolSettings?.canva ?? { portRangeStart: 5173, portRangeEnd: 5273, skill: '' }),
+          ...patch,
+        },
       },
     });
   };
@@ -439,6 +451,63 @@ export default function ToolsProperties({ nodeId, data }: Props) {
   }
 
   // -------------------------------------------------------------------------
+  // Page: canva settings
+  // -------------------------------------------------------------------------
+  if (page === 'canva') {
+    return (
+      <div className="space-y-1">
+        <PageHeader title="canva" onBack={() => setPage('main')} />
+
+        <div className="rounded-md border border-slate-700/50 bg-slate-800/30 px-3 py-2 mb-2">
+          <p className="text-[10px] text-slate-400">
+            <strong className="text-slate-300">canva</strong> lets the agent build small HTML/CSS/JS
+            visualizations and serve them on a local port. Files are written under
+            <span className="font-mono"> &lt;cwd&gt;/.canva/&lt;name&gt;/</span>.
+          </p>
+        </div>
+
+        <Field label="Port range start">
+          <input
+            className={inputClass}
+            type="number"
+            min={1024}
+            max={65535}
+            value={data.toolSettings?.canva?.portRangeStart ?? 5173}
+            onChange={(e) => updateCanva({ portRangeStart: parseInt(e.target.value) || 5173 })}
+          />
+        </Field>
+
+        <Field label="Port range end">
+          <input
+            className={inputClass}
+            type="number"
+            min={1024}
+            max={65535}
+            value={data.toolSettings?.canva?.portRangeEnd ?? 5273}
+            onChange={(e) => updateCanva({ portRangeEnd: parseInt(e.target.value) || 5273 })}
+          />
+          <p className="mt-0.5 text-[9px] text-slate-600">
+            The agent auto-picks a free port in this range. It may also request a specific port.
+          </p>
+        </Field>
+
+        <Field label="Skill">
+          <textarea
+            className={textareaClass}
+            rows={4}
+            value={data.toolSettings?.canva?.skill ?? ''}
+            onChange={(e) => updateCanva({ skill: e.target.value })}
+            placeholder="Markdown guidance for how the agent should use canva..."
+          />
+          <p className="mt-0.5 text-[9px] text-slate-600">
+            Injected into the system prompt to guide canva usage.
+          </p>
+        </Field>
+      </div>
+    );
+  }
+
+  // -------------------------------------------------------------------------
   // Page: sub-agents
   // -------------------------------------------------------------------------
   if (page === 'sub_agents') {
@@ -629,6 +698,16 @@ export default function ToolsProperties({ nodeId, data }: Props) {
               return keys.length > 0 ? keys.join(', ') : undefined;
             })()}
             onClick={() => setPage('image')}
+          />
+          <PageLink
+            icon={<LayoutDashboard size={14} />}
+            label="canva"
+            hint={(() => {
+              const start = data.toolSettings?.canva?.portRangeStart;
+              const end = data.toolSettings?.canva?.portRangeEnd;
+              return start && end ? `${start}-${end}` : undefined;
+            })()}
+            onClick={() => setPage('canva')}
           />
           <PageLink
             icon={<Users size={14} />}

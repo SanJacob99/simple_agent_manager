@@ -128,6 +128,8 @@ export class AgentRuntime {
         geminiApiKey,
         getOpenrouterApiKey,
         imageModel: config.imageModel,
+        canvaPortRangeStart: config.canvaPortRangeStart,
+        canvaPortRangeEnd: config.canvaPortRangeEnd,
         modelId: config.modelId,
       },
     );

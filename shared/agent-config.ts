@@ -149,6 +149,10 @@ export interface AgentConfig {
   geminiApiKey?: string;
   /** Preferred image generation model, e.g. "openai/gpt-image-1". */
   imageModel?: string;
+  /** Lower bound (inclusive) of the port range canva will auto-pick from. */
+  canvaPortRangeStart?: number;
+  /** Upper bound (inclusive) of the port range canva will auto-pick from. */
+  canvaPortRangeEnd?: number;
 
   exportedAt: number;
   sourceGraphId: string;

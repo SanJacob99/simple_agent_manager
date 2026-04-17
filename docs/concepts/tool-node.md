@@ -3,7 +3,7 @@
 > Configures which tools an agent can use through profiles, groups, direct enables, skills, and plugins.
 
 <!-- source: src/types/nodes.ts#ToolsNodeData -->
-<!-- last-verified: 2026-04-10 -->
+<!-- last-verified: 2026-04-17 -->
 
 ## Overview
 
@@ -28,6 +28,9 @@ Skills stored on the Tool Node are merged into system prompt content during grap
 | `plugins` | `PluginDefinition[]` | `[]` | Plugin bundles that contribute tools, skills, and optional hooks |
 | `subAgentSpawning` | `boolean` | `false` | Whether the agent may spawn sub-agents |
 | `maxSubAgents` | `number` | `3` | Maximum concurrent sub-agents |
+| `toolSettings.canva.portRangeStart` | `number` | `5173` | Lower bound of the port range canva auto-picks from |
+| `toolSettings.canva.portRangeEnd` | `number` | `5273` | Upper bound of the port range canva auto-picks from |
+| `toolSettings.canva.skill` | `string` | `""` | Markdown guidance injected into the system prompt for the canva tool |
 
 ## Runtime Behavior
 
@@ -45,6 +48,7 @@ Tool name resolution happens in `shared/resolve-tool-names.ts` in this order:
 - memory tools are skipped there because `MemoryEngine` provides them separately
 - session tools are skipped because they are injected later by the run coordinator
 - `calculator` and the built-in `web_fetch` have real implementations
+- `canva` writes HTML/CSS/JS into `<cwd>/.canva/<name>/` and serves each canvas from its own static HTTP server on a port auto-picked from the configured range
 - most other tools are still stubs
 - if the resolved tool list already includes `web_search` or `web_fetch` and the active provider plugin supplies replacements, `createAgentTools()` swaps in the provider-backed implementation instead of auto-adding new tools
 

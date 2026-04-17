@@ -123,11 +123,21 @@ export interface ImageToolSettings {
   skill: string;
 }
 
+export interface CanvaToolSettings {
+  /** Start of the port range used when the agent doesn't request a specific port */
+  portRangeStart: number;
+  /** End of the port range (inclusive) */
+  portRangeEnd: number;
+  /** Markdown guidance for the canva tool */
+  skill: string;
+}
+
 export interface ToolSettings {
   exec: ExecToolSettings;
   codeExecution: CodeExecutionToolSettings;
   webSearch: WebSearchToolSettings;
   image: ImageToolSettings;
+  canva: CanvaToolSettings;
 }
 
 export interface ToolsNodeData {
