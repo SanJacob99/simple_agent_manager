@@ -5,6 +5,7 @@ import type { AgentTool } from '@mariozechner/pi-agent-core';
 
 const DEFAULT_SIZE = '1024x1024';
 const DEFAULT_TIMEOUT_SEC = 90;
+const IMAGES_SUBDIR = 'images';
 
 // ---------------------------------------------------------------------------
 // Provider interface
@@ -316,7 +317,7 @@ export function createImageGenerateTool(ctx: ImageGenerateContext): AgentTool<TS
       `Generate images from text prompts. Providers: ${providerNames}. ` +
       `Use action "list" to see available providers and models. ` +
       'Be descriptive in your prompt for best results. ' +
-      'Generated images are saved to the workspace.',
+      `Generated images are saved to the workspace under the "${IMAGES_SUBDIR}/" subfolder.`,
     label: 'Image Generate',
     parameters: Type.Object({
       prompt: Type.Optional(
@@ -392,6 +393,11 @@ export function createImageGenerateTool(ctx: ImageGenerateContext): AgentTool<TS
         const savedPaths: string[] = [];
         const contentBlocks: Array<{ type: string; text?: string; mimeType?: string; data?: string }> = [];
 
+        // Generated images go into a dedicated subfolder of the workspace unless
+        // the filename hint already specifies a path (respect explicit placement).
+        const hintHasDir = filenameHint.includes('/') || filenameHint.includes('\\');
+        const baseDir = hintHasDir ? ctx.cwd : path.resolve(ctx.cwd, IMAGES_SUBDIR);
+
         for (let i = 0; i < result.images.length; i++) {
           const img = result.images[i];
           const ext = img.mimeType === 'image/jpeg' ? '.jpg' : '.png';
@@ -399,10 +405,10 @@ export function createImageGenerateTool(ctx: ImageGenerateContext): AgentTool<TS
             ? `${filenameHint}${ext}`
             : `${filenameHint}_${i + 1}${ext}`;
 
-          const outputPath = path.resolve(ctx.cwd, filename);
+          const outputPath = path.resolve(baseDir, filename);
           await fs.mkdir(path.dirname(outputPath), { recursive: true });
           await fs.writeFile(outputPath, Buffer.from(img.data, 'base64'));
-          savedPaths.push(filename);
+          savedPaths.push(path.relative(ctx.cwd, outputPath));
 
           contentBlocks.push({ type: 'image', mimeType: img.mimeType, data: img.data });
         }
