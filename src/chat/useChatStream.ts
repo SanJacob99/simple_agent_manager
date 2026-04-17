@@ -224,6 +224,7 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
               content: te.result ?? '',
               toolName: te.toolName,
               isToolError: Boolean(te.isError),
+              images: Array.isArray(te.images) && te.images.length > 0 ? te.images : undefined,
               tokenCount: estimateTokens(te.result ?? ''),
             }));
             void flushSession(sessionKeyRef.current);

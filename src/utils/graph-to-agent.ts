@@ -104,6 +104,14 @@ export function resolveAgentConfig(
         injectAs: 'system-prompt' as const,
       });
     }
+    if (ts?.image?.skill?.trim()) {
+      allSkills.push({
+        id: 'tool-skill-image',
+        name: 'image tool guidance',
+        content: ts.image.skill,
+        injectAs: 'system-prompt' as const,
+      });
+    }
   }
 
   const toolsConfig = toolsNode && toolsNode.data.type === 'tools'
@@ -292,6 +300,15 @@ export function resolveAgentConfig(
       : undefined,
     tavilyApiKey: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.webSearch?.tavilyApiKey
       ? toolsNode.data.toolSettings.webSearch.tavilyApiKey
+      : undefined,
+    openaiApiKey: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.image?.openaiApiKey
+      ? toolsNode.data.toolSettings.image.openaiApiKey
+      : undefined,
+    geminiApiKey: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.image?.geminiApiKey
+      ? toolsNode.data.toolSettings.image.geminiApiKey
+      : undefined,
+    imageModel: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.image?.preferredModel
+      ? toolsNode.data.toolSettings.image.preferredModel
       : undefined,
     exportedAt: Date.now(),
     sourceGraphId: agentNodeId,

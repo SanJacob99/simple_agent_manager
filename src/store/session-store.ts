@@ -18,6 +18,11 @@ export interface MessageUsage {
   totalTokens: number;
 }
 
+export interface MessageImage {
+  mimeType: string;
+  data: string; // base64
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant' | 'tool';
@@ -29,6 +34,7 @@ export interface Message {
   thinking?: string;
   toolName?: string;
   isToolError?: boolean;
+  images?: MessageImage[];
 }
 
 export interface ChatSession {
@@ -82,6 +88,20 @@ function extractThinkingContent(content: unknown): string | undefined {
   return parts.length > 0 ? parts.join('\n\n') : undefined;
 }
 
+function extractImageContent(content: unknown): MessageImage[] | undefined {
+  if (!Array.isArray(content)) return undefined;
+  const images: MessageImage[] = [];
+  for (const part of content) {
+    if (part && typeof part === 'object') {
+      const p = part as { type?: unknown; mimeType?: unknown; data?: unknown };
+      if (p.type === 'image' && typeof p.mimeType === 'string' && typeof p.data === 'string') {
+        images.push({ mimeType: p.mimeType, data: p.data });
+      }
+    }
+  }
+  return images.length > 0 ? images : undefined;
+}
+
 function toStoredMessage(entry: SessionEntry): Message | null {
   if (entry.type === 'custom') {
     const customEntry = entry as SessionEntry & { customType?: unknown; data?: unknown };
@@ -131,6 +151,7 @@ function toStoredMessage(entry: SessionEntry): Message | null {
     thinking: raw.role === 'assistant' ? extractThinkingContent(raw.content) : undefined,
     toolName: role === 'tool' ? raw.toolName : undefined,
     isToolError: role === 'tool' ? raw.isError : undefined,
+    images: extractImageContent(raw.content),
   };
 }
 

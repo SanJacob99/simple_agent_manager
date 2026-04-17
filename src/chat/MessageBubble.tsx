@@ -113,6 +113,18 @@ function MessageBubble({
                 className={`text-slate-500 transition-transform ${toolExpanded ? 'rotate-180' : ''}`}
               />
             </button>
+            {msg.images && msg.images.length > 0 && (
+              <div className={`border-t ${borderColor} px-3 py-2 flex flex-wrap gap-2`}>
+                {msg.images.map((img, i) => (
+                  <img
+                    key={i}
+                    src={`data:${img.mimeType};base64,${img.data}`}
+                    alt={`${msg.toolName ?? 'tool'} output ${i + 1}`}
+                    className="max-w-full max-h-96 rounded border border-slate-700/50 object-contain"
+                  />
+                ))}
+              </div>
+            )}
             {toolExpanded && msg.content && (
               <div className={`border-t ${borderColor} px-3 py-2 text-[10px] leading-relaxed`}>
                 <pre className="whitespace-pre-wrap break-words font-mono text-slate-300 max-h-60 overflow-y-auto">

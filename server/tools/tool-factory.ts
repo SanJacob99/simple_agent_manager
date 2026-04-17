@@ -18,6 +18,8 @@ import { createWriteFileTool } from './builtins/fs/write-file';
 import { createEditFileTool } from './builtins/fs/edit-file';
 import { createListDirectoryTool } from './builtins/fs/list-directory';
 import { createApplyPatchTool } from './builtins/fs/apply-patch';
+import { createImageAnalyzeTool } from './builtins/image/image-analyze';
+import { createImageGenerateTool } from './builtins/image/image-generate';
 import { createWebSearchTool } from './builtins/web/web-search';
 
 // Re-export resolveToolNames from shared (used by agent-runtime.ts)
@@ -51,7 +53,6 @@ export { IMPLEMENTED_TOOL_NAMES } from '../../shared/resolve-tool-names';
 // Stub tools are NOT included — the model should never see a tool it can't use.
 // TODO: Uncomment as each tool gets a real implementation:
 //   send_message: () => createTool('send_message', 'Send a message to another agent or user'),
-//   image_generation: () => createTool('image_generation', 'Generate an image from a text prompt'),
 //   text_to_speech: () => createTool('text_to_speech', 'Convert text to speech'),
 const TOOL_CREATORS: Record<string, () => AgentTool<TSchema>> = {
   calculator: createCalculatorTool,
@@ -78,6 +79,14 @@ export interface ToolFactoryContext {
   xaiModel?: string;
   /** Tavily API key for web_search. When absent, falls back to DuckDuckGo. */
   tavilyApiKey?: string;
+  /** OpenAI API key for image_generate (DALL-E) */
+  openaiApiKey?: string;
+  /** Google/Gemini API key for image_generate */
+  geminiApiKey?: string;
+  /** Lazy OpenRouter key resolver (fetches from ApiKeyStore at tool call time) */
+  getOpenrouterApiKey?: () => Promise<string | undefined> | string | undefined;
+  /** Preferred image generation model */
+  imageModel?: string;
   /** Model ID — used to apply provider-specific schema cleaning (e.g. Gemini) */
   modelId?: string;
 }
@@ -115,6 +124,22 @@ export function createAgentTools(
       else if (name === 'edit_file') tools.push(createEditFileTool(fsCtx));
       else if (name === 'list_directory') tools.push(createListDirectoryTool(fsCtx));
       else if (name === 'apply_patch') tools.push(createApplyPatchTool(fsCtx));
+      continue;
+    }
+
+    // Image tools
+    if (name === 'image' && factoryContext?.cwd) {
+      tools.push(createImageAnalyzeTool({ cwd: factoryContext.cwd }));
+      continue;
+    }
+    if (name === 'image_generate' && factoryContext?.cwd) {
+      tools.push(createImageGenerateTool({
+        cwd: factoryContext.cwd,
+        openaiApiKey: factoryContext.openaiApiKey,
+        geminiApiKey: factoryContext.geminiApiKey,
+        getOpenrouterApiKey: factoryContext.getOpenrouterApiKey,
+        preferredModel: factoryContext.imageModel,
+      }));
       continue;
     }
 

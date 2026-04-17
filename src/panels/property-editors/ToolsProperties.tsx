@@ -1,14 +1,15 @@
-import { useState } from 'react';
-import { ChevronLeft, ChevronRight, Terminal, Code2, Globe, Users } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { ChevronLeft, ChevronRight, Terminal, Code2, Globe, Image, Users } from 'lucide-react';
 import { useGraphStore } from '../../store/graph-store';
+import { buildProviderCatalogKey, useModelCatalogStore } from '../../store/model-catalog-store';
 import type { ToolsNodeData, ToolProfile, ToolGroup } from '../../types/nodes';
 import { Field, inputClass, selectClass, textareaClass } from './shared';
 import { ALL_TOOL_NAMES, TOOL_GROUPS, TOOL_PROFILES } from '../../../shared/resolve-tool-names';
 
 const PROFILES: ToolProfile[] = ['full', 'coding', 'messaging', 'minimal', 'custom'];
-const GROUPS: ToolGroup[] = ['runtime', 'fs', 'web', 'coding', 'communication'];
+const GROUPS: ToolGroup[] = ['runtime', 'fs', 'web', 'coding', 'media', 'communication'];
 
-type Page = 'main' | 'exec' | 'code_execution' | 'web_search' | 'sub_agents';
+type Page = 'main' | 'exec' | 'code_execution' | 'web_search' | 'image' | 'sub_agents';
 
 interface Props {
   nodeId: string;
@@ -80,6 +81,41 @@ export default function ToolsProperties({ nodeId, data }: Props) {
     return (agentNode?.data as { workingDirectory?: string })?.workingDirectory ?? '';
   })();
 
+  // Resolve the connected agent's provider for image generation model selection
+  const modelsByKey = useModelCatalogStore((s) => s.models);
+  const connectedProvider = useMemo(() => {
+    // Walk: tools → agent (outgoing edge from tools)
+    const toAgentEdge = edges.find((e) => e.source === nodeId);
+    if (!toAgentEdge) return null;
+    const agentNode = allNodes.find((n) => n.id === toAgentEdge.target && n.data.type === 'agent');
+    if (!agentNode) return null;
+
+    // Find provider among all nodes connected to the agent.
+    // Multiple edges point to the agent (context, storage, provider, tools) —
+    // find the one whose SOURCE is a provider node.
+    const incomingEdges = edges.filter((e) => e.target === agentNode.id);
+    for (const edge of incomingEdges) {
+      const source = allNodes.find((n) => n.id === edge.source);
+      if (source?.data.type === 'provider') {
+        return {
+          pluginId: (source.data as { pluginId?: string }).pluginId ?? '',
+          baseUrl: (source.data as { baseUrl?: string }).baseUrl ?? '',
+        };
+      }
+    }
+    return null;
+  }, [edges, allNodes, nodeId]);
+
+  // Filter catalog for image-capable models
+  const imageCapableModels = useMemo(() => {
+    if (!connectedProvider) return [];
+    const key = buildProviderCatalogKey(connectedProvider);
+    const models = modelsByKey[key] ?? {};
+    return Object.entries(models)
+      .filter(([, metadata]) => metadata.outputModalities?.includes('image'))
+      .map(([id, metadata]) => ({ id, name: metadata.name ?? id }));
+  }, [connectedProvider, modelsByKey]);
+
   // Effective groups
   const profileGroups = (TOOL_PROFILES[data.profile] ?? []) as ToolGroup[];
   const effectiveGroups = data.enabledGroups.length > 0
@@ -132,6 +168,15 @@ export default function ToolsProperties({ nodeId, data }: Props) {
       toolSettings: {
         ...data.toolSettings,
         webSearch: { ...(data.toolSettings?.webSearch ?? { tavilyApiKey: '', skill: '' }), ...patch },
+      },
+    });
+  };
+
+  const updateImage = (patch: Record<string, unknown>) => {
+    update(nodeId, {
+      toolSettings: {
+        ...data.toolSettings,
+        image: { ...(data.toolSettings?.image ?? { openaiApiKey: '', geminiApiKey: '', preferredModel: '', skill: '' }), ...patch },
       },
     });
   };
@@ -274,6 +319,126 @@ export default function ToolsProperties({ nodeId, data }: Props) {
   }
 
   // -------------------------------------------------------------------------
+  // Page: image settings
+  // -------------------------------------------------------------------------
+  if (page === 'image') {
+    return (
+      <div className="space-y-1">
+        <PageHeader title="image / image_generate" onBack={() => setPage('main')} />
+
+        <div className="rounded-md border border-slate-700/50 bg-slate-800/30 px-3 py-2 mb-2">
+          <p className="text-[10px] text-slate-400">
+            <strong className="text-slate-300">image</strong> (analysis) loads an image so the model can see it.
+            Requires a vision-capable model.
+          </p>
+          <p className="text-[10px] text-slate-400 mt-1">
+            <strong className="text-slate-300">image_generate</strong> creates images via configured providers.
+            Set at least one API key below. Use action "list" at runtime to inspect available providers.
+          </p>
+        </div>
+
+        {/* Model selection — uses connected agent's provider catalog */}
+        <Field label="Preferred Model">
+          {connectedProvider?.pluginId === 'openrouter' && imageCapableModels.length > 0 ? (
+            <>
+              <select
+                className={selectClass}
+                value={data.toolSettings?.image?.preferredModel ?? ''}
+                onChange={(e) => updateImage({ preferredModel: e.target.value })}
+              >
+                <option value="">(no preference — use first available)</option>
+                {imageCapableModels.map((m) => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </select>
+              <p className="mt-0.5 text-[9px] text-slate-600">
+                {imageCapableModels.length} image-capable model{imageCapableModels.length !== 1 ? 's' : ''} from OpenRouter catalog.
+                Agent's OPENROUTER_API_KEY is reused.
+              </p>
+            </>
+          ) : connectedProvider?.pluginId === 'openrouter' ? (
+            <>
+              <input
+                className={inputClass}
+                value={data.toolSettings?.image?.preferredModel ?? ''}
+                onChange={(e) => updateImage({ preferredModel: e.target.value })}
+                placeholder="e.g. openai/gpt-image-1"
+              />
+              <p className="mt-0.5 text-[9px] text-amber-500/80">
+                OpenRouter catalog not loaded. Open Settings → Model Catalog to sync, then return here for a filtered picker.
+              </p>
+            </>
+          ) : connectedProvider ? (
+            <>
+              <input
+                className={inputClass}
+                value={data.toolSettings?.image?.preferredModel ?? ''}
+                onChange={(e) => updateImage({ preferredModel: e.target.value })}
+                placeholder="e.g. openai/gpt-image-1 or google/gemini-2.0-flash-exp"
+              />
+              <p className="mt-0.5 text-[9px] text-slate-600">
+                Connected provider: <span className="text-slate-400">{connectedProvider.pluginId}</span>.
+                Model selection uses direct API keys below.
+              </p>
+            </>
+          ) : (
+            <>
+              <input
+                className={inputClass}
+                value={data.toolSettings?.image?.preferredModel ?? ''}
+                onChange={(e) => updateImage({ preferredModel: e.target.value })}
+                placeholder="e.g. openai/gpt-image-1"
+              />
+              <p className="mt-0.5 text-[9px] text-amber-500/80">
+                No agent connected. Connect this Tools node to an agent with a provider to see available models.
+              </p>
+            </>
+          )}
+        </Field>
+
+        <Field label="OpenAI API Key">
+          <input
+            className={inputClass}
+            type="password"
+            value={data.toolSettings?.image?.openaiApiKey ?? ''}
+            onChange={(e) => updateImage({ openaiApiKey: e.target.value })}
+            placeholder="Empty = reads OPENAI_API_KEY from env"
+          />
+          <p className="mt-0.5 text-[9px] text-slate-600">
+            For DALL-E / gpt-image-1. Supports edit mode with up to 5 reference images.
+          </p>
+        </Field>
+
+        <Field label="Google / Gemini API Key">
+          <input
+            className={inputClass}
+            type="password"
+            value={data.toolSettings?.image?.geminiApiKey ?? ''}
+            onChange={(e) => updateImage({ geminiApiKey: e.target.value })}
+            placeholder="Empty = reads GEMINI_API_KEY from env"
+          />
+          <p className="mt-0.5 text-[9px] text-slate-600">
+            For Gemini image generation. Supports edit mode.
+          </p>
+        </Field>
+
+        <Field label="Skill">
+          <textarea
+            className={textareaClass}
+            rows={4}
+            value={data.toolSettings?.image?.skill ?? ''}
+            onChange={(e) => updateImage({ skill: e.target.value })}
+            placeholder="Markdown guidance for how the agent should use image tools..."
+          />
+          <p className="mt-0.5 text-[9px] text-slate-600">
+            Injected into the system prompt to guide image tool usage.
+          </p>
+        </Field>
+      </div>
+    );
+  }
+
+  // -------------------------------------------------------------------------
   // Page: sub-agents
   // -------------------------------------------------------------------------
   if (page === 'sub_agents') {
@@ -316,6 +481,33 @@ export default function ToolsProperties({ nodeId, data }: Props) {
   // -------------------------------------------------------------------------
   return (
     <div className="space-y-1">
+      <div className="rounded-md border border-slate-700/50 bg-slate-800/30 px-3 py-2 mb-2 space-y-1.5">
+        <p className="text-[10px] text-slate-400 leading-relaxed">
+          <strong className="text-slate-300">Tools</strong> give the agent actions it can take —
+          filesystem I/O, shell commands, web search, image generation, and more. Enable only what
+          the agent needs so the system prompt stays small and tool selection stays focused.
+        </p>
+        <p className="text-[10px] text-slate-400 leading-relaxed">
+          <strong className="text-slate-300">Skills</strong> are short markdown instructions that
+          teach the model <em>when</em> and <em>how</em> to use a tool — naming conventions, safety
+          rails, preferred flags. A tool without a skill is available but opaque; with a skill, the
+          model invokes it at the right moments with the right arguments.
+        </p>
+        <div className="rounded border border-slate-700/40 bg-slate-900/40 px-2 py-1.5 mt-1">
+          <p className="text-[9px] text-slate-500 uppercase tracking-wide font-semibold mb-0.5">
+            Example
+          </p>
+          <p className="text-[10px] text-slate-400 leading-snug">
+            Enabling <span className="font-mono text-slate-300">exec</span> alone lets the agent
+            run shell commands — but it may pick wrong ones. Adding a skill like
+            <span className="block mt-0.5 font-mono text-[9px] text-slate-500">
+              "Use exec for read-only inspection (ls, cat). Never rm or sudo. Always pass cwd."
+            </span>
+            turns the tool into a directed capability the model uses safely and predictably.
+          </p>
+        </div>
+      </div>
+
       <Field label="Label">
         <input
           className={inputClass}
@@ -426,6 +618,17 @@ export default function ToolsProperties({ nodeId, data }: Props) {
             label="web_search"
             hint={data.toolSettings?.webSearch?.tavilyApiKey ? 'tavily' : 'duckduckgo'}
             onClick={() => setPage('web_search')}
+          />
+          <PageLink
+            icon={<Image size={14} />}
+            label="image / image_generate"
+            hint={(() => {
+              const keys = [];
+              if (data.toolSettings?.image?.openaiApiKey) keys.push('openai');
+              if (data.toolSettings?.image?.geminiApiKey) keys.push('google');
+              return keys.length > 0 ? keys.join(', ') : undefined;
+            })()}
+            onClick={() => setPage('image')}
           />
           <PageLink
             icon={<Users size={14} />}

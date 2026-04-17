@@ -106,6 +106,14 @@ export class AgentRuntime {
     const workspaceCwd = config.workspacePath ?? process.cwd();
     const xaiApiKey = config.xaiApiKey || process.env.XAI_API_KEY;
     const tavilyApiKey = config.tavilyApiKey || process.env.TAVILY_API_KEY;
+    const openaiApiKey = config.openaiApiKey || process.env.OPENAI_API_KEY;
+    const geminiApiKey = config.geminiApiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+    // OpenRouter key is resolved lazily — the ApiKeyStore (populated via config:setApiKeys)
+    // is the primary source; env var is a fallback.
+    const getOpenrouterApiKey = async () => {
+      const fromStore = await getApiKey('openrouter');
+      return fromStore || process.env.OPENROUTER_API_KEY;
+    };
     let tools = createAgentTools(
       toolNames,
       memoryTools as AgentTool<TSchema>[],
@@ -116,6 +124,10 @@ export class AgentRuntime {
         xaiApiKey,
         xaiModel: config.xaiModel,
         tavilyApiKey,
+        openaiApiKey,
+        geminiApiKey,
+        getOpenrouterApiKey,
+        imageModel: config.imageModel,
         modelId: config.modelId,
       },
     );

@@ -23,9 +23,18 @@ export class ToolSummaryCollector implements StreamTransform {
     }
 
     if (raw.type === 'tool_execution_end') {
-      const resultText = raw.result?.content
-        ?.map((c: { type: string; text?: string }) => (c.type === 'text' ? c.text : ''))
-        .join('') || '';
+      const contentBlocks = (raw.result?.content ?? []) as Array<{
+        type: string;
+        text?: string;
+        mimeType?: string;
+        data?: string;
+      }>;
+      const resultText = contentBlocks
+        .map((c) => (c.type === 'text' ? c.text ?? '' : ''))
+        .join('');
+      const images = contentBlocks
+        .filter((c) => c.type === 'image' && c.data && c.mimeType)
+        .map((c) => ({ mimeType: c.mimeType!, data: c.data! }));
 
       context.toolSummaries.push({
         toolCallId: raw.toolCallId,
@@ -41,6 +50,7 @@ export class ToolSummaryCollector implements StreamTransform {
         toolCallId: raw.toolCallId,
         toolName: raw.toolName,
         result: resultText.slice(0, MAX_SUMMARY_LENGTH),
+        images: images.length > 0 ? images : undefined,
         isError: !!raw.isError,
       } as any);
 

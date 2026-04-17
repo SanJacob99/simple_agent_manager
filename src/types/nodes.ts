@@ -62,7 +62,7 @@ export interface MemoryNodeData {
 // --- Tools Node (OpenClaw-inspired) ---
 
 export type ToolProfile = 'full' | 'coding' | 'messaging' | 'minimal' | 'custom';
-export type ToolGroup = 'runtime' | 'fs' | 'web' | 'memory' | 'coding' | 'communication';
+export type ToolGroup = 'runtime' | 'fs' | 'web' | 'coding' | 'media' | 'communication';
 
 export interface SkillDefinition {
   id: string;
@@ -112,10 +112,22 @@ export interface WebSearchToolSettings {
   skill: string;
 }
 
+export interface ImageToolSettings {
+  /** OpenAI API key for DALL-E. Empty = reads OPENAI_API_KEY from env. */
+  openaiApiKey: string;
+  /** Google/Gemini API key. Empty = reads GEMINI_API_KEY from env. */
+  geminiApiKey: string;
+  /** Preferred model, e.g. "openai/gpt-image-1" or "google/gemini-2.0-flash-exp" */
+  preferredModel: string;
+  /** Markdown guidance for image tools */
+  skill: string;
+}
+
 export interface ToolSettings {
   exec: ExecToolSettings;
   codeExecution: CodeExecutionToolSettings;
   webSearch: WebSearchToolSettings;
+  image: ImageToolSettings;
 }
 
 export interface ToolsNodeData {

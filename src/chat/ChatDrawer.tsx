@@ -476,6 +476,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
         streamingMsgId={chatStream.streamingMsgId}
         contextInfo={contextInfo}
         peripheralReservations={peripheralReservations}
+        hasTools={!!config.tools}
       />
 
       {/* Input */}

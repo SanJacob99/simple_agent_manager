@@ -40,7 +40,7 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
       return {
         type: 'tools',
         label: 'Tools',
-        profile: 'full',
+        profile: 'custom',
         enabledTools: [],
         enabledGroups: [],
         skills: [],
@@ -60,6 +60,12 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
           },
           webSearch: {
             tavilyApiKey: '',
+            skill: '',
+          },
+          image: {
+            openaiApiKey: '',
+            geminiApiKey: '',
+            preferredModel: '',
             skill: '',
           },
         },

@@ -2,7 +2,7 @@
 
 export type MemoryBackend = 'builtin' | 'external' | 'cloud';
 export type ToolProfile = 'full' | 'coding' | 'messaging' | 'minimal' | 'custom';
-export type ToolGroup = 'runtime' | 'fs' | 'web' | 'memory' | 'coding' | 'communication';
+export type ToolGroup = 'runtime' | 'fs' | 'web' | 'coding' | 'media' | 'communication';
 export type CompactionStrategy = 'summary' | 'sliding-window' | 'trim-oldest' | 'hybrid';
 
 export type SystemPromptMode = 'auto' | 'append' | 'manual';
@@ -143,6 +143,12 @@ export interface AgentConfig {
   xaiModel?: string;
   /** Tavily API key for web_search. No key = DuckDuckGo fallback. */
   tavilyApiKey?: string;
+  /** OpenAI API key for image_generate (DALL-E). */
+  openaiApiKey?: string;
+  /** Google/Gemini API key for image_generate. */
+  geminiApiKey?: string;
+  /** Preferred image generation model, e.g. "openai/gpt-image-1". */
+  imageModel?: string;
 
   exportedAt: number;
   sourceGraphId: string;
