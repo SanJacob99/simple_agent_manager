@@ -183,6 +183,13 @@ export class AgentManager {
     return this.agents.get(agentId)?.bridge;
   }
 
+  /** Resolved workspace directory for an agent, or null if not running. */
+  getWorkspacePath(agentId: string): string | null {
+    const managed = this.agents.get(agentId);
+    if (!managed) return null;
+    return managed.config.workspacePath ?? process.cwd();
+  }
+
   addSocket(agentId: string, socket: WebSocket): void {
     this.agents.get(agentId)?.bridge.addSocket(socket);
   }

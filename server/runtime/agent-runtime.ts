@@ -114,6 +114,9 @@ export class AgentRuntime {
       const fromStore = await getApiKey('openrouter');
       return fromStore || process.env.OPENROUTER_API_KEY;
     };
+    const canvasPublicBaseUrl = config.canvasPublicBaseUrl
+      ?? process.env.CANVAS_PUBLIC_BASE_URL
+      ?? `http://localhost:${process.env.STORAGE_PORT ?? '3210'}`;
     let tools = createAgentTools(
       toolNames,
       memoryTools as AgentTool<TSchema>[],
@@ -129,6 +132,8 @@ export class AgentRuntime {
         getOpenrouterApiKey,
         imageModel: config.imageModel,
         modelId: config.modelId,
+        canvasPublicBaseUrl,
+        agentId: config.id,
       },
     );
 

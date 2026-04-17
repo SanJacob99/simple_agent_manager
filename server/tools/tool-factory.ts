@@ -22,6 +22,7 @@ import { createImageAnalyzeTool } from './builtins/image/image-analyze';
 import { createImageGenerateTool } from './builtins/image/image-generate';
 import { createShowImageTool } from './builtins/image/show-image';
 import { createWebSearchTool } from './builtins/web/web-search';
+import { createCanvasTool } from './builtins/canvas/canvas';
 
 // Re-export resolveToolNames from shared (used by agent-runtime.ts)
 export { resolveToolNames } from '../../shared/resolve-tool-names';
@@ -38,6 +39,7 @@ export const ALL_TOOL_NAMES = [
   'web_search',
   'web_fetch',
   'calculator',
+  'canvas',
   'memory_search',
   'memory_get',
   'memory_save',
@@ -90,6 +92,10 @@ export interface ToolFactoryContext {
   imageModel?: string;
   /** Model ID — used to apply provider-specific schema cleaning (e.g. Gemini) */
   modelId?: string;
+  /** Public base URL used by the canvas tool to build openable links. */
+  canvasPublicBaseUrl?: string;
+  /** Agent id — lets the canvas tool scope its public URLs per agent. */
+  agentId?: string;
 }
 
 /**
@@ -135,6 +141,15 @@ export function createAgentTools(
     }
     if (name === 'show_image' && factoryContext?.cwd) {
       tools.push(createShowImageTool({ cwd: factoryContext.cwd }));
+      continue;
+    }
+    if (name === 'canvas' && factoryContext?.cwd) {
+      tools.push(createCanvasTool({
+        cwd: factoryContext.cwd,
+        sandboxWorkdir: factoryContext.sandboxWorkdir,
+        publicBaseUrl: factoryContext.canvasPublicBaseUrl,
+        agentId: factoryContext.agentId,
+      }));
       continue;
     }
     if (name === 'image_generate' && factoryContext?.cwd) {

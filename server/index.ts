@@ -543,6 +543,65 @@ app.post('/api/providers/catalog/clear', async (req, res) => {
   }
 });
 
+// --- Canvas static serving ---
+//
+// The canvas tool writes HTML/CSS/JS bundles to `<workspace>/canvas/<id>/`.
+// We expose them at `/canvas/<agentId>/<canvasId>/<file>`; the agentId lets
+// us resolve the correct per-agent workspace and keeps canvases sandboxed.
+
+const CANVAS_ASSET_MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.htm': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.txt': 'text/plain; charset=utf-8',
+  '.md': 'text/markdown; charset=utf-8',
+};
+
+app.get('/canvas/:agentId/:canvasId/*filePath', async (req, res) => {
+  try {
+    const { agentId, canvasId } = req.params as { agentId: string; canvasId: string };
+    const rawPath = (req.params as Record<string, string | string[]>).filePath;
+    const requested = Array.isArray(rawPath) ? rawPath.join('/') : (rawPath ?? 'index.html');
+    const safeRequested = requested.length > 0 ? requested : 'index.html';
+
+    const workspace = agentManager.getWorkspacePath(agentId);
+    if (!workspace) {
+      res.status(404).type('text/plain').send('Canvas host agent is not running.');
+      return;
+    }
+
+    const canvasRoot = path.resolve(workspace, 'canvas', canvasId);
+    const target = path.resolve(canvasRoot, safeRequested);
+    if (!target.startsWith(canvasRoot + path.sep) && target !== canvasRoot) {
+      res.status(400).type('text/plain').send('Invalid canvas path.');
+      return;
+    }
+
+    const stat = await import('fs/promises').then((fsp) => fsp.stat(target).catch(() => null));
+    if (!stat || !stat.isFile()) {
+      res.status(404).type('text/plain').send('Canvas file not found.');
+      return;
+    }
+
+    const ext = path.extname(target).toLowerCase();
+    const mime = CANVAS_ASSET_MIME[ext] ?? 'application/octet-stream';
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Cache-Control', 'no-store');
+    res.sendFile(target);
+  } catch (err) {
+    res.status(500).type('text/plain').send(`Canvas error: ${(err as Error).message}`);
+  }
+});
+
 // --- Health check ---
 
 app.get('/api/health', (_req, res) => {

@@ -149,6 +149,12 @@ export interface AgentConfig {
   geminiApiKey?: string;
   /** Preferred image generation model, e.g. "openai/gpt-image-1". */
   imageModel?: string;
+  /**
+   * Public base URL used by the `canvas` tool when generating links to the
+   * HTML/CSS/JS bundles it serves (e.g. `http://localhost:3210`). Falls back
+   * to the `CANVAS_PUBLIC_BASE_URL` env var, then to the local server port.
+   */
+  canvasPublicBaseUrl?: string;
 
   exportedAt: number;
   sourceGraphId: string;

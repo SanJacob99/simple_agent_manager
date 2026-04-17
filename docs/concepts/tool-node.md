@@ -3,7 +3,7 @@
 > Configures which tools an agent can use through profiles, groups, direct enables, skills, and plugins.
 
 <!-- source: src/types/nodes.ts#ToolsNodeData -->
-<!-- last-verified: 2026-04-10 -->
+<!-- last-verified: 2026-04-17 -->
 
 ## Overview
 
@@ -47,6 +47,15 @@ Tool name resolution happens in `shared/resolve-tool-names.ts` in this order:
 - `calculator` and the built-in `web_fetch` have real implementations
 - most other tools are still stubs
 - if the resolved tool list already includes `web_search` or `web_fetch` and the active provider plugin supplies replacements, `createAgentTools()` swaps in the provider-backed implementation instead of auto-adding new tools
+
+The `media` group also exposes a `canvas` tool. `canvas` writes a self-contained
+HTML/CSS/JS bundle to `<workspace>/canvas/<id>/` and returns a URL of the form
+`<canvasPublicBaseUrl>/canvas/<agentId>/<id>/index.html`. The server serves
+those files from the agent's workspace so the user can open the result in a
+browser. Use it for small interactive visualizations, prototypes, or mini-apps
+that are not a static image. The base URL defaults to the local server origin
+(`http://localhost:${STORAGE_PORT}`) but can be overridden per-agent via
+`AgentConfig.canvasPublicBaseUrl` or the `CANVAS_PUBLIC_BASE_URL` env var.
 
 Tool skills from the Tool Node and connected Skills Nodes are merged during `resolveAgentConfig()` and then folded into the system prompt by `buildSystemPrompt()`.
 
