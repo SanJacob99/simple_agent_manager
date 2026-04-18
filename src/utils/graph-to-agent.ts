@@ -1,7 +1,7 @@
 import type { AppNode } from '../types/nodes';
 import type { Edge } from '@xyflow/react';
 import type { AgentConfig, ResolvedProviderConfig, SystemPromptMode } from '../../shared/agent-config';
-import { resolveToolNames } from '../../shared/resolve-tool-names';
+import { resolveToolNames, IMPLEMENTED_TOOL_NAMES } from '../../shared/resolve-tool-names';
 import { buildSystemPrompt } from '../../shared/system-prompt-builder';
 
 export function resolveAgentConfig(
@@ -77,18 +77,72 @@ export function resolveAgentConfig(
     }
   }
 
+  // Collect per-tool skills from tool settings
+  if (toolsNode && toolsNode.data.type === 'tools') {
+    const ts = toolsNode.data.toolSettings;
+    if (ts?.exec?.skill?.trim()) {
+      allSkills.push({
+        id: 'tool-skill-exec',
+        name: 'exec tool guidance',
+        content: ts.exec.skill,
+        injectAs: 'system-prompt' as const,
+      });
+    }
+    if (ts?.codeExecution?.skill?.trim()) {
+      allSkills.push({
+        id: 'tool-skill-code-execution',
+        name: 'code_execution tool guidance',
+        content: ts.codeExecution.skill,
+        injectAs: 'system-prompt' as const,
+      });
+    }
+    if (ts?.webSearch?.skill?.trim()) {
+      allSkills.push({
+        id: 'tool-skill-web-search',
+        name: 'web_search tool guidance',
+        content: ts.webSearch.skill,
+        injectAs: 'system-prompt' as const,
+      });
+    }
+    if (ts?.image?.skill?.trim()) {
+      allSkills.push({
+        id: 'tool-skill-image',
+        name: 'image tool guidance',
+        content: ts.image.skill,
+        injectAs: 'system-prompt' as const,
+      });
+    }
+    if (ts?.canva?.skill?.trim()) {
+      allSkills.push({
+        id: 'tool-skill-canva',
+        name: 'canva tool guidance',
+        content: ts.canva.skill,
+        injectAs: 'system-prompt' as const,
+      });
+    }
+    if (ts?.textToSpeech?.skill?.trim()) {
+      allSkills.push({
+        id: 'tool-skill-text-to-speech',
+        name: 'text_to_speech tool guidance',
+        content: ts.textToSpeech.skill,
+        injectAs: 'system-prompt' as const,
+      });
+    }
+    if (ts?.musicGenerate?.skill?.trim()) {
+      allSkills.push({
+        id: 'tool-skill-music-generate',
+        name: 'music_generate tool guidance',
+        content: ts.musicGenerate.skill,
+        injectAs: 'system-prompt' as const,
+      });
+    }
+  }
+
   const toolsConfig = toolsNode && toolsNode.data.type === 'tools'
     ? {
         profile: toolsNode.data.profile,
-        resolvedTools: resolveToolNames({
-          profile: toolsNode.data.profile,
-          resolvedTools: toolsNode.data.enabledTools,
-          enabledGroups: toolsNode.data.enabledGroups,
-          skills: allSkills,
-          plugins: toolsNode.data.plugins,
-          subAgentSpawning: toolsNode.data.subAgentSpawning,
-          maxSubAgents: toolsNode.data.maxSubAgents,
-        }),
+        // Store raw per-tool selections; full resolution happens once at runtime
+        resolvedTools: toolsNode.data.enabledTools,
         enabledGroups: toolsNode.data.enabledGroups,
         skills: allSkills,
         plugins: toolsNode.data.plugins,
@@ -200,7 +254,7 @@ export function resolveAgentConfig(
   const mode: SystemPromptMode = agentMode === 'manual' ? 'manual' : 'append';
 
   const toolsSummary = toolsConfig
-    ? toolsConfig.resolvedTools.join(', ')
+    ? resolveToolNames(toolsConfig).filter((t) => IMPLEMENTED_TOOL_NAMES.has(t)).join(', ')
     : null;
 
   const skillsSummary = allSkills.length > 0
@@ -214,7 +268,7 @@ export function resolveAgentConfig(
     ? ((contextNode.data as any).bootstrapTotalMaxChars ?? 150000)
     : 150000;
 
-  const workspacePath = storage ? storage.storagePath : null;
+  const workspacePath = data.workingDirectory || null;
 
   const systemPrompt = buildSystemPrompt({
     mode,
@@ -254,6 +308,96 @@ export function resolveAgentConfig(
     storage,
     vectorDatabases,
     crons,
+    // Exec tool cwd overrides agent-level workingDirectory when set
+    workspacePath:
+      (toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.exec?.cwd)
+        ? toolsNode.data.toolSettings.exec.cwd
+        : (data.workingDirectory || null),
+    sandboxWorkdir: toolsNode?.data.type === 'tools'
+      ? toolsNode.data.toolSettings?.exec?.sandboxWorkdir ?? false
+      : false,
+    xaiApiKey: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.codeExecution?.apiKey
+      ? toolsNode.data.toolSettings.codeExecution.apiKey
+      : undefined,
+    xaiModel: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.codeExecution?.model
+      ? toolsNode.data.toolSettings.codeExecution.model
+      : undefined,
+    tavilyApiKey: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.webSearch?.tavilyApiKey
+      ? toolsNode.data.toolSettings.webSearch.tavilyApiKey
+      : undefined,
+    openaiApiKey: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.image?.openaiApiKey
+      ? toolsNode.data.toolSettings.image.openaiApiKey
+      : undefined,
+    geminiApiKey: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.image?.geminiApiKey
+      ? toolsNode.data.toolSettings.image.geminiApiKey
+      : undefined,
+    imageModel: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.image?.preferredModel
+      ? toolsNode.data.toolSettings.image.preferredModel
+      : undefined,
+    canvaPortRangeStart: toolsNode?.data.type === 'tools'
+      ? toolsNode.data.toolSettings?.canva?.portRangeStart
+      : undefined,
+    canvaPortRangeEnd: toolsNode?.data.type === 'tools'
+      ? toolsNode.data.toolSettings?.canva?.portRangeEnd
+      : undefined,
+    ttsPreferredProvider: (() => {
+      if (toolsNode?.data.type !== 'tools') return undefined;
+      const value = toolsNode.data.toolSettings?.textToSpeech?.preferredProvider;
+      return value && value.length > 0 ? value : undefined;
+    })(),
+    elevenLabsApiKey: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.textToSpeech?.elevenLabsApiKey
+      ? toolsNode.data.toolSettings.textToSpeech.elevenLabsApiKey
+      : undefined,
+    elevenLabsDefaultVoice: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.textToSpeech?.elevenLabsDefaultVoice
+      ? toolsNode.data.toolSettings.textToSpeech.elevenLabsDefaultVoice
+      : undefined,
+    elevenLabsDefaultModel: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.textToSpeech?.elevenLabsDefaultModel
+      ? toolsNode.data.toolSettings.textToSpeech.elevenLabsDefaultModel
+      : undefined,
+    openaiTtsVoice: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.textToSpeech?.openaiVoice
+      ? toolsNode.data.toolSettings.textToSpeech.openaiVoice
+      : undefined,
+    openaiTtsModel: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.textToSpeech?.openaiModel
+      ? toolsNode.data.toolSettings.textToSpeech.openaiModel
+      : undefined,
+    geminiTtsVoice: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.textToSpeech?.geminiVoice
+      ? toolsNode.data.toolSettings.textToSpeech.geminiVoice
+      : undefined,
+    geminiTtsModel: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.textToSpeech?.geminiModel
+      ? toolsNode.data.toolSettings.textToSpeech.geminiModel
+      : undefined,
+    microsoftTtsApiKey: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.textToSpeech?.microsoftApiKey
+      ? toolsNode.data.toolSettings.textToSpeech.microsoftApiKey
+      : undefined,
+    microsoftTtsRegion: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.textToSpeech?.microsoftRegion
+      ? toolsNode.data.toolSettings.textToSpeech.microsoftRegion
+      : undefined,
+    microsoftTtsVoice: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.textToSpeech?.microsoftDefaultVoice
+      ? toolsNode.data.toolSettings.textToSpeech.microsoftDefaultVoice
+      : undefined,
+    minimaxApiKey: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.textToSpeech?.minimaxApiKey
+      ? toolsNode.data.toolSettings.textToSpeech.minimaxApiKey
+      : undefined,
+    minimaxGroupId: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.textToSpeech?.minimaxGroupId
+      ? toolsNode.data.toolSettings.textToSpeech.minimaxGroupId
+      : undefined,
+    minimaxDefaultVoice: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.textToSpeech?.minimaxDefaultVoice
+      ? toolsNode.data.toolSettings.textToSpeech.minimaxDefaultVoice
+      : undefined,
+    minimaxDefaultModel: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.textToSpeech?.minimaxDefaultModel
+      ? toolsNode.data.toolSettings.textToSpeech.minimaxDefaultModel
+      : undefined,
+    musicPreferredProvider: (() => {
+      if (toolsNode?.data.type !== 'tools') return undefined;
+      const value = toolsNode.data.toolSettings?.musicGenerate?.preferredProvider;
+      return value && value.length > 0 ? value : undefined;
+    })(),
+    geminiMusicModel: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.musicGenerate?.geminiModel
+      ? toolsNode.data.toolSettings.musicGenerate.geminiModel
+      : undefined,
+    minimaxMusicModel: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.musicGenerate?.minimaxModel
+      ? toolsNode.data.toolSettings.musicGenerate.minimaxModel
+      : undefined,
     exportedAt: Date.now(),
     sourceGraphId: agentNodeId,
     runTimeoutMs: 172800000,

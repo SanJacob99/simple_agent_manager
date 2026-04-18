@@ -11,6 +11,7 @@ export class CompactionHandler implements StreamTransform {
     emit({ type: 'compaction:start', agentId: '', runId: context.runId } as any);
 
     // In this layer, retrying is always false — the compaction trigger is not built yet.
+    // ToDo: Compaction Trigger
     const retrying = false;
 
     if (retrying) {

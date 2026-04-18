@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { MaintenanceScheduler } from './maintenance-scheduler';
-import type { StorageEngine } from './storage-engine';
+import type { StorageEngine } from '../storage/storage-engine';
 import type { MaintenanceReport } from '../../shared/storage-types';
 
 function makeMockEngine(): StorageEngine {

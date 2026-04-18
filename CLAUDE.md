@@ -30,11 +30,13 @@ Important current behavior:
 | Agent runtime | `server/runtime/agent-runtime.ts` |
 | Memory engine | `server/runtime/memory-engine.ts` |
 | Context engine | `server/runtime/context-engine.ts` |
-| Tool factory | `server/runtime/tool-factory.ts` |
+| Tool factory | `server/tools/tool-factory.ts` |
+| Tool adapter | `server/tools/tool-adapter.ts` |
+| Built-in tools | `server/tools/builtins/` |
 | Model resolver | `server/runtime/model-resolver.ts` |
-| Storage engine | `server/runtime/storage-engine.ts` |
-| Session router | `server/runtime/session-router.ts` |
-| Session transcript store | `server/runtime/session-transcript-store.ts` |
+| Storage engine | `server/storage/storage-engine.ts` |
+| Session router | `server/sessions/session-router.ts` |
+| Session transcript store | `server/sessions/session-transcript-store.ts` |
 | Run coordination and queueing | `server/agents/run-coordinator.ts` |
 | Hook lifecycle types | `server/hooks/hook-types.ts` |
 | Node UI components | `src/nodes/` |

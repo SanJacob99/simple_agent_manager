@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
-import { SettingsFileStore } from './settings-file-store';
+import { SettingsFileStore, DEFAULT_SAFETY_SETTINGS } from './settings-file-store';
 
 let tmpDir: string;
 let store: SettingsFileStore;
@@ -23,6 +23,7 @@ describe('SettingsFileStore', () => {
       apiKeys: {},
       agentDefaults: {},
       storageDefaults: {},
+      safety: { ...DEFAULT_SAFETY_SETTINGS },
     });
   });
 
@@ -35,7 +36,12 @@ describe('SettingsFileStore', () => {
     await store.save(data);
 
     const loaded = await store.load();
-    expect(loaded).toEqual(data);
+    // Missing `safety` is filled in from defaults on load, so compare the
+    // fields we wrote and check safety fell back to defaults.
+    expect(loaded.apiKeys).toEqual(data.apiKeys);
+    expect(loaded.agentDefaults).toEqual(data.agentDefaults);
+    expect(loaded.storageDefaults).toEqual(data.storageDefaults);
+    expect(loaded.safety).toEqual(DEFAULT_SAFETY_SETTINGS);
   });
 
   it('overwrites existing settings on save', async () => {

@@ -17,6 +17,7 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         systemPromptMode: 'append' as SystemPromptMode,
         showReasoning: false,
         verbose: false,
+        workingDirectory: '',
       };
     case 'memory':
       return {
@@ -39,13 +40,67 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
       return {
         type: 'tools',
         label: 'Tools',
-        profile: 'full',
-        enabledTools: [],
+        profile: 'custom',
+        // HITL (ask_user + confirm_action) is checked by default. The tools
+        // node still shows the checkboxes, but they are locked unless the
+        // user explicitly enables "Dangerous Fully Auto" mode in Settings.
+        enabledTools: ['ask_user', 'confirm_action'],
         enabledGroups: [],
         skills: [],
         plugins: [],
         subAgentSpawning: false,
         maxSubAgents: 3,
+        toolSettings: {
+          exec: {
+            cwd: '',
+            sandboxWorkdir: false,
+            skill: '',
+          },
+          codeExecution: {
+            apiKey: '',
+            model: '',
+            skill: '',
+          },
+          webSearch: {
+            tavilyApiKey: '',
+            skill: '',
+          },
+          image: {
+            openaiApiKey: '',
+            geminiApiKey: '',
+            preferredModel: '',
+            skill: '',
+          },
+          canva: {
+            portRangeStart: 5173,
+            portRangeEnd: 5273,
+            skill: '',
+          },
+          textToSpeech: {
+            preferredProvider: '',
+            elevenLabsApiKey: '',
+            elevenLabsDefaultVoice: '',
+            elevenLabsDefaultModel: '',
+            openaiVoice: '',
+            openaiModel: '',
+            geminiVoice: '',
+            geminiModel: '',
+            microsoftApiKey: '',
+            microsoftRegion: '',
+            microsoftDefaultVoice: '',
+            minimaxApiKey: '',
+            minimaxGroupId: '',
+            minimaxDefaultVoice: '',
+            minimaxDefaultModel: '',
+            skill: '',
+          },
+          musicGenerate: {
+            preferredProvider: '',
+            geminiModel: '',
+            minimaxModel: '',
+            skill: '',
+          },
+        },
       };
     case 'skills':
       return {

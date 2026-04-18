@@ -7,6 +7,7 @@ import {
   DEFAULT_MEMORY_DEFAULTS,
   DEFAULT_CRON_DEFAULTS,
   DEFAULT_CHAT_UI_DEFAULTS,
+  DEFAULT_SAFETY_SETTINGS,
   type AgentDefaults,
   type ProviderDefaults,
   type StorageDefaults,
@@ -14,6 +15,7 @@ import {
   type MemoryDefaults,
   type CronDefaults,
   type ChatUIDefaults,
+  type SafetySettings,
 } from './types';
 
 interface PersistedSettings {
@@ -25,6 +27,7 @@ interface PersistedSettings {
   memoryDefaults: MemoryDefaults;
   cronDefaults: CronDefaults;
   chatUIDefaults: ChatUIDefaults;
+  safety: SafetySettings;
 }
 
 interface SettingsStore extends PersistedSettings {
@@ -39,6 +42,7 @@ interface SettingsStore extends PersistedSettings {
   setMemoryDefaults: (updates: Partial<MemoryDefaults>) => void;
   setCronDefaults: (updates: Partial<CronDefaults>) => void;
   setChatUIDefaults: (updates: Partial<ChatUIDefaults>) => void;
+  setSafetySettings: (updates: Partial<SafetySettings>) => void;
   resetSettings: () => void;
   loadFromServer: () => Promise<void>;
 }
@@ -51,6 +55,7 @@ const INITIAL_DEFAULTS: Omit<PersistedSettings, 'apiKeys'> = {
   memoryDefaults: DEFAULT_MEMORY_DEFAULTS,
   cronDefaults: DEFAULT_CRON_DEFAULTS,
   chatUIDefaults: DEFAULT_CHAT_UI_DEFAULTS,
+  safety: DEFAULT_SAFETY_SETTINGS,
 };
 
 async function fetchSettings(): Promise<PersistedSettings> {
@@ -66,6 +71,7 @@ async function fetchSettings(): Promise<PersistedSettings> {
     memoryDefaults: { ...DEFAULT_MEMORY_DEFAULTS, ...(data.memoryDefaults ?? {}) },
     cronDefaults: { ...DEFAULT_CRON_DEFAULTS, ...(data.cronDefaults ?? {}) },
     chatUIDefaults: { ...DEFAULT_CHAT_UI_DEFAULTS, ...(data.chatUIDefaults ?? {}) },
+    safety: { ...DEFAULT_SAFETY_SETTINGS, ...(data.safety ?? {}) },
   };
 }
 
@@ -91,6 +97,7 @@ function getSnapshot(state: SettingsStore): PersistedSettings {
     memoryDefaults: state.memoryDefaults,
     cronDefaults: state.cronDefaults,
     chatUIDefaults: state.chatUIDefaults,
+    safety: state.safety,
   };
 }
 
@@ -165,6 +172,12 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     const next = { ...get().chatUIDefaults, ...updates };
     set({ chatUIDefaults: next });
     saveSettings({ ...getSnapshot(get()), chatUIDefaults: next });
+  },
+
+  setSafetySettings: (updates) => {
+    const next = { ...get().safety, ...updates };
+    set({ safety: next });
+    saveSettings({ ...getSnapshot(get()), safety: next });
   },
 
   resetSettings: () => {

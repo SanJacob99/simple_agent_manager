@@ -1,12 +1,13 @@
 import express from 'express';
 import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
-import { StorageEngine } from './runtime/storage-engine';
-import { SessionTranscriptStore } from './runtime/session-transcript-store';
-import { SessionRouter } from './runtime/session-router';
+import { StorageEngine } from './storage/storage-engine';
+import { SessionTranscriptStore } from './sessions/session-transcript-store';
+import { SessionRouter } from './sessions/session-router';
 import { AgentManager } from './agents/agent-manager';
 import { ApiKeyStore } from './auth/api-keys';
 import { handleConnection } from './connections/ws-handler';
+import { HitlRegistry } from './hitl/hitl-registry';
 import { getGlobalHookRegistry } from './agents/agent-manager';
 import { HOOK_NAMES, type BackendLifecycleContext } from './hooks/hook-types';
 import { createStartupErrorHandler } from './startup';
@@ -14,7 +15,7 @@ import { ProviderPluginRegistry } from './providers/plugin-registry';
 import { ProviderCatalogCache, type ProviderCatalogRequest } from './providers/catalog-cache';
 import { loadProviderPlugins } from './providers/provider-loader';
 import { resolveProviderRuntimeAuth } from './providers/provider-auth';
-import { SettingsFileStore } from './runtime/settings-file-store';
+import { SettingsFileStore, DEFAULT_SAFETY_SETTINGS, type SafetySettings } from './storage/settings-file-store';
 import path from 'path';
 import type { ResolvedStorageConfig } from '../shared/agent-config';
 import type { SessionRouteRequest, SessionTranscriptResponse } from '../shared/session-routes';
@@ -27,8 +28,19 @@ app.use(express.json({ limit: '10mb' }));
 const apiKeys = new ApiKeyStore();
 const pluginRegistry = new ProviderPluginRegistry();
 const catalogCache = new ProviderCatalogCache();
-const agentManager = new AgentManager(apiKeys, pluginRegistry);
+const hitlRegistry = new HitlRegistry();
 const settingsFile = new SettingsFileStore();
+
+// Live safety settings — updated from the PUT /api/settings handler, read
+// lazily by AgentManager at agent-start time so newly started agents pick up
+// changes without a server restart. Running agents are NOT re-built.
+let currentSafetySettings: SafetySettings = { ...DEFAULT_SAFETY_SETTINGS };
+const agentManager = new AgentManager(
+  apiKeys,
+  pluginRegistry,
+  hitlRegistry,
+  () => currentSafetySettings,
+);
 
 // --- Storage engine instances ---
 
@@ -167,6 +179,33 @@ app.post('/api/sessions/:agentId/:sessionKey/reset', async (req, res) => {
   try {
     const router = getOrCreateSessionRouter(config, agentName, req.params.agentId);
     res.json(await router.resetSession(req.params.sessionKey));
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.delete('/api/sessions/:agentId/:sessionKey/messages/:messageId', async (req, res) => {
+  const { config, agentName } = req.body as {
+    config: ResolvedStorageConfig;
+    agentName: string;
+  };
+  try {
+    const router = getOrCreateSessionRouter(config, agentName, req.params.agentId);
+    const result = await router.deleteMessage(req.params.sessionKey, req.params.messageId);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.post('/api/sessions/:agentId/:sessionKey/clear', async (req, res) => {
+  const { config, agentName } = req.body as {
+    config: ResolvedStorageConfig;
+    agentName: string;
+  };
+  try {
+    const router = getOrCreateSessionRouter(config, agentName, req.params.agentId);
+    res.json(await router.clearMessages(req.params.sessionKey));
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
@@ -423,10 +462,19 @@ app.put('/api/settings', async (req, res) => {
       apiKeys: Record<string, string>;
       agentDefaults: Record<string, unknown>;
       storageDefaults: Record<string, unknown>;
+      safety?: SafetySettings;
     };
     await settingsFile.save(settings);
     // Keep in-memory API key store in sync
     apiKeys.setAll(settings.apiKeys ?? {});
+    // Keep safety settings in sync so AgentManager reads current values on
+    // the next agent:start.
+    if (settings.safety) {
+      currentSafetySettings = {
+        allowDisableHitl: settings.safety.allowDisableHitl ?? DEFAULT_SAFETY_SETTINGS.allowDisableHitl,
+        confirmationPolicy: settings.safety.confirmationPolicy ?? DEFAULT_SAFETY_SETTINGS.confirmationPolicy,
+      };
+    }
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
@@ -537,11 +585,17 @@ wss.on('connection', (socket) => {
   handleConnection(socket, agentManager, apiKeys);
 });
 
-// Seed in-memory API key store from persisted settings
+// Seed in-memory API key store + safety settings from persisted settings
 settingsFile.load().then((s) => {
   if (Object.keys(s.apiKeys).length > 0) {
     apiKeys.setAll(s.apiKeys);
     console.log(`[Settings] Loaded API keys for ${Object.keys(s.apiKeys).length} provider(s) from ${settingsFile.getFilePath()}`);
+  }
+  if (s.safety) {
+    currentSafetySettings = {
+      allowDisableHitl: s.safety.allowDisableHitl ?? DEFAULT_SAFETY_SETTINGS.allowDisableHitl,
+      confirmationPolicy: s.safety.confirmationPolicy ?? DEFAULT_SAFETY_SETTINGS.confirmationPolicy,
+    };
   }
 }).catch((err) => {
   console.error('[Settings] Failed to load settings file:', err);

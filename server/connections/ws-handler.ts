@@ -1,7 +1,7 @@
 import type WebSocket from 'ws';
 import type { AgentManager } from '../agents/agent-manager';
 import type { ApiKeyStore } from '../auth/api-keys';
-import type { Command, AgentStateEvent } from '../../shared/protocol';
+import type { Command, AgentStateEvent, HitlListResultEvent } from '../../shared/protocol';
 import { log, logError, logConsoleAndFile } from '../logger';
 
 /**
@@ -49,6 +49,43 @@ export function handleConnection(
         case 'agent:dispatch': {
           await pendingStarts.get(command.agentId);
           manager.addSocket(command.agentId, socket);
+
+          // If a HITL prompt is pending for this session, interpret the
+          // user's text as the HITL answer instead of starting a new turn.
+          // For kind='confirm', non-yes/no text is rejected here and the
+          // prompt stays open so the user can try again.
+          const hitlRouted = manager.hitlRegistry.resolveForSession(
+            command.agentId,
+            command.sessionKey,
+            command.text,
+          );
+          if (hitlRouted && 'parseError' in hitlRouted) {
+            socket.send(JSON.stringify({
+              type: 'agent:error',
+              agentId: command.agentId,
+              error: hitlRouted.parseError,
+            }));
+            break;
+          }
+          if (hitlRouted) {
+            const bridge = manager.getBridge(command.agentId);
+            bridge?.broadcast({
+              type: 'hitl:resolved',
+              agentId: command.agentId,
+              sessionKey: command.sessionKey,
+              toolCallId: hitlRouted.resolved.toolCallId,
+              outcome: 'answered',
+            });
+            socket.send(JSON.stringify({
+              type: 'run:accepted',
+              agentId: command.agentId,
+              runId: `hitl-${hitlRouted.resolved.toolCallId}`,
+              sessionId: command.sessionKey,
+              acceptedAt: Date.now(),
+            }));
+            break;
+          }
+
           const result = await manager.dispatch(command.agentId, {
             sessionKey: command.sessionKey,
             text: command.text,
@@ -68,6 +105,39 @@ export function handleConnection(
           // Backwards compat: translate to dispatch
           await pendingStarts.get(command.agentId);
           manager.addSocket(command.agentId, socket);
+
+          const hitlRouted = manager.hitlRegistry.resolveForSession(
+            command.agentId,
+            command.sessionId,
+            command.text,
+          );
+          if (hitlRouted && 'parseError' in hitlRouted) {
+            socket.send(JSON.stringify({
+              type: 'agent:error',
+              agentId: command.agentId,
+              error: hitlRouted.parseError,
+            }));
+            break;
+          }
+          if (hitlRouted) {
+            const bridge = manager.getBridge(command.agentId);
+            bridge?.broadcast({
+              type: 'hitl:resolved',
+              agentId: command.agentId,
+              sessionKey: command.sessionId,
+              toolCallId: hitlRouted.resolved.toolCallId,
+              outcome: 'answered',
+            });
+            socket.send(JSON.stringify({
+              type: 'run:accepted',
+              agentId: command.agentId,
+              runId: `hitl-${hitlRouted.resolved.toolCallId}`,
+              sessionId: command.sessionId,
+              acceptedAt: Date.now(),
+            }));
+            break;
+          }
+
           const result = await manager.dispatch(command.agentId, {
             sessionKey: command.sessionId,
             text: command.text,
@@ -80,6 +150,61 @@ export function handleConnection(
             sessionId: result.sessionId,
             acceptedAt: result.acceptedAt,
           }));
+          break;
+        }
+
+        case 'hitl:respond': {
+          const { agentId, sessionKey, toolCallId, kind, answer } = command;
+          manager.addSocket(agentId, socket);
+          if (kind === 'confirm') {
+            if (answer !== 'yes' && answer !== 'no') {
+              socket.send(JSON.stringify({
+                type: 'agent:error',
+                agentId,
+                error: 'hitl:respond kind=confirm requires answer "yes" or "no".',
+              }));
+              break;
+            }
+            manager.hitlRegistry.resolve(agentId, sessionKey, toolCallId, {
+              kind: 'confirm',
+              answer,
+            });
+          } else {
+            manager.hitlRegistry.resolve(agentId, sessionKey, toolCallId, {
+              kind: 'text',
+              answer,
+            });
+          }
+          manager.getBridge(agentId)?.broadcast({
+            type: 'hitl:resolved',
+            agentId,
+            sessionKey,
+            toolCallId,
+            outcome: 'answered',
+          });
+          break;
+        }
+
+        case 'hitl:list': {
+          manager.addSocket(command.agentId, socket);
+          const pending = manager.hitlRegistry.listForSession(
+            command.agentId,
+            command.sessionKey,
+          );
+          const event: HitlListResultEvent = {
+            type: 'hitl:list:result',
+            agentId: command.agentId,
+            sessionKey: command.sessionKey,
+            pending: pending.map((p) => ({
+              toolCallId: p.toolCallId,
+              toolName: p.toolName,
+              kind: p.kind,
+              question: p.question,
+              createdAt: p.createdAt,
+              timeoutMs: p.timeoutMs,
+            })),
+          };
+          socket.send(JSON.stringify(event));
           break;
         }
 

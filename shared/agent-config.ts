@@ -2,7 +2,7 @@
 
 export type MemoryBackend = 'builtin' | 'external' | 'cloud';
 export type ToolProfile = 'full' | 'coding' | 'messaging' | 'minimal' | 'custom';
-export type ToolGroup = 'runtime' | 'fs' | 'web' | 'memory' | 'coding' | 'communication';
+export type ToolGroup = 'runtime' | 'fs' | 'web' | 'coding' | 'media' | 'communication' | 'human';
 export type CompactionStrategy = 'summary' | 'sliding-window' | 'trim-oldest' | 'hybrid';
 
 export type SystemPromptMode = 'auto' | 'append' | 'manual';
@@ -132,6 +132,56 @@ export interface AgentConfig {
   storage: ResolvedStorageConfig | null;
   vectorDatabases: ResolvedVectorDatabaseConfig[];
   crons: ResolvedCronConfig[];
+
+  /** Working directory for shell commands (exec tool). Independent of storage path. */
+  workspacePath: string | null;
+  /** When true, exec workdir is constrained to stay within workspacePath. Defaults to false. */
+  sandboxWorkdir?: boolean;
+  /** xAI API key for code_execution tool */
+  xaiApiKey?: string;
+  /** xAI model for code_execution (defaults to grok-4-1-fast) */
+  xaiModel?: string;
+  /** Tavily API key for web_search. No key = DuckDuckGo fallback. */
+  tavilyApiKey?: string;
+  /** OpenAI API key for image_generate (DALL-E). */
+  openaiApiKey?: string;
+  /** Google/Gemini API key for image_generate. */
+  geminiApiKey?: string;
+  /** Preferred image generation model, e.g. "openai/gpt-image-1". */
+  imageModel?: string;
+  /** Lower bound (inclusive) of the port range canva will auto-pick from. */
+  canvaPortRangeStart?: number;
+  /** Upper bound (inclusive) of the port range canva will auto-pick from. */
+  canvaPortRangeEnd?: number;
+
+  /** Preferred default TTS provider. */
+  ttsPreferredProvider?: 'openai' | 'elevenlabs' | 'google' | 'microsoft' | 'minimax';
+  /** ElevenLabs API key for text_to_speech. */
+  elevenLabsApiKey?: string;
+  elevenLabsDefaultVoice?: string;
+  elevenLabsDefaultModel?: string;
+  /** Override default OpenAI TTS voice/model (OpenAI API key is reused from image config). */
+  openaiTtsVoice?: string;
+  openaiTtsModel?: string;
+  /** Override default Google Gemini TTS voice/model (Gemini API key is reused from image config). */
+  geminiTtsVoice?: string;
+  geminiTtsModel?: string;
+  /** Microsoft Azure Speech configuration. */
+  microsoftTtsApiKey?: string;
+  microsoftTtsRegion?: string;
+  microsoftTtsVoice?: string;
+  /** MiniMax TTS configuration. */
+  minimaxApiKey?: string;
+  minimaxGroupId?: string;
+  minimaxDefaultVoice?: string;
+  minimaxDefaultModel?: string;
+
+  /** Preferred default music generation provider. */
+  musicPreferredProvider?: 'google' | 'minimax';
+  /** Google Lyria music model override (Gemini API key is reused from image config). */
+  geminiMusicModel?: string;
+  /** MiniMax music model override (MiniMax API key is reused from TTS config). */
+  minimaxMusicModel?: string;
 
   exportedAt: number;
   sourceGraphId: string;

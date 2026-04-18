@@ -83,6 +83,12 @@ describe('ws-handler', () => {
         };
       }),
       removeSocketFromAll: vi.fn(),
+      getBridge: vi.fn(() => ({ broadcast: vi.fn() })),
+      hitlRegistry: {
+        resolveForSession: vi.fn(() => null),
+        listForSession: vi.fn(() => []),
+        resolve: vi.fn(() => true),
+      },
     } as any;
 
     handleConnection(socket, manager, { setAll: vi.fn() } as any);

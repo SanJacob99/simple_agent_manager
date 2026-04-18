@@ -264,6 +264,18 @@ export default function AgentProperties({ nodeId, data }: Props) {
         />
       </Field>
 
+      <Field label="Working Directory">
+        <input
+          className={inputClass}
+          value={data.workingDirectory ?? ''}
+          onChange={(e) => update(nodeId, { workingDirectory: e.target.value })}
+          placeholder="Empty = server working directory"
+        />
+        <p className="mt-0.5 text-[9px] text-slate-600">
+          Base directory for shell commands and workspace context.
+        </p>
+      </Field>
+
       <Field label="Model">
         <ProviderModelPicker
           provider={connectedPluginId}

@@ -18,6 +18,11 @@ export interface MessageUsage {
   totalTokens: number;
 }
 
+export interface MessageImage {
+  mimeType: string;
+  data: string; // base64
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant' | 'tool';
@@ -27,6 +32,9 @@ export interface Message {
   usage?: MessageUsage;
   kind?: 'diagnostic';
   thinking?: string;
+  toolName?: string;
+  isToolError?: boolean;
+  images?: MessageImage[];
 }
 
 export interface ChatSession {
@@ -80,6 +88,20 @@ function extractThinkingContent(content: unknown): string | undefined {
   return parts.length > 0 ? parts.join('\n\n') : undefined;
 }
 
+function extractImageContent(content: unknown): MessageImage[] | undefined {
+  if (!Array.isArray(content)) return undefined;
+  const images: MessageImage[] = [];
+  for (const part of content) {
+    if (part && typeof part === 'object') {
+      const p = part as { type?: unknown; mimeType?: unknown; data?: unknown };
+      if (p.type === 'image' && typeof p.mimeType === 'string' && typeof p.data === 'string') {
+        images.push({ mimeType: p.mimeType, data: p.data });
+      }
+    }
+  }
+  return images.length > 0 ? images : undefined;
+}
+
 function toStoredMessage(entry: SessionEntry): Message | null {
   if (entry.type === 'custom') {
     const customEntry = entry as SessionEntry & { customType?: unknown; data?: unknown };
@@ -102,7 +124,14 @@ function toStoredMessage(entry: SessionEntry): Message | null {
     return null;
   }
 
-  const raw = entry.message as { role?: string; content?: unknown; timestamp?: number; usage?: MessageUsage } | undefined;
+  const raw = entry.message as {
+    role?: string;
+    content?: unknown;
+    timestamp?: number;
+    usage?: MessageUsage;
+    toolName?: string;
+    isError?: boolean;
+  } | undefined;
   if (!raw?.role) {
     return null;
   }
@@ -120,6 +149,9 @@ function toStoredMessage(entry: SessionEntry): Message | null {
     tokenCount: raw.role === 'assistant' ? raw.usage?.output : undefined,
     usage: raw.role === 'assistant' ? raw.usage : undefined,
     thinking: raw.role === 'assistant' ? extractThinkingContent(raw.content) : undefined,
+    toolName: role === 'tool' ? raw.toolName : undefined,
+    isToolError: role === 'tool' ? raw.isError : undefined,
+    images: extractImageContent(raw.content),
   };
 }
 
@@ -188,7 +220,7 @@ interface SessionStore {
     messageId: string,
     updater: (msg: Message) => Message,
   ) => void;
-  deleteMessage: (sessionKey: string, messageId: string) => void;
+  deleteMessage: (sessionKey: string, messageId: string) => Promise<void>;
   clearSessionMessages: (sessionKey: string) => Promise<void>;
   flushSession: (sessionKey: string) => Promise<void>;
 
@@ -422,7 +454,11 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     });
   },
 
-  deleteMessage: (sessionKey, messageId) => {
+  deleteMessage: async (sessionKey, messageId) => {
+    const session = get().sessions[sessionKey];
+    if (!session) return;
+
+    // Remove from in-memory store immediately
     set((state) => {
       const session = state.sessions[sessionKey];
       if (!session) return state;
@@ -436,6 +472,16 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         },
       };
     });
+
+    // Persist deletion to disk
+    const storageEngine = get().storageEngines[session.agentId] ?? get().storageEngine;
+    if (storageEngine) {
+      try {
+        await storageEngine.deleteMessage(sessionKey, messageId);
+      } catch {
+        // In-memory state already updated; log but don't revert
+      }
+    }
   },
 
   clearSessionMessages: async (sessionKey) => {
@@ -444,20 +490,24 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       ? get().storageEngines[session.agentId] ?? get().storageEngine
       : get().storageEngine;
     if (storageEngine) {
-      const routed = await storageEngine.resetSession(sessionKey);
-      const meta = await storageEngine.getSession(routed.sessionKey);
-      if (meta) {
-        set((state) => ({
-          sessions: {
-            ...state.sessions,
-            [sessionKey]: toChatSession(meta),
-          },
-          transcriptStatus: {
-            ...state.transcriptStatus,
-            [sessionKey]: 'ready',
-          },
-        }));
-        return;
+      try {
+        await storageEngine.clearSessionMessages(sessionKey);
+        const meta = await storageEngine.getSession(sessionKey);
+        if (meta) {
+          set((state) => ({
+            sessions: {
+              ...state.sessions,
+              [sessionKey]: toChatSession(meta),
+            },
+            transcriptStatus: {
+              ...state.transcriptStatus,
+              [sessionKey]: 'ready',
+            },
+          }));
+          return;
+        }
+      } catch {
+        // Fall through to in-memory-only clear
       }
     }
 

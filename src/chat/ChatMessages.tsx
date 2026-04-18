@@ -25,6 +25,7 @@ interface ChatMessagesProps {
   streamingMsgId: string;
   contextInfo: ContextWindowInfo;
   peripheralReservations: PeripheralReservation[];
+  hasTools?: boolean;
 }
 
 function ChatMessages({
@@ -38,12 +39,23 @@ function ChatMessages({
   streamingMsgId,
   contextInfo,
   peripheralReservations,
+  hasTools,
 }: ChatMessagesProps) {
   // Stable fallback — must NOT be inline `?? []` inside the selector because
   // that creates a new array reference every call, causing useSyncExternalStore
   // to see a perpetually-changing snapshot and loop infinitely.
   const messages = useSessionStore(
     (s) => s.sessions[activeSessionKey ?? '']?.messages ?? EMPTY,
+  );
+  const deleteMessage = useSessionStore((s) => s.deleteMessage);
+
+  const handleDeleteMessage = useCallback(
+    (messageId: string) => {
+      if (activeSessionKey) {
+        deleteMessage(activeSessionKey, messageId);
+      }
+    },
+    [activeSessionKey, deleteMessage],
   );
 
   // ContextUsagePanel only needs tokenCount/usage — derive a stable array that
@@ -177,7 +189,15 @@ function ChatMessages({
         )}
         {!isTranscriptLoading && messages.length === 0 && (
           <div className="flex h-full items-center justify-center">
-            <p className="text-xs text-slate-600">Send a message to start the conversation</p>
+            <div className="flex flex-col items-center gap-2 max-w-[300px] text-center">
+              <p className="text-xs text-slate-600">Send a message to start the conversation</p>
+              {!hasTools && (
+                <p className="text-[10px] text-slate-600 leading-relaxed">
+                  Tip: connect a <span className="text-slate-400">Tools</span> node to this agent
+                  so it can call actions like filesystem, web search, or exec.
+                </p>
+              )}
+            </div>
           </div>
         )}
         {!isTranscriptLoading && messages.map((msg) => {
@@ -189,6 +209,7 @@ function ChatMessages({
               isStreamingThis={isStreamingThis}
               isReasoningThis={isStreamingThis && isReasoning}
               preferPlainText={msg.role === 'assistant' && !richMarkdownIds.has(msg.id)}
+              onDelete={handleDeleteMessage}
             />
           );
         })}

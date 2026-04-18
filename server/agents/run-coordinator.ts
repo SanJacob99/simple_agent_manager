@@ -3,13 +3,17 @@ import type { SessionManager } from '@mariozechner/pi-coding-agent';
 import type { AgentMessage } from '@mariozechner/pi-agent-core';
 import type { AssistantMessage, ToolResultMessage, Usage, UserMessage } from '@mariozechner/pi-ai';
 import type { AgentRuntime, RuntimeEvent } from '../runtime/agent-runtime';
-import type { StorageEngine } from '../runtime/storage-engine';
+import type { StorageEngine } from '../storage/storage-engine';
 import type { AgentConfig } from '../../shared/agent-config';
 import type { SessionStoreEntry } from '../../shared/storage-types';
 import type { HookRegistry } from '../hooks/hook-registry';
 import { log } from '../logger';
-import { SessionRouter, type RouteRequest, type RouteResult } from '../runtime/session-router';
-import { SessionTranscriptStore } from '../runtime/session-transcript-store';
+import { SessionRouter, type RouteRequest, type RouteResult } from '../sessions/session-router';
+import { SessionTranscriptStore } from '../sessions/session-transcript-store';
+import {
+  sanitizeAssistantVisibleText,
+  sanitizeAssistantContentBlocks,
+} from '../../shared/text/assistant-visible-text';
 import {
   HOOK_NAMES,
   type BeforeModelResolveContext,
@@ -36,8 +40,8 @@ import {
   type RunErrorDiagnosticData,
 } from '../../shared/session-diagnostics';
 import { RunConcurrencyController } from './run-concurrency-controller';
-import { SubAgentRegistry } from '../runtime/sub-agent-registry';
-import { createSessionTools, type SessionToolContext } from '../runtime/session-tools';
+import { SubAgentRegistry } from './sub-agent-registry';
+import { createSessionTools, type SessionToolContext } from '../sessions/session-tools';
 import { SESSION_TOOL_NAMES } from '../../shared/resolve-tool-names';
 
 export type RunStatus = 'pending' | 'running' | 'completed' | 'error';
@@ -64,6 +68,7 @@ export interface RunRecord {
 
 const RUN_RECORD_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_WAIT_TIMEOUT_MS = 30_000;
+const STREAM_IDLE_TIMEOUT_MS = 30_000; // abort if no real token within 30s of message_start
 const NO_REPLY_PATTERN = /^no_reply$/i;
 const SESSION_TOOL_NAME_SET = new Set<string>(SESSION_TOOL_NAMES);
 
@@ -94,6 +99,17 @@ function extractTextContent(content: unknown): string {
     .filter((block) => block.type === 'text' && typeof block.text === 'string')
     .map((block) => block.text ?? '')
     .join('');
+}
+
+function hasThinkingContent(content: unknown): boolean {
+  if (!Array.isArray(content)) return false;
+  return content.some(
+    (block) =>
+      block && typeof block === 'object' &&
+      (block as { type?: string }).type === 'thinking' &&
+      typeof (block as { thinking?: unknown }).thinking === 'string' &&
+      ((block as { thinking: string }).thinking).trim().length > 0,
+  );
 }
 
 export class RunCoordinator {
@@ -302,6 +318,10 @@ export class RunCoordinator {
     } satisfies StructuredError;
     record.pendingDiagnostic ??= this.buildRunDiagnostic(record, error);
     this.runtime.abort();
+    // Cancel any outstanding HITL prompts for this session — the agent
+    // signal fires the tool's abort listener, but doing this explicitly
+    // makes cancellation deterministic regardless of listener timing.
+    this.runtime.cancelPendingHitl(record.sessionKey, 'aborted');
     this.concurrency.release(record.runId, record.sessionId);
     this.finalizeRunError(record, error);
     this.tryStartNextRun();
@@ -448,6 +468,7 @@ export class RunCoordinator {
         transcriptManager.buildSessionContext().messages as AgentMessage[],
       );
       this.runtime.setActiveSession(transcriptManager);
+      this.runtime.setCurrentSessionKey(record.sessionKey);
 
       const enabledSessionToolNames = this.config.tools?.resolvedTools.filter((toolName) =>
         SESSION_TOOL_NAME_SET.has(toolName),
@@ -644,6 +665,30 @@ export class RunCoordinator {
       );
     };
 
+    // Streaming idle timeout: abort if no real token (thinking_delta, text_delta,
+    // toolcall_delta) arrives within STREAM_IDLE_TIMEOUT_MS of message_start.
+    // This catches OpenRouter's `: OPENROUTER PROCESSING` keep-alive stalls
+    // where the HTTP stream stays open but no model output is produced.
+    let _streamIdleTimer: ReturnType<typeof setTimeout> | null = null;
+    const clearStreamIdleTimer = () => {
+      if (_streamIdleTimer) {
+        clearTimeout(_streamIdleTimer);
+        _streamIdleTimer = null;
+      }
+    };
+    const resetStreamIdleTimer = () => {
+      clearStreamIdleTimer();
+      _streamIdleTimer = setTimeout(() => {
+        if (record.status !== 'running') return;
+        log(
+          'stream',
+          `[${this.agentId}] stream idle timeout after ${STREAM_IDLE_TIMEOUT_MS}ms ` +
+            `pass=${_apiCallCount} — aborting`,
+        );
+        this.runtime.abort();
+      }, STREAM_IDLE_TIMEOUT_MS);
+    };
+
     const unsubscribe = this.runtime.subscribe((event: RuntimeEvent) => {
       if ('type' in event) {
         if (event.type === 'message_start' && (event as any).message?.role === 'assistant') {
@@ -667,12 +712,18 @@ export class RunCoordinator {
               `thinkingLevel=${this.config.thinkingLevel ?? 'unset'} ` +
               `showReasoning=${this.config.showReasoning ?? false}`,
           );
+          resetStreamIdleTimer();
         }
         else if (event.type === 'message_update') {
           const assistantEvent = (event as any).assistantMessageEvent;
           if (assistantEvent?.type) {
             _assistantEventTypes.add(assistantEvent.type);
           }
+          // Any real content delta resets the idle timer
+          if (assistantEvent?.type === 'text_delta' || assistantEvent?.type === 'thinking_delta' || assistantEvent?.type === 'toolcall_delta') {
+            resetStreamIdleTimer();
+          }
+
           if (assistantEvent?.type === 'text_delta') {
             _textChars += (assistantEvent.delta ?? '').length;
             if (!_firstTextDeltaLogged) {
@@ -694,6 +745,7 @@ export class RunCoordinator {
           }
         }
         else if (event.type === 'message_end' && (event as any).message?.role === 'assistant') {
+          clearStreamIdleTimer();
           logStreamSummary('message_end');
         }
       }
@@ -716,6 +768,7 @@ export class RunCoordinator {
           sessionId: record.sessionId,
           provider: this.config.provider.pluginId,
           modelId: this.config.modelId,
+          apiError: this.runtime.lastApiError ?? undefined,
           createdAt: Date.now(),
         };
       }
@@ -733,6 +786,7 @@ export class RunCoordinator {
       this.finalizeRunError(record, classifyError(error));
       this.tryStartNextRun();
     } finally {
+      clearStreamIdleTimer();
       unsubscribe();
       await finalizeTranscript();
       this.runtime.clearActiveSession();
@@ -783,9 +837,10 @@ export class RunCoordinator {
       }
 
       if (assistantEvent.type === 'text_end') {
-        const content = typeof assistantEvent.content === 'string'
+        const rawContent = typeof assistantEvent.content === 'string'
           ? assistantEvent.content
           : transcriptState.assistantText;
+        const content = sanitizeAssistantVisibleText(rawContent);
         transcriptState.assistantText = content;
         transcriptState.assistantSuppressed = NO_REPLY_PATTERN.test(content.trim());
       }
@@ -795,18 +850,19 @@ export class RunCoordinator {
     if (raw.type === 'message_end' && raw.message?.role === 'assistant') {
       const fallbackText =
         transcriptState.assistantText || extractTextContent(raw.message.content);
+      const thinkingOnly = !fallbackText && hasThinkingContent(raw.message.content);
 
       if (
-        !fallbackText
+        !fallbackText && !thinkingOnly
         || transcriptState.assistantSuppressed
-        || NO_REPLY_PATTERN.test(fallbackText.trim())
+        || (!thinkingOnly && NO_REPLY_PATTERN.test((fallbackText ?? '').trim()))
       ) {
         transcriptState.assistantText = '';
         transcriptState.assistantSuppressed = false;
         return;
       }
 
-      const assistantMessage = this.buildAssistantMessage(raw.message, fallbackText);
+      const assistantMessage = this.buildAssistantMessage(raw.message, fallbackText || '');
       transcriptManager.appendMessage(assistantMessage);
       await this.applyAssistantUsage(record.sessionKey, assistantMessage);
       transcriptState.assistantPersisted = true;
@@ -907,11 +963,13 @@ export class RunCoordinator {
 
   private buildAssistantMessage(rawMessage: any, fallbackText: string): AssistantMessage {
     const normalized = this.normalizeUsage(rawMessage?.usage);
+    const rawContent = Array.isArray(rawMessage?.content) && rawMessage.content.length > 0
+      ? rawMessage.content
+      : [{ type: 'text', text: fallbackText }];
+    const content = sanitizeAssistantContentBlocks(rawContent);
     return {
       role: 'assistant',
-      content: Array.isArray(rawMessage?.content) && rawMessage.content.length > 0
-        ? rawMessage.content
-        : [{ type: 'text', text: fallbackText }],
+      content,
       api: rawMessage?.api ?? (this.runtime.state.model as any)?.api ?? 'openai-completions',
       provider: rawMessage?.provider ?? this.config.provider.pluginId,
       model: rawMessage?.model ?? this.config.modelId,

@@ -8,6 +8,7 @@ import type { ImageAttachment } from '../../shared/protocol';
 import { useSessionStore, type Message } from '../store/session-store';
 import ChatInput from './ChatInput';
 import ChatMessages from './ChatMessages';
+import HitlBanner from './HitlBanner';
 import { StorageClient } from '../runtime/storage-client';
 import { estimateTokens } from '../../shared/token-estimator';
 import { useContextWindow, usePeripheralReservations } from './useContextWindow';
@@ -164,6 +165,16 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
 
   const chatStream = useChatStream(agentNodeId);
 
+  // Reconnect: when the active session changes (open, switch, reconnect),
+  // ask the server for any pending HITL prompt so the banner shows up
+  // without requiring a new tool call.
+  const queryPendingHitl = chatStream.queryPendingHitl;
+  useEffect(() => {
+    if (activeSessionKey && connectionStatus === 'connected') {
+      queryPendingHitl(activeSessionKey);
+    }
+  }, [activeSessionKey, connectionStatus, queryPendingHitl]);
+
   const isStreaming = chatStream.isStreaming;
   const supportsVision = config?.modelCapabilities?.inputModalities?.includes('image') ?? false;
 
@@ -249,10 +260,48 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
       tokenCount: estimateTokens(text),
     };
 
+    // When the agent is waiting on a human prompt, route the text as the HITL
+    // answer instead of starting a new turn. For kind='confirm', strict
+    // yes/no parsing is enforced server-side — non-matching text gets an
+    // agent:error reply and the prompt stays open.
+    if (chatStream.pendingHitl && chatStream.pendingHitl.sessionKey === activeSessionKey) {
+      addMessage(activeSessionKey, userMessage);
+      chatStream.sendHitlResponse(
+        activeSessionKey,
+        chatStream.pendingHitl.toolCallId,
+        chatStream.pendingHitl.kind,
+        text,
+      );
+      return;
+    }
+
     addMessage(activeSessionKey, userMessage);
     startAgent(agentNodeId, config);
     chatStream.sendMessage(text, activeSessionKey, attachments.length ? attachments : undefined);
   }, [config, agentNodeId, activeSessionKey, addMessage, startAgent, chatStream]);
+
+  // Clicking a Yes/No button on the HITL banner: send via the structured
+  // hitl:respond path AND add a synthetic user message so the answer shows
+  // up in the transcript just like a typed response would.
+  const handleHitlConfirm = useCallback(
+    (answer: 'yes' | 'no') => {
+      if (!activeSessionKey || !chatStream.pendingHitl) return;
+      addMessage(activeSessionKey, {
+        id: `msg_${Date.now()}`,
+        role: 'user',
+        content: answer,
+        timestamp: Date.now(),
+        tokenCount: estimateTokens(answer),
+      });
+      chatStream.sendHitlResponse(
+        activeSessionKey,
+        chatStream.pendingHitl.toolCallId,
+        'confirm',
+        answer,
+      );
+    },
+    [activeSessionKey, chatStream, addMessage],
+  );
 
   const handleStop = useCallback(() => {
     abortAgent(agentNodeId);
@@ -476,7 +525,18 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
         streamingMsgId={chatStream.streamingMsgId}
         contextInfo={contextInfo}
         peripheralReservations={peripheralReservations}
+        hasTools={!!config.tools}
       />
+
+      {/* HITL sticky banner — sits above the input when the agent is waiting. */}
+      {chatStream.pendingHitl
+        && chatStream.pendingHitl.sessionKey === activeSessionKey
+        && !isBlocked && (
+        <HitlBanner
+          pending={chatStream.pendingHitl}
+          onConfirmAnswer={handleHitlConfirm}
+        />
+      )}
 
       {/* Input */}
       <ChatInput

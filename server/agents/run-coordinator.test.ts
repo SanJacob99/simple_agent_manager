@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SessionManager } from '@mariozechner/pi-coding-agent';
 import { RunCoordinator } from './run-coordinator';
 import { StreamProcessor } from './stream-processor';
-import { StorageEngine } from '../runtime/storage-engine';
+import { StorageEngine } from '../storage/storage-engine';
 import type { AgentRuntime } from '../runtime/agent-runtime';
 import type { AgentConfig } from '../../shared/agent-config';
 import { HookRegistry } from '../hooks/hook-registry';
@@ -47,6 +47,10 @@ function mockRuntime(): AgentRuntime {
     getSystemPrompt: vi.fn(() => 'Test'),
     setActiveSession: vi.fn(),
     clearActiveSession: vi.fn(),
+    setCurrentSessionKey: vi.fn(),
+    getCurrentSessionKey: vi.fn(() => ''),
+    setBroadcast: vi.fn(),
+    cancelPendingHitl: vi.fn(),
     setSessionContext: vi.fn((messages: any[]) => {
       runtime.state.messages = [...messages];
     }),

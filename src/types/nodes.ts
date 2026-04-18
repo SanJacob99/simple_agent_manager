@@ -33,6 +33,8 @@ export interface AgentNodeData {
   systemPromptMode: SystemPromptMode;
   showReasoning: boolean;
   verbose: boolean;
+  /** Working directory for the agent. Empty = server process.cwd() */
+  workingDirectory: string;
 }
 
 // --- Memory Node (OpenClaw-inspired) ---
@@ -60,7 +62,7 @@ export interface MemoryNodeData {
 // --- Tools Node (OpenClaw-inspired) ---
 
 export type ToolProfile = 'full' | 'coding' | 'messaging' | 'minimal' | 'custom';
-export type ToolGroup = 'runtime' | 'fs' | 'web' | 'memory' | 'coding' | 'communication';
+export type ToolGroup = 'runtime' | 'fs' | 'web' | 'coding' | 'media' | 'communication' | 'human';
 
 export interface SkillDefinition {
   id: string;
@@ -85,6 +87,108 @@ export interface PluginDefinition {
   enabled: boolean;
 }
 
+export interface ExecToolSettings {
+  /** Working directory for shell commands. Empty string = server process.cwd() */
+  cwd: string;
+  /** When true, workdir param is constrained to stay within cwd */
+  sandboxWorkdir: boolean;
+  /** Markdown guidance injected into the system prompt for this tool */
+  skill: string;
+}
+
+export interface CodeExecutionToolSettings {
+  /** xAI API key (or env var name). Empty = reads XAI_API_KEY from environment */
+  apiKey: string;
+  /** xAI model override (defaults to grok-4-1-fast) */
+  model: string;
+  /** Markdown guidance injected into the system prompt for this tool */
+  skill: string;
+}
+
+export interface WebSearchToolSettings {
+  /** Tavily API key. Empty = reads TAVILY_API_KEY from env. No key = DuckDuckGo fallback. */
+  tavilyApiKey: string;
+  /** Markdown guidance injected into the system prompt for this tool */
+  skill: string;
+}
+
+export interface ImageToolSettings {
+  /** OpenAI API key for DALL-E. Empty = reads OPENAI_API_KEY from env. */
+  openaiApiKey: string;
+  /** Google/Gemini API key. Empty = reads GEMINI_API_KEY from env. */
+  geminiApiKey: string;
+  /** Preferred model, e.g. "openai/gpt-image-1" or "google/gemini-2.0-flash-exp" */
+  preferredModel: string;
+  /** Markdown guidance for image tools */
+  skill: string;
+}
+
+export interface CanvaToolSettings {
+  /** Start of the port range used when the agent doesn't request a specific port */
+  portRangeStart: number;
+  /** End of the port range (inclusive) */
+  portRangeEnd: number;
+  /** Markdown guidance for the canva tool */
+  skill: string;
+}
+
+export type TtsProviderId =
+  | ''
+  | 'openai'
+  | 'elevenlabs'
+  | 'google'
+  | 'microsoft'
+  | 'minimax';
+
+export interface TextToSpeechToolSettings {
+  /** Preferred default provider. Empty = first configured. */
+  preferredProvider: TtsProviderId;
+  /** ElevenLabs API key. Empty = reads ELEVENLABS_API_KEY from env. */
+  elevenLabsApiKey: string;
+  elevenLabsDefaultVoice: string;
+  elevenLabsDefaultModel: string;
+  /** Override OpenAI TTS voice/model. Uses ImageToolSettings.openaiApiKey. */
+  openaiVoice: string;
+  openaiModel: string;
+  /** Google Gemini TTS voice/model. Uses ImageToolSettings.geminiApiKey. */
+  geminiVoice: string;
+  geminiModel: string;
+  /** Microsoft Azure Speech */
+  microsoftApiKey: string;
+  microsoftRegion: string;
+  microsoftDefaultVoice: string;
+  /** MiniMax */
+  minimaxApiKey: string;
+  minimaxGroupId: string;
+  minimaxDefaultVoice: string;
+  minimaxDefaultModel: string;
+  /** Markdown guidance injected into the system prompt for this tool */
+  skill: string;
+}
+
+export type MusicProviderId = '' | 'google' | 'minimax';
+
+export interface MusicGenerateToolSettings {
+  /** Preferred default provider. Empty = first configured. */
+  preferredProvider: MusicProviderId;
+  /** Google Gemini/Lyria music model override. Uses ImageToolSettings.geminiApiKey. */
+  geminiModel: string;
+  /** MiniMax music model (e.g. "music-01"). Uses TextToSpeechToolSettings.minimaxApiKey and minimaxGroupId. */
+  minimaxModel: string;
+  /** Markdown guidance injected into the system prompt for this tool */
+  skill: string;
+}
+
+export interface ToolSettings {
+  exec: ExecToolSettings;
+  codeExecution: CodeExecutionToolSettings;
+  webSearch: WebSearchToolSettings;
+  image: ImageToolSettings;
+  canva: CanvaToolSettings;
+  textToSpeech: TextToSpeechToolSettings;
+  musicGenerate: MusicGenerateToolSettings;
+}
+
 export interface ToolsNodeData {
   [key: string]: unknown;
   type: 'tools';
@@ -96,6 +200,7 @@ export interface ToolsNodeData {
   plugins: PluginDefinition[];
   subAgentSpawning: boolean;
   maxSubAgents: number;
+  toolSettings: ToolSettings;
 }
 
 // --- Skills Node ---

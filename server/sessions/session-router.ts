@@ -1,7 +1,7 @@
 import path from 'path';
 import type { ResolvedStorageConfig } from '../../shared/agent-config';
 import type { SessionStoreEntry } from '../../shared/storage-types';
-import { StorageEngine } from './storage-engine';
+import { StorageEngine } from '../storage/storage-engine';
 import { SessionTranscriptStore } from './session-transcript-store';
 
 export interface RouteRequest {
@@ -93,6 +93,55 @@ export class SessionRouter {
     }
 
     return this.toRouteResult(updated, false, true);
+  }
+
+  async deleteMessage(sessionKey: string, messageId: string): Promise<{ deleted: boolean }> {
+    const existing = await this.storageEngine.getSession(sessionKey);
+    if (!existing) {
+      throw new Error(`Session ${sessionKey} not found`);
+    }
+
+    const transcriptPath = this.storageEngine.resolveTranscriptPath(existing);
+    const deleted = await this.transcriptStore.deleteEntry(transcriptPath, messageId);
+
+    if (deleted) {
+      await this.storageEngine.updateSession(sessionKey, {
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    return { deleted };
+  }
+
+  async clearMessages(sessionKey: string): Promise<RouteResult> {
+    const existing = await this.storageEngine.getSession(sessionKey);
+    if (!existing) {
+      throw new Error(`Session ${sessionKey} not found`);
+    }
+
+    const transcriptPath = this.storageEngine.resolveTranscriptPath(existing);
+    await this.transcriptStore.clearTranscript(transcriptPath);
+
+    await this.storageEngine.updateSession(sessionKey, {
+      updatedAt: new Date().toISOString(),
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      contextTokens: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalEstimatedCostUsd: 0,
+      compactionCount: 0,
+      memoryFlushAt: undefined,
+      memoryFlushCompactionCount: undefined,
+    });
+
+    const updated = await this.storageEngine.getSession(sessionKey);
+    if (!updated) {
+      throw new Error(`Failed to read session metadata after clearing ${sessionKey}`);
+    }
+
+    return this.toRouteResult(updated, false, false);
   }
 
   async getStatus(sessionKey: string): Promise<SessionStoreEntry | null> {

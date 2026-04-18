@@ -46,6 +46,22 @@ export interface AgentDispatchCommand {
   attachments?: ImageAttachment[];
 }
 
+export interface HitlRespondCommand {
+  type: 'hitl:respond';
+  agentId: string;
+  sessionKey: string;
+  toolCallId: string;
+  /** 'text' sends freeform, 'confirm' sends 'yes' | 'no' */
+  kind: 'text' | 'confirm';
+  answer: string;
+}
+
+export interface HitlListCommand {
+  type: 'hitl:list';
+  agentId: string;
+  sessionKey: string;
+}
+
 export interface RunWaitCommand {
   type: 'run:wait';
   agentId: string;
@@ -66,7 +82,9 @@ export type Command =
   | AgentDestroyCommand
   | AgentSyncCommand
   | RunWaitCommand
-  | SetApiKeysCommand;
+  | SetApiKeysCommand
+  | HitlRespondCommand
+  | HitlListCommand;
 
 // --- Events (backend → frontend) ---
 
@@ -267,6 +285,51 @@ export interface ToolSummaryEvent {
   summary: string;
 }
 
+/**
+ * Emitted when the `ask_user` tool starts waiting for a human response.
+ * The client should render a sticky prompt banner and route the next user
+ * message (or Yes/No button) back to the server as a `hitl:respond`.
+ */
+export interface HitlInputRequiredEvent {
+  type: 'hitl:input_required';
+  agentId: string;
+  runId?: string;
+  sessionKey: string;
+  toolCallId: string;
+  toolName: string;
+  kind: 'text' | 'confirm';
+  question: string;
+  /** ms from creation to automatic timeout. */
+  timeoutMs: number;
+  createdAt: number;
+}
+
+/** Emitted when a pending HITL prompt is resolved (answered, cancelled, or timed out). */
+export interface HitlResolvedEvent {
+  type: 'hitl:resolved';
+  agentId: string;
+  sessionKey: string;
+  toolCallId: string;
+  outcome: 'answered' | 'cancelled';
+  /** Cancellation reason, when outcome === 'cancelled'. */
+  reason?: 'timeout' | 'aborted';
+}
+
+/** Server's reply to a `hitl:list` command — the current pending prompts for a session. */
+export interface HitlListResultEvent {
+  type: 'hitl:list:result';
+  agentId: string;
+  sessionKey: string;
+  pending: Array<{
+    toolCallId: string;
+    toolName: string;
+    kind: 'text' | 'confirm';
+    question: string;
+    createdAt: number;
+    timeoutMs: number;
+  }>;
+}
+
 export type ServerEvent =
   | AgentReadyEvent
   | AgentErrorEvent
@@ -291,4 +354,7 @@ export type ServerEvent =
   | MessageSuppressedEvent
   | CompactionStartEvent
   | CompactionEndEvent
-  | ToolSummaryEvent;
+  | ToolSummaryEvent
+  | HitlInputRequiredEvent
+  | HitlResolvedEvent
+  | HitlListResultEvent;

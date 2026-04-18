@@ -12,9 +12,13 @@ import { resolveProviderRuntimeAuth } from '../providers/provider-auth';
 import { resolveProviderStreamFn } from '../providers/stream-resolver';
 import { MemoryEngine } from './memory-engine';
 import { ContextEngine } from './context-engine';
-import { resolveToolNames, createAgentTools } from './tool-factory';
+import { resolveToolNames, createAgentTools } from '../tools/tool-factory';
 import { resolveRuntimeModel } from './model-resolver';
+import { isToolErrorDetails } from '../tools/tool-adapter';
 import { log } from '../logger';
+import type { HitlRegistry } from '../hitl/hitl-registry';
+import type { ServerEvent } from '../../shared/protocol';
+import { DEFAULT_SAFETY_SETTINGS, type SafetySettings } from '../storage/settings-file-store';
 
 export type RuntimeEvent =
   | AgentEvent
@@ -72,12 +76,22 @@ export class AgentRuntime {
   private getApiKeyFn: (provider: string) => Promise<string | undefined> | string | undefined;
   private getDiscoveredModelFn: (provider: string, modelId: string) => DiscoveredModelMetadata | undefined;
 
+  /** Current session key — set by RunCoordinator before each prompt so HITL tools know their session. */
+  private currentSessionKey: string = '';
+  /** Broadcast function injected by AgentManager after the WS bridge is wired. */
+  private broadcastFn: ((event: ServerEvent) => void) | null = null;
+
+  /** Last API-level error message from a non-2xx response. Cleared on each `prompt()` call. */
+  lastApiError: string | null = null;
+
   constructor(
     config: AgentConfig,
     getApiKey: (provider: string) => Promise<string | undefined> | string | undefined,
     getDiscoveredModel?: (provider: string, modelId: string) => DiscoveredModelMetadata | undefined,
     hookRegistry?: HookRegistry,
     private readonly pluginRegistry?: ProviderPluginRegistry,
+    private readonly hitlRegistry?: HitlRegistry,
+    private readonly safetySettings: SafetySettings = DEFAULT_SAFETY_SETTINGS,
   ) {
     this.config = config;
     this.getApiKeyFn = getApiKey;
@@ -99,15 +113,104 @@ export class AgentRuntime {
     const toolNames = config.tools
       ? resolveToolNames(config.tools)
       : [];
-    let tools = createAgentTools(toolNames, memoryTools as AgentTool<TSchema>[]);
+
+    // Safety enforcement: while `allowDisableHitl` is false (the default —
+    // "Dangerous Fully Auto" off), every agent MUST have ask_user and
+    // confirm_action regardless of what its saved Tools node lists. This
+    // guarantees that agents created before HITL shipped (or configs that
+    // drift from the default) still get the human-gate tools.
+    // When `allowDisableHitl` is true, the user has explicitly opted out,
+    // so we respect whatever the agent config contains.
+    if (!this.safetySettings.allowDisableHitl) {
+      if (!toolNames.includes('ask_user')) toolNames.push('ask_user');
+      if (!toolNames.includes('confirm_action')) toolNames.push('confirm_action');
+    }
+    const workspaceCwd = config.workspacePath ?? process.cwd();
+    const xaiApiKey = config.xaiApiKey || process.env.XAI_API_KEY;
+    const tavilyApiKey = config.tavilyApiKey || process.env.TAVILY_API_KEY;
+    const openaiApiKey = config.openaiApiKey || process.env.OPENAI_API_KEY;
+    const geminiApiKey = config.geminiApiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+    // OpenRouter key is resolved lazily — the ApiKeyStore (populated via config:setApiKeys)
+    // is the primary source; env var is a fallback.
+    const getOpenrouterApiKey = async () => {
+      const fromStore = await getApiKey('openrouter');
+      return fromStore || process.env.OPENROUTER_API_KEY;
+    };
+    // HITL tool context: the ask_user tool is created once, but sessionKey
+    // and the broadcast target vary over the runtime's lifetime — capture
+    // them as late-binding references.
+    const hitlContext = this.hitlRegistry
+      ? {
+        agentId: config.id,
+        getSessionKey: () => this.currentSessionKey,
+        registry: this.hitlRegistry,
+        emit: (event: ServerEvent) => {
+          this.broadcastFn?.(event);
+        },
+      }
+      : undefined;
+
+    let tools = createAgentTools(
+      toolNames,
+      memoryTools as AgentTool<TSchema>[],
+      undefined,
+      {
+        cwd: workspaceCwd,
+        sandboxWorkdir: config.sandboxWorkdir,
+        xaiApiKey,
+        xaiModel: config.xaiModel,
+        tavilyApiKey,
+        openaiApiKey,
+        geminiApiKey,
+        getOpenrouterApiKey,
+        imageModel: config.imageModel,
+        canvaPortRangeStart: config.canvaPortRangeStart,
+        canvaPortRangeEnd: config.canvaPortRangeEnd,
+        ttsPreferredProvider: config.ttsPreferredProvider,
+        elevenLabsApiKey: config.elevenLabsApiKey || process.env.ELEVENLABS_API_KEY,
+        elevenLabsDefaultVoice: config.elevenLabsDefaultVoice,
+        elevenLabsDefaultModel: config.elevenLabsDefaultModel,
+        openaiTtsVoice: config.openaiTtsVoice,
+        openaiTtsModel: config.openaiTtsModel,
+        geminiTtsVoice: config.geminiTtsVoice,
+        geminiTtsModel: config.geminiTtsModel,
+        microsoftTtsApiKey: config.microsoftTtsApiKey || process.env.AZURE_SPEECH_KEY,
+        microsoftTtsRegion: config.microsoftTtsRegion || process.env.AZURE_SPEECH_REGION,
+        microsoftTtsVoice: config.microsoftTtsVoice,
+        minimaxApiKey: config.minimaxApiKey || process.env.MINIMAX_API_KEY,
+        minimaxGroupId: config.minimaxGroupId || process.env.MINIMAX_GROUP_ID,
+        minimaxDefaultVoice: config.minimaxDefaultVoice,
+        minimaxDefaultModel: config.minimaxDefaultModel,
+        musicPreferredProvider: config.musicPreferredProvider,
+        geminiMusicModel: config.geminiMusicModel,
+        minimaxMusicModel: config.minimaxMusicModel,
+        modelId: config.modelId,
+        hitl: hitlContext,
+        agentConfig: config,
+      },
+    );
 
     // Wrap tools with hook invocation if registry is provided
     if (this.hookRegistry) {
       tools = this.wrapToolsWithHooks(tools, config.id);
     }
 
-    // Build system prompt
-    const systemPrompt = config.systemPrompt.assembled;
+    // Build system prompt — inject the runtime workspace path when the config
+    // didn't have one (workingDirectory was empty, so no workspace section was built).
+    let systemPrompt = config.systemPrompt.assembled;
+    if (workspaceCwd && !/Working directory: /.test(systemPrompt)) {
+      systemPrompt += `\n\n## Workspace\n\nWorking directory: ${workspaceCwd}`;
+    }
+
+    // Confirmation policy — appended whenever either HITL tool is present in
+    // the resolved tool list. Teaches the model WHEN to call `confirm_action`
+    // / `ask_user` and enforces the one-tool-call-per-confirm-turn rule that
+    // keeps parallel-tool-calling providers from bypassing the gate.
+    const hasHitlTool = toolNames.includes('confirm_action') || toolNames.includes('ask_user');
+    const policy = this.safetySettings.confirmationPolicy?.trim();
+    if (hasHitlTool && policy) {
+      systemPrompt += `\n\n${policy}`;
+    }
 
     const plugin = this.pluginRegistry?.get(config.provider.pluginId);
     const runtimeProviderId = plugin?.runtimeProviderId ?? config.provider.pluginId;
@@ -183,6 +286,58 @@ export class AgentRuntime {
    */
   getSystemPrompt(): string {
     return this.agent.state.systemPrompt;
+  }
+
+  /**
+   * Set the current session key. Called by RunCoordinator before each
+   * `prompt()` so HITL tools (`ask_user`) can register pending prompts
+   * against the correct session.
+   */
+  setCurrentSessionKey(sessionKey: string): void {
+    this.currentSessionKey = sessionKey;
+  }
+
+  /**
+   * Get the current session key. Useful for tool-scoped logging and for
+   * coordinator code that needs to address the HITL registry.
+   */
+  getCurrentSessionKey(): string {
+    return this.currentSessionKey;
+  }
+
+  /**
+   * Inject the function that sends events to the agent's connected sockets.
+   * Called by AgentManager after the EventBridge is constructed so HITL
+   * tools can push `hitl:input_required` / `hitl:resolved` to clients
+   * without going through the coordinator's run-scoped stream.
+   */
+  setBroadcast(fn: (event: ServerEvent) => void): void {
+    this.broadcastFn = fn;
+  }
+
+  /**
+   * Cancel every pending HITL prompt for a session and broadcast the
+   * resolution. Called by RunCoordinator.abort() so the UI's banner clears
+   * even when the run is torn down before the tool's own abort handler
+   * fires.
+   */
+  cancelPendingHitl(sessionKey: string, reason: 'aborted' | 'timeout'): void {
+    if (!this.hitlRegistry) return;
+    const cancelled = this.hitlRegistry.cancelAllForSession(
+      this.config.id,
+      sessionKey,
+      reason,
+    );
+    for (const entry of cancelled) {
+      this.broadcastFn?.({
+        type: 'hitl:resolved',
+        agentId: entry.agentId,
+        sessionKey: entry.sessionKey,
+        toolCallId: entry.toolCallId,
+        outcome: 'cancelled',
+        reason,
+      });
+    }
   }
 
   setSessionContext(messages: AgentMessage[]): void {
@@ -264,7 +419,7 @@ export class AgentRuntime {
           toolName: tool.name,
           params: beforeCtx.params,
           result: resultText,
-          isError: false,
+          isError: isToolErrorDetails(result.details),
           transformedResult: undefined,
         };
 
@@ -305,22 +460,38 @@ export class AgentRuntime {
   }
 
   async prompt(text: string, attachments?: ImageAttachment[]): Promise<void> {
+    this.lastApiError = null;
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async (...args) => {
       log('pi-ai Fetch', `[START] URL: ${args[0]}`);
       try {
         const response = await originalFetch(...args);
         log('pi-ai Fetch', `[STATUS] ${response.status} ${response.statusText}`);
-        const clone = response.clone();
-        // Never await the cloned body here: doing so buffers the full stream
-        // before returning the Response and breaks live token streaming.
-        void clone.text()
-          .then((bodyText) => {
+        if (!response.ok) {
+          // Non-2xx: small error body, safe to await without blocking a stream.
+          const clone = response.clone();
+          try {
+            const bodyText = await clone.text();
             log('pi-ai Fetch', `[BODY] ${bodyText.substring(0, 1000)}`);
-          })
-          .catch((err) => {
-            log('pi-ai Fetch', `[BODY_ERROR] ${err instanceof Error ? err.message : String(err)}`);
-          });
+            const parsed = JSON.parse(bodyText);
+            if (typeof parsed?.error?.message === 'string') {
+              this.lastApiError = parsed.error.message;
+            }
+          } catch {
+            // ignore parse failures
+          }
+        } else {
+          const clone = response.clone();
+          // Never await the cloned body here: doing so buffers the full stream
+          // before returning the Response and breaks live token streaming.
+          void clone.text()
+            .then((bodyText) => {
+              log('pi-ai Fetch', `[BODY] ${bodyText.substring(0, 1000)}`);
+            })
+            .catch((err) => {
+              log('pi-ai Fetch', `[BODY_ERROR] ${err instanceof Error ? err.message : String(err)}`);
+            });
+        }
         return response;
       } catch (err) {
         log('pi-ai Fetch', `[ERROR] ${err instanceof Error ? err.message : String(err)}`);

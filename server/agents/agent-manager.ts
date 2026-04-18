@@ -2,13 +2,15 @@ import { AgentRuntime } from '../runtime/agent-runtime';
 import { RunCoordinator } from './run-coordinator';
 import { StreamProcessor } from './stream-processor';
 import { EventBridge } from './event-bridge';
-import { StorageEngine } from '../runtime/storage-engine';
+import { StorageEngine } from '../storage/storage-engine';
 import { HookRegistry } from '../hooks/hook-registry';
 import { PluginLoader } from '../hooks/plugin-loader';
 import { registerInternalHooks } from '../hooks/internal-hooks';
 import { HOOK_NAMES, type BackendLifecycleContext } from '../hooks/hook-types';
 import { ProviderPluginRegistry } from '../providers/plugin-registry';
 import type { ApiKeyStore } from '../auth/api-keys';
+import { HitlRegistry } from '../hitl/hitl-registry';
+import { DEFAULT_SAFETY_SETTINGS, type SafetySettings } from '../storage/settings-file-store';
 import type { AgentConfig } from '../../shared/agent-config';
 import type {
   DispatchParams,
@@ -48,11 +50,25 @@ export function getGlobalHookRegistry(): HookRegistry {
 
 export class AgentManager {
   private agents = new Map<string, ManagedAgent>();
+  /** Shared HITL registry — single instance for all agents managed by this server. */
+  readonly hitlRegistry: HitlRegistry;
+  /**
+   * Callback read at runtime construction time to source the current safety
+   * settings (confirmation policy text, allow-disable flag). Kept as a
+   * callback so live edits from the settings endpoint propagate to new
+   * agent runs without restarting the server.
+   */
+  readonly getSafetySettings: () => SafetySettings;
 
   constructor(
     private readonly apiKeys: ApiKeyStore,
     private readonly pluginRegistry: ProviderPluginRegistry,
-  ) {}
+    hitlRegistry?: HitlRegistry,
+    getSafetySettings?: () => SafetySettings,
+  ) {
+    this.hitlRegistry = hitlRegistry ?? new HitlRegistry();
+    this.getSafetySettings = getSafetySettings ?? (() => DEFAULT_SAFETY_SETTINGS);
+  }
 
   async start(config: AgentConfig): Promise<void> {
     // Destroy existing if present
@@ -89,6 +105,8 @@ export class AgentManager {
       undefined,
       hooks,
       this.pluginRegistry,
+      this.hitlRegistry,
+      this.getSafetySettings(),
     );
 
     // Create coordinator with hook registry
@@ -97,6 +115,11 @@ export class AgentManager {
     const processor = new StreamProcessor(config.id, coordinator, config);
 
     const bridge = new EventBridge(config.id, processor);
+
+    // Now that the bridge exists, let the runtime's HITL tool push events
+    // directly to connected clients (bypassing the run-scoped stream).
+    // Guarded: tests mock AgentRuntime and may not implement setBroadcast.
+    runtime.setBroadcast?.((event) => bridge.broadcast(event));
 
     // Subscribe to coordinator lifecycle events for lastActivity tracking
     const unsubscribe = coordinator.subscribeAll(() => {
