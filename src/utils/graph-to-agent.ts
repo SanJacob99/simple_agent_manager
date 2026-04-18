@@ -128,6 +128,14 @@ export function resolveAgentConfig(
         injectAs: 'system-prompt' as const,
       });
     }
+    if (ts?.musicGenerate?.skill?.trim()) {
+      allSkills.push({
+        id: 'tool-skill-music-generate',
+        name: 'music_generate tool guidance',
+        content: ts.musicGenerate.skill,
+        injectAs: 'system-prompt' as const,
+      });
+    }
   }
 
   const toolsConfig = toolsNode && toolsNode.data.type === 'tools'
@@ -378,6 +386,17 @@ export function resolveAgentConfig(
       : undefined,
     minimaxDefaultModel: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.textToSpeech?.minimaxDefaultModel
       ? toolsNode.data.toolSettings.textToSpeech.minimaxDefaultModel
+      : undefined,
+    musicPreferredProvider: (() => {
+      if (toolsNode?.data.type !== 'tools') return undefined;
+      const value = toolsNode.data.toolSettings?.musicGenerate?.preferredProvider;
+      return value && value.length > 0 ? value : undefined;
+    })(),
+    geminiMusicModel: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.musicGenerate?.geminiModel
+      ? toolsNode.data.toolSettings.musicGenerate.geminiModel
+      : undefined,
+    minimaxMusicModel: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.musicGenerate?.minimaxModel
+      ? toolsNode.data.toolSettings.musicGenerate.minimaxModel
       : undefined,
     exportedAt: Date.now(),
     sourceGraphId: agentNodeId,

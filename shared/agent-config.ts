@@ -176,6 +176,13 @@ export interface AgentConfig {
   minimaxDefaultVoice?: string;
   minimaxDefaultModel?: string;
 
+  /** Preferred default music generation provider. */
+  musicPreferredProvider?: 'google' | 'minimax';
+  /** Google Lyria music model override (Gemini API key is reused from image config). */
+  geminiMusicModel?: string;
+  /** MiniMax music model override (MiniMax API key is reused from TTS config). */
+  minimaxMusicModel?: string;
+
   exportedAt: number;
   sourceGraphId: string;
   runTimeoutMs: number;

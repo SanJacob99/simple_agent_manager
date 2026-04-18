@@ -145,6 +145,9 @@ export class AgentRuntime {
         minimaxGroupId: config.minimaxGroupId || process.env.MINIMAX_GROUP_ID,
         minimaxDefaultVoice: config.minimaxDefaultVoice,
         minimaxDefaultModel: config.minimaxDefaultModel,
+        musicPreferredProvider: config.musicPreferredProvider,
+        geminiMusicModel: config.geminiMusicModel,
+        minimaxMusicModel: config.minimaxMusicModel,
         modelId: config.modelId,
       },
     );
