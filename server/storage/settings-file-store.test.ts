@@ -2,7 +2,11 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
-import { SettingsFileStore, DEFAULT_SAFETY_SETTINGS } from './settings-file-store';
+import {
+  SettingsFileStore,
+  DEFAULT_SAFETY_SETTINGS,
+  LEGACY_CONFIRMATION_POLICIES,
+} from './settings-file-store';
 
 let tmpDir: string;
 let store: SettingsFileStore;
@@ -73,5 +77,32 @@ describe('SettingsFileStore', () => {
 
   it('getFilePath returns expected path', () => {
     expect(store.getFilePath()).toBe(path.join(tmpDir, 'settings.json'));
+  });
+
+  it('upgrades every legacy confirmation policy to the current default', async () => {
+    for (const legacy of LEGACY_CONFIRMATION_POLICIES) {
+      await store.save({
+        apiKeys: {},
+        agentDefaults: {},
+        storageDefaults: {},
+        safety: { allowDisableHitl: false, confirmationPolicy: legacy },
+      });
+      const loaded = await store.load();
+      expect(loaded.safety?.confirmationPolicy).toBe(
+        DEFAULT_SAFETY_SETTINGS.confirmationPolicy,
+      );
+    }
+  });
+
+  it('preserves a user-customized confirmation policy on load', async () => {
+    const custom = '## My custom policy\n\nBe careful.';
+    await store.save({
+      apiKeys: {},
+      agentDefaults: {},
+      storageDefaults: {},
+      safety: { allowDisableHitl: false, confirmationPolicy: custom },
+    });
+    const loaded = await store.load();
+    expect(loaded.safety?.confirmationPolicy).toBe(custom);
   });
 });
