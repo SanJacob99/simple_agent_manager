@@ -6,6 +6,18 @@ import { useSettingsStore } from '../../settings/settings-store';
 import type { ToolsNodeData, ToolProfile, ToolGroup } from '../../types/nodes';
 import { Field, inputClass, selectClass, textareaClass } from './shared';
 import { ALL_TOOL_NAMES, TOOL_GROUPS, TOOL_PROFILES } from '../../../shared/resolve-tool-names';
+import { SchemaForm } from './schema-form/SchemaForm';
+import {
+  canvaToolConfigSchema,
+  codeExecutionToolConfigSchema,
+  execToolConfigSchema,
+  webSearchToolConfigSchema,
+} from './tool-config-schemas';
+
+const DEFAULT_EXEC_SETTINGS = { cwd: '', sandboxWorkdir: false, skill: '' };
+const DEFAULT_CODE_EXECUTION_SETTINGS = { apiKey: '', model: '', skill: '' };
+const DEFAULT_WEB_SEARCH_SETTINGS = { tavilyApiKey: '', skill: '' };
+const DEFAULT_CANVA_SETTINGS = { portRangeStart: 5173, portRangeEnd: 5273, skill: '' };
 
 const HITL_TOOLS = new Set(['ask_user', 'confirm_action']);
 
@@ -256,48 +268,19 @@ export default function ToolsProperties({ nodeId, data }: Props) {
     return (
       <div className="space-y-1">
         <PageHeader title="exec / bash" onBack={() => setPage('main')} />
-
-        <Field label="Working directory override">
-          <input
-            className={inputClass}
-            value={data.toolSettings?.exec?.cwd ?? ''}
-            onChange={(e) => updateExec({ cwd: e.target.value })}
-            placeholder={agentWorkingDir || 'Inherited from agent node'}
-          />
-          <p className="mt-0.5 text-[9px] text-slate-600">
-            {agentWorkingDir
-              ? `Inherits: ${agentWorkingDir} — set a value here to override.`
-              : 'Leave empty to use the agent node\'s working directory.'}
-          </p>
-        </Field>
-
-        <Field label="Sandbox">
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={data.toolSettings?.exec?.sandboxWorkdir ?? false}
-              onChange={(e) => updateExec({ sandboxWorkdir: e.target.checked })}
-              className="rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500/30"
-            />
-            <span className="text-xs text-slate-300">Restrict workdir to cwd</span>
-          </label>
-          <p className="mt-0.5 text-[9px] text-slate-600">
-            When enabled, the agent cannot set workdir outside of the configured cwd.
-          </p>
-        </Field>
-
-        <Field label="Skill">
-          <textarea
-            className={textareaClass}
-            rows={4}
-            value={data.toolSettings?.exec?.skill ?? ''}
-            onChange={(e) => updateExec({ skill: e.target.value })}
-            placeholder="Markdown guidance for how the agent should use exec..."
-          />
-          <p className="mt-0.5 text-[9px] text-slate-600">
-            Injected into the system prompt to guide exec usage.
-          </p>
-        </Field>
+        <SchemaForm
+          schema={execToolConfigSchema}
+          value={data.toolSettings?.exec ?? DEFAULT_EXEC_SETTINGS}
+          onChange={updateExec}
+          fieldOverrides={{
+            cwd: {
+              placeholder: agentWorkingDir || 'Inherited from agent node',
+              description: agentWorkingDir
+                ? `Inherits: ${agentWorkingDir} — set a value here to override.`
+                : "Leave empty to use the agent node's working directory.",
+            },
+          }}
+        />
       </div>
     );
   }
@@ -309,41 +292,11 @@ export default function ToolsProperties({ nodeId, data }: Props) {
     return (
       <div className="space-y-1">
         <PageHeader title="code_execution" onBack={() => setPage('main')} />
-
-        <Field label="xAI API Key">
-          <input
-            className={inputClass}
-            type="password"
-            value={data.toolSettings?.codeExecution?.apiKey ?? ''}
-            onChange={(e) => updateCodeExecution({ apiKey: e.target.value })}
-            placeholder="Empty = reads XAI_API_KEY from env"
-          />
-        </Field>
-
-        <Field label="Model">
-          <input
-            className={inputClass}
-            value={data.toolSettings?.codeExecution?.model ?? ''}
-            onChange={(e) => updateCodeExecution({ model: e.target.value })}
-            placeholder="grok-4-1-fast (default)"
-          />
-          <p className="mt-0.5 text-[9px] text-slate-600">
-            Runs sandboxed Python on xAI. For calculations, statistics, data analysis.
-          </p>
-        </Field>
-
-        <Field label="Skill">
-          <textarea
-            className={textareaClass}
-            rows={4}
-            value={data.toolSettings?.codeExecution?.skill ?? ''}
-            onChange={(e) => updateCodeExecution({ skill: e.target.value })}
-            placeholder="Markdown guidance for how the agent should use code_execution..."
-          />
-          <p className="mt-0.5 text-[9px] text-slate-600">
-            Injected into the system prompt to guide code_execution usage.
-          </p>
-        </Field>
+        <SchemaForm
+          schema={codeExecutionToolConfigSchema}
+          value={data.toolSettings?.codeExecution ?? DEFAULT_CODE_EXECUTION_SETTINGS}
+          onChange={updateCodeExecution}
+        />
       </div>
     );
   }
@@ -355,33 +308,11 @@ export default function ToolsProperties({ nodeId, data }: Props) {
     return (
       <div className="space-y-1">
         <PageHeader title="web_search" onBack={() => setPage('main')} />
-
-        <Field label="Tavily API Key">
-          <input
-            className={inputClass}
-            type="password"
-            value={data.toolSettings?.webSearch?.tavilyApiKey ?? ''}
-            onChange={(e) => updateWebSearch({ tavilyApiKey: e.target.value })}
-            placeholder="Empty = TAVILY_API_KEY env or DuckDuckGo fallback"
-          />
-          <p className="mt-0.5 text-[9px] text-slate-600">
-            With a Tavily key: AI-summarized results (free tier: 500/month).
-            Without: basic DuckDuckGo HTML scrape.
-          </p>
-        </Field>
-
-        <Field label="Skill">
-          <textarea
-            className={textareaClass}
-            rows={4}
-            value={data.toolSettings?.webSearch?.skill ?? ''}
-            onChange={(e) => updateWebSearch({ skill: e.target.value })}
-            placeholder="Markdown guidance for how the agent should use web_search..."
-          />
-          <p className="mt-0.5 text-[9px] text-slate-600">
-            Injected into the system prompt to guide web_search usage.
-          </p>
-        </Field>
+        <SchemaForm
+          schema={webSearchToolConfigSchema}
+          value={data.toolSettings?.webSearch ?? DEFAULT_WEB_SEARCH_SETTINGS}
+          onChange={updateWebSearch}
+        />
       </div>
     );
   }
@@ -522,43 +453,11 @@ export default function ToolsProperties({ nodeId, data }: Props) {
           </p>
         </div>
 
-        <Field label="Port range start">
-          <input
-            className={inputClass}
-            type="number"
-            min={1024}
-            max={65535}
-            value={data.toolSettings?.canva?.portRangeStart ?? 5173}
-            onChange={(e) => updateCanva({ portRangeStart: parseInt(e.target.value) || 5173 })}
-          />
-        </Field>
-
-        <Field label="Port range end">
-          <input
-            className={inputClass}
-            type="number"
-            min={1024}
-            max={65535}
-            value={data.toolSettings?.canva?.portRangeEnd ?? 5273}
-            onChange={(e) => updateCanva({ portRangeEnd: parseInt(e.target.value) || 5273 })}
-          />
-          <p className="mt-0.5 text-[9px] text-slate-600">
-            The agent auto-picks a free port in this range. It may also request a specific port.
-          </p>
-        </Field>
-
-        <Field label="Skill">
-          <textarea
-            className={textareaClass}
-            rows={4}
-            value={data.toolSettings?.canva?.skill ?? ''}
-            onChange={(e) => updateCanva({ skill: e.target.value })}
-            placeholder="Markdown guidance for how the agent should use canva..."
-          />
-          <p className="mt-0.5 text-[9px] text-slate-600">
-            Injected into the system prompt to guide canva usage.
-          </p>
-        </Field>
+        <SchemaForm
+          schema={canvaToolConfigSchema}
+          value={data.toolSettings?.canva ?? DEFAULT_CANVA_SETTINGS}
+          onChange={updateCanva}
+        />
       </div>
     );
   }
