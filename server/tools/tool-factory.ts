@@ -22,6 +22,8 @@ import { createImageAnalyzeTool } from './builtins/image/image-analyze';
 import { createImageGenerateTool } from './builtins/image/image-generate';
 import { createShowImageTool } from './builtins/image/show-image';
 import { createWebSearchTool } from './builtins/web/web-search';
+import { createCanvaTool } from './builtins/canva/canva';
+import { createTextToSpeechTool } from './builtins/tts/text-to-speech';
 
 // Re-export resolveToolNames from shared (used by agent-runtime.ts)
 export { resolveToolNames } from '../../shared/resolve-tool-names';
@@ -38,6 +40,7 @@ export const ALL_TOOL_NAMES = [
   'web_search',
   'web_fetch',
   'calculator',
+  'canva',
   'memory_search',
   'memory_get',
   'memory_save',
@@ -88,6 +91,40 @@ export interface ToolFactoryContext {
   getOpenrouterApiKey?: () => Promise<string | undefined> | string | undefined;
   /** Preferred image generation model */
   imageModel?: string;
+  /** Start of the port range canva will auto-pick from */
+  canvaPortRangeStart?: number;
+  /** End of the port range canva will auto-pick from */
+  canvaPortRangeEnd?: number;
+  /** Preferred default TTS provider */
+  ttsPreferredProvider?: 'openai' | 'elevenlabs' | 'google' | 'microsoft' | 'minimax';
+  /** ElevenLabs API key for text_to_speech */
+  elevenLabsApiKey?: string;
+  /** ElevenLabs default voice id */
+  elevenLabsDefaultVoice?: string;
+  /** ElevenLabs default model id */
+  elevenLabsDefaultModel?: string;
+  /** OpenAI default TTS voice (e.g. "alloy") */
+  openaiTtsVoice?: string;
+  /** OpenAI TTS model (e.g. "gpt-4o-mini-tts") */
+  openaiTtsModel?: string;
+  /** Google Gemini TTS default voice (e.g. "Kore") */
+  geminiTtsVoice?: string;
+  /** Google Gemini TTS model override */
+  geminiTtsModel?: string;
+  /** Microsoft Azure Speech API key */
+  microsoftTtsApiKey?: string;
+  /** Microsoft Azure Speech region (e.g. "eastus") */
+  microsoftTtsRegion?: string;
+  /** Microsoft Azure default voice (e.g. "en-US-JennyNeural") */
+  microsoftTtsVoice?: string;
+  /** MiniMax API key */
+  minimaxApiKey?: string;
+  /** MiniMax group id */
+  minimaxGroupId?: string;
+  /** MiniMax default voice id */
+  minimaxDefaultVoice?: string;
+  /** MiniMax default model (e.g. "speech-02-hd") */
+  minimaxDefaultModel?: string;
   /** Model ID — used to apply provider-specific schema cleaning (e.g. Gemini) */
   modelId?: string;
 }
@@ -125,6 +162,42 @@ export function createAgentTools(
       else if (name === 'edit_file') tools.push(createEditFileTool(fsCtx));
       else if (name === 'list_directory') tools.push(createListDirectoryTool(fsCtx));
       else if (name === 'apply_patch') tools.push(createApplyPatchTool(fsCtx));
+      continue;
+    }
+
+    // Text-to-speech — needs the workspace for writing audio files
+    if (name === 'text_to_speech' && factoryContext?.cwd) {
+      tools.push(createTextToSpeechTool({
+        cwd: factoryContext.cwd,
+        preferredProvider: factoryContext.ttsPreferredProvider,
+        openaiApiKey: factoryContext.openaiApiKey,
+        openaiDefaultVoice: factoryContext.openaiTtsVoice,
+        openaiDefaultModel: factoryContext.openaiTtsModel,
+        elevenLabsApiKey: factoryContext.elevenLabsApiKey,
+        elevenLabsDefaultVoice: factoryContext.elevenLabsDefaultVoice,
+        elevenLabsDefaultModel: factoryContext.elevenLabsDefaultModel,
+        geminiApiKey: factoryContext.geminiApiKey,
+        geminiDefaultVoice: factoryContext.geminiTtsVoice,
+        geminiDefaultModel: factoryContext.geminiTtsModel,
+        microsoftApiKey: factoryContext.microsoftTtsApiKey,
+        microsoftRegion: factoryContext.microsoftTtsRegion,
+        microsoftDefaultVoice: factoryContext.microsoftTtsVoice,
+        minimaxApiKey: factoryContext.minimaxApiKey,
+        minimaxGroupId: factoryContext.minimaxGroupId,
+        minimaxDefaultVoice: factoryContext.minimaxDefaultVoice,
+        minimaxDefaultModel: factoryContext.minimaxDefaultModel,
+      }));
+      continue;
+    }
+
+    // Canva (HTML/CSS/JS visualizations) — needs the agent workspace for file output
+    if (name === 'canva' && factoryContext?.cwd) {
+      tools.push(createCanvaTool({
+        cwd: factoryContext.cwd,
+        sandboxWorkdir: factoryContext.sandboxWorkdir,
+        portRangeStart: factoryContext.canvaPortRangeStart,
+        portRangeEnd: factoryContext.canvaPortRangeEnd,
+      }));
       continue;
     }
 

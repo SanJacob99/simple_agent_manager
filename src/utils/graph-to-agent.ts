@@ -112,6 +112,22 @@ export function resolveAgentConfig(
         injectAs: 'system-prompt' as const,
       });
     }
+    if (ts?.canva?.skill?.trim()) {
+      allSkills.push({
+        id: 'tool-skill-canva',
+        name: 'canva tool guidance',
+        content: ts.canva.skill,
+        injectAs: 'system-prompt' as const,
+      });
+    }
+    if (ts?.textToSpeech?.skill?.trim()) {
+      allSkills.push({
+        id: 'tool-skill-text-to-speech',
+        name: 'text_to_speech tool guidance',
+        content: ts.textToSpeech.skill,
+        injectAs: 'system-prompt' as const,
+      });
+    }
   }
 
   const toolsConfig = toolsNode && toolsNode.data.type === 'tools'
@@ -309,6 +325,59 @@ export function resolveAgentConfig(
       : undefined,
     imageModel: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.image?.preferredModel
       ? toolsNode.data.toolSettings.image.preferredModel
+      : undefined,
+    canvaPortRangeStart: toolsNode?.data.type === 'tools'
+      ? toolsNode.data.toolSettings?.canva?.portRangeStart
+      : undefined,
+    canvaPortRangeEnd: toolsNode?.data.type === 'tools'
+      ? toolsNode.data.toolSettings?.canva?.portRangeEnd
+      : undefined,
+    ttsPreferredProvider: (() => {
+      if (toolsNode?.data.type !== 'tools') return undefined;
+      const value = toolsNode.data.toolSettings?.textToSpeech?.preferredProvider;
+      return value && value.length > 0 ? value : undefined;
+    })(),
+    elevenLabsApiKey: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.textToSpeech?.elevenLabsApiKey
+      ? toolsNode.data.toolSettings.textToSpeech.elevenLabsApiKey
+      : undefined,
+    elevenLabsDefaultVoice: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.textToSpeech?.elevenLabsDefaultVoice
+      ? toolsNode.data.toolSettings.textToSpeech.elevenLabsDefaultVoice
+      : undefined,
+    elevenLabsDefaultModel: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.textToSpeech?.elevenLabsDefaultModel
+      ? toolsNode.data.toolSettings.textToSpeech.elevenLabsDefaultModel
+      : undefined,
+    openaiTtsVoice: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.textToSpeech?.openaiVoice
+      ? toolsNode.data.toolSettings.textToSpeech.openaiVoice
+      : undefined,
+    openaiTtsModel: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.textToSpeech?.openaiModel
+      ? toolsNode.data.toolSettings.textToSpeech.openaiModel
+      : undefined,
+    geminiTtsVoice: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.textToSpeech?.geminiVoice
+      ? toolsNode.data.toolSettings.textToSpeech.geminiVoice
+      : undefined,
+    geminiTtsModel: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.textToSpeech?.geminiModel
+      ? toolsNode.data.toolSettings.textToSpeech.geminiModel
+      : undefined,
+    microsoftTtsApiKey: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.textToSpeech?.microsoftApiKey
+      ? toolsNode.data.toolSettings.textToSpeech.microsoftApiKey
+      : undefined,
+    microsoftTtsRegion: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.textToSpeech?.microsoftRegion
+      ? toolsNode.data.toolSettings.textToSpeech.microsoftRegion
+      : undefined,
+    microsoftTtsVoice: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.textToSpeech?.microsoftDefaultVoice
+      ? toolsNode.data.toolSettings.textToSpeech.microsoftDefaultVoice
+      : undefined,
+    minimaxApiKey: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.textToSpeech?.minimaxApiKey
+      ? toolsNode.data.toolSettings.textToSpeech.minimaxApiKey
+      : undefined,
+    minimaxGroupId: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.textToSpeech?.minimaxGroupId
+      ? toolsNode.data.toolSettings.textToSpeech.minimaxGroupId
+      : undefined,
+    minimaxDefaultVoice: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.textToSpeech?.minimaxDefaultVoice
+      ? toolsNode.data.toolSettings.textToSpeech.minimaxDefaultVoice
+      : undefined,
+    minimaxDefaultModel: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.textToSpeech?.minimaxDefaultModel
+      ? toolsNode.data.toolSettings.textToSpeech.minimaxDefaultModel
       : undefined,
     exportedAt: Date.now(),
     sourceGraphId: agentNodeId,

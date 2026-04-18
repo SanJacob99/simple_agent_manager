@@ -123,11 +123,56 @@ export interface ImageToolSettings {
   skill: string;
 }
 
+export interface CanvaToolSettings {
+  /** Start of the port range used when the agent doesn't request a specific port */
+  portRangeStart: number;
+  /** End of the port range (inclusive) */
+  portRangeEnd: number;
+  /** Markdown guidance for the canva tool */
+  skill: string;
+}
+
+export type TtsProviderId =
+  | ''
+  | 'openai'
+  | 'elevenlabs'
+  | 'google'
+  | 'microsoft'
+  | 'minimax';
+
+export interface TextToSpeechToolSettings {
+  /** Preferred default provider. Empty = first configured. */
+  preferredProvider: TtsProviderId;
+  /** ElevenLabs API key. Empty = reads ELEVENLABS_API_KEY from env. */
+  elevenLabsApiKey: string;
+  elevenLabsDefaultVoice: string;
+  elevenLabsDefaultModel: string;
+  /** Override OpenAI TTS voice/model. Uses ImageToolSettings.openaiApiKey. */
+  openaiVoice: string;
+  openaiModel: string;
+  /** Google Gemini TTS voice/model. Uses ImageToolSettings.geminiApiKey. */
+  geminiVoice: string;
+  geminiModel: string;
+  /** Microsoft Azure Speech */
+  microsoftApiKey: string;
+  microsoftRegion: string;
+  microsoftDefaultVoice: string;
+  /** MiniMax */
+  minimaxApiKey: string;
+  minimaxGroupId: string;
+  minimaxDefaultVoice: string;
+  minimaxDefaultModel: string;
+  /** Markdown guidance injected into the system prompt for this tool */
+  skill: string;
+}
+
 export interface ToolSettings {
   exec: ExecToolSettings;
   codeExecution: CodeExecutionToolSettings;
   webSearch: WebSearchToolSettings;
   image: ImageToolSettings;
+  canva: CanvaToolSettings;
+  textToSpeech: TextToSpeechToolSettings;
 }
 
 export interface ToolsNodeData {
