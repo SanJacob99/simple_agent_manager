@@ -9,11 +9,9 @@ import type { AgentConfig } from '../../shared/agent-config';
 import { REGISTERED_TOOL_NAMES, buildToolFromModule } from './tool-registry';
 import type { RuntimeHints } from './tool-module';
 import { createCalculatorTool } from './builtins/calculator/calculator';
-import { createTextToSpeechTool } from './builtins/tts/text-to-speech';
 // ask_user + confirm_action are served through the ToolModule registry.
 // The AskUserContext type is still referenced by ToolFactoryContext.hitl below.
 import type { AskUserContext } from './builtins/human/ask-user';
-import { createMusicGenerateTool } from './builtins/music/music-generate';
 
 // Re-export resolveToolNames from shared (used by agent-runtime.ts)
 export { resolveToolNames } from '../../shared/resolve-tool-names';
@@ -74,54 +72,8 @@ export interface ToolFactoryContext {
   xaiModel?: string;
   /** Tavily API key for web_search. When absent, falls back to DuckDuckGo. */
   tavilyApiKey?: string;
-  /** OpenAI API key for image_generate (DALL-E) */
-  openaiApiKey?: string;
-  /** Google/Gemini API key for image_generate */
-  geminiApiKey?: string;
   /** Lazy OpenRouter key resolver (fetches from ApiKeyStore at tool call time) */
   getOpenrouterApiKey?: () => Promise<string | undefined> | string | undefined;
-  /** Preferred image generation model */
-  imageModel?: string;
-  /** Start of the port range canva will auto-pick from */
-  canvaPortRangeStart?: number;
-  /** End of the port range canva will auto-pick from */
-  canvaPortRangeEnd?: number;
-  /** Preferred default TTS provider */
-  ttsPreferredProvider?: 'openai' | 'elevenlabs' | 'google' | 'microsoft' | 'minimax';
-  /** ElevenLabs API key for text_to_speech */
-  elevenLabsApiKey?: string;
-  /** ElevenLabs default voice id */
-  elevenLabsDefaultVoice?: string;
-  /** ElevenLabs default model id */
-  elevenLabsDefaultModel?: string;
-  /** OpenAI default TTS voice (e.g. "alloy") */
-  openaiTtsVoice?: string;
-  /** OpenAI TTS model (e.g. "gpt-4o-mini-tts") */
-  openaiTtsModel?: string;
-  /** Google Gemini TTS default voice (e.g. "Kore") */
-  geminiTtsVoice?: string;
-  /** Google Gemini TTS model override */
-  geminiTtsModel?: string;
-  /** Microsoft Azure Speech API key */
-  microsoftTtsApiKey?: string;
-  /** Microsoft Azure Speech region (e.g. "eastus") */
-  microsoftTtsRegion?: string;
-  /** Microsoft Azure default voice (e.g. "en-US-JennyNeural") */
-  microsoftTtsVoice?: string;
-  /** MiniMax API key */
-  minimaxApiKey?: string;
-  /** MiniMax group id */
-  minimaxGroupId?: string;
-  /** MiniMax default voice id */
-  minimaxDefaultVoice?: string;
-  /** MiniMax default model (e.g. "speech-02-hd") */
-  minimaxDefaultModel?: string;
-  /** Preferred default music generation provider */
-  musicPreferredProvider?: 'google' | 'minimax';
-  /** Google Gemini/Lyria default model override for music_generate (e.g. "lyria-002") */
-  geminiMusicModel?: string;
-  /** MiniMax music model (e.g. "music-01") */
-  minimaxMusicModel?: string;
   /** Model ID — used to apply provider-specific schema cleaning (e.g. Gemini) */
   modelId?: string;
   /**
@@ -181,52 +133,11 @@ export function createAgentTools(
       continue;
     }
 
-    // exec/bash + fs tools (read_file, write_file, edit_file, list_directory,
-    // apply_patch) are served through the ToolModule registry above.
-
-    // Music generation — needs the workspace for writing audio files.
-    // Reuses the Gemini API key (Google Lyria) and the MiniMax API key from TTS.
-    if (name === 'music_generate' && factoryContext?.cwd) {
-      tools.push(createMusicGenerateTool({
-        cwd: factoryContext.cwd,
-        preferredProvider: factoryContext.musicPreferredProvider,
-        geminiApiKey: factoryContext.geminiApiKey,
-        geminiDefaultModel: factoryContext.geminiMusicModel,
-        minimaxApiKey: factoryContext.minimaxApiKey,
-        minimaxGroupId: factoryContext.minimaxGroupId,
-        minimaxDefaultModel: factoryContext.minimaxMusicModel,
-      }));
-      continue;
-    }
-
-    // Text-to-speech — needs the workspace for writing audio files
-    if (name === 'text_to_speech' && factoryContext?.cwd) {
-      tools.push(createTextToSpeechTool({
-        cwd: factoryContext.cwd,
-        preferredProvider: factoryContext.ttsPreferredProvider,
-        openaiApiKey: factoryContext.openaiApiKey,
-        openaiDefaultVoice: factoryContext.openaiTtsVoice,
-        openaiDefaultModel: factoryContext.openaiTtsModel,
-        elevenLabsApiKey: factoryContext.elevenLabsApiKey,
-        elevenLabsDefaultVoice: factoryContext.elevenLabsDefaultVoice,
-        elevenLabsDefaultModel: factoryContext.elevenLabsDefaultModel,
-        geminiApiKey: factoryContext.geminiApiKey,
-        geminiDefaultVoice: factoryContext.geminiTtsVoice,
-        geminiDefaultModel: factoryContext.geminiTtsModel,
-        microsoftApiKey: factoryContext.microsoftTtsApiKey,
-        microsoftRegion: factoryContext.microsoftTtsRegion,
-        microsoftDefaultVoice: factoryContext.microsoftTtsVoice,
-        minimaxApiKey: factoryContext.minimaxApiKey,
-        minimaxGroupId: factoryContext.minimaxGroupId,
-        minimaxDefaultVoice: factoryContext.minimaxDefaultVoice,
-        minimaxDefaultModel: factoryContext.minimaxDefaultModel,
-      }));
-      continue;
-    }
-
-    // canva, image_generate, code_execution, web_search, web_fetch served
-    // above via registry. image (analyze), show_image, ask_user,
-    // confirm_action also via registry.
+    // Everything else (exec/bash, fs tools, web_search, web_fetch, canva,
+    // code_execution, image_analyze, image_generate, show_image, ask_user,
+    // confirm_action, text_to_speech, music_generate) is served through the
+    // ToolModule registry above. The only thing left in TOOL_CREATORS is a
+    // safety-net fallback for calculator during the transition.
 
     const creator = TOOL_CREATORS[name];
     if (creator) {

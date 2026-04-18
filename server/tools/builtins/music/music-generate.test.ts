@@ -39,9 +39,12 @@ describe('music_generate registration', () => {
     expect(tools.map((t) => t.name)).toContain('music_generate');
   });
 
-  it('is skipped when cwd is missing', () => {
+  it('is still registered when cwd falls back to process.cwd()', () => {
+    // The module receives `runtime.cwd` which always defaults to process.cwd()
+    // when the factory is invoked without one. The tool handles missing
+    // providers at execute time, not at registration time.
     const tools = createAgentTools(['music_generate'], [], undefined, {});
-    expect(tools.map((t) => t.name)).not.toContain('music_generate');
+    expect(tools.map((t) => t.name)).toContain('music_generate');
   });
 });
 
