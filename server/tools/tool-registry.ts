@@ -39,6 +39,8 @@ import webSearchModule from './builtins/web/web-search.module';
 import webFetchModule from './builtins/web/web-fetch.module';
 import codeExecutionModule from './builtins/code-execution/code-execution.module';
 import canvaModule from './builtins/canva/canva.module';
+import textToSpeechModule from './builtins/tts/text-to-speech.module';
+import musicGenerateModule from './builtins/music/music-generate.module';
 
 /**
  * The registered tool modules. Order is irrelevant at runtime — names are
@@ -57,8 +59,10 @@ export const TOOL_MODULES: ReadonlyArray<ToolModule<any>> = [
   imageAnalyzeModule,
   imageGenerateModule,
   listDirectoryModule,
+  musicGenerateModule,
   readFileModule,
   showImageModule,
+  textToSpeechModule,
   webFetchModule,
   webSearchModule,
   writeFileModule,

@@ -46,9 +46,12 @@ describe('text_to_speech registration', () => {
     expect(tools.map((t) => t.name)).toContain('text_to_speech');
   });
 
-  it('is skipped when cwd is missing', () => {
+  it('is still registered when cwd falls back to process.cwd()', () => {
+    // The module receives `runtime.cwd` which always defaults to process.cwd()
+    // when the factory is invoked without one. The tool handles missing
+    // providers at execute time, not at registration time.
     const tools = createAgentTools(['text_to_speech'], [], undefined, {});
-    expect(tools.map((t) => t.name)).not.toContain('text_to_speech');
+    expect(tools.map((t) => t.name)).toContain('text_to_speech');
   });
 });
 
