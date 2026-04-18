@@ -1,11 +1,7 @@
 import type { TSchema } from '@sinclair/typebox';
 import type { AgentTool } from '@mariozechner/pi-agent-core';
 import { SESSION_TOOL_NAMES } from '../../shared/resolve-tool-names';
-import type {
-  ProviderPluginDefinition,
-  WebFetchToolContext,
-  WebSearchToolContext,
-} from '../../shared/plugin-sdk';
+import type { ProviderPluginDefinition } from '../../shared/plugin-sdk';
 import { adaptAgentTools } from './tool-adapter';
 import { findToolNameConflicts } from './tool-name-policy';
 import { logError } from '../logger';
@@ -13,11 +9,6 @@ import type { AgentConfig } from '../../shared/agent-config';
 import { REGISTERED_TOOL_NAMES, buildToolFromModule } from './tool-registry';
 import type { RuntimeHints } from './tool-module';
 import { createCalculatorTool } from './builtins/calculator/calculator';
-import { createWebFetchTool } from './builtins/web/web-fetch';
-import { createCodeExecutionTool } from './builtins/code-execution/code-execution';
-import { createImageGenerateTool } from './builtins/image/image-generate';
-import { createWebSearchTool } from './builtins/web/web-search';
-import { createCanvaTool } from './builtins/canva/canva';
 import { createTextToSpeechTool } from './builtins/tts/text-to-speech';
 // ask_user + confirm_action are served through the ToolModule registry.
 // The AskUserContext type is still referenced by ToolFactoryContext.hitl below.
@@ -59,9 +50,9 @@ export { IMPLEMENTED_TOOL_NAMES } from '../../shared/resolve-tool-names';
 //   send_message: () => createTool('send_message', 'Send a message to another agent or user'),
 //   text_to_speech: () => createTool('text_to_speech', 'Convert text to speech'),
 const TOOL_CREATORS: Record<string, () => AgentTool<TSchema>> = {
+  // `calculator` is also served by the ToolModule registry; keeping it in
+  // this legacy map as a safety-net while the migration is in progress.
   calculator: createCalculatorTool,
-  web_fetch: createWebFetchTool,
-  // exec requires runtime context (cwd) — handled in createAgentTools below
 };
 
 const SESSION_TOOL_NAME_SET = new Set<string>(SESSION_TOOL_NAMES);
@@ -167,6 +158,7 @@ export function createAgentTools(
     modelId: factoryContext?.modelId,
     hitl: factoryContext?.hitl,
     getOpenrouterApiKey: factoryContext?.getOpenrouterApiKey,
+    providerWeb: providerWebContext,
   };
   // Fall-back AgentConfig for modules that were pointed at the registry
   // from code paths that didn't have a real config. Safe because migrated
@@ -232,63 +224,9 @@ export function createAgentTools(
       continue;
     }
 
-    // Canva (HTML/CSS/JS visualizations) — needs the agent workspace for file output
-    if (name === 'canva' && factoryContext?.cwd) {
-      tools.push(createCanvaTool({
-        cwd: factoryContext.cwd,
-        sandboxWorkdir: factoryContext.sandboxWorkdir,
-        portRangeStart: factoryContext.canvaPortRangeStart,
-        portRangeEnd: factoryContext.canvaPortRangeEnd,
-      }));
-      continue;
-    }
-
-    // image (analyze), show_image, ask_user, confirm_action served above via registry.
-
-    if (name === 'image_generate' && factoryContext?.cwd) {
-      tools.push(createImageGenerateTool({
-        cwd: factoryContext.cwd,
-        openaiApiKey: factoryContext.openaiApiKey,
-        geminiApiKey: factoryContext.geminiApiKey,
-        getOpenrouterApiKey: factoryContext.getOpenrouterApiKey,
-        preferredModel: factoryContext.imageModel,
-      }));
-      continue;
-    }
-
-    if (name === 'code_execution' && factoryContext?.xaiApiKey) {
-      tools.push(createCodeExecutionTool({
-        apiKey: factoryContext.xaiApiKey,
-        model: factoryContext.xaiModel,
-      }));
-      continue;
-    }
-
-    if (name === 'web_search') {
-      // Provider plugin takes priority if available
-      if (providerWebContext?.plugin.webSearch) {
-        const ctx: WebSearchToolContext = {
-          apiKey: providerWebContext.apiKey,
-          baseUrl: providerWebContext.baseUrl,
-        };
-        tools.push(providerWebContext.plugin.webSearch.createTool(ctx));
-      } else {
-        // Built-in: Tavily (if key set) or DuckDuckGo fallback
-        tools.push(createWebSearchTool({
-          tavilyApiKey: factoryContext?.tavilyApiKey,
-        }));
-      }
-      continue;
-    }
-
-    if (name === 'web_fetch' && providerWebContext?.plugin.webFetch) {
-      const ctx: WebFetchToolContext = {
-        apiKey: providerWebContext.apiKey,
-        baseUrl: providerWebContext.baseUrl,
-      };
-      tools.push(providerWebContext.plugin.webFetch.createTool(ctx));
-      continue;
-    }
+    // canva, image_generate, code_execution, web_search, web_fetch served
+    // above via registry. image (analyze), show_image, ask_user,
+    // confirm_action also via registry.
 
     const creator = TOOL_CREATORS[name];
     if (creator) {

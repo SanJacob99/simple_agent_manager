@@ -27,7 +27,20 @@
 import type { TSchema } from '@sinclair/typebox';
 import type { AgentTool } from '@mariozechner/pi-agent-core';
 import type { AgentConfig } from '../../shared/agent-config';
+import type { ProviderPluginDefinition } from '../../shared/plugin-sdk';
 import type { AskUserContext } from './builtins/human/ask-user';
+
+/**
+ * Provider-plugin web tool context. Passed through to `web_search` /
+ * `web_fetch` modules so they can delegate to a plugin-supplied
+ * implementation (e.g. an OpenRouter provider that has its own search
+ * endpoint) before falling back to the built-in tools.
+ */
+export interface ProviderWebContext {
+  plugin: ProviderPluginDefinition;
+  apiKey: string;
+  baseUrl: string;
+}
 
 /**
  * Safety classification. The confirmation policy currently treats all
@@ -57,6 +70,12 @@ export interface RuntimeHints {
    * a separate key field.
    */
   getOpenrouterApiKey?: () => Promise<string | undefined> | string | undefined;
+  /**
+   * Provider-plugin web tool bundle. When a connected provider exports
+   * `webSearch` or `webFetch` (e.g. OpenRouter), the matching tool modules
+   * prefer it over their built-in implementations.
+   */
+  providerWeb?: ProviderWebContext;
 }
 
 /**

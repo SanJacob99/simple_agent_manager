@@ -34,6 +34,11 @@ import listDirectoryModule from './builtins/fs/list-directory.module';
 import applyPatchModule from './builtins/fs/apply-patch.module';
 import imageAnalyzeModule from './builtins/image/image-analyze.module';
 import showImageModule from './builtins/image/show-image.module';
+import imageGenerateModule from './builtins/image/image-generate.module';
+import webSearchModule from './builtins/web/web-search.module';
+import webFetchModule from './builtins/web/web-fetch.module';
+import codeExecutionModule from './builtins/code-execution/code-execution.module';
+import canvaModule from './builtins/canva/canva.module';
 
 /**
  * The registered tool modules. Order is irrelevant at runtime — names are
@@ -44,13 +49,18 @@ export const TOOL_MODULES: ReadonlyArray<ToolModule<any>> = [
   applyPatchModule,
   askUserModule,
   calculatorModule,
+  canvaModule,
+  codeExecutionModule,
   confirmActionModule,
   editFileModule,
   execModule,
   imageAnalyzeModule,
+  imageGenerateModule,
   listDirectoryModule,
   readFileModule,
   showImageModule,
+  webFetchModule,
+  webSearchModule,
   writeFileModule,
 ];
 
