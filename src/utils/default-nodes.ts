@@ -41,7 +41,10 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         type: 'tools',
         label: 'Tools',
         profile: 'custom',
-        enabledTools: [],
+        // HITL (ask_user + confirm_action) is checked by default. The tools
+        // node still shows the checkboxes, but they are locked unless the
+        // user explicitly enables "Dangerous Fully Auto" mode in Settings.
+        enabledTools: ['ask_user', 'confirm_action'],
         enabledGroups: [],
         skills: [],
         plugins: [],

@@ -16,6 +16,9 @@ import { resolveToolNames, createAgentTools } from '../tools/tool-factory';
 import { resolveRuntimeModel } from './model-resolver';
 import { isToolErrorDetails } from '../tools/tool-adapter';
 import { log } from '../logger';
+import type { HitlRegistry } from '../hitl/hitl-registry';
+import type { ServerEvent } from '../../shared/protocol';
+import { DEFAULT_SAFETY_SETTINGS, type SafetySettings } from '../storage/settings-file-store';
 
 export type RuntimeEvent =
   | AgentEvent
@@ -73,6 +76,11 @@ export class AgentRuntime {
   private getApiKeyFn: (provider: string) => Promise<string | undefined> | string | undefined;
   private getDiscoveredModelFn: (provider: string, modelId: string) => DiscoveredModelMetadata | undefined;
 
+  /** Current session key — set by RunCoordinator before each prompt so HITL tools know their session. */
+  private currentSessionKey: string = '';
+  /** Broadcast function injected by AgentManager after the WS bridge is wired. */
+  private broadcastFn: ((event: ServerEvent) => void) | null = null;
+
   /** Last API-level error message from a non-2xx response. Cleared on each `prompt()` call. */
   lastApiError: string | null = null;
 
@@ -82,6 +90,8 @@ export class AgentRuntime {
     getDiscoveredModel?: (provider: string, modelId: string) => DiscoveredModelMetadata | undefined,
     hookRegistry?: HookRegistry,
     private readonly pluginRegistry?: ProviderPluginRegistry,
+    private readonly hitlRegistry?: HitlRegistry,
+    private readonly safetySettings: SafetySettings = DEFAULT_SAFETY_SETTINGS,
   ) {
     this.config = config;
     this.getApiKeyFn = getApiKey;
@@ -103,6 +113,18 @@ export class AgentRuntime {
     const toolNames = config.tools
       ? resolveToolNames(config.tools)
       : [];
+
+    // Safety enforcement: while `allowDisableHitl` is false (the default —
+    // "Dangerous Fully Auto" off), every agent MUST have ask_user and
+    // confirm_action regardless of what its saved Tools node lists. This
+    // guarantees that agents created before HITL shipped (or configs that
+    // drift from the default) still get the human-gate tools.
+    // When `allowDisableHitl` is true, the user has explicitly opted out,
+    // so we respect whatever the agent config contains.
+    if (!this.safetySettings.allowDisableHitl) {
+      if (!toolNames.includes('ask_user')) toolNames.push('ask_user');
+      if (!toolNames.includes('confirm_action')) toolNames.push('confirm_action');
+    }
     const workspaceCwd = config.workspacePath ?? process.cwd();
     const xaiApiKey = config.xaiApiKey || process.env.XAI_API_KEY;
     const tavilyApiKey = config.tavilyApiKey || process.env.TAVILY_API_KEY;
@@ -114,6 +136,20 @@ export class AgentRuntime {
       const fromStore = await getApiKey('openrouter');
       return fromStore || process.env.OPENROUTER_API_KEY;
     };
+    // HITL tool context: the ask_user tool is created once, but sessionKey
+    // and the broadcast target vary over the runtime's lifetime — capture
+    // them as late-binding references.
+    const hitlContext = this.hitlRegistry
+      ? {
+        agentId: config.id,
+        getSessionKey: () => this.currentSessionKey,
+        registry: this.hitlRegistry,
+        emit: (event: ServerEvent) => {
+          this.broadcastFn?.(event);
+        },
+      }
+      : undefined;
+
     let tools = createAgentTools(
       toolNames,
       memoryTools as AgentTool<TSchema>[],
@@ -146,6 +182,7 @@ export class AgentRuntime {
         minimaxDefaultVoice: config.minimaxDefaultVoice,
         minimaxDefaultModel: config.minimaxDefaultModel,
         modelId: config.modelId,
+        hitl: hitlContext,
       },
     );
 
@@ -159,6 +196,16 @@ export class AgentRuntime {
     let systemPrompt = config.systemPrompt.assembled;
     if (workspaceCwd && !/Working directory: /.test(systemPrompt)) {
       systemPrompt += `\n\n## Workspace\n\nWorking directory: ${workspaceCwd}`;
+    }
+
+    // Confirmation policy — appended whenever either HITL tool is present in
+    // the resolved tool list. Teaches the model WHEN to call `confirm_action`
+    // / `ask_user` and enforces the one-tool-call-per-confirm-turn rule that
+    // keeps parallel-tool-calling providers from bypassing the gate.
+    const hasHitlTool = toolNames.includes('confirm_action') || toolNames.includes('ask_user');
+    const policy = this.safetySettings.confirmationPolicy?.trim();
+    if (hasHitlTool && policy) {
+      systemPrompt += `\n\n${policy}`;
     }
 
     const plugin = this.pluginRegistry?.get(config.provider.pluginId);
@@ -235,6 +282,58 @@ export class AgentRuntime {
    */
   getSystemPrompt(): string {
     return this.agent.state.systemPrompt;
+  }
+
+  /**
+   * Set the current session key. Called by RunCoordinator before each
+   * `prompt()` so HITL tools (`ask_user`) can register pending prompts
+   * against the correct session.
+   */
+  setCurrentSessionKey(sessionKey: string): void {
+    this.currentSessionKey = sessionKey;
+  }
+
+  /**
+   * Get the current session key. Useful for tool-scoped logging and for
+   * coordinator code that needs to address the HITL registry.
+   */
+  getCurrentSessionKey(): string {
+    return this.currentSessionKey;
+  }
+
+  /**
+   * Inject the function that sends events to the agent's connected sockets.
+   * Called by AgentManager after the EventBridge is constructed so HITL
+   * tools can push `hitl:input_required` / `hitl:resolved` to clients
+   * without going through the coordinator's run-scoped stream.
+   */
+  setBroadcast(fn: (event: ServerEvent) => void): void {
+    this.broadcastFn = fn;
+  }
+
+  /**
+   * Cancel every pending HITL prompt for a session and broadcast the
+   * resolution. Called by RunCoordinator.abort() so the UI's banner clears
+   * even when the run is torn down before the tool's own abort handler
+   * fires.
+   */
+  cancelPendingHitl(sessionKey: string, reason: 'aborted' | 'timeout'): void {
+    if (!this.hitlRegistry) return;
+    const cancelled = this.hitlRegistry.cancelAllForSession(
+      this.config.id,
+      sessionKey,
+      reason,
+    );
+    for (const entry of cancelled) {
+      this.broadcastFn?.({
+        type: 'hitl:resolved',
+        agentId: entry.agentId,
+        sessionKey: entry.sessionKey,
+        toolCallId: entry.toolCallId,
+        outcome: 'cancelled',
+        reason,
+      });
+    }
   }
 
   setSessionContext(messages: AgentMessage[]): void {

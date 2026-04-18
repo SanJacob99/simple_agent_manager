@@ -11,6 +11,16 @@ export interface ToolSummaryInfo {
   summary: string;
 }
 
+export interface PendingHitlInfo {
+  toolCallId: string;
+  toolName: string;
+  kind: 'text' | 'confirm';
+  question: string;
+  createdAt: number;
+  timeoutMs: number;
+  sessionKey: string;
+}
+
 export interface ChatStreamState {
   isStreaming: boolean;
   streamingMsgId: string;
@@ -19,7 +29,15 @@ export interface ChatStreamState {
   suppressedReply: boolean;
   compacting: boolean;
   toolSummaries: ToolSummaryInfo[];
+  pendingHitl: PendingHitlInfo | null;
   sendMessage: (text: string, sessionKey: string, attachments?: any[]) => void;
+  sendHitlResponse: (
+    sessionKey: string,
+    toolCallId: string,
+    kind: 'text' | 'confirm',
+    answer: string,
+  ) => void;
+  queryPendingHitl: (sessionKey: string) => void;
 }
 
 export function useChatStream(agentNodeId: string): ChatStreamState {
@@ -29,6 +47,7 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
   const [suppressedReply, setSuppressedReply] = useState(false);
   const [compacting, setCompacting] = useState(false);
   const [toolSummaries, setToolSummaries] = useState<ToolSummaryInfo[]>([]);
+  const [pendingHitl, setPendingHitl] = useState<PendingHitlInfo | null>(null);
 
   const addMessage = useSessionStore((s) => s.addMessage);
   const updateMessage = useSessionStore((s) => s.updateMessage);
@@ -92,6 +111,79 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
 
   // Clean up on unmount
   useEffect(() => cleanup, [cleanup]);
+
+  // Persistent HITL event listener: outside the per-turn subscription in
+  // sendMessage so banners survive across turns and reconnects.
+  useEffect(() => {
+    const unsub = agentClient.onEvent((event: ServerEvent) => {
+      if (!('agentId' in event) || (event as any).agentId !== agentNodeId) return;
+
+      switch (event.type) {
+        case 'hitl:input_required': {
+          const e = event as any;
+          setPendingHitl({
+            toolCallId: e.toolCallId,
+            toolName: e.toolName,
+            kind: e.kind,
+            question: e.question,
+            createdAt: e.createdAt,
+            timeoutMs: e.timeoutMs,
+            sessionKey: e.sessionKey,
+          });
+          break;
+        }
+        case 'hitl:resolved': {
+          const e = event as any;
+          setPendingHitl((prev) => (prev && prev.toolCallId === e.toolCallId ? null : prev));
+          break;
+        }
+        case 'hitl:list:result': {
+          const e = event as any;
+          const first = (e.pending ?? [])[0];
+          if (first) {
+            setPendingHitl({
+              toolCallId: first.toolCallId,
+              toolName: first.toolName,
+              kind: first.kind,
+              question: first.question,
+              createdAt: first.createdAt,
+              timeoutMs: first.timeoutMs,
+              sessionKey: e.sessionKey,
+            });
+          } else {
+            setPendingHitl(null);
+          }
+          break;
+        }
+      }
+    });
+    return unsub;
+  }, [agentNodeId]);
+
+  const sendHitlResponse = useCallback(
+    (sessionKey: string, toolCallId: string, kind: 'text' | 'confirm', answer: string) => {
+      agentClient.send({
+        type: 'hitl:respond',
+        agentId: agentNodeId,
+        sessionKey,
+        toolCallId,
+        kind,
+        answer,
+      });
+    },
+    [agentNodeId],
+  );
+
+  const queryPendingHitl = useCallback(
+    (sessionKey: string) => {
+      agentClient.send({
+        type: 'hitl:list',
+        agentId: agentNodeId,
+        sessionKey,
+      });
+    },
+    [agentNodeId],
+  );
 
   const sendMessage = useCallback(
     (text: string, sessionKey: string, attachments?: any[]) => {
@@ -297,6 +389,9 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
     suppressedReply,
     compacting,
     toolSummaries,
+    pendingHitl,
     sendMessage,
+    sendHitlResponse,
+    queryPendingHitl,
   };
 }

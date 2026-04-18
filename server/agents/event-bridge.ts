@@ -36,7 +36,13 @@ export class EventBridge {
     this.sockets.clear();
   }
 
-  private broadcast(event: ServerEvent): void {
+  /**
+   * Forward a server event to every connected socket. Exposed so that flows
+   * originating outside the stream processor (e.g. the `ask_user` HITL tool)
+   * can push events to clients without round-tripping through run-bound
+   * processors.
+   */
+  broadcast(event: ServerEvent): void {
     const json = JSON.stringify(event);
     for (const socket of this.sockets) {
       if (socket.readyState === (socket as any).OPEN) {

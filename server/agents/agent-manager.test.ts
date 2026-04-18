@@ -18,6 +18,10 @@ vi.mock('../runtime/agent-runtime', () => {
     getSystemPrompt = vi.fn(() => 'Test prompt');
     setActiveSession = vi.fn();
     clearActiveSession = vi.fn();
+    setCurrentSessionKey = vi.fn();
+    getCurrentSessionKey = vi.fn(() => '');
+    setBroadcast = vi.fn();
+    cancelPendingHitl = vi.fn();
     setSessionContext = vi.fn((messages: any[]) => {
       this.state.messages = [...messages];
     });

@@ -318,6 +318,10 @@ export class RunCoordinator {
     } satisfies StructuredError;
     record.pendingDiagnostic ??= this.buildRunDiagnostic(record, error);
     this.runtime.abort();
+    // Cancel any outstanding HITL prompts for this session — the agent
+    // signal fires the tool's abort listener, but doing this explicitly
+    // makes cancellation deterministic regardless of listener timing.
+    this.runtime.cancelPendingHitl(record.sessionKey, 'aborted');
     this.concurrency.release(record.runId, record.sessionId);
     this.finalizeRunError(record, error);
     this.tryStartNextRun();
@@ -464,6 +468,7 @@ export class RunCoordinator {
         transcriptManager.buildSessionContext().messages as AgentMessage[],
       );
       this.runtime.setActiveSession(transcriptManager);
+      this.runtime.setCurrentSessionKey(record.sessionKey);
 
       const enabledSessionToolNames = this.config.tools?.resolvedTools.filter((toolName) =>
         SESSION_TOOL_NAME_SET.has(toolName),

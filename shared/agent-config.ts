@@ -2,7 +2,7 @@
 
 export type MemoryBackend = 'builtin' | 'external' | 'cloud';
 export type ToolProfile = 'full' | 'coding' | 'messaging' | 'minimal' | 'custom';
-export type ToolGroup = 'runtime' | 'fs' | 'web' | 'coding' | 'media' | 'communication';
+export type ToolGroup = 'runtime' | 'fs' | 'web' | 'coding' | 'media' | 'communication' | 'human';
 export type CompactionStrategy = 'summary' | 'sliding-window' | 'trim-oldest' | 'hybrid';
 
 export type SystemPromptMode = 'auto' | 'append' | 'manual';

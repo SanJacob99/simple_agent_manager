@@ -24,6 +24,8 @@ import { createShowImageTool } from './builtins/image/show-image';
 import { createWebSearchTool } from './builtins/web/web-search';
 import { createCanvaTool } from './builtins/canva/canva';
 import { createTextToSpeechTool } from './builtins/tts/text-to-speech';
+import { createAskUserTool, type AskUserContext } from './builtins/human/ask-user';
+import { createConfirmActionTool } from './builtins/human/confirm-action';
 
 // Re-export resolveToolNames from shared (used by agent-runtime.ts)
 export { resolveToolNames } from '../../shared/resolve-tool-names';
@@ -127,6 +129,11 @@ export interface ToolFactoryContext {
   minimaxDefaultModel?: string;
   /** Model ID — used to apply provider-specific schema cleaning (e.g. Gemini) */
   modelId?: string;
+  /**
+   * Context needed by the ask_user (HITL) tool. When absent, the tool is
+   * skipped during registration even if its name appears in `names`.
+   */
+  hitl?: AskUserContext;
 }
 
 /**
@@ -208,6 +215,16 @@ export function createAgentTools(
     }
     if (name === 'show_image' && factoryContext?.cwd) {
       tools.push(createShowImageTool({ cwd: factoryContext.cwd }));
+      continue;
+    }
+
+    if (name === 'ask_user' && factoryContext?.hitl) {
+      tools.push(createAskUserTool(factoryContext.hitl));
+      continue;
+    }
+
+    if (name === 'confirm_action' && factoryContext?.hitl) {
+      tools.push(createConfirmActionTool(factoryContext.hitl));
       continue;
     }
     if (name === 'image_generate' && factoryContext?.cwd) {

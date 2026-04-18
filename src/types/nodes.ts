@@ -62,7 +62,7 @@ export interface MemoryNodeData {
 // --- Tools Node (OpenClaw-inspired) ---
 
 export type ToolProfile = 'full' | 'coding' | 'messaging' | 'minimal' | 'custom';
-export type ToolGroup = 'runtime' | 'fs' | 'web' | 'coding' | 'media' | 'communication';
+export type ToolGroup = 'runtime' | 'fs' | 'web' | 'coding' | 'media' | 'communication' | 'human';
 
 export interface SkillDefinition {
   id: string;

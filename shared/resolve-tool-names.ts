@@ -9,6 +9,7 @@ export const TOOL_GROUPS: Record<string, string[]> = {
   coding: ['bash', 'read_file', 'write_file', 'code_interpreter'],
   media: ['image', 'image_generate', 'show_image', 'canva'],
   communication: ['send_message', 'text_to_speech'],
+  human: ['ask_user', 'confirm_action'],
   sessions: [
     'sessions_list',
     'sessions_history',
@@ -57,6 +58,8 @@ export const ALL_TOOL_NAMES = [
   'show_image',
   'send_message',
   'text_to_speech',
+  'ask_user',
+  'confirm_action',
   ...SESSION_TOOL_NAMES,
 ];
 
@@ -82,6 +85,8 @@ export const IMPLEMENTED_TOOL_NAMES = new Set<string>([
   'show_image',
   'canva',
   'text_to_speech',
+  'ask_user',
+  'confirm_action',
   // memory tools are managed by the memory node, not the tools node
   ...SESSION_TOOL_NAMES,
 ]);

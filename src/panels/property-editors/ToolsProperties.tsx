@@ -1,13 +1,16 @@
 import { useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Terminal, Code2, Globe, Image, Users, LayoutDashboard, Volume2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Terminal, Code2, Globe, Image, Users, LayoutDashboard, Volume2, ShieldAlert } from 'lucide-react';
 import { useGraphStore } from '../../store/graph-store';
 import { buildProviderCatalogKey, useModelCatalogStore } from '../../store/model-catalog-store';
+import { useSettingsStore } from '../../settings/settings-store';
 import type { ToolsNodeData, ToolProfile, ToolGroup } from '../../types/nodes';
 import { Field, inputClass, selectClass, textareaClass } from './shared';
 import { ALL_TOOL_NAMES, TOOL_GROUPS, TOOL_PROFILES } from '../../../shared/resolve-tool-names';
 
+const HITL_TOOLS = new Set(['ask_user', 'confirm_action']);
+
 const PROFILES: ToolProfile[] = ['full', 'coding', 'messaging', 'minimal', 'custom'];
-const GROUPS: ToolGroup[] = ['runtime', 'fs', 'web', 'coding', 'media', 'communication'];
+const GROUPS: ToolGroup[] = ['runtime', 'fs', 'web', 'coding', 'media', 'communication', 'human'];
 
 type Page = 'main' | 'exec' | 'code_execution' | 'web_search' | 'image' | 'canva' | 'text_to_speech' | 'sub_agents';
 
@@ -89,6 +92,7 @@ export default function ToolsProperties({ nodeId, data }: Props) {
   const update = useGraphStore((s) => s.updateNodeData);
   const edges = useGraphStore((s) => s.edges);
   const allNodes = useGraphStore((s) => s.nodes);
+  const allowDisableHitl = useSettingsStore((s) => s.safety.allowDisableHitl);
   const [page, setPage] = useState<Page>('main');
   const [customTool, setCustomTool] = useState('');
 
@@ -150,6 +154,8 @@ export default function ToolsProperties({ nodeId, data }: Props) {
   };
 
   const toggleTool = (tool: string) => {
+    // HITL tools are locked on unless "Dangerous Fully Auto" is enabled in Settings.
+    if (HITL_TOOLS.has(tool) && !allowDisableHitl) return;
     const tools = data.enabledTools.includes(tool)
       ? data.enabledTools.filter((t) => t !== tool)
       : [...data.enabledTools, tool];
@@ -860,18 +866,44 @@ export default function ToolsProperties({ nodeId, data }: Props) {
       {/* Individual tools (when custom profile) */}
       {data.profile === 'custom' && (
         <Field label="Individual Tools">
+          {!allowDisableHitl && (
+            <div className="flex items-start gap-1.5 rounded-md border border-amber-500/20 bg-amber-500/5 px-2 py-1.5 mb-2">
+              <ShieldAlert size={11} className="text-amber-400 mt-0.5 flex-shrink-0" />
+              <p className="text-[9px] text-slate-400 leading-snug">
+                <strong className="text-amber-300">HITL locked on.</strong> `ask_user` and `confirm_action` stay checked
+                so the agent must get human approval before risky actions. Enable <em>"Dangerous Fully Auto"</em> in
+                Settings → Safety to unlock.
+              </p>
+            </div>
+          )}
           <div className="space-y-1">
-            {ALL_TOOL_NAMES.map((tool) => (
-              <label key={tool} className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={data.enabledTools.includes(tool)}
-                  onChange={() => toggleTool(tool)}
-                  className="rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500/30"
-                />
-                <span className="text-xs text-slate-300">{tool}</span>
-              </label>
-            ))}
+            {ALL_TOOL_NAMES.map((tool) => {
+              const isHitl = HITL_TOOLS.has(tool);
+              const locked = isHitl && !allowDisableHitl;
+              return (
+                <label
+                  key={tool}
+                  className={`flex items-center gap-2 ${locked ? 'cursor-not-allowed' : ''}`}
+                  title={locked ? 'Locked by Safety settings — enable Dangerous Fully Auto to uncheck.' : undefined}
+                >
+                  <input
+                    type="checkbox"
+                    checked={data.enabledTools.includes(tool)}
+                    onChange={() => toggleTool(tool)}
+                    disabled={locked}
+                    className={`rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500/30 ${
+                      locked ? 'opacity-70' : ''
+                    }`}
+                  />
+                  <span className={`text-xs ${locked ? 'text-slate-400' : 'text-slate-300'}`}>
+                    {tool}
+                    {isHitl && (
+                      <span className="ml-1 text-[9px] text-amber-400/80">(safety)</span>
+                    )}
+                  </span>
+                </label>
+              );
+            })}
           </div>
           <div className="mt-2 flex gap-1.5">
             <input

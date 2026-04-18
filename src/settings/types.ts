@@ -7,6 +7,7 @@ export type SettingsSectionId =
   | 'api-keys'
   | 'model-catalog'
   | 'defaults'
+  | 'safety'
   | 'appearance'
   | 'colors'
   | 'data-maintenance';
@@ -149,6 +150,41 @@ export const DEFAULT_CHAT_UI_DEFAULTS: ChatUIDefaults = {
   textRevealStructure: 'blocks',
 };
 
+// --- Safety (HITL) ---
+
+export interface SafetySettings {
+  /**
+   * Controls whether the Tools node's HITL checkboxes (ask_user,
+   * confirm_action) can be unchecked. Default false: they stay locked on,
+   * protecting the user even when they add agent tools that can damage
+   * the system or reach the network. Flipping this to true is the explicit
+   * "Dangerous Fully Auto" mode — the user takes responsibility.
+   */
+  allowDisableHitl: boolean;
+  /**
+   * Markdown policy block appended to every agent's system prompt when a
+   * HITL tool is enabled. User-editable so teams can tune tone and scope.
+   */
+  confirmationPolicy: string;
+}
+
+export const DEFAULT_CONFIRMATION_POLICY = `## Confirmation policy
+
+Before you call ANY tool OTHER THAN \`confirm_action\` or \`ask_user\`, you MUST first call \`confirm_action\` with a short yes/no question summarizing what you are about to do, and wait for the answer. This applies to every tool — including read-only ones (\`web_search\`, \`read_file\`, \`list_directory\`, \`calculator\`, etc.) AND state-mutating ones (\`write_file\`, \`edit_file\`, \`apply_patch\`, \`exec\`, \`bash\`, \`image_generate\`, \`send_message\`, network requests).
+
+RULES:
+1. The confirmation call MUST be the ONLY tool call in that turn. Do NOT emit any other tool call alongside \`confirm_action\` — wait for the answer, then act on it in your next turn.
+2. If the answer is "no" or the call is cancelled/timed out, you MUST abandon the action. Report what you would have done and stop.
+3. If you need freeform input from the user (not yes/no), call \`ask_user\` instead — this also satisfies the gate for the subsequent action you described.
+4. Exception: you do NOT need confirmation for calling \`ask_user\` or \`confirm_action\` themselves.
+
+Phrase the confirmation concretely — "I want to run \`exec\` with command \`rm -rf ./build\` — proceed?" — so the user can judge intent at a glance.`;
+
+export const DEFAULT_SAFETY_SETTINGS: SafetySettings = {
+  allowDisableHitl: false,
+  confirmationPolicy: DEFAULT_CONFIRMATION_POLICY,
+};
+
 export const SETTINGS_SECTIONS: Array<{
   id: SettingsSectionId;
   label: string;
@@ -168,6 +204,11 @@ export const SETTINGS_SECTIONS: Array<{
     id: 'defaults',
     label: 'Defaults',
     description: 'Choose the defaults applied to newly created nodes.',
+  },
+  {
+    id: 'safety',
+    label: 'Safety',
+    description: 'Human-in-the-loop confirmation policy and tool-lock controls.',
   },
   {
     id: 'appearance',

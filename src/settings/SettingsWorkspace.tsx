@@ -6,6 +6,7 @@ import DefaultsSection from './sections/DefaultsSection';
 import AppearanceSection from './sections/AppearanceSection';
 import ColorsSection from './sections/ColorsSection';
 import DataMaintenanceSection from './sections/DataMaintenanceSection';
+import SafetySection from './sections/SafetySection';
 
 interface SettingsWorkspaceProps {
   activeSection: SettingsSectionId;
@@ -46,6 +47,8 @@ export default function SettingsWorkspace({
           <ModelCatalogSection />
         ) : activeSection === 'defaults' ? (
           <DefaultsSection />
+        ) : activeSection === 'safety' ? (
+          <SafetySection />
         ) : activeSection === 'appearance' ? (
           <AppearanceSection />
         ) : activeSection === 'colors' ? (
