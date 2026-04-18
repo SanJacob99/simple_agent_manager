@@ -166,6 +166,19 @@ export interface TextToSpeechToolSettings {
   skill: string;
 }
 
+export type MusicProviderId = '' | 'google' | 'minimax';
+
+export interface MusicGenerateToolSettings {
+  /** Preferred default provider. Empty = first configured. */
+  preferredProvider: MusicProviderId;
+  /** Google Gemini/Lyria music model override. Uses ImageToolSettings.geminiApiKey. */
+  geminiModel: string;
+  /** MiniMax music model (e.g. "music-01"). Uses TextToSpeechToolSettings.minimaxApiKey and minimaxGroupId. */
+  minimaxModel: string;
+  /** Markdown guidance injected into the system prompt for this tool */
+  skill: string;
+}
+
 export interface ToolSettings {
   exec: ExecToolSettings;
   codeExecution: CodeExecutionToolSettings;
@@ -173,6 +186,7 @@ export interface ToolSettings {
   image: ImageToolSettings;
   canva: CanvaToolSettings;
   textToSpeech: TextToSpeechToolSettings;
+  musicGenerate: MusicGenerateToolSettings;
 }
 
 export interface ToolsNodeData {

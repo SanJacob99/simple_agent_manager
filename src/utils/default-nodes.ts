@@ -94,6 +94,12 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
             minimaxDefaultModel: '',
             skill: '',
           },
+          musicGenerate: {
+            preferredProvider: '',
+            geminiModel: '',
+            minimaxModel: '',
+            skill: '',
+          },
         },
       };
     case 'skills':

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Terminal, Code2, Globe, Image, Users, LayoutDashboard, Volume2, ShieldAlert } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Terminal, Code2, Globe, Image, Users, LayoutDashboard, Volume2, ShieldAlert, Music } from 'lucide-react';
 import { useGraphStore } from '../../store/graph-store';
 import { buildProviderCatalogKey, useModelCatalogStore } from '../../store/model-catalog-store';
 import { useSettingsStore } from '../../settings/settings-store';
@@ -12,7 +12,7 @@ const HITL_TOOLS = new Set(['ask_user', 'confirm_action']);
 const PROFILES: ToolProfile[] = ['full', 'coding', 'messaging', 'minimal', 'custom'];
 const GROUPS: ToolGroup[] = ['runtime', 'fs', 'web', 'coding', 'media', 'communication', 'human'];
 
-type Page = 'main' | 'exec' | 'code_execution' | 'web_search' | 'image' | 'canva' | 'text_to_speech' | 'sub_agents';
+type Page = 'main' | 'exec' | 'code_execution' | 'web_search' | 'image' | 'canva' | 'text_to_speech' | 'music_generate' | 'sub_agents';
 
 const TTS_DEFAULTS = {
   preferredProvider: '' as const,
@@ -30,6 +30,13 @@ const TTS_DEFAULTS = {
   minimaxGroupId: '',
   minimaxDefaultVoice: '',
   minimaxDefaultModel: '',
+  skill: '',
+};
+
+const MUSIC_DEFAULTS = {
+  preferredProvider: '' as const,
+  geminiModel: '',
+  minimaxModel: '',
   skill: '',
 };
 
@@ -224,6 +231,18 @@ export default function ToolsProperties({ nodeId, data }: Props) {
         ...data.toolSettings,
         textToSpeech: {
           ...(data.toolSettings?.textToSpeech ?? TTS_DEFAULTS),
+          ...patch,
+        },
+      },
+    });
+  };
+
+  const updateMusicGenerate = (patch: Record<string, unknown>) => {
+    update(nodeId, {
+      toolSettings: {
+        ...data.toolSettings,
+        musicGenerate: {
+          ...(data.toolSettings?.musicGenerate ?? MUSIC_DEFAULTS),
           ...patch,
         },
       },
@@ -738,6 +757,86 @@ export default function ToolsProperties({ nodeId, data }: Props) {
   }
 
   // -------------------------------------------------------------------------
+  // Page: music_generate settings
+  // -------------------------------------------------------------------------
+  if (page === 'music_generate') {
+    const music = data.toolSettings?.musicGenerate ?? MUSIC_DEFAULTS;
+    return (
+      <div className="space-y-1">
+        <PageHeader title="music_generate" onBack={() => setPage('main')} />
+
+        <div className="rounded-md border border-slate-700/50 bg-slate-800/30 px-3 py-2 mb-2 space-y-1">
+          <p className="text-[10px] text-slate-400">
+            <strong className="text-slate-300">music_generate</strong> turns prompts into
+            music or ambient audio via Google Lyria or MiniMax Music. The Gemini API key is
+            shared with the image tool; the MiniMax API key and group id are shared with
+            text_to_speech.
+          </p>
+          <p className="text-[10px] text-slate-500">
+            Audio is written under <span className="font-mono">&lt;cwd&gt;/music/</span>.
+          </p>
+        </div>
+
+        <Field label="Preferred provider">
+          <select
+            className={selectClass}
+            value={music.preferredProvider ?? ''}
+            onChange={(e) => updateMusicGenerate({ preferredProvider: e.target.value })}
+          >
+            <option value="">(first configured)</option>
+            <option value="google">Google Lyria</option>
+            <option value="minimax">MiniMax Music</option>
+          </select>
+        </Field>
+
+        <div className="mt-2 border-t border-slate-700/40 pt-2">
+          <p className="text-[10px] font-semibold text-slate-400">Google Lyria</p>
+          <p className="text-[9px] text-slate-600">
+            Reuses the Gemini API key from the image settings.
+          </p>
+        </div>
+        <Field label="Model">
+          <input
+            className={inputClass}
+            value={music.geminiModel ?? ''}
+            onChange={(e) => updateMusicGenerate({ geminiModel: e.target.value })}
+            placeholder="lyria-002 (default)"
+          />
+        </Field>
+
+        <div className="mt-2 border-t border-slate-700/40 pt-2">
+          <p className="text-[10px] font-semibold text-slate-400">MiniMax Music</p>
+          <p className="text-[9px] text-slate-600">
+            Reuses the MiniMax API key and group id from text_to_speech.
+          </p>
+        </div>
+        <Field label="Model">
+          <input
+            className={inputClass}
+            value={music.minimaxModel ?? ''}
+            onChange={(e) => updateMusicGenerate({ minimaxModel: e.target.value })}
+            placeholder="music-01 (default)"
+          />
+        </Field>
+
+        <div className="mt-2 border-t border-slate-700/40 pt-2" />
+        <Field label="Skill">
+          <textarea
+            className={textareaClass}
+            rows={4}
+            value={music.skill ?? ''}
+            onChange={(e) => updateMusicGenerate({ skill: e.target.value })}
+            placeholder="Markdown guidance for how the agent should use music_generate..."
+          />
+          <p className="mt-0.5 text-[9px] text-slate-600">
+            Injected into the system prompt to guide music generation usage.
+          </p>
+        </Field>
+      </div>
+    );
+  }
+
+  // -------------------------------------------------------------------------
   // Page: sub-agents
   // -------------------------------------------------------------------------
   if (page === 'sub_agents') {
@@ -968,6 +1067,17 @@ export default function ToolsProperties({ nodeId, data }: Props) {
               return configured.length > 0 ? configured.join(', ') : undefined;
             })()}
             onClick={() => setPage('text_to_speech')}
+          />
+          <PageLink
+            icon={<Music size={14} />}
+            label="music_generate"
+            hint={(() => {
+              const music = data.toolSettings?.musicGenerate;
+              if (!music) return undefined;
+              const preferred = music.preferredProvider;
+              return preferred ? preferred : undefined;
+            })()}
+            onClick={() => setPage('music_generate')}
           />
           <PageLink
             icon={<LayoutDashboard size={14} />}

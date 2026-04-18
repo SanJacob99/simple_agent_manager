@@ -26,6 +26,7 @@ import { createCanvaTool } from './builtins/canva/canva';
 import { createTextToSpeechTool } from './builtins/tts/text-to-speech';
 import { createAskUserTool, type AskUserContext } from './builtins/human/ask-user';
 import { createConfirmActionTool } from './builtins/human/confirm-action';
+import { createMusicGenerateTool } from './builtins/music/music-generate';
 
 // Re-export resolveToolNames from shared (used by agent-runtime.ts)
 export { resolveToolNames } from '../../shared/resolve-tool-names';
@@ -49,6 +50,7 @@ export const ALL_TOOL_NAMES = [
   'send_message',
   'image_generation',
   'text_to_speech',
+  'music_generate',
   ...SESSION_TOOL_NAMES,
 ];
 
@@ -127,6 +129,12 @@ export interface ToolFactoryContext {
   minimaxDefaultVoice?: string;
   /** MiniMax default model (e.g. "speech-02-hd") */
   minimaxDefaultModel?: string;
+  /** Preferred default music generation provider */
+  musicPreferredProvider?: 'google' | 'minimax';
+  /** Google Gemini/Lyria default model override for music_generate (e.g. "lyria-002") */
+  geminiMusicModel?: string;
+  /** MiniMax music model (e.g. "music-01") */
+  minimaxMusicModel?: string;
   /** Model ID — used to apply provider-specific schema cleaning (e.g. Gemini) */
   modelId?: string;
   /**
@@ -169,6 +177,21 @@ export function createAgentTools(
       else if (name === 'edit_file') tools.push(createEditFileTool(fsCtx));
       else if (name === 'list_directory') tools.push(createListDirectoryTool(fsCtx));
       else if (name === 'apply_patch') tools.push(createApplyPatchTool(fsCtx));
+      continue;
+    }
+
+    // Music generation — needs the workspace for writing audio files.
+    // Reuses the Gemini API key (Google Lyria) and the MiniMax API key from TTS.
+    if (name === 'music_generate' && factoryContext?.cwd) {
+      tools.push(createMusicGenerateTool({
+        cwd: factoryContext.cwd,
+        preferredProvider: factoryContext.musicPreferredProvider,
+        geminiApiKey: factoryContext.geminiApiKey,
+        geminiDefaultModel: factoryContext.geminiMusicModel,
+        minimaxApiKey: factoryContext.minimaxApiKey,
+        minimaxGroupId: factoryContext.minimaxGroupId,
+        minimaxDefaultModel: factoryContext.minimaxMusicModel,
+      }));
       continue;
     }
 

@@ -42,6 +42,10 @@ Skills stored on the Tool Node are merged into system prompt content during grap
 | `toolSettings.textToSpeech.minimaxApiKey` | `string` | `""` | MiniMax API key. Empty reads `MINIMAX_API_KEY` from env |
 | `toolSettings.textToSpeech.minimaxGroupId` | `string` | `""` | MiniMax group id. Empty reads `MINIMAX_GROUP_ID` from env |
 | `toolSettings.textToSpeech.skill` | `string` | `""` | Markdown guidance injected into the system prompt for text_to_speech |
+| `toolSettings.musicGenerate.preferredProvider` | `string` | `""` | Default music provider: `google` or `minimax` |
+| `toolSettings.musicGenerate.geminiModel` | `string` | `""` | Google Lyria model override (reuses the image-tool Gemini API key) |
+| `toolSettings.musicGenerate.minimaxModel` | `string` | `""` | MiniMax music model override, e.g. `music-01` (reuses the text_to_speech MiniMax key and group id) |
+| `toolSettings.musicGenerate.skill` | `string` | `""` | Markdown guidance injected into the system prompt for music_generate |
 
 ## Runtime Behavior
 
@@ -61,6 +65,7 @@ Tool name resolution happens in `shared/resolve-tool-names.ts` in this order:
 - `calculator` and the built-in `web_fetch` have real implementations
 - `canva` writes HTML/CSS/JS into `<cwd>/.canva/<name>/` and serves each canvas from its own static HTTP server on a port auto-picked from the configured range
 - `text_to_speech` synthesizes audio via ElevenLabs, Google Gemini, Microsoft Azure, MiniMax, or OpenAI and writes the resulting file into `<cwd>/audio/`
+- `music_generate` generates music or ambient audio via Google Lyria or MiniMax Music and writes the resulting file into `<cwd>/music/`. The Gemini API key is reused from the image settings, and the MiniMax API key and group id are reused from text_to_speech
 - most other tools are still stubs
 - if the resolved tool list already includes `web_search` or `web_fetch` and the active provider plugin supplies replacements, `createAgentTools()` swaps in the provider-backed implementation instead of auto-adding new tools
 
