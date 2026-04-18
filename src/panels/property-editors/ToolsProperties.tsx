@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Terminal, Code2, Globe, Image, Users, LayoutDashboard } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Terminal, Code2, Globe, Image, Users, LayoutDashboard, Volume2 } from 'lucide-react';
 import { useGraphStore } from '../../store/graph-store';
 import { buildProviderCatalogKey, useModelCatalogStore } from '../../store/model-catalog-store';
 import type { ToolsNodeData, ToolProfile, ToolGroup } from '../../types/nodes';
@@ -9,7 +9,26 @@ import { ALL_TOOL_NAMES, TOOL_GROUPS, TOOL_PROFILES } from '../../../shared/reso
 const PROFILES: ToolProfile[] = ['full', 'coding', 'messaging', 'minimal', 'custom'];
 const GROUPS: ToolGroup[] = ['runtime', 'fs', 'web', 'coding', 'media', 'communication'];
 
-type Page = 'main' | 'exec' | 'code_execution' | 'web_search' | 'image' | 'canva' | 'sub_agents';
+type Page = 'main' | 'exec' | 'code_execution' | 'web_search' | 'image' | 'canva' | 'text_to_speech' | 'sub_agents';
+
+const TTS_DEFAULTS = {
+  preferredProvider: '' as const,
+  elevenLabsApiKey: '',
+  elevenLabsDefaultVoice: '',
+  elevenLabsDefaultModel: '',
+  openaiVoice: '',
+  openaiModel: '',
+  geminiVoice: '',
+  geminiModel: '',
+  microsoftApiKey: '',
+  microsoftRegion: '',
+  microsoftDefaultVoice: '',
+  minimaxApiKey: '',
+  minimaxGroupId: '',
+  minimaxDefaultVoice: '',
+  minimaxDefaultModel: '',
+  skill: '',
+};
 
 interface Props {
   nodeId: string;
@@ -187,6 +206,18 @@ export default function ToolsProperties({ nodeId, data }: Props) {
         ...data.toolSettings,
         canva: {
           ...(data.toolSettings?.canva ?? { portRangeStart: 5173, portRangeEnd: 5273, skill: '' }),
+          ...patch,
+        },
+      },
+    });
+  };
+
+  const updateTextToSpeech = (patch: Record<string, unknown>) => {
+    update(nodeId, {
+      toolSettings: {
+        ...data.toolSettings,
+        textToSpeech: {
+          ...(data.toolSettings?.textToSpeech ?? TTS_DEFAULTS),
           ...patch,
         },
       },
@@ -508,6 +539,199 @@ export default function ToolsProperties({ nodeId, data }: Props) {
   }
 
   // -------------------------------------------------------------------------
+  // Page: text_to_speech settings
+  // -------------------------------------------------------------------------
+  if (page === 'text_to_speech') {
+    const tts = data.toolSettings?.textToSpeech ?? TTS_DEFAULTS;
+    return (
+      <div className="space-y-1">
+        <PageHeader title="text_to_speech" onBack={() => setPage('main')} />
+
+        <div className="rounded-md border border-slate-700/50 bg-slate-800/30 px-3 py-2 mb-2 space-y-1">
+          <p className="text-[10px] text-slate-400">
+            <strong className="text-slate-300">text_to_speech</strong> turns outbound text into
+            audio via one of five providers. Configure at least one API key below. OpenAI and
+            Gemini keys are shared with the image tool.
+          </p>
+          <p className="text-[10px] text-slate-500">
+            Audio is written under <span className="font-mono">&lt;cwd&gt;/audio/</span>.
+          </p>
+        </div>
+
+        <Field label="Preferred provider">
+          <select
+            className={selectClass}
+            value={tts.preferredProvider ?? ''}
+            onChange={(e) => updateTextToSpeech({ preferredProvider: e.target.value })}
+          >
+            <option value="">(first configured)</option>
+            <option value="openai">OpenAI</option>
+            <option value="elevenlabs">ElevenLabs</option>
+            <option value="google">Google Gemini</option>
+            <option value="microsoft">Microsoft Azure</option>
+            <option value="minimax">MiniMax</option>
+          </select>
+        </Field>
+
+        <div className="mt-2 border-t border-slate-700/40 pt-2">
+          <p className="text-[10px] font-semibold text-slate-400">ElevenLabs</p>
+        </div>
+        <Field label="API Key">
+          <input
+            className={inputClass}
+            type="password"
+            value={tts.elevenLabsApiKey ?? ''}
+            onChange={(e) => updateTextToSpeech({ elevenLabsApiKey: e.target.value })}
+            placeholder="Empty = reads ELEVENLABS_API_KEY from env"
+          />
+        </Field>
+        <Field label="Default voice ID">
+          <input
+            className={inputClass}
+            value={tts.elevenLabsDefaultVoice ?? ''}
+            onChange={(e) => updateTextToSpeech({ elevenLabsDefaultVoice: e.target.value })}
+            placeholder="21m00Tcm4TlvDq8ikWAM (Rachel)"
+          />
+        </Field>
+        <Field label="Default model">
+          <input
+            className={inputClass}
+            value={tts.elevenLabsDefaultModel ?? ''}
+            onChange={(e) => updateTextToSpeech({ elevenLabsDefaultModel: e.target.value })}
+            placeholder="eleven_multilingual_v2"
+          />
+        </Field>
+
+        <div className="mt-2 border-t border-slate-700/40 pt-2">
+          <p className="text-[10px] font-semibold text-slate-400">OpenAI</p>
+          <p className="text-[9px] text-slate-600">
+            Reuses the OpenAI API key from the image settings.
+          </p>
+        </div>
+        <Field label="Voice">
+          <input
+            className={inputClass}
+            value={tts.openaiVoice ?? ''}
+            onChange={(e) => updateTextToSpeech({ openaiVoice: e.target.value })}
+            placeholder="alloy, nova, shimmer, echo, fable, onyx"
+          />
+        </Field>
+        <Field label="Model">
+          <input
+            className={inputClass}
+            value={tts.openaiModel ?? ''}
+            onChange={(e) => updateTextToSpeech({ openaiModel: e.target.value })}
+            placeholder="gpt-4o-mini-tts (default)"
+          />
+        </Field>
+
+        <div className="mt-2 border-t border-slate-700/40 pt-2">
+          <p className="text-[10px] font-semibold text-slate-400">Google Gemini</p>
+          <p className="text-[9px] text-slate-600">
+            Reuses the Gemini API key from the image settings.
+          </p>
+        </div>
+        <Field label="Voice">
+          <input
+            className={inputClass}
+            value={tts.geminiVoice ?? ''}
+            onChange={(e) => updateTextToSpeech({ geminiVoice: e.target.value })}
+            placeholder="Kore, Puck, Charon, Fenrir, …"
+          />
+        </Field>
+        <Field label="Model">
+          <input
+            className={inputClass}
+            value={tts.geminiModel ?? ''}
+            onChange={(e) => updateTextToSpeech({ geminiModel: e.target.value })}
+            placeholder="gemini-2.5-flash-preview-tts"
+          />
+        </Field>
+
+        <div className="mt-2 border-t border-slate-700/40 pt-2">
+          <p className="text-[10px] font-semibold text-slate-400">Microsoft Azure</p>
+        </div>
+        <Field label="API Key">
+          <input
+            className={inputClass}
+            type="password"
+            value={tts.microsoftApiKey ?? ''}
+            onChange={(e) => updateTextToSpeech({ microsoftApiKey: e.target.value })}
+            placeholder="Empty = reads AZURE_SPEECH_KEY from env"
+          />
+        </Field>
+        <Field label="Region">
+          <input
+            className={inputClass}
+            value={tts.microsoftRegion ?? ''}
+            onChange={(e) => updateTextToSpeech({ microsoftRegion: e.target.value })}
+            placeholder="eastus"
+          />
+        </Field>
+        <Field label="Default voice">
+          <input
+            className={inputClass}
+            value={tts.microsoftDefaultVoice ?? ''}
+            onChange={(e) => updateTextToSpeech({ microsoftDefaultVoice: e.target.value })}
+            placeholder="en-US-JennyNeural"
+          />
+        </Field>
+
+        <div className="mt-2 border-t border-slate-700/40 pt-2">
+          <p className="text-[10px] font-semibold text-slate-400">MiniMax</p>
+        </div>
+        <Field label="API Key">
+          <input
+            className={inputClass}
+            type="password"
+            value={tts.minimaxApiKey ?? ''}
+            onChange={(e) => updateTextToSpeech({ minimaxApiKey: e.target.value })}
+            placeholder="Empty = reads MINIMAX_API_KEY from env"
+          />
+        </Field>
+        <Field label="Group ID">
+          <input
+            className={inputClass}
+            value={tts.minimaxGroupId ?? ''}
+            onChange={(e) => updateTextToSpeech({ minimaxGroupId: e.target.value })}
+            placeholder="Empty = reads MINIMAX_GROUP_ID from env"
+          />
+        </Field>
+        <Field label="Default voice">
+          <input
+            className={inputClass}
+            value={tts.minimaxDefaultVoice ?? ''}
+            onChange={(e) => updateTextToSpeech({ minimaxDefaultVoice: e.target.value })}
+            placeholder="male-qn-qingse"
+          />
+        </Field>
+        <Field label="Default model">
+          <input
+            className={inputClass}
+            value={tts.minimaxDefaultModel ?? ''}
+            onChange={(e) => updateTextToSpeech({ minimaxDefaultModel: e.target.value })}
+            placeholder="speech-02-hd"
+          />
+        </Field>
+
+        <div className="mt-2 border-t border-slate-700/40 pt-2" />
+        <Field label="Skill">
+          <textarea
+            className={textareaClass}
+            rows={4}
+            value={tts.skill ?? ''}
+            onChange={(e) => updateTextToSpeech({ skill: e.target.value })}
+            placeholder="Markdown guidance for how the agent should use text_to_speech..."
+          />
+          <p className="mt-0.5 text-[9px] text-slate-600">
+            Injected into the system prompt to guide TTS usage.
+          </p>
+        </Field>
+      </div>
+    );
+  }
+
+  // -------------------------------------------------------------------------
   // Page: sub-agents
   // -------------------------------------------------------------------------
   if (page === 'sub_agents') {
@@ -698,6 +922,20 @@ export default function ToolsProperties({ nodeId, data }: Props) {
               return keys.length > 0 ? keys.join(', ') : undefined;
             })()}
             onClick={() => setPage('image')}
+          />
+          <PageLink
+            icon={<Volume2 size={14} />}
+            label="text_to_speech"
+            hint={(() => {
+              const tts = data.toolSettings?.textToSpeech;
+              if (!tts) return undefined;
+              const configured: string[] = [];
+              if (tts.elevenLabsApiKey) configured.push('elevenlabs');
+              if (tts.microsoftApiKey) configured.push('azure');
+              if (tts.minimaxApiKey) configured.push('minimax');
+              return configured.length > 0 ? configured.join(', ') : undefined;
+            })()}
+            onClick={() => setPage('text_to_speech')}
           />
           <PageLink
             icon={<LayoutDashboard size={14} />}

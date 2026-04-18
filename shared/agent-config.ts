@@ -154,6 +154,28 @@ export interface AgentConfig {
   /** Upper bound (inclusive) of the port range canva will auto-pick from. */
   canvaPortRangeEnd?: number;
 
+  /** Preferred default TTS provider. */
+  ttsPreferredProvider?: 'openai' | 'elevenlabs' | 'google' | 'microsoft' | 'minimax';
+  /** ElevenLabs API key for text_to_speech. */
+  elevenLabsApiKey?: string;
+  elevenLabsDefaultVoice?: string;
+  elevenLabsDefaultModel?: string;
+  /** Override default OpenAI TTS voice/model (OpenAI API key is reused from image config). */
+  openaiTtsVoice?: string;
+  openaiTtsModel?: string;
+  /** Override default Google Gemini TTS voice/model (Gemini API key is reused from image config). */
+  geminiTtsVoice?: string;
+  geminiTtsModel?: string;
+  /** Microsoft Azure Speech configuration. */
+  microsoftTtsApiKey?: string;
+  microsoftTtsRegion?: string;
+  microsoftTtsVoice?: string;
+  /** MiniMax TTS configuration. */
+  minimaxApiKey?: string;
+  minimaxGroupId?: string;
+  minimaxDefaultVoice?: string;
+  minimaxDefaultModel?: string;
+
   exportedAt: number;
   sourceGraphId: string;
   runTimeoutMs: number;
