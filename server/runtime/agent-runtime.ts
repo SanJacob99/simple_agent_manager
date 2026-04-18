@@ -13,6 +13,7 @@ import { resolveProviderStreamFn } from '../providers/stream-resolver';
 import { MemoryEngine } from './memory-engine';
 import { ContextEngine } from './context-engine';
 import { resolveToolNames, createAgentTools } from '../tools/tool-factory';
+import { buildToolClassificationMatrix } from '../tools/classification-policy';
 import { resolveRuntimeModel } from './model-resolver';
 import { isToolErrorDetails } from '../tools/tool-adapter';
 import { log } from '../logger';
@@ -181,10 +182,18 @@ export class AgentRuntime {
     // the resolved tool list. Teaches the model WHEN to call `confirm_action`
     // / `ask_user` and enforces the one-tool-call-per-confirm-turn rule that
     // keeps parallel-tool-calling providers from bypassing the gate.
+    //
+    // The user-editable policy text is followed by an auto-generated matrix
+    // that groups THIS agent's enabled tools by their declared classification
+    // (read-only / state-mutating / destructive). The matrix is not
+    // user-editable — it is the ground truth for the model about which of
+    // its tools require confirmation.
     const hasHitlTool = toolNames.includes('confirm_action') || toolNames.includes('ask_user');
     const policy = this.safetySettings.confirmationPolicy?.trim();
     if (hasHitlTool && policy) {
       systemPrompt += `\n\n${policy}`;
+      const matrix = buildToolClassificationMatrix(toolNames);
+      if (matrix) systemPrompt += `\n\n${matrix}`;
     }
 
     const plugin = this.pluginRegistry?.get(config.provider.pluginId);

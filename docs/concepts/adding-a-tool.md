@@ -247,7 +247,7 @@ The optional `classification` field on `ToolModule` tells the HITL system whethe
 - `state-mutating` — `write_file`, `edit_file`, `image_generate` (writes a file to disk), `send_message`. Reversible or scoped side effects.
 - `destructive` — `exec`, `bash`, `apply_patch`, operations with `rm`/`DELETE` semantics. Hard or impossible to undo.
 
-The global confirmation policy treats all three as needing confirmation. The classification becomes meaningful if/when we add per-classification policy overrides (e.g. "auto-confirm read-only", "always confirm destructive").
+The `agent-runtime` builder groups each agent's enabled tools by classification and appends a "Tool confirmation matrix" block to the system prompt right after the user-editable policy text. The matrix tells the model which of ITS tools are read-only (no confirmation), state-mutating (confirm first), and destructive (confirm with explicit impact summary). Tools not in the `ToolModule` registry (memory, session tools, provider-plugin tools) get conservative defaults via a fallback map in [classification-policy.ts](../../server/tools/classification-policy.ts).
 
 ---
 
