@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import { Field, inputClass, selectClass, textareaClass } from '../shared';
 import type {
   BooleanFieldSchema,
@@ -5,6 +6,7 @@ import type {
   FieldSchema,
   IntegerFieldSchema,
   ObjectSchema,
+  SchemaSection,
   StringFieldSchema,
 } from './types';
 
@@ -13,23 +15,20 @@ interface SchemaFormProps<T> {
   value: T;
   onChange: (patch: Partial<T>) => void;
   /**
-   * Per-field runtime overrides — placeholder / description text that
-   * depends on values outside the schema (inherited working directory, a
-   * connected provider's name, etc.).
+   * Per-field runtime overrides — placeholder / description text, or
+   * visibility — that depends on values outside the schema (inherited
+   * working directory, conditional visibility, etc.).
    */
   fieldOverrides?: FieldOverrides;
 }
 
 /**
- * Renders a form for a flat object schema. Each key in `schema.properties`
- * becomes a row. Emits partial updates through `onChange` so the caller
- * merges into its own state.
+ * Renders a form for a flat object schema.
  *
- * Deliberately narrow: this handles the single-section, flat-object case
- * used by simple tools (`exec`, `code_execution`, `web_search`, `canva`).
- * Multi-section tools (`text_to_speech`, `music_generate`, `image`) will
- * get a nested-schema variant once this baseline is validated in
- * production.
+ * Fields appear in `schema.properties` declaration order. When
+ * `schema.sections` is present, a divider + heading is inserted
+ * immediately above the field named in each section's `startAt` —
+ * sections group fields visually without changing the flat data shape.
  */
 export function SchemaForm<T>({
   schema,
@@ -37,25 +36,47 @@ export function SchemaForm<T>({
   onChange,
   fieldOverrides,
 }: SchemaFormProps<T>) {
-  const entries = Object.entries(schema.properties) as Array<[keyof T & string, FieldSchema]>;
+  const entries = Object.entries(schema.properties).filter(
+    ([, field]) => Boolean(field),
+  ) as Array<[keyof T & string, FieldSchema]>;
+  const sectionByStartAt = new Map<string, SchemaSection<T>>();
+  for (const section of schema.sections ?? []) {
+    sectionByStartAt.set(section.startAt, section);
+  }
   return (
     <>
-      {entries.map(([key, field]) => (
-        <FieldRow
-          key={key}
-          name={key}
-          field={field}
-          value={(value as Record<string, unknown>)[key]}
-          onChange={(next) => onChange({ [key]: next } as Partial<T>)}
-          override={fieldOverrides?.[key]}
-        />
-      ))}
+      {entries.map(([key, field]) => {
+        const override = fieldOverrides?.[key];
+        if (override?.hidden) return null;
+        const section = sectionByStartAt.get(key);
+        return (
+          <Fragment key={key}>
+            {section && <SectionHeader section={section} />}
+            <FieldRow
+              field={field}
+              value={(value as Record<string, unknown>)[key]}
+              onChange={(next) => onChange({ [key]: next } as Partial<T>)}
+              override={override}
+            />
+          </Fragment>
+        );
+      })}
     </>
   );
 }
 
+function SectionHeader<T>({ section }: { section: SchemaSection<T> }) {
+  return (
+    <div className="mt-2 border-t border-slate-700/40 pt-2">
+      <p className="text-[10px] font-semibold text-slate-400">{section.title}</p>
+      {section.description && (
+        <p className="text-[9px] text-slate-600">{section.description}</p>
+      )}
+    </div>
+  );
+}
+
 interface FieldRowProps {
-  name: string;
   field: FieldSchema;
   value: unknown;
   onChange: (next: unknown) => void;
