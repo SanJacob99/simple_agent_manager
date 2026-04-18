@@ -9,23 +9,19 @@ import type {
 import { adaptAgentTools } from './tool-adapter';
 import { findToolNameConflicts } from './tool-name-policy';
 import { logError } from '../logger';
+import type { AgentConfig } from '../../shared/agent-config';
+import { REGISTERED_TOOL_NAMES, buildToolFromModule } from './tool-registry';
+import type { RuntimeHints } from './tool-module';
 import { createCalculatorTool } from './builtins/calculator/calculator';
 import { createWebFetchTool } from './builtins/web/web-fetch';
-import { createExecTool } from './builtins/exec/exec';
 import { createCodeExecutionTool } from './builtins/code-execution/code-execution';
-import { createReadFileTool } from './builtins/fs/read-file';
-import { createWriteFileTool } from './builtins/fs/write-file';
-import { createEditFileTool } from './builtins/fs/edit-file';
-import { createListDirectoryTool } from './builtins/fs/list-directory';
-import { createApplyPatchTool } from './builtins/fs/apply-patch';
-import { createImageAnalyzeTool } from './builtins/image/image-analyze';
 import { createImageGenerateTool } from './builtins/image/image-generate';
-import { createShowImageTool } from './builtins/image/show-image';
 import { createWebSearchTool } from './builtins/web/web-search';
 import { createCanvaTool } from './builtins/canva/canva';
 import { createTextToSpeechTool } from './builtins/tts/text-to-speech';
-import { createAskUserTool, type AskUserContext } from './builtins/human/ask-user';
-import { createConfirmActionTool } from './builtins/human/confirm-action';
+// ask_user + confirm_action are served through the ToolModule registry.
+// The AskUserContext type is still referenced by ToolFactoryContext.hitl below.
+import type { AskUserContext } from './builtins/human/ask-user';
 import { createMusicGenerateTool } from './builtins/music/music-generate';
 
 // Re-export resolveToolNames from shared (used by agent-runtime.ts)
@@ -142,6 +138,12 @@ export interface ToolFactoryContext {
    * skipped during registration even if its name appears in `names`.
    */
   hitl?: AskUserContext;
+  /**
+   * Full `AgentConfig`. Passed through to `ToolModule.resolveContext` so
+   * migrated tools can read their own config fields. Legacy tools don't
+   * need this — they consume scalar fields (`weatherApiKey`, etc.) above.
+   */
+  agentConfig?: AgentConfig;
 }
 
 /**
@@ -156,29 +158,39 @@ export function createAgentTools(
 ): AgentTool<TSchema>[] {
   const tools: AgentTool<TSchema>[] = [];
 
+  // Shared RuntimeHints for ToolModule-based tools. Built once per call —
+  // modules that need config fields read them through `agentConfig` in
+  // their own `resolveContext`.
+  const runtime: RuntimeHints = {
+    cwd: factoryContext?.cwd ?? process.cwd(),
+    sandboxWorkdir: factoryContext?.sandboxWorkdir,
+    modelId: factoryContext?.modelId,
+    hitl: factoryContext?.hitl,
+    getOpenrouterApiKey: factoryContext?.getOpenrouterApiKey,
+  };
+  // Fall-back AgentConfig for modules that were pointed at the registry
+  // from code paths that didn't have a real config. Safe because migrated
+  // modules either ignore `config` entirely (calculator) or read a field
+  // that will be undefined in the empty object (tools with required auth
+  // will return null from `create`).
+  const agentConfig = factoryContext?.agentConfig ?? ({} as AgentConfig);
+
   for (const name of names) {
     // Skip session tools — provided separately by session-tools.ts
     if (SESSION_TOOL_NAME_SET.has(name)) continue;
 
-    // Context-dependent tools
-    if ((name === 'exec' || name === 'bash') && factoryContext?.cwd) {
-      tools.push(createExecTool({
-        cwd: factoryContext.cwd,
-        sandboxWorkdir: factoryContext.sandboxWorkdir,
-      }));
+    // ToolModule registry takes precedence. Migrated tools are served
+    // exclusively out of the registry — their legacy switch branches
+    // below are dead weight while the migration is in progress and will
+    // be deleted once every tool has a module.
+    if (REGISTERED_TOOL_NAMES.has(name)) {
+      const tool = buildToolFromModule(name, agentConfig, runtime);
+      if (tool) tools.push(tool);
       continue;
     }
 
-    // File I/O tools — share the same context as exec
-    if ((name === 'read_file' || name === 'write_file' || name === 'edit_file' || name === 'list_directory' || name === 'apply_patch') && factoryContext?.cwd) {
-      const fsCtx = { cwd: factoryContext.cwd, sandboxWorkdir: factoryContext.sandboxWorkdir };
-      if (name === 'read_file') tools.push(createReadFileTool(fsCtx));
-      else if (name === 'write_file') tools.push(createWriteFileTool(fsCtx));
-      else if (name === 'edit_file') tools.push(createEditFileTool(fsCtx));
-      else if (name === 'list_directory') tools.push(createListDirectoryTool(fsCtx));
-      else if (name === 'apply_patch') tools.push(createApplyPatchTool(fsCtx));
-      continue;
-    }
+    // exec/bash + fs tools (read_file, write_file, edit_file, list_directory,
+    // apply_patch) are served through the ToolModule registry above.
 
     // Music generation — needs the workspace for writing audio files.
     // Reuses the Gemini API key (Google Lyria) and the MiniMax API key from TTS.
@@ -231,25 +243,8 @@ export function createAgentTools(
       continue;
     }
 
-    // Image tools
-    if (name === 'image' && factoryContext?.cwd) {
-      tools.push(createImageAnalyzeTool({ cwd: factoryContext.cwd }));
-      continue;
-    }
-    if (name === 'show_image' && factoryContext?.cwd) {
-      tools.push(createShowImageTool({ cwd: factoryContext.cwd }));
-      continue;
-    }
+    // image (analyze), show_image, ask_user, confirm_action served above via registry.
 
-    if (name === 'ask_user' && factoryContext?.hitl) {
-      tools.push(createAskUserTool(factoryContext.hitl));
-      continue;
-    }
-
-    if (name === 'confirm_action' && factoryContext?.hitl) {
-      tools.push(createConfirmActionTool(factoryContext.hitl));
-      continue;
-    }
     if (name === 'image_generate' && factoryContext?.cwd) {
       tools.push(createImageGenerateTool({
         cwd: factoryContext.cwd,

@@ -186,6 +186,7 @@ export class AgentRuntime {
         minimaxMusicModel: config.minimaxMusicModel,
         modelId: config.modelId,
         hitl: hitlContext,
+        agentConfig: config,
       },
     );
 
