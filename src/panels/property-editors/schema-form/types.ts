@@ -43,18 +43,34 @@ export type FieldSchema = StringFieldSchema | IntegerFieldSchema | BooleanFieldS
 
 /**
  * Per-field overrides a caller can pass at render time. Used when a
- * placeholder or hint depends on data that lives outside the schema (for
- * example, the `exec` tool's placeholder shows the connected agent's
- * working directory, which the schema cannot know about).
+ * placeholder, hint, or visibility decision depends on data that lives
+ * outside the schema (the `exec` tool's placeholder shows the connected
+ * agent's working directory; `sub_agents` hides `maxSubAgents` until
+ * `subAgentSpawning` is enabled).
  */
 export interface FieldOverride {
   placeholder?: string;
   description?: string;
+  /** When true, the field is not rendered at all. */
+  hidden?: boolean;
 }
 
 export type FieldOverrides = Record<string, FieldOverride>;
 
+/**
+ * Optional UI grouping. When the renderer reaches the field named in
+ * `startAt` it emits a divider + heading + optional description above
+ * that field. Section membership is NOT about data shape — fields still
+ * live flat on the value object; sections only add visual separators.
+ */
+export interface SchemaSection<T = Record<string, unknown>> {
+  title: string;
+  description?: string;
+  startAt: keyof T & string;
+}
+
 export interface ObjectSchema<T = Record<string, unknown>> {
   type: 'object';
-  properties: { [K in keyof T]: FieldSchema };
+  properties: Partial<Record<keyof T & string, FieldSchema>>;
+  sections?: SchemaSection<T>[];
 }

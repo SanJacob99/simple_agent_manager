@@ -117,4 +117,58 @@ describe('SchemaForm', () => {
     expect(nameInput.getAttribute('placeholder')).toBe('Inherited: alice');
     expect(screen.getByText('Overridden hint.')).toBeInTheDocument();
   });
+
+  it('hides a field when fieldOverrides[name].hidden is true', () => {
+    const { container } = render(
+      <SchemaForm
+        schema={sampleSchema}
+        value={baseValue()}
+        onChange={() => {}}
+        fieldOverrides={{ count: { hidden: true } }}
+      />,
+    );
+    expect(screen.queryByText('Count')).toBeNull();
+    expect(container.querySelector('input[type="number"]')).toBeNull();
+  });
+
+  it('renders section headers immediately before each section.startAt field', () => {
+    interface Layered {
+      prelude: string;
+      alphaOne: string;
+      alphaTwo: string;
+      betaOne: string;
+    }
+    const schema: ObjectSchema<Layered> = {
+      type: 'object',
+      properties: {
+        prelude: { type: 'string', title: 'Prelude' },
+        alphaOne: { type: 'string', title: 'Alpha 1' },
+        alphaTwo: { type: 'string', title: 'Alpha 2' },
+        betaOne: { type: 'string', title: 'Beta 1' },
+      },
+      sections: [
+        { title: 'Alpha Section', description: 'Alpha hint', startAt: 'alphaOne' },
+        { title: 'Beta Section', startAt: 'betaOne' },
+      ],
+    };
+    const value: Layered = { prelude: '', alphaOne: '', alphaTwo: '', betaOne: '' };
+    const { container } = render(
+      <SchemaForm schema={schema} value={value} onChange={() => {}} />,
+    );
+
+    expect(screen.getByText('Alpha Section')).toBeInTheDocument();
+    expect(screen.getByText('Alpha hint')).toBeInTheDocument();
+    expect(screen.getByText('Beta Section')).toBeInTheDocument();
+
+    // Verify ordering in the DOM: prelude → Alpha Section → Alpha 1 → Alpha 2 → Beta Section → Beta 1
+    const texts = Array.from(container.querySelectorAll('label, p'))
+      .map((el) => el.textContent?.trim())
+      .filter((t): t is string => Boolean(t));
+    const idx = (needle: string) => texts.findIndex((t) => t.includes(needle));
+    expect(idx('Prelude')).toBeLessThan(idx('Alpha Section'));
+    expect(idx('Alpha Section')).toBeLessThan(idx('Alpha 1'));
+    expect(idx('Alpha 1')).toBeLessThan(idx('Alpha 2'));
+    expect(idx('Alpha 2')).toBeLessThan(idx('Beta Section'));
+    expect(idx('Beta Section')).toBeLessThan(idx('Beta 1'));
+  });
 });

@@ -4,13 +4,17 @@ import { useGraphStore } from '../../store/graph-store';
 import { buildProviderCatalogKey, useModelCatalogStore } from '../../store/model-catalog-store';
 import { useSettingsStore } from '../../settings/settings-store';
 import type { ToolsNodeData, ToolProfile, ToolGroup } from '../../types/nodes';
-import { Field, inputClass, selectClass, textareaClass } from './shared';
+import { Field, inputClass, selectClass } from './shared';
 import { ALL_TOOL_NAMES, TOOL_GROUPS, TOOL_PROFILES } from '../../../shared/resolve-tool-names';
 import { SchemaForm } from './schema-form/SchemaForm';
 import {
   canvaToolConfigSchema,
   codeExecutionToolConfigSchema,
   execToolConfigSchema,
+  imageToolConfigSchema,
+  musicGenerateToolConfigSchema,
+  subAgentsToolConfigSchema,
+  textToSpeechToolConfigSchema,
   webSearchToolConfigSchema,
 } from './tool-config-schemas';
 
@@ -18,6 +22,12 @@ const DEFAULT_EXEC_SETTINGS = { cwd: '', sandboxWorkdir: false, skill: '' };
 const DEFAULT_CODE_EXECUTION_SETTINGS = { apiKey: '', model: '', skill: '' };
 const DEFAULT_WEB_SEARCH_SETTINGS = { tavilyApiKey: '', skill: '' };
 const DEFAULT_CANVA_SETTINGS = { portRangeStart: 5173, portRangeEnd: 5273, skill: '' };
+const DEFAULT_IMAGE_SETTINGS = {
+  openaiApiKey: '',
+  geminiApiKey: '',
+  preferredModel: '',
+  skill: '',
+};
 
 const HITL_TOOLS = new Set(['ask_user', 'confirm_action']);
 
@@ -321,6 +331,10 @@ export default function ToolsProperties({ nodeId, data }: Props) {
   // Page: image settings
   // -------------------------------------------------------------------------
   if (page === 'image') {
+    // The preferred-model picker stays hand-written: it switches between
+    // an input and a catalog-filtered select depending on the connected
+    // provider, with four different hint texts. The SchemaForm below
+    // handles the API keys and skill field.
     return (
       <div className="space-y-1">
         <PageHeader title="image / image_generate" onBack={() => setPage('main')} />
@@ -336,7 +350,6 @@ export default function ToolsProperties({ nodeId, data }: Props) {
           </p>
         </div>
 
-        {/* Model selection — uses connected agent's provider catalog */}
         <Field label="Preferred Model">
           {connectedProvider?.pluginId === 'openrouter' && imageCapableModels.length > 0 ? (
             <>
@@ -395,44 +408,11 @@ export default function ToolsProperties({ nodeId, data }: Props) {
           )}
         </Field>
 
-        <Field label="OpenAI API Key">
-          <input
-            className={inputClass}
-            type="password"
-            value={data.toolSettings?.image?.openaiApiKey ?? ''}
-            onChange={(e) => updateImage({ openaiApiKey: e.target.value })}
-            placeholder="Empty = reads OPENAI_API_KEY from env"
-          />
-          <p className="mt-0.5 text-[9px] text-slate-600">
-            For DALL-E / gpt-image-1. Supports edit mode with up to 5 reference images.
-          </p>
-        </Field>
-
-        <Field label="Google / Gemini API Key">
-          <input
-            className={inputClass}
-            type="password"
-            value={data.toolSettings?.image?.geminiApiKey ?? ''}
-            onChange={(e) => updateImage({ geminiApiKey: e.target.value })}
-            placeholder="Empty = reads GEMINI_API_KEY from env"
-          />
-          <p className="mt-0.5 text-[9px] text-slate-600">
-            For Gemini image generation. Supports edit mode.
-          </p>
-        </Field>
-
-        <Field label="Skill">
-          <textarea
-            className={textareaClass}
-            rows={4}
-            value={data.toolSettings?.image?.skill ?? ''}
-            onChange={(e) => updateImage({ skill: e.target.value })}
-            placeholder="Markdown guidance for how the agent should use image tools..."
-          />
-          <p className="mt-0.5 text-[9px] text-slate-600">
-            Injected into the system prompt to guide image tool usage.
-          </p>
-        </Field>
+        <SchemaForm
+          schema={imageToolConfigSchema}
+          value={data.toolSettings?.image ?? DEFAULT_IMAGE_SETTINGS}
+          onChange={updateImage}
+        />
       </div>
     );
   }
@@ -482,175 +462,11 @@ export default function ToolsProperties({ nodeId, data }: Props) {
           </p>
         </div>
 
-        <Field label="Preferred provider">
-          <select
-            className={selectClass}
-            value={tts.preferredProvider ?? ''}
-            onChange={(e) => updateTextToSpeech({ preferredProvider: e.target.value })}
-          >
-            <option value="">(first configured)</option>
-            <option value="openai">OpenAI</option>
-            <option value="elevenlabs">ElevenLabs</option>
-            <option value="google">Google Gemini</option>
-            <option value="microsoft">Microsoft Azure</option>
-            <option value="minimax">MiniMax</option>
-          </select>
-        </Field>
-
-        <div className="mt-2 border-t border-slate-700/40 pt-2">
-          <p className="text-[10px] font-semibold text-slate-400">ElevenLabs</p>
-        </div>
-        <Field label="API Key">
-          <input
-            className={inputClass}
-            type="password"
-            value={tts.elevenLabsApiKey ?? ''}
-            onChange={(e) => updateTextToSpeech({ elevenLabsApiKey: e.target.value })}
-            placeholder="Empty = reads ELEVENLABS_API_KEY from env"
-          />
-        </Field>
-        <Field label="Default voice ID">
-          <input
-            className={inputClass}
-            value={tts.elevenLabsDefaultVoice ?? ''}
-            onChange={(e) => updateTextToSpeech({ elevenLabsDefaultVoice: e.target.value })}
-            placeholder="21m00Tcm4TlvDq8ikWAM (Rachel)"
-          />
-        </Field>
-        <Field label="Default model">
-          <input
-            className={inputClass}
-            value={tts.elevenLabsDefaultModel ?? ''}
-            onChange={(e) => updateTextToSpeech({ elevenLabsDefaultModel: e.target.value })}
-            placeholder="eleven_multilingual_v2"
-          />
-        </Field>
-
-        <div className="mt-2 border-t border-slate-700/40 pt-2">
-          <p className="text-[10px] font-semibold text-slate-400">OpenAI</p>
-          <p className="text-[9px] text-slate-600">
-            Reuses the OpenAI API key from the image settings.
-          </p>
-        </div>
-        <Field label="Voice">
-          <input
-            className={inputClass}
-            value={tts.openaiVoice ?? ''}
-            onChange={(e) => updateTextToSpeech({ openaiVoice: e.target.value })}
-            placeholder="alloy, nova, shimmer, echo, fable, onyx"
-          />
-        </Field>
-        <Field label="Model">
-          <input
-            className={inputClass}
-            value={tts.openaiModel ?? ''}
-            onChange={(e) => updateTextToSpeech({ openaiModel: e.target.value })}
-            placeholder="gpt-4o-mini-tts (default)"
-          />
-        </Field>
-
-        <div className="mt-2 border-t border-slate-700/40 pt-2">
-          <p className="text-[10px] font-semibold text-slate-400">Google Gemini</p>
-          <p className="text-[9px] text-slate-600">
-            Reuses the Gemini API key from the image settings.
-          </p>
-        </div>
-        <Field label="Voice">
-          <input
-            className={inputClass}
-            value={tts.geminiVoice ?? ''}
-            onChange={(e) => updateTextToSpeech({ geminiVoice: e.target.value })}
-            placeholder="Kore, Puck, Charon, Fenrir, …"
-          />
-        </Field>
-        <Field label="Model">
-          <input
-            className={inputClass}
-            value={tts.geminiModel ?? ''}
-            onChange={(e) => updateTextToSpeech({ geminiModel: e.target.value })}
-            placeholder="gemini-2.5-flash-preview-tts"
-          />
-        </Field>
-
-        <div className="mt-2 border-t border-slate-700/40 pt-2">
-          <p className="text-[10px] font-semibold text-slate-400">Microsoft Azure</p>
-        </div>
-        <Field label="API Key">
-          <input
-            className={inputClass}
-            type="password"
-            value={tts.microsoftApiKey ?? ''}
-            onChange={(e) => updateTextToSpeech({ microsoftApiKey: e.target.value })}
-            placeholder="Empty = reads AZURE_SPEECH_KEY from env"
-          />
-        </Field>
-        <Field label="Region">
-          <input
-            className={inputClass}
-            value={tts.microsoftRegion ?? ''}
-            onChange={(e) => updateTextToSpeech({ microsoftRegion: e.target.value })}
-            placeholder="eastus"
-          />
-        </Field>
-        <Field label="Default voice">
-          <input
-            className={inputClass}
-            value={tts.microsoftDefaultVoice ?? ''}
-            onChange={(e) => updateTextToSpeech({ microsoftDefaultVoice: e.target.value })}
-            placeholder="en-US-JennyNeural"
-          />
-        </Field>
-
-        <div className="mt-2 border-t border-slate-700/40 pt-2">
-          <p className="text-[10px] font-semibold text-slate-400">MiniMax</p>
-        </div>
-        <Field label="API Key">
-          <input
-            className={inputClass}
-            type="password"
-            value={tts.minimaxApiKey ?? ''}
-            onChange={(e) => updateTextToSpeech({ minimaxApiKey: e.target.value })}
-            placeholder="Empty = reads MINIMAX_API_KEY from env"
-          />
-        </Field>
-        <Field label="Group ID">
-          <input
-            className={inputClass}
-            value={tts.minimaxGroupId ?? ''}
-            onChange={(e) => updateTextToSpeech({ minimaxGroupId: e.target.value })}
-            placeholder="Empty = reads MINIMAX_GROUP_ID from env"
-          />
-        </Field>
-        <Field label="Default voice">
-          <input
-            className={inputClass}
-            value={tts.minimaxDefaultVoice ?? ''}
-            onChange={(e) => updateTextToSpeech({ minimaxDefaultVoice: e.target.value })}
-            placeholder="male-qn-qingse"
-          />
-        </Field>
-        <Field label="Default model">
-          <input
-            className={inputClass}
-            value={tts.minimaxDefaultModel ?? ''}
-            onChange={(e) => updateTextToSpeech({ minimaxDefaultModel: e.target.value })}
-            placeholder="speech-02-hd"
-          />
-        </Field>
-
-        <div className="mt-2 border-t border-slate-700/40 pt-2" />
-        <Field label="Skill">
-          <textarea
-            className={textareaClass}
-            rows={4}
-            value={tts.skill ?? ''}
-            onChange={(e) => updateTextToSpeech({ skill: e.target.value })}
-            placeholder="Markdown guidance for how the agent should use text_to_speech..."
-          />
-          <p className="mt-0.5 text-[9px] text-slate-600">
-            Injected into the system prompt to guide TTS usage.
-          </p>
-        </Field>
+        <SchemaForm
+          schema={textToSpeechToolConfigSchema}
+          value={tts}
+          onChange={updateTextToSpeech}
+        />
       </div>
     );
   }
@@ -676,61 +492,11 @@ export default function ToolsProperties({ nodeId, data }: Props) {
           </p>
         </div>
 
-        <Field label="Preferred provider">
-          <select
-            className={selectClass}
-            value={music.preferredProvider ?? ''}
-            onChange={(e) => updateMusicGenerate({ preferredProvider: e.target.value })}
-          >
-            <option value="">(first configured)</option>
-            <option value="google">Google Lyria</option>
-            <option value="minimax">MiniMax Music</option>
-          </select>
-        </Field>
-
-        <div className="mt-2 border-t border-slate-700/40 pt-2">
-          <p className="text-[10px] font-semibold text-slate-400">Google Lyria</p>
-          <p className="text-[9px] text-slate-600">
-            Reuses the Gemini API key from the image settings.
-          </p>
-        </div>
-        <Field label="Model">
-          <input
-            className={inputClass}
-            value={music.geminiModel ?? ''}
-            onChange={(e) => updateMusicGenerate({ geminiModel: e.target.value })}
-            placeholder="lyria-002 (default)"
-          />
-        </Field>
-
-        <div className="mt-2 border-t border-slate-700/40 pt-2">
-          <p className="text-[10px] font-semibold text-slate-400">MiniMax Music</p>
-          <p className="text-[9px] text-slate-600">
-            Reuses the MiniMax API key and group id from text_to_speech.
-          </p>
-        </div>
-        <Field label="Model">
-          <input
-            className={inputClass}
-            value={music.minimaxModel ?? ''}
-            onChange={(e) => updateMusicGenerate({ minimaxModel: e.target.value })}
-            placeholder="music-01 (default)"
-          />
-        </Field>
-
-        <div className="mt-2 border-t border-slate-700/40 pt-2" />
-        <Field label="Skill">
-          <textarea
-            className={textareaClass}
-            rows={4}
-            value={music.skill ?? ''}
-            onChange={(e) => updateMusicGenerate({ skill: e.target.value })}
-            placeholder="Markdown guidance for how the agent should use music_generate..."
-          />
-          <p className="mt-0.5 text-[9px] text-slate-600">
-            Injected into the system prompt to guide music generation usage.
-          </p>
-        </Field>
+        <SchemaForm
+          schema={musicGenerateToolConfigSchema}
+          value={music}
+          onChange={updateMusicGenerate}
+        />
       </div>
     );
   }
@@ -742,33 +508,14 @@ export default function ToolsProperties({ nodeId, data }: Props) {
     return (
       <div className="space-y-1">
         <PageHeader title="Sub-Agents" onBack={() => setPage('main')} />
-
-        <Field label="Sub-Agent Spawning">
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={data.subAgentSpawning}
-              onChange={(e) => update(nodeId, { subAgentSpawning: e.target.checked })}
-              className="rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500/30"
-            />
-            <span className="text-xs text-slate-300">Enable sub-agent spawning</span>
-          </label>
-        </Field>
-
-        {data.subAgentSpawning && (
-          <Field label="Max Sub-Agents">
-            <input
-              className={inputClass}
-              type="number"
-              min={1}
-              max={10}
-              value={data.maxSubAgents}
-              onChange={(e) =>
-                update(nodeId, { maxSubAgents: parseInt(e.target.value) || 3 })
-              }
-            />
-          </Field>
-        )}
+        <SchemaForm
+          schema={subAgentsToolConfigSchema}
+          value={{ subAgentSpawning: data.subAgentSpawning, maxSubAgents: data.maxSubAgents }}
+          onChange={(patch) => update(nodeId, patch)}
+          fieldOverrides={{
+            maxSubAgents: { hidden: !data.subAgentSpawning },
+          }}
+        />
       </div>
     );
   }
