@@ -5,7 +5,7 @@ import { buildProviderCatalogKey, useModelCatalogStore } from '../../store/model
 import { useSettingsStore } from '../../settings/settings-store';
 import type { ToolsNodeData, ToolProfile, ToolGroup } from '../../types/nodes';
 import { Field, inputClass, selectClass } from './shared';
-import { ALL_TOOL_NAMES, TOOL_GROUPS, TOOL_PROFILES } from '../../../shared/resolve-tool-names';
+import { ALL_TOOL_NAMES, TOOL_GROUPS, TOOL_PROFILES, canonicalizeToolName } from '../../../shared/resolve-tool-names';
 import { SchemaForm } from './schema-form/SchemaForm';
 import {
   canvaToolConfigSchema,
@@ -52,6 +52,8 @@ const TTS_DEFAULTS = {
   minimaxGroupId: '',
   minimaxDefaultVoice: '',
   minimaxDefaultModel: '',
+  openrouterVoice: '',
+  openrouterModel: '',
   skill: '',
 };
 
@@ -185,8 +187,17 @@ export default function ToolsProperties({ nodeId, data }: Props) {
   const toggleTool = (tool: string) => {
     // HITL tools are locked on unless "Dangerous Fully Auto" is enabled in Settings.
     if (HITL_TOOLS.has(tool) && !allowDisableHitl) return;
-    const tools = data.enabledTools.includes(tool)
-      ? data.enabledTools.filter((t) => t !== tool)
+    // A click counts as "present" if the saved list has either the
+    // canonical tool name or any of its aliases. Toggling off sweeps
+    // out every alias form so legacy aliases don't silently re-enable
+    // the tool on the next render.
+    const isPresent = data.enabledTools.some(
+      (saved) => saved === tool || canonicalizeToolName(saved) === tool,
+    );
+    const tools = isPresent
+      ? data.enabledTools.filter(
+          (saved) => saved !== tool && canonicalizeToolName(saved) !== tool,
+        )
       : [...data.enabledTools, tool];
     update(nodeId, { enabledTools: tools });
   };
@@ -625,6 +636,13 @@ export default function ToolsProperties({ nodeId, data }: Props) {
             {ALL_TOOL_NAMES.map((tool) => {
               const isHitl = HITL_TOOLS.has(tool);
               const locked = isHitl && !allowDisableHitl;
+              // Alias-aware "is this tool enabled" check: a saved
+              // `enabledTools` list may still contain a legacy alias
+              // (e.g. `bash`) from before aliases were hidden from the
+              // picker. Treat any alias of `tool` as the same tick.
+              const isChecked = data.enabledTools.some(
+                (saved) => saved === tool || canonicalizeToolName(saved) === tool,
+              );
               return (
                 <label
                   key={tool}
@@ -633,7 +651,7 @@ export default function ToolsProperties({ nodeId, data }: Props) {
                 >
                   <input
                     type="checkbox"
-                    checked={data.enabledTools.includes(tool)}
+                    checked={isChecked}
                     onChange={() => toggleTool(tool)}
                     disabled={locked}
                     className={`rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500/30 ${

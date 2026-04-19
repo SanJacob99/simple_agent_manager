@@ -387,6 +387,12 @@ export function resolveAgentConfig(
     minimaxDefaultModel: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.textToSpeech?.minimaxDefaultModel
       ? toolsNode.data.toolSettings.textToSpeech.minimaxDefaultModel
       : undefined,
+    openrouterTtsVoice: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.textToSpeech?.openrouterVoice
+      ? toolsNode.data.toolSettings.textToSpeech.openrouterVoice
+      : undefined,
+    openrouterTtsModel: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.textToSpeech?.openrouterModel
+      ? toolsNode.data.toolSettings.textToSpeech.openrouterModel
+      : undefined,
     musicPreferredProvider: (() => {
       if (toolsNode?.data.type !== 'tools') return undefined;
       const value = toolsNode.data.toolSettings?.musicGenerate?.preferredProvider;

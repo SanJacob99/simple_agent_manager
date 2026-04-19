@@ -2,6 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { Type, type TSchema } from '@sinclair/typebox';
 import type { AgentTool, AgentToolResult } from '@mariozechner/pi-agent-core';
+import { wrapPcmAsWav as wrapPcmAsWavBytes } from '../../../../shared/audio-format';
 
 const AUDIO_SUBDIR = 'audio';
 const DEFAULT_TIMEOUT_SEC = 60;
@@ -21,6 +22,19 @@ interface SpeakRequest {
   signal?: AbortSignal;
 }
 
+/**
+ * Raw-PCM providers populate this so the tool can wrap the bytes in a
+ * WAV header before shipping them to the chat drawer. Browsers can't
+ * play raw PCM via `<audio>` — there's no container, no sample rate,
+ * no bit depth — so an inline player would show "0:00" and refuse to
+ * start. See also `wrapPcmAsWav`.
+ */
+interface PcmSpec {
+  sampleRate: number;
+  channels: number;
+  bitsPerSample: number;
+}
+
 interface SpeakResult {
   audio: Buffer;
   mimeType: string;
@@ -28,6 +42,11 @@ interface SpeakResult {
   provider: string;
   model: string;
   voice: string;
+  /**
+   * Set only when `audio` holds raw PCM. Undefined for container formats
+   * (mp3/wav/ogg) — they're directly playable and don't need rewrapping.
+   */
+  pcm?: PcmSpec;
 }
 
 interface TtsProvider {
@@ -102,6 +121,8 @@ function createOpenAiTtsProvider(
         provider: 'openai',
         model,
         voice,
+        // OpenAI TTS PCM is 24 kHz, mono, 16-bit signed (per their docs).
+        pcm: format === 'pcm' ? { sampleRate: 24000, channels: 1, bitsPerSample: 16 } : undefined,
       };
     },
   };
@@ -152,6 +173,8 @@ function createElevenLabsProvider(
         provider: 'elevenlabs',
         model,
         voice,
+        // ElevenLabs PCM is `pcm_16000` — 16 kHz mono 16-bit signed.
+        pcm: format === 'pcm' ? { sampleRate: 16000, channels: 1, bitsPerSample: 16 } : undefined,
       };
     },
   };
@@ -220,6 +243,7 @@ function createGeminiTtsProvider(
           provider: 'google',
           model,
           voice,
+          pcm: { sampleRate, channels, bitsPerSample },
         };
       }
       const wav = wrapPcmAsWav(pcm, { sampleRate, channels, bitsPerSample });
@@ -247,28 +271,13 @@ function parseGoogleAudioMime(mime?: string): {
   return defaults;
 }
 
+// Thin Buffer-returning shim over the shared typed-array impl. Gemini's
+// provider code and the execute() PCM-wrap path both want a `Buffer`.
 function wrapPcmAsWav(
   pcm: Buffer,
   opts: { sampleRate: number; channels: number; bitsPerSample: number },
 ): Buffer {
-  const { sampleRate, channels, bitsPerSample } = opts;
-  const byteRate = (sampleRate * channels * bitsPerSample) / 8;
-  const blockAlign = (channels * bitsPerSample) / 8;
-  const header = Buffer.alloc(44);
-  header.write('RIFF', 0);
-  header.writeUInt32LE(36 + pcm.length, 4);
-  header.write('WAVE', 8);
-  header.write('fmt ', 12);
-  header.writeUInt32LE(16, 16);
-  header.writeUInt16LE(1, 20);
-  header.writeUInt16LE(channels, 22);
-  header.writeUInt32LE(sampleRate, 24);
-  header.writeUInt32LE(byteRate, 28);
-  header.writeUInt16LE(blockAlign, 32);
-  header.writeUInt16LE(bitsPerSample, 34);
-  header.write('data', 36);
-  header.writeUInt32LE(pcm.length, 40);
-  return Buffer.concat([header, pcm]);
+  return Buffer.from(wrapPcmAsWavBytes(pcm, opts));
 }
 
 // ---------------------------------------------------------------------------
@@ -335,6 +344,100 @@ function escapeXml(input: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// OpenRouter
+//
+// OpenRouter does NOT have a dedicated TTS endpoint — audio output is
+// produced by passing an audio-capable chat model (e.g.
+// `openai/gpt-4o-audio-preview`) with `modalities: ["text", "audio"]` and
+// `stream: true`. The response is an SSE stream whose `delta.audio.data`
+// fields carry base64 chunks that we concatenate into a single buffer.
+// We instruct the model to speak the user text verbatim; that keeps the
+// behaviour comparable to a real TTS endpoint for most inputs.
+// ---------------------------------------------------------------------------
+
+function createOpenRouterTtsProvider(
+  apiKey: string,
+  opts: { defaultModel?: string; defaultVoice?: string },
+): TtsProvider {
+  const defaultModel = opts.defaultModel || 'openai/gpt-4o-audio-preview';
+  const defaultVoice = opts.defaultVoice || 'alloy';
+  return {
+    id: 'openrouter',
+    name: 'OpenRouter',
+    defaultModel,
+    defaultVoice,
+    // gpt-4o-audio-preview supports these; other audio-capable models may
+    // diverge. We accept the intersection and let the server reject the rest.
+    supportedFormats: ['mp3', 'wav', 'pcm', 'ogg'],
+    async speak(req) {
+      const model = req.model || defaultModel;
+      const voice = req.voice || defaultVoice;
+      const format = req.format || 'mp3';
+      const wireFormat =
+        format === 'pcm' ? 'pcm16' : format === 'ogg' ? 'opus' : format;
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          modalities: ['text', 'audio'],
+          audio: { voice, format: wireFormat },
+          stream: true,
+          messages: [
+            {
+              role: 'user',
+              content:
+                'Speak the following text verbatim, with no additions, ' +
+                'commentary, translation, or paraphrasing:\n\n' +
+                req.text,
+            },
+          ],
+        }),
+        signal: req.signal,
+      });
+      if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        throw new Error(`OpenRouter TTS error ${response.status}: ${text.slice(0, 300)}`);
+      }
+      const raw = await response.text();
+      const chunks: Buffer[] = [];
+      for (const line of raw.split(/\r?\n/)) {
+        if (!line.startsWith('data:')) continue;
+        const payload = line.slice(5).trim();
+        if (!payload || payload === '[DONE]') continue;
+        let json: any;
+        try {
+          json = JSON.parse(payload);
+        } catch {
+          continue;
+        }
+        const data = json?.choices?.[0]?.delta?.audio?.data;
+        if (typeof data === 'string' && data.length > 0) {
+          chunks.push(Buffer.from(data, 'base64'));
+        }
+      }
+      if (chunks.length === 0) {
+        throw new Error('OpenRouter TTS returned no audio payload');
+      }
+      return {
+        audio: Buffer.concat(chunks),
+        mimeType: mimeFor(format),
+        extension: extFor(format),
+        provider: 'openrouter',
+        model,
+        voice,
+        // gpt-4o-audio-preview (the default audio model) emits pcm16
+        // at 24 kHz mono — matches OpenAI's native TTS endpoint.
+        pcm: format === 'pcm' ? { sampleRate: 24000, channels: 1, bitsPerSample: 16 } : undefined,
+      };
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // MiniMax
 // ---------------------------------------------------------------------------
 
@@ -395,6 +498,8 @@ function createMiniMaxProvider(
         provider: 'minimax',
         model,
         voice,
+        // MiniMax we configure at 32 kHz, mono, 16-bit signed (audio_setting above).
+        pcm: format === 'pcm' ? { sampleRate: 32000, channels: 1, bitsPerSample: 16 } : undefined,
       };
     },
   };
@@ -411,7 +516,8 @@ export interface TextToSpeechContext {
     | 'elevenlabs'
     | 'google'
     | 'microsoft'
-    | 'minimax';
+    | 'minimax'
+    | 'openrouter';
   openaiApiKey?: string;
   openaiDefaultVoice?: string;
   openaiDefaultModel?: string;
@@ -428,9 +534,13 @@ export interface TextToSpeechContext {
   minimaxGroupId?: string;
   minimaxDefaultVoice?: string;
   minimaxDefaultModel?: string;
+  /** Lazy resolver for the OpenRouter key — called at tool execution time. */
+  getOpenrouterApiKey?: () => Promise<string | undefined> | string | undefined;
+  openrouterDefaultVoice?: string;
+  openrouterDefaultModel?: string;
 }
 
-function resolveProviders(ctx: TextToSpeechContext): TtsProvider[] {
+async function resolveProviders(ctx: TextToSpeechContext): Promise<TtsProvider[]> {
   const providers: TtsProvider[] = [];
   if (ctx.openaiApiKey) {
     providers.push(
@@ -473,6 +583,17 @@ function resolveProviders(ctx: TextToSpeechContext): TtsProvider[] {
       }),
     );
   }
+  const openrouterApiKey = ctx.getOpenrouterApiKey
+    ? await ctx.getOpenrouterApiKey()
+    : undefined;
+  if (openrouterApiKey) {
+    providers.push(
+      createOpenRouterTtsProvider(openrouterApiKey, {
+        defaultModel: ctx.openrouterDefaultModel,
+        defaultVoice: ctx.openrouterDefaultVoice,
+      }),
+    );
+  }
 
   if (ctx.preferredProvider) {
     providers.sort((a, b) => {
@@ -486,7 +607,7 @@ function resolveProviders(ctx: TextToSpeechContext): TtsProvider[] {
 
 function formatProviderList(providers: TtsProvider[]): string {
   if (providers.length === 0) {
-    return 'No TTS providers configured. Set an API key for OpenAI, ElevenLabs, Google Gemini, Microsoft Azure, or MiniMax.';
+    return 'No TTS providers configured. Set an API key for OpenAI, ElevenLabs, Google Gemini, Microsoft Azure, MiniMax, or OpenRouter.';
   }
   const lines = ['Available text-to-speech providers:'];
   for (const p of providers) {
@@ -497,7 +618,33 @@ function formatProviderList(providers: TtsProvider[]): string {
   return lines.join('\n');
 }
 
-function textResult(text: string): AgentToolResult<undefined> {
+/**
+ * Structured payload the chat drawer reads to render an audio player
+ * under the tool-result bubble. Kept out of `content` because
+ * `AgentToolResult.content` is typed as `(TextContent | ImageContent)[]`
+ * in `pi-agent-core`; the model doesn't need the audio bytes anyway —
+ * it only needs the text summary describing what was produced.
+ */
+export interface TtsAudioDetails {
+  audio: {
+    /** e.g. 'audio/mpeg', 'audio/wav'. */
+    mimeType: string;
+    /** Base64-encoded audio bytes. */
+    data: string;
+    /** File path relative to the workspace. */
+    path: string;
+    /** Human-friendly filename suggested for download. */
+    filename: string;
+    /** Synthesis provider id that produced the clip. */
+    provider: string;
+    /** The raw text that was spoken — shown as a caption. */
+    transcript: string;
+  };
+}
+
+export type TtsToolResult = AgentToolResult<TtsAudioDetails | undefined>;
+
+function textResult(text: string): TtsToolResult {
   return { content: [{ type: 'text', text }], details: undefined };
 }
 
@@ -512,7 +659,7 @@ function pickProvider(
 ): TtsProvider {
   if (providers.length === 0) {
     throw new Error(
-      'No TTS providers configured. Set OPENAI_API_KEY, ELEVENLABS_API_KEY, GEMINI_API_KEY, AZURE_SPEECH_KEY + AZURE_SPEECH_REGION, or MINIMAX_API_KEY.',
+      'No TTS providers configured. Set OPENAI_API_KEY, ELEVENLABS_API_KEY, GEMINI_API_KEY, AZURE_SPEECH_KEY + AZURE_SPEECH_REGION, MINIMAX_API_KEY, or an OpenRouter API key.',
     );
   }
   if (!requested) return providers[0];
@@ -536,8 +683,8 @@ function truncateForSummary(text: string, max = 80): string {
 
 const DESCRIPTION = [
   'Convert outbound reply text into spoken audio using ElevenLabs, Google Gemini,',
-  'Microsoft Azure, MiniMax, or OpenAI. Writes the audio file to the workspace',
-  `under "${AUDIO_SUBDIR}/" and returns its path so the user can play it.`,
+  'Microsoft Azure, MiniMax, OpenAI, or OpenRouter. Writes the audio file to the',
+  `workspace under "${AUDIO_SUBDIR}/" and returns its path so the user can play it.`,
   '',
   'Actions:',
   '  speak — synthesize audio. Params: text, provider?, voice?, model?, format?, filename?',
@@ -566,7 +713,7 @@ export function createTextToSpeechTool(ctx: TextToSpeechContext): AgentTool<TSch
       provider: Type.Optional(
         Type.String({
           description:
-            'openai | elevenlabs | google | microsoft | minimax. Defaults to the preferred provider.',
+            'openai | elevenlabs | google | microsoft | minimax | openrouter. Defaults to the preferred provider.',
         }),
       ),
       voice: Type.Optional(
@@ -587,7 +734,7 @@ export function createTextToSpeechTool(ctx: TextToSpeechContext): AgentTool<TSch
     execute: async (_toolCallId, params: any, signal) => {
       const action = (params.action as string) || 'speak';
 
-      const providers = resolveProviders(ctx);
+      const providers = await resolveProviders(ctx);
 
       if (action === 'list') {
         return textResult(formatProviderList(providers));
@@ -655,9 +802,37 @@ export function createTextToSpeechTool(ctx: TextToSpeechContext): AgentTool<TSch
           `(model: ${result.model}, voice: ${result.voice}, format: ${result.extension}).`,
         `Saved to: ${relPath}`,
         `Preview text: "${truncateForSummary(text)}"`,
+        'Audio attached below — the user can play it inline in the chat drawer.',
       ].join('\n');
 
-      return textResult(summary);
+      // Raw PCM has no container, so `<audio>` in the chat drawer can't
+      // decode it (no sample rate / channels / bit-depth info). When the
+      // result is PCM, wrap it in a WAV header for the UI payload only.
+      // The file on disk stays as the originally-requested `.pcm` so
+      // external consumers still get what they asked for.
+      const uiAudio =
+        result.pcm !== undefined
+          ? {
+              bytes: wrapPcmAsWav(result.audio, result.pcm),
+              mimeType: 'audio/wav',
+            }
+          : { bytes: result.audio, mimeType: result.mimeType };
+
+      const details: TtsAudioDetails = {
+        audio: {
+          mimeType: uiAudio.mimeType,
+          data: uiAudio.bytes.toString('base64'),
+          path: relPath,
+          filename: path.basename(outputPath),
+          provider: result.provider,
+          transcript: text,
+        },
+      };
+
+      return {
+        content: [{ type: 'text', text: summary }],
+        details,
+      } satisfies TtsToolResult;
     },
   };
 }

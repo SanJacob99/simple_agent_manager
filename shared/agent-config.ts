@@ -155,7 +155,13 @@ export interface AgentConfig {
   canvaPortRangeEnd?: number;
 
   /** Preferred default TTS provider. */
-  ttsPreferredProvider?: 'openai' | 'elevenlabs' | 'google' | 'microsoft' | 'minimax';
+  ttsPreferredProvider?:
+    | 'openai'
+    | 'elevenlabs'
+    | 'google'
+    | 'microsoft'
+    | 'minimax'
+    | 'openrouter';
   /** ElevenLabs API key for text_to_speech. */
   elevenLabsApiKey?: string;
   elevenLabsDefaultVoice?: string;
@@ -175,6 +181,9 @@ export interface AgentConfig {
   minimaxGroupId?: string;
   minimaxDefaultVoice?: string;
   minimaxDefaultModel?: string;
+  /** Override default OpenRouter TTS voice/model (OpenRouter key resolves lazily from ApiKeyStore). */
+  openrouterTtsVoice?: string;
+  openrouterTtsModel?: string;
 
   /** Preferred default music generation provider. */
   musicPreferredProvider?: 'google' | 'minimax';

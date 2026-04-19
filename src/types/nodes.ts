@@ -138,7 +138,8 @@ export type TtsProviderId =
   | 'elevenlabs'
   | 'google'
   | 'microsoft'
-  | 'minimax';
+  | 'minimax'
+  | 'openrouter';
 
 export interface TextToSpeechToolSettings {
   /** Preferred default provider. Empty = first configured. */
@@ -162,6 +163,13 @@ export interface TextToSpeechToolSettings {
   minimaxGroupId: string;
   minimaxDefaultVoice: string;
   minimaxDefaultModel: string;
+  /**
+   * OpenRouter audio output. Uses the OpenRouter API key from the global
+   * API key store; voice/model only override the defaults of whichever
+   * audio-capable model is selected.
+   */
+  openrouterVoice: string;
+  openrouterModel: string;
   /** Markdown guidance injected into the system prompt for this tool */
   skill: string;
 }

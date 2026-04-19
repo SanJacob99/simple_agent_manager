@@ -92,6 +92,8 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
             minimaxGroupId: '',
             minimaxDefaultVoice: '',
             minimaxDefaultModel: '',
+            openrouterVoice: '',
+            openrouterModel: '',
             skill: '',
           },
           musicGenerate: {

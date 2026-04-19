@@ -1,7 +1,16 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentRuntime } from './agent-runtime';
 import { log } from '../logger';
 import type { AgentConfig } from '../../shared/agent-config';
+import {
+  DEFAULT_CONFIRMATION_POLICY,
+  DEFAULT_SAFETY_SETTINGS,
+} from '../storage/settings-file-store';
+import { initializeToolRegistry } from '../tools/tool-registry';
+
+beforeAll(async () => {
+  await initializeToolRegistry();
+});
 
 vi.mock('../logger');
 
@@ -11,14 +20,14 @@ const abortMock = vi.fn();
 
 // Captures the onPayload callback passed to Agent constructor so tests can invoke it directly.
 let capturedOnPayload: ((payload: any) => void) | undefined;
+// Captures the system prompt passed to Agent's initialState, so tests can
+// assert on the resolved prompt (policy substitutions, workspace section,
+// etc).
+let capturedSystemPrompt: string | undefined;
 
 vi.mock('@mariozechner/pi-agent-core', () => {
   class MockAgent {
-    state = {
-      systemPrompt: 'Test prompt',
-      model: { id: 'gpt-4' },
-      messages: [],
-    };
+    state: { systemPrompt: string; model: { id: string }; messages: unknown[] };
 
     prompt = promptMock;
     subscribe = subscribeMock;
@@ -28,6 +37,13 @@ vi.mock('@mariozechner/pi-agent-core', () => {
       if (options?.onPayload) {
         capturedOnPayload = options.onPayload;
       }
+      const systemPrompt = options?.initialState?.systemPrompt ?? 'Test prompt';
+      capturedSystemPrompt = systemPrompt;
+      this.state = {
+        systemPrompt,
+        model: { id: 'gpt-4' },
+        messages: [],
+      };
     }
   }
 
@@ -233,5 +249,139 @@ describe('summarizePayload behavior via onPayload', () => {
       'pi-ai Request Payload',
       'model=gpt-4 | messages=1 | tools=0 | last_user=No tools here',
     );
+  });
+});
+
+describe('confirmation policy classification substitution', () => {
+  beforeEach(() => {
+    promptMock.mockReset();
+    subscribeMock.mockClear();
+    abortMock.mockClear();
+    capturedOnPayload = undefined;
+    capturedSystemPrompt = undefined;
+    vi.mocked(log).mockClear();
+  });
+
+  it('fills the three placeholders with the enabled tools grouped by class', () => {
+    new AgentRuntime(
+      makeConfig({
+        tools: {
+          profile: 'custom',
+          enabledGroups: [],
+          resolvedTools: [
+            'calculator',
+            'web_search',
+            'write_file',
+            'image_generate',
+            'exec',
+          ],
+          plugins: [],
+          skills: [],
+          subAgentSpawning: false,
+          maxSubAgents: 0,
+        } as any,
+      }),
+      () => 'sk-test',
+    );
+
+    expect(capturedSystemPrompt).toBeDefined();
+    const prompt = capturedSystemPrompt!;
+    // ask_user + confirm_action get auto-added by the HITL safety
+    // enforcement, which is what triggers the policy in the first place.
+    expect(prompt).toContain('## Confirmation policy');
+
+    // Read-only bucket: tools listed, ask_user / confirm_action omitted.
+    expect(prompt).toMatch(/Read-only tools: [^\n]*`calculator`[^\n]*`web_search`/);
+    expect(prompt).not.toMatch(/Read-only tools:[^\n]*`ask_user`/);
+    expect(prompt).not.toMatch(/Read-only tools:[^\n]*`confirm_action`/);
+
+    // State-mutating bucket.
+    expect(prompt).toMatch(/State-mutating tools: [^\n]*`write_file`[^\n]*`image_generate`/);
+
+    // Destructive bucket.
+    expect(prompt).toMatch(/Destructive tools: [^\n]*`exec`/);
+
+    // Ensure every placeholder was actually expanded.
+    expect(prompt).not.toContain('{{READ_ONLY_TOOLS}}');
+    expect(prompt).not.toContain('{{STATE_MUTATING_TOOLS}}');
+    expect(prompt).not.toContain('{{DESTRUCTIVE_TOOLS}}');
+  });
+
+  it('renders "(none enabled)" for empty classes', () => {
+    new AgentRuntime(
+      makeConfig({
+        tools: {
+          profile: 'custom',
+          enabledGroups: [],
+          resolvedTools: ['write_file'],
+          plugins: [],
+          skills: [],
+          subAgentSpawning: false,
+          maxSubAgents: 0,
+        } as any,
+      }),
+      () => 'sk-test',
+    );
+
+    expect(capturedSystemPrompt).toBeDefined();
+    const prompt = capturedSystemPrompt!;
+    expect(prompt).toMatch(/Read-only tools: \(none enabled\)/);
+    expect(prompt).toMatch(/State-mutating tools: [^\n]*`write_file`/);
+    expect(prompt).toMatch(/Destructive tools: \(none enabled\)/);
+  });
+
+  it('leaves a custom policy without placeholders untouched', () => {
+    const customPolicy = '## My custom policy\n\nAlways confirm. No exceptions.';
+    new AgentRuntime(
+      makeConfig({
+        tools: {
+          profile: 'custom',
+          enabledGroups: [],
+          resolvedTools: ['calculator'],
+          plugins: [],
+          skills: [],
+          subAgentSpawning: false,
+          maxSubAgents: 0,
+        } as any,
+      }),
+      () => 'sk-test',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        ...DEFAULT_SAFETY_SETTINGS,
+        confirmationPolicy: customPolicy,
+      },
+    );
+
+    expect(capturedSystemPrompt).toBeDefined();
+    expect(capturedSystemPrompt).toContain(customPolicy);
+    expect(capturedSystemPrompt).not.toContain('{{READ_ONLY_TOOLS}}');
+  });
+
+  it('does not append the policy when no HITL tool is enabled', () => {
+    new AgentRuntime(
+      makeConfig({
+        tools: {
+          profile: 'custom',
+          enabledGroups: [],
+          resolvedTools: ['calculator'],
+          plugins: [],
+          skills: [],
+          subAgentSpawning: false,
+          maxSubAgents: 0,
+        } as any,
+      }),
+      () => 'sk-test',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { allowDisableHitl: true, confirmationPolicy: DEFAULT_CONFIRMATION_POLICY },
+    );
+
+    expect(capturedSystemPrompt).toBeDefined();
+    expect(capturedSystemPrompt).not.toContain('## Confirmation policy');
   });
 });

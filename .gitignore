@@ -13,3 +13,10 @@ settings.json
 provider-catalog*
 notes/
 C:/rojects/simple_agent_manager/storage
+
+# User-installed tools — loaded at runtime via filesystem scan.
+# See docs/concepts/user-tools-plan.md. Remove this line to commit a
+# shared team library of tools to the repo.
+server/tools/user/
+
+audio/

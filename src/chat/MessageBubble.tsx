@@ -1,18 +1,91 @@
-import { memo, useCallback, useEffect, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import { AlertTriangle, Brain, ChevronDown, Trash2, Wrench } from 'lucide-react';
-import type { Message } from '../store/session-store';
+import type { Message, MessageAudio } from '../store/session-store';
 import StreamingText from './StreamingText';
 import StreamingMarkdownRenderer from './StreamingMarkdownRenderer';
 import { markdownComponents } from './markdown-components';
 import { useSettingsStore } from '../settings/settings-store';
+import {
+  isPcmMimeType,
+  pcmParamsForProvider,
+  wrapPcmAsWav,
+} from '../../shared/audio-format';
 
 function formatTokenBadge(count: number): string {
   if (count >= 1000) return `${(count / 1000).toFixed(1)}K`;
   return count.toString();
+}
+
+/**
+ * Renders a single inline audio clip from a tool result. Raw PCM
+ * payloads (mime `audio/L16` etc.) are wrapped in a WAV header on the
+ * fly for retrocompat with old transcripts that predate the server-side
+ * wrap; everything else is played as-is via a Blob URL.
+ */
+function AudioAttachment({ audio, label }: { audio: MessageAudio; label: string }) {
+  const blobUrl = useMemo(() => {
+    try {
+      const binary = atob(audio.data);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+
+      let payload: Uint8Array = bytes;
+      let mime = audio.mimeType;
+      if (isPcmMimeType(mime)) {
+        payload = wrapPcmAsWav(bytes, pcmParamsForProvider(audio.provider));
+        mime = 'audio/wav';
+      }
+
+      const blob = new Blob([payload], { type: mime });
+      return URL.createObjectURL(blob);
+    } catch {
+      return null;
+    }
+  }, [audio.data, audio.mimeType, audio.provider]);
+
+  useEffect(() => {
+    return () => {
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+    };
+  }, [blobUrl]);
+
+  if (!blobUrl) {
+    return (
+      <div className="text-[10px] text-amber-400 font-mono">
+        {label}: failed to decode audio payload
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <audio controls preload="auto" className="w-full" src={blobUrl}>
+        Your browser does not support inline audio playback.
+      </audio>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[9px] text-slate-400 font-mono">
+        {audio.filename && <span>{audio.filename}</span>}
+        {audio.provider && <span className="text-slate-500">via {audio.provider}</span>}
+        <a
+          href={blobUrl}
+          download={audio.filename ?? 'audio-clip'}
+          className="text-blue-400 hover:text-blue-300 underline"
+        >
+          download
+        </a>
+      </div>
+      {audio.transcript && (
+        <div className="text-[10px] leading-snug text-slate-400 italic">
+          "{audio.transcript.length > 160
+            ? audio.transcript.slice(0, 160).trimEnd() + '…'
+            : audio.transcript}"
+        </div>
+      )}
+    </div>
+  );
 }
 
 interface MessageBubbleProps {
@@ -121,6 +194,17 @@ function MessageBubble({
                     src={`data:${img.mimeType};base64,${img.data}`}
                     alt={`${msg.toolName ?? 'tool'} output ${i + 1}`}
                     className="max-w-full max-h-96 rounded border border-slate-700/50 object-contain"
+                  />
+                ))}
+              </div>
+            )}
+            {msg.audios && msg.audios.length > 0 && (
+              <div className={`border-t ${borderColor} px-3 py-2 flex flex-col gap-2`}>
+                {msg.audios.map((audio, i) => (
+                  <AudioAttachment
+                    key={i}
+                    audio={audio}
+                    label={`${msg.toolName ?? 'tool'} output ${i + 1}`}
                   />
                 ))}
               </div>

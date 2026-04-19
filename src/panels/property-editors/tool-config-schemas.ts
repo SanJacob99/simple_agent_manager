@@ -163,6 +163,7 @@ export const textToSpeechToolConfigSchema: ObjectSchema<TextToSpeechToolSettings
         { value: 'google', label: 'Google Gemini' },
         { value: 'microsoft', label: 'Microsoft Azure' },
         { value: 'minimax', label: 'MiniMax' },
+        { value: 'openrouter', label: 'OpenRouter' },
       ],
     },
     elevenLabsApiKey: {
@@ -238,6 +239,16 @@ export const textToSpeechToolConfigSchema: ObjectSchema<TextToSpeechToolSettings
       title: 'Default model',
       placeholder: 'speech-02-hd',
     },
+    openrouterVoice: {
+      type: 'string',
+      title: 'Voice',
+      placeholder: 'alloy, echo, fable, onyx, nova, shimmer',
+    },
+    openrouterModel: {
+      type: 'string',
+      title: 'Model',
+      placeholder: 'openai/gpt-4o-audio-preview',
+    },
     skill: {
       type: 'string',
       format: 'textarea',
@@ -260,6 +271,12 @@ export const textToSpeechToolConfigSchema: ObjectSchema<TextToSpeechToolSettings
     },
     { title: 'Microsoft Azure', startAt: 'microsoftApiKey' },
     { title: 'MiniMax', startAt: 'minimaxApiKey' },
+    {
+      title: 'OpenRouter',
+      description:
+        'Uses the OpenRouter key from the global API keys. Audio output is produced by an audio-capable chat model (e.g. gpt-4o-audio-preview).',
+      startAt: 'openrouterVoice',
+    },
   ],
 };
 

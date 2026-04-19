@@ -13,6 +13,7 @@ import { resolveProviderStreamFn } from '../providers/stream-resolver';
 import { MemoryEngine } from './memory-engine';
 import { ContextEngine } from './context-engine';
 import { resolveToolNames, createAgentTools } from '../tools/tool-factory';
+import { groupToolsByClassification } from '../tools/tool-registry';
 import { resolveRuntimeModel } from './model-resolver';
 import { isToolErrorDetails } from '../tools/tool-adapter';
 import { log } from '../logger';
@@ -27,6 +28,27 @@ export type RuntimeEvent =
   | { type: 'memory_compaction'; summary: string };
 
 export type RuntimeEventListener = (event: RuntimeEvent) => void;
+
+/**
+ * Substitute `{{READ_ONLY_TOOLS}}` / `{{STATE_MUTATING_TOOLS}}` /
+ * `{{DESTRUCTIVE_TOOLS}}` in the confirmation policy with the enabled
+ * tools in each class. Unclassified tools (session tools, stubs,
+ * plugin-supplied) are folded into the state-mutating list because the
+ * policy treats them as the safe default.
+ */
+function fillConfirmationPolicyPlaceholders(
+  policy: string,
+  toolNames: string[],
+): string {
+  const { readOnly, stateMutating, destructive, unclassified } =
+    groupToolsByClassification(toolNames);
+  const fmt = (names: string[]): string =>
+    names.length === 0 ? '(none enabled)' : names.map((n) => `\`${n}\``).join(', ');
+  return policy
+    .replace('{{READ_ONLY_TOOLS}}', fmt(readOnly))
+    .replace('{{STATE_MUTATING_TOOLS}}', fmt([...stateMutating, ...unclassified]))
+    .replace('{{DESTRUCTIVE_TOOLS}}', fmt(destructive));
+}
 
 function summarizePayload(payload: any): string {
   const model: string = payload.model ?? 'unknown';
@@ -126,12 +148,9 @@ export class AgentRuntime {
       if (!toolNames.includes('confirm_action')) toolNames.push('confirm_action');
     }
     const workspaceCwd = config.workspacePath ?? process.cwd();
-    const xaiApiKey = config.xaiApiKey || process.env.XAI_API_KEY;
-    const tavilyApiKey = config.tavilyApiKey || process.env.TAVILY_API_KEY;
-    const openaiApiKey = config.openaiApiKey || process.env.OPENAI_API_KEY;
-    const geminiApiKey = config.geminiApiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
     // OpenRouter key is resolved lazily — the ApiKeyStore (populated via config:setApiKeys)
-    // is the primary source; env var is a fallback.
+    // is the primary source; env var is a fallback. All other API-key env
+    // fallbacks now live inside the relevant tool module's resolveContext.
     const getOpenrouterApiKey = async () => {
       const fromStore = await getApiKey('openrouter');
       return fromStore || process.env.OPENROUTER_API_KEY;
@@ -157,33 +176,7 @@ export class AgentRuntime {
       {
         cwd: workspaceCwd,
         sandboxWorkdir: config.sandboxWorkdir,
-        xaiApiKey,
-        xaiModel: config.xaiModel,
-        tavilyApiKey,
-        openaiApiKey,
-        geminiApiKey,
         getOpenrouterApiKey,
-        imageModel: config.imageModel,
-        canvaPortRangeStart: config.canvaPortRangeStart,
-        canvaPortRangeEnd: config.canvaPortRangeEnd,
-        ttsPreferredProvider: config.ttsPreferredProvider,
-        elevenLabsApiKey: config.elevenLabsApiKey || process.env.ELEVENLABS_API_KEY,
-        elevenLabsDefaultVoice: config.elevenLabsDefaultVoice,
-        elevenLabsDefaultModel: config.elevenLabsDefaultModel,
-        openaiTtsVoice: config.openaiTtsVoice,
-        openaiTtsModel: config.openaiTtsModel,
-        geminiTtsVoice: config.geminiTtsVoice,
-        geminiTtsModel: config.geminiTtsModel,
-        microsoftTtsApiKey: config.microsoftTtsApiKey || process.env.AZURE_SPEECH_KEY,
-        microsoftTtsRegion: config.microsoftTtsRegion || process.env.AZURE_SPEECH_REGION,
-        microsoftTtsVoice: config.microsoftTtsVoice,
-        minimaxApiKey: config.minimaxApiKey || process.env.MINIMAX_API_KEY,
-        minimaxGroupId: config.minimaxGroupId || process.env.MINIMAX_GROUP_ID,
-        minimaxDefaultVoice: config.minimaxDefaultVoice,
-        minimaxDefaultModel: config.minimaxDefaultModel,
-        musicPreferredProvider: config.musicPreferredProvider,
-        geminiMusicModel: config.geminiMusicModel,
-        minimaxMusicModel: config.minimaxMusicModel,
         modelId: config.modelId,
         hitl: hitlContext,
         agentConfig: config,
@@ -206,10 +199,16 @@ export class AgentRuntime {
     // the resolved tool list. Teaches the model WHEN to call `confirm_action`
     // / `ask_user` and enforces the one-tool-call-per-confirm-turn rule that
     // keeps parallel-tool-calling providers from bypassing the gate.
+    //
+    // The policy template may contain `{{READ_ONLY_TOOLS}}`,
+    // `{{STATE_MUTATING_TOOLS}}`, `{{DESTRUCTIVE_TOOLS}}` placeholders;
+    // each is replaced with a comma-separated list of enabled tools in
+    // that safety class. A user who strips the placeholders from their
+    // custom policy still gets a working (but non-class-aware) policy.
     const hasHitlTool = toolNames.includes('confirm_action') || toolNames.includes('ask_user');
     const policy = this.safetySettings.confirmationPolicy?.trim();
     if (hasHitlTool && policy) {
-      systemPrompt += `\n\n${policy}`;
+      systemPrompt += `\n\n${fillConfirmationPolicyPlaceholders(policy, toolNames)}`;
     }
 
     const plugin = this.pluginRegistry?.get(config.provider.pluginId);

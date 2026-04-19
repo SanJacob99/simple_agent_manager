@@ -14,6 +14,7 @@ import { createStartupErrorHandler } from './startup';
 import { ProviderPluginRegistry } from './providers/plugin-registry';
 import { ProviderCatalogCache, type ProviderCatalogRequest } from './providers/catalog-cache';
 import { loadProviderPlugins } from './providers/provider-loader';
+import { initializeToolRegistry, TOOL_MODULES } from './tools/tool-registry';
 import { resolveProviderRuntimeAuth } from './providers/provider-auth';
 import { SettingsFileStore, DEFAULT_SAFETY_SETTINGS, type SafetySettings } from './storage/settings-file-store';
 import path from 'path';
@@ -611,19 +612,34 @@ loadProviderPlugins(
   console.error('[Providers] Failed to load plugins:', err);
 });
 
-httpServer.listen(PORT, () => {
-  httpServer.off('error', handleStartupError);
-  wss.off('error', handleStartupError);
-  console.log(`Server listening on http://localhost:${PORT}`);
-  console.log(`WebSocket available at ws://localhost:${PORT}/ws`);
+// Discover tool modules BEFORE the HTTP listener accepts connections.
+// Filesystem-scan-driven: every `*.module.ts` / `*.module.js` under
+// `server/tools/builtins/` is auto-registered. Extra directories (user
+// tools under `server/tools/user/`, or wherever `SAM_USER_TOOLS_DIR`
+// points) will plug in here once the user-tools loader is wired — see
+// `docs/concepts/user-tools-plan.md`. We block startup so the first
+// agent build can never race against an empty registry.
+initializeToolRegistry()
+  .then(() => {
+    console.log(`[Tools] ${TOOL_MODULES.length} tool module(s) discovered.`);
+    httpServer.listen(PORT, () => {
+      httpServer.off('error', handleStartupError);
+      wss.off('error', handleStartupError);
+      console.log(`Server listening on http://localhost:${PORT}`);
+      console.log(`WebSocket available at ws://localhost:${PORT}/ws`);
 
-  // --- backend_start hook (global) ---
-  const globalRegistry = getGlobalHookRegistry();
-  const startCtx: BackendLifecycleContext = { phase: 'start', timestamp: Date.now() };
-  globalRegistry.invoke(HOOK_NAMES.BACKEND_START, startCtx).catch((err) => {
-    console.error('[Server] backend_start hook error:', err);
+      // --- backend_start hook (global) ---
+      const globalRegistry = getGlobalHookRegistry();
+      const startCtx: BackendLifecycleContext = { phase: 'start', timestamp: Date.now() };
+      globalRegistry.invoke(HOOK_NAMES.BACKEND_START, startCtx).catch((err) => {
+        console.error('[Server] backend_start hook error:', err);
+      });
+    });
+  })
+  .catch((err) => {
+    console.error('[Tools] Failed to initialize tool registry — aborting startup:', err);
+    process.exit(1);
   });
-});
 
 // --- Graceful shutdown ---
 
