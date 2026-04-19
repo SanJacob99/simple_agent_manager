@@ -1,5 +1,6 @@
 import { Type, type TSchema } from '@sinclair/typebox';
 import type { AgentTool, AgentToolResult } from '@mariozechner/pi-agent-core';
+import dns from 'dns';
 
 function textResult(text: string): AgentToolResult<undefined> {
   return { content: [{ type: 'text', text }], details: undefined };
@@ -78,6 +79,52 @@ export function createWebFetchTool(): AgentTool<TSchema> {
           return textResult('Error: Access to internal or restricted hosts is not permitted.');
         }
 
+        // Perform DNS lookup and check resolved IP
+        try {
+          // Use { all: true } to check ALL records returned by DNS to prevent multiple-A-record bypass
+          const records = await dns.promises.lookup(hostname, { all: true });
+          let selectedSafeIp: string | null = null;
+
+          for (const record of records) {
+            const address = record.address;
+            const isRestrictedV4 =
+              address === '127.0.0.1' ||
+              address === '0.0.0.0' ||
+              address === '169.254.169.254' ||
+              address.startsWith('10.') ||
+              address.startsWith('192.168.') ||
+              address.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\./) || // 172.16.0.0/12
+              address.match(/^127\./) || // 127.0.0.0/8
+              address.match(/^169\.254\./); // 169.254.0.0/16
+
+            const isRestrictedV6 =
+              address === '::1' ||
+              address === '::' ||
+              address.toLowerCase().startsWith('fc') || // ULA
+              address.toLowerCase().startsWith('fd') || // ULA
+              address.toLowerCase().startsWith('fe8') || // Link-local
+              address.toLowerCase().startsWith('fe9') || // Link-local
+              address.toLowerCase().startsWith('fea') || // Link-local
+              address.toLowerCase().startsWith('feb') || // Link-local
+              address.toLowerCase().startsWith('::ffff:'); // IPv4 mapped
+
+            if (isRestrictedV4 || isRestrictedV6) {
+              return textResult('Error: Access to internal or restricted hosts is not permitted.');
+            }
+
+            if (!selectedSafeIp && record.family === 4) {
+              selectedSafeIp = address;
+            }
+          }
+
+        } catch (err) {
+          return textResult(`Error resolving hostname: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        }
+
+        // Note: For full TOCTOU/DNS Rebinding protection, an HTTP Agent or custom
+        // dispatcher (e.g. undici) overriding the connection socket is required to
+        // pin the validated IP while retaining standard SNI for TLS.
+        // For now, we perform the validation lookup and rely on the OS DNS cache.
         const resp = await fetch(params.url, {
           method: params.method || 'GET',
           signal,
