@@ -83,7 +83,7 @@ describe('OpenRouter live integration', () => {
   it(
     'reads OPENROUTER_API_KEY from .env and completes a live run',
     async () => {
-      loadEnvFile();
+      await loadEnvFile();
 
       const apiKey = process.env.OPENROUTER_API_KEY;
       if (!apiKey) {

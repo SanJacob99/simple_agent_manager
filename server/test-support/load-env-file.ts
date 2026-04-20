@@ -1,4 +1,4 @@
-import fs from 'fs';
+import fsPromises from 'fs/promises';
 import path from 'path';
 
 function parseEnvValue(rawValue: string): string {
@@ -18,12 +18,20 @@ function parseEnvValue(rawValue: string): string {
   return commentIndex === -1 ? trimmed : trimmed.slice(0, commentIndex).trim();
 }
 
-export function loadEnvFile(filePath = path.resolve(process.cwd(), '.env')): Record<string, string> {
-  if (!fs.existsSync(filePath)) {
-    return {};
+export async function loadEnvFile(
+  filePath = path.resolve(process.cwd(), '.env'),
+): Promise<Record<string, string>> {
+  let content: string;
+  try {
+    // Avoid synchronous event-loop blocking by using async file read
+    content = await fsPromises.readFile(filePath, 'utf-8');
+  } catch (error: any) {
+    if (error.code === 'ENOENT') {
+      return {};
+    }
+    throw error;
   }
 
-  const content = fs.readFileSync(filePath, 'utf-8');
   const loaded: Record<string, string> = {};
 
   for (const line of content.split(/\r?\n/)) {

@@ -15,7 +15,7 @@ declare global {
 }
 
 const envPath = path.resolve(process.cwd(), '.env');
-loadEnvFile(envPath);
+await loadEnvFile(envPath);
 
 const openRouterApiKey = process.env.OPENROUTER_API_KEY?.trim();
 const openRouterModel = process.env.OPENROUTER_MODEL?.trim() || 'qwen/qwen3.6-plus:free';
