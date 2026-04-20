@@ -245,18 +245,24 @@ export class AgentManager {
     let restored = 0;
     try {
       const entries = await fs.readdir(resolvedPath, { withFileTypes: true });
-      for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
+
+      // Concurrently read and restore agents to avoid N+1 sequential I/O overhead
+      const restorePromises = entries.map(async (entry) => {
+        if (!entry.isDirectory()) return;
         const configPath = path.join(resolvedPath, entry.name, 'agent-config.json');
         try {
           const raw = await fs.readFile(configPath, 'utf-8');
           const config = JSON.parse(raw) as AgentConfig;
           await this.start(config);
-          restored++;
+          return true; // Successfully restored
         } catch {
-          // No config file in this directory — skip
+          // No config file in this directory or parsing failed — skip
+          return false;
         }
-      }
+      });
+
+      const results = await Promise.all(restorePromises);
+      restored = results.filter((success) => success).length;
     } catch {
       // Storage path doesn't exist yet — nothing to restore
     }
