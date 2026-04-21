@@ -403,7 +403,13 @@ function createOpenRouterTtsProvider(
         throw new Error(`OpenRouter TTS error ${response.status}: ${text.slice(0, 300)}`);
       }
       const raw = await response.text();
-      const chunks: Buffer[] = [];
+      // Collect the base64 strings and decode ONCE at the end. Decoding
+      // each chunk's base64 separately silently corrupts the payload
+      // when OpenRouter splits bytes at a non-3-byte boundary (the
+      // straddling base64 group is truncated per-chunk). This matches
+      // the reference pattern in the OpenRouter docs:
+      // https://openrouter.ai/docs/guides/overview/multimodal/audio
+      const base64Parts: string[] = [];
       for (const line of raw.split(/\r?\n/)) {
         if (!line.startsWith('data:')) continue;
         const payload = line.slice(5).trim();
@@ -416,14 +422,15 @@ function createOpenRouterTtsProvider(
         }
         const data = json?.choices?.[0]?.delta?.audio?.data;
         if (typeof data === 'string' && data.length > 0) {
-          chunks.push(Buffer.from(data, 'base64'));
+          base64Parts.push(data);
         }
       }
-      if (chunks.length === 0) {
+      if (base64Parts.length === 0) {
         throw new Error('OpenRouter TTS returned no audio payload');
       }
+      const audio = Buffer.from(base64Parts.join(''), 'base64');
       return {
-        audio: Buffer.concat(chunks),
+        audio,
         mimeType: mimeFor(format),
         extension: extFor(format),
         provider: 'openrouter',

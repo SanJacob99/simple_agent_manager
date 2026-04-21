@@ -354,18 +354,22 @@ describe('text_to_speech.openrouter', () => {
   });
 
   it('streams audio chunks back through the chat-completions SSE response', async () => {
-    const part1 = Buffer.from([0x01, 0x02]);
-    const part2 = Buffer.from([0x03, 0x04, 0x05]);
+    // OpenRouter emits the audio as a single base64 stream split across
+    // SSE chunks at arbitrary character offsets (see the OpenRouter docs
+    // — their reference example concatenates chunk strings before
+    // decoding). Model that shape: pick a realistic payload, encode the
+    // whole thing once, then split the encoded string at a 4-char
+    // boundary so each chunk decodes cleanly on its own too. The
+    // harder mid-group split case lives in a separate test below.
+    const payload = Buffer.from([0x01, 0x02, 0x03, 0x04, 0x05, 0x06]);
+    const full = payload.toString('base64');
+    const splitAt = 4;
     const body =
       sseChunk({
-        choices: [
-          { delta: { audio: { data: part1.toString('base64') } } },
-        ],
+        choices: [{ delta: { audio: { data: full.slice(0, splitAt) } } }],
       }) +
       sseChunk({
-        choices: [
-          { delta: { audio: { data: part2.toString('base64') } } },
-        ],
+        choices: [{ delta: { audio: { data: full.slice(splitAt) } } }],
       }) +
       'data: [DONE]\n\n';
 
@@ -400,7 +404,7 @@ describe('text_to_speech.openrouter', () => {
     expect(sent.messages[0].content).toMatch(/verbatim/i);
 
     const saved = await fs.readFile(path.join(tmpDir, 'audio', 'or.mp3'));
-    expect(saved.equals(Buffer.concat([part1, part2]))).toBe(true);
+    expect(saved.equals(payload)).toBe(true);
   });
 
   it('maps pcm and ogg formats onto OpenRouter wire formats (pcm16, opus)', async () => {
@@ -427,6 +431,46 @@ describe('text_to_speech.openrouter', () => {
     });
     const sent = JSON.parse(fetchMock.mock.calls[0][1]?.body as string);
     expect(sent.audio.format).toBe('pcm16');
+  });
+
+  it('preserves byte stream across SSE chunks that split mid-base64-group', async () => {
+    // Regression: OpenRouter can split the base64 audio payload at any
+    // byte offset, not just at 3-byte boundaries. If the decoder runs
+    // per-chunk, straddling groups get silently dropped (Node's
+    // Buffer.from('base64') is lenient). The payload must survive a
+    // mid-group split and round-trip back to the original bytes.
+    const original = Buffer.from([
+      0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
+      0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00,
+    ]);
+    const fullB64 = original.toString('base64');
+    // Split after 5 base64 chars — lands mid-group on the first chunk,
+    // which is the exact pathology per-chunk decoding mishandles.
+    const split = 5;
+    const chunkA = fullB64.slice(0, split);
+    const chunkB = fullB64.slice(split);
+    const body =
+      sseChunk({ choices: [{ delta: { audio: { data: chunkA } } }] }) +
+      sseChunk({ choices: [{ delta: { audio: { data: chunkB } } }] }) +
+      'data: [DONE]\n\n';
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(body, { status: 200 }),
+    );
+
+    const tool = createTextToSpeechTool({
+      cwd: tmpDir,
+      getOpenrouterApiKey: () => 'or-key',
+    });
+    await tool.execute('t1', {
+      action: 'speak',
+      text: 'x',
+      provider: 'openrouter',
+      filename: 'split',
+    });
+
+    const saved = await fs.readFile(path.join(tmpDir, 'audio', 'split.mp3'));
+    expect(saved.equals(original)).toBe(true);
   });
 
   it('surfaces a clear error when the SSE stream contains no audio chunks', async () => {
