@@ -12,7 +12,6 @@ logs/
 settings.json
 provider-catalog*
 notes/
-C:/rojects/simple_agent_manager/storage
 
 # User-installed tools — loaded at runtime via filesystem scan.
 # See docs/concepts/user-tools-plan.md. Remove this line to commit a
