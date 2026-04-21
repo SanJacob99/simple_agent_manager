@@ -120,6 +120,14 @@ export function resolveAgentConfig(
         injectAs: 'system-prompt' as const,
       });
     }
+    if (ts?.browser?.skill?.trim()) {
+      allSkills.push({
+        id: 'tool-skill-browser',
+        name: 'browser tool guidance',
+        content: ts.browser.skill,
+        injectAs: 'system-prompt' as const,
+      });
+    }
     if (ts?.textToSpeech?.skill?.trim()) {
       allSkills.push({
         id: 'tool-skill-text-to-speech',
@@ -339,6 +347,29 @@ export function resolveAgentConfig(
       : undefined,
     canvaPortRangeEnd: toolsNode?.data.type === 'tools'
       ? toolsNode.data.toolSettings?.canva?.portRangeEnd
+      : undefined,
+    browserUserDataDir: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.browser?.userDataDir
+      ? toolsNode.data.toolSettings.browser.userDataDir
+      : undefined,
+    browserViewportWidth: toolsNode?.data.type === 'tools'
+      ? toolsNode.data.toolSettings?.browser?.viewportWidth
+      : undefined,
+    browserViewportHeight: toolsNode?.data.type === 'tools'
+      ? toolsNode.data.toolSettings?.browser?.viewportHeight
+      : undefined,
+    browserTimeoutMs: toolsNode?.data.type === 'tools'
+      ? toolsNode.data.toolSettings?.browser?.timeoutMs
+      : undefined,
+    browserAutoScreenshot: toolsNode?.data.type === 'tools'
+      ? toolsNode.data.toolSettings?.browser?.autoScreenshot
+      : undefined,
+    browserScreenshotFormat: (() => {
+      if (toolsNode?.data.type !== 'tools') return undefined;
+      const value = toolsNode.data.toolSettings?.browser?.screenshotFormat;
+      return value === 'png' || value === 'jpeg' ? value : undefined;
+    })(),
+    browserScreenshotQuality: toolsNode?.data.type === 'tools'
+      ? toolsNode.data.toolSettings?.browser?.screenshotQuality
       : undefined,
     ttsPreferredProvider: (() => {
       if (toolsNode?.data.type !== 'tools') return undefined;

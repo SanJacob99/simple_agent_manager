@@ -132,6 +132,23 @@ export interface CanvaToolSettings {
   skill: string;
 }
 
+export interface BrowserToolSettings {
+  /** Persistent profile path. Absolute or relative to workspace. Empty = <cwd>/.browser-profile. */
+  userDataDir: string;
+  viewportWidth: number;
+  viewportHeight: number;
+  /** Per-action timeout (navigation, clicks, fills) in milliseconds. */
+  timeoutMs: number;
+  /** Attach a screenshot to every state-changing action so the user can watch progress. */
+  autoScreenshot: boolean;
+  /** Format for inline screenshots. "jpeg" is cheaper; "png" is lossless. */
+  screenshotFormat: 'jpeg' | 'png';
+  /** JPEG quality 1-100. Ignored for PNG. */
+  screenshotQuality: number;
+  /** Markdown guidance injected into the system prompt for this tool */
+  skill: string;
+}
+
 export type TtsProviderId =
   | ''
   | 'openai'
@@ -193,6 +210,7 @@ export interface ToolSettings {
   webSearch: WebSearchToolSettings;
   image: ImageToolSettings;
   canva: CanvaToolSettings;
+  browser: BrowserToolSettings;
   textToSpeech: TextToSpeechToolSettings;
   musicGenerate: MusicGenerateToolSettings;
 }

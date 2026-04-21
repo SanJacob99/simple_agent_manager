@@ -543,6 +543,10 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
         isStreaming={isStreaming}
         isBlocked={isBlocked}
         supportsVision={supportsVision}
+        hitlPending={
+          !!chatStream.pendingHitl
+          && chatStream.pendingHitl.sessionKey === activeSessionKey
+        }
         onSend={handleSend}
         onStop={handleStop}
       />

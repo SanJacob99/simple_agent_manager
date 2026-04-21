@@ -154,6 +154,19 @@ export interface AgentConfig {
   /** Upper bound (inclusive) of the port range canva will auto-pick from. */
   canvaPortRangeEnd?: number;
 
+  /** Path for the persistent browser profile. Absolute or relative to workspace. Empty = <cwd>/.browser-profile. */
+  browserUserDataDir?: string;
+  browserViewportWidth?: number;
+  browserViewportHeight?: number;
+  /** Per-action timeout used for navigation, clicks, fills, and other Playwright ops. */
+  browserTimeoutMs?: number;
+  /** Attach a screenshot to every state-changing browser action so the user can watch progress. */
+  browserAutoScreenshot?: boolean;
+  /** Inline screenshot format. Default "jpeg" for bandwidth. */
+  browserScreenshotFormat?: 'jpeg' | 'png';
+  /** JPEG quality 1-100. Ignored for PNG. Default 60. */
+  browserScreenshotQuality?: number;
+
   /** Preferred default TTS provider. */
   ttsPreferredProvider?:
     | 'openai'

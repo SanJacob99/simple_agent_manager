@@ -10,6 +10,7 @@
 
 import type { ObjectSchema } from './schema-form/types';
 import type {
+  BrowserToolSettings,
   CanvaToolSettings,
   CodeExecutionToolSettings,
   ExecToolSettings,
@@ -88,6 +89,75 @@ export const webSearchToolConfigSchema: ObjectSchema<WebSearchToolSettings> = {
       description: 'Injected into the system prompt to guide web_search usage.',
     },
   },
+};
+
+export const browserToolConfigSchema: ObjectSchema<BrowserToolSettings> = {
+  type: 'object',
+  properties: {
+    userDataDir: {
+      type: 'string',
+      title: 'Profile directory',
+      placeholder: '<cwd>/.browser-profile',
+      description:
+        'Where Chromium stores cookies, localStorage, and login state. Relative paths resolve against the workspace.',
+    },
+    viewportWidth: {
+      type: 'integer',
+      title: 'Viewport width',
+      minimum: 320,
+      maximum: 3840,
+    },
+    viewportHeight: {
+      type: 'integer',
+      title: 'Viewport height',
+      minimum: 240,
+      maximum: 2160,
+    },
+    timeoutMs: {
+      type: 'integer',
+      title: 'Default timeout (ms)',
+      minimum: 1000,
+      maximum: 300000,
+      description: 'Applies to navigation, clicks, and fills.',
+    },
+    autoScreenshot: {
+      type: 'boolean',
+      title: 'Stream screenshots',
+      checkboxLabel: 'Attach a screenshot to every state-changing action',
+      description:
+        'When on, the user sees a screenshot after each navigate/act/click/type. These images also enter the agent\'s context, so vision-capable models can use them too.',
+    },
+    screenshotFormat: {
+      type: 'string',
+      title: 'Format',
+      enum: [
+        { value: 'jpeg', label: 'JPEG (smaller, lossy)' },
+        { value: 'png', label: 'PNG (lossless)' },
+      ],
+    },
+    screenshotQuality: {
+      type: 'integer',
+      title: 'JPEG quality',
+      minimum: 1,
+      maximum: 100,
+      description: 'Ignored for PNG. Lower = smaller payload. 60 is a good default.',
+    },
+    skill: {
+      type: 'string',
+      format: 'textarea',
+      title: 'Skill',
+      placeholder: 'Markdown guidance for how the agent should use browser...',
+      description: 'Injected into the system prompt to guide browser usage.',
+    },
+  },
+  sections: [
+    {
+      title: 'Screenshot streaming',
+      description:
+        'Auto-attach screenshots so the user can watch the browser. Explicit `screenshot` calls are unaffected.',
+      startAt: 'autoScreenshot',
+    },
+  ],
 };
 
 export const canvaToolConfigSchema: ObjectSchema<CanvaToolSettings> = {

@@ -24,7 +24,7 @@ export function canonicalizeToolName(name: string): string {
 export const TOOL_GROUPS: Record<string, string[]> = {
   runtime: ['exec', 'code_interpreter'],
   fs: ['read_file', 'write_file', 'edit_file', 'list_directory', 'apply_patch'],
-  web: ['web_search', 'web_fetch'],
+  web: ['web_search', 'web_fetch', 'browser'],
   // memory tools are managed by the memory node, not the tools node
   coding: ['exec', 'read_file', 'write_file', 'code_interpreter'],
   media: ['image', 'image_generate', 'show_image', 'canva', 'music_generate'],
@@ -78,6 +78,7 @@ export const ALL_TOOL_NAMES = [
   'apply_patch',
   'web_search',
   'web_fetch',
+  'browser',
   'calculator',
   'canva',
   'image',
@@ -103,6 +104,7 @@ export const IMPLEMENTED_TOOL_NAMES = new Set<string>([
   'calculator',
   'web_search',
   'web_fetch',
+  'browser',
   'read_file',
   'write_file',
   'edit_file',

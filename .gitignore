@@ -12,6 +12,8 @@ logs/
 settings.json
 provider-catalog*
 notes/
+.browser-profile/
+browser-screenshots/
 
 # User-installed tools — loaded at runtime via filesystem scan.
 # See docs/concepts/user-tools-plan.md. Remove this line to commit a
