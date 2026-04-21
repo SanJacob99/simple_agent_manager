@@ -245,18 +245,23 @@ export class AgentManager {
     let restored = 0;
     try {
       const entries = await fs.readdir(resolvedPath, { withFileTypes: true });
-      for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
-        const configPath = path.join(resolvedPath, entry.name, 'agent-config.json');
-        try {
-          const raw = await fs.readFile(configPath, 'utf-8');
-          const config = JSON.parse(raw) as AgentConfig;
-          await this.start(config);
-          restored++;
-        } catch {
-          // No config file in this directory — skip
-        }
-      }
+      // ⚡ Bolt Optimization: Use Promise.all with .map() to read configs and start agents
+      // concurrently instead of sequentially to eliminate N+1 I/O latency overhead on boot.
+      await Promise.all(
+        entries
+          .filter((entry) => entry.isDirectory())
+          .map(async (entry) => {
+            const configPath = path.join(resolvedPath, entry.name, 'agent-config.json');
+            try {
+              const raw = await fs.readFile(configPath, 'utf-8');
+              const config = JSON.parse(raw) as AgentConfig;
+              await this.start(config);
+              restored++;
+            } catch {
+              // No config file in this directory — skip
+            }
+          })
+      );
     } catch {
       // Storage path doesn't exist yet — nothing to restore
     }
