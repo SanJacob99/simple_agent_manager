@@ -1,13 +1,14 @@
 import { useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Terminal, Code2, Globe, Image, Users, LayoutDashboard, Volume2, ShieldAlert, Music } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Terminal, Code2, Globe, Image, Users, LayoutDashboard, Volume2, ShieldAlert, Music, Chrome } from 'lucide-react';
 import { useGraphStore } from '../../store/graph-store';
 import { buildProviderCatalogKey, useModelCatalogStore } from '../../store/model-catalog-store';
 import { useSettingsStore } from '../../settings/settings-store';
 import type { ToolsNodeData, ToolProfile, ToolGroup } from '../../types/nodes';
 import { Field, inputClass, selectClass } from './shared';
-import { ALL_TOOL_NAMES, TOOL_GROUPS, TOOL_PROFILES } from '../../../shared/resolve-tool-names';
+import { ALL_TOOL_NAMES, TOOL_GROUPS, TOOL_PROFILES, canonicalizeToolName } from '../../../shared/resolve-tool-names';
 import { SchemaForm } from './schema-form/SchemaForm';
 import {
+  browserToolConfigSchema,
   canvaToolConfigSchema,
   codeExecutionToolConfigSchema,
   execToolConfigSchema,
@@ -22,6 +23,16 @@ const DEFAULT_EXEC_SETTINGS = { cwd: '', sandboxWorkdir: false, skill: '' };
 const DEFAULT_CODE_EXECUTION_SETTINGS = { apiKey: '', model: '', skill: '' };
 const DEFAULT_WEB_SEARCH_SETTINGS = { tavilyApiKey: '', skill: '' };
 const DEFAULT_CANVA_SETTINGS = { portRangeStart: 5173, portRangeEnd: 5273, skill: '' };
+const DEFAULT_BROWSER_SETTINGS = {
+  userDataDir: '',
+  viewportWidth: 1280,
+  viewportHeight: 800,
+  timeoutMs: 30000,
+  autoScreenshot: true,
+  screenshotFormat: 'jpeg' as const,
+  screenshotQuality: 60,
+  skill: '',
+};
 const DEFAULT_IMAGE_SETTINGS = {
   openaiApiKey: '',
   geminiApiKey: '',
@@ -34,7 +45,7 @@ const HITL_TOOLS = new Set(['ask_user', 'confirm_action']);
 const PROFILES: ToolProfile[] = ['full', 'coding', 'messaging', 'minimal', 'custom'];
 const GROUPS: ToolGroup[] = ['runtime', 'fs', 'web', 'coding', 'media', 'communication', 'human'];
 
-type Page = 'main' | 'exec' | 'code_execution' | 'web_search' | 'image' | 'canva' | 'text_to_speech' | 'music_generate' | 'sub_agents';
+type Page = 'main' | 'exec' | 'code_execution' | 'web_search' | 'image' | 'canva' | 'browser' | 'text_to_speech' | 'music_generate' | 'sub_agents';
 
 const TTS_DEFAULTS = {
   preferredProvider: '' as const,
@@ -52,6 +63,8 @@ const TTS_DEFAULTS = {
   minimaxGroupId: '',
   minimaxDefaultVoice: '',
   minimaxDefaultModel: '',
+  openrouterVoice: '',
+  openrouterModel: '',
   skill: '',
 };
 
@@ -185,8 +198,17 @@ export default function ToolsProperties({ nodeId, data }: Props) {
   const toggleTool = (tool: string) => {
     // HITL tools are locked on unless "Dangerous Fully Auto" is enabled in Settings.
     if (HITL_TOOLS.has(tool) && !allowDisableHitl) return;
-    const tools = data.enabledTools.includes(tool)
-      ? data.enabledTools.filter((t) => t !== tool)
+    // A click counts as "present" if the saved list has either the
+    // canonical tool name or any of its aliases. Toggling off sweeps
+    // out every alias form so legacy aliases don't silently re-enable
+    // the tool on the next render.
+    const isPresent = data.enabledTools.some(
+      (saved) => saved === tool || canonicalizeToolName(saved) === tool,
+    );
+    const tools = isPresent
+      ? data.enabledTools.filter(
+          (saved) => saved !== tool && canonicalizeToolName(saved) !== tool,
+        )
       : [...data.enabledTools, tool];
     update(nodeId, { enabledTools: tools });
   };
@@ -241,6 +263,18 @@ export default function ToolsProperties({ nodeId, data }: Props) {
         ...data.toolSettings,
         canva: {
           ...(data.toolSettings?.canva ?? { portRangeStart: 5173, portRangeEnd: 5273, skill: '' }),
+          ...patch,
+        },
+      },
+    });
+  };
+
+  const updateBrowser = (patch: Record<string, unknown>) => {
+    update(nodeId, {
+      toolSettings: {
+        ...data.toolSettings,
+        browser: {
+          ...(data.toolSettings?.browser ?? DEFAULT_BROWSER_SETTINGS),
           ...patch,
         },
       },
@@ -443,6 +477,41 @@ export default function ToolsProperties({ nodeId, data }: Props) {
   }
 
   // -------------------------------------------------------------------------
+  // Page: browser settings
+  // -------------------------------------------------------------------------
+  if (page === 'browser') {
+    return (
+      <div className="space-y-1">
+        <PageHeader title="browser" onBack={() => setPage('main')} />
+
+        <div className="rounded-md border border-slate-700/50 bg-slate-800/30 px-3 py-2 mb-2 space-y-1">
+          <p className="text-[10px] text-slate-400">
+            <strong className="text-slate-300">browser</strong> drives a real headless Chromium
+            via Playwright. The agent navigates, inspects via <em>snapshot</em> or{' '}
+            <em>screenshot</em>, and acts with CSS / text / role selectors.
+          </p>
+          <p className="text-[10px] text-slate-500">
+            One browser per workspace; the profile at <span className="font-mono">&lt;cwd&gt;/.browser-profile/</span>{' '}
+            keeps cookies and logins between runs. Screenshots land in{' '}
+            <span className="font-mono">&lt;cwd&gt;/browser-screenshots/</span>.
+          </p>
+        </div>
+
+        <SchemaForm
+          schema={browserToolConfigSchema}
+          value={data.toolSettings?.browser ?? DEFAULT_BROWSER_SETTINGS}
+          onChange={updateBrowser}
+          fieldOverrides={{
+            screenshotQuality: {
+              hidden: (data.toolSettings?.browser?.screenshotFormat ?? 'jpeg') === 'png',
+            },
+          }}
+        />
+      </div>
+    );
+  }
+
+  // -------------------------------------------------------------------------
   // Page: text_to_speech settings
   // -------------------------------------------------------------------------
   if (page === 'text_to_speech') {
@@ -625,6 +694,13 @@ export default function ToolsProperties({ nodeId, data }: Props) {
             {ALL_TOOL_NAMES.map((tool) => {
               const isHitl = HITL_TOOLS.has(tool);
               const locked = isHitl && !allowDisableHitl;
+              // Alias-aware "is this tool enabled" check: a saved
+              // `enabledTools` list may still contain a legacy alias
+              // (e.g. `bash`) from before aliases were hidden from the
+              // picker. Treat any alias of `tool` as the same tick.
+              const isChecked = data.enabledTools.some(
+                (saved) => saved === tool || canonicalizeToolName(saved) === tool,
+              );
               return (
                 <label
                   key={tool}
@@ -633,7 +709,7 @@ export default function ToolsProperties({ nodeId, data }: Props) {
                 >
                   <input
                     type="checkbox"
-                    checked={data.enabledTools.includes(tool)}
+                    checked={isChecked}
                     onChange={() => toggleTool(tool)}
                     disabled={locked}
                     className={`rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500/30 ${
@@ -734,6 +810,12 @@ export default function ToolsProperties({ nodeId, data }: Props) {
               return start && end ? `${start}-${end}` : undefined;
             })()}
             onClick={() => setPage('canva')}
+          />
+          <PageLink
+            icon={<Chrome size={14} />}
+            label="browser"
+            hint={data.toolSettings?.browser?.autoScreenshot ? 'streaming' : undefined}
+            onClick={() => setPage('browser')}
           />
           <PageLink
             icon={<Users size={14} />}

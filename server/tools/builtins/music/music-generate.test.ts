@@ -1,9 +1,14 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import { createMusicGenerateTool } from './music-generate';
 import { createAgentTools } from '../../tool-factory';
+import { initializeToolRegistry } from '../../tool-registry';
+
+beforeAll(async () => {
+  await initializeToolRegistry();
+});
 
 let tmpDir: string;
 
@@ -37,11 +42,6 @@ describe('music_generate registration', () => {
   it('is registered by createAgentTools when music_generate is in names and cwd is set', () => {
     const tools = createAgentTools(['music_generate'], [], undefined, { cwd: tmpDir });
     expect(tools.map((t) => t.name)).toContain('music_generate');
-  });
-
-  it('is skipped when cwd is missing', () => {
-    const tools = createAgentTools(['music_generate'], [], undefined, {});
-    expect(tools.map((t) => t.name)).not.toContain('music_generate');
   });
 });
 

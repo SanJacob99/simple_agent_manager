@@ -6,23 +6,29 @@ interface ChatInputProps {
   isStreaming: boolean;
   isBlocked: boolean;
   supportsVision: boolean;
+  hitlPending: boolean;
   onSend: (text: string, attachments: ImageAttachment[]) => void;
   onStop: () => void;
 }
 
-export default function ChatInput({ isStreaming, isBlocked, supportsVision, onSend, onStop }: ChatInputProps) {
+export default function ChatInput({ isStreaming, isBlocked, supportsVision, hitlPending, onSend, onStop }: ChatInputProps) {
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // While the agent is paused on a HITL prompt (e.g. ask_user), isStreaming
+  // is still true but we need the input enabled so the user can reply.
+  const inputDisabled = (isStreaming && !hitlPending) || isBlocked;
+  const showSendButton = !isStreaming || hitlPending;
+
   const handleSend = useCallback(() => {
-    if ((!input.trim() && attachments.length === 0) || isStreaming || isBlocked) return;
+    if ((!input.trim() && attachments.length === 0) || inputDisabled) return;
     onSend(input.trim(), attachments);
     setInput('');
     setAttachments([]);
     setPreviews([]);
-  }, [input, attachments, isStreaming, isBlocked, onSend]);
+  }, [input, attachments, inputDisabled, onSend]);
 
   const handleImageSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
@@ -83,7 +89,7 @@ export default function ChatInput({ isStreaming, isBlocked, supportsVision, onSe
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              disabled={isStreaming || isBlocked}
+              disabled={inputDisabled}
               className="rounded-lg border border-slate-700 bg-slate-800 p-2 text-slate-400 transition hover:text-slate-200 hover:border-slate-600 disabled:opacity-50"
               title="Attach images"
             >
@@ -96,25 +102,25 @@ export default function ChatInput({ isStreaming, isBlocked, supportsVision, onSe
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
-          placeholder="Type a message..."
-          disabled={isStreaming || isBlocked}
+          placeholder={hitlPending ? 'Type your answer...' : 'Type a message...'}
+          disabled={inputDisabled}
         />
-        {isStreaming ? (
+        {showSendButton ? (
+          <button
+            onClick={handleSend}
+            disabled={(!input.trim() && attachments.length === 0) || inputDisabled}
+            className="rounded-lg bg-blue-600 p-2 text-white transition hover:bg-blue-500 disabled:opacity-50"
+            title="Send Message"
+          >
+            <Send size={14} />
+          </button>
+        ) : (
           <button
             onClick={onStop}
             className="rounded-lg bg-red-600 p-2 text-white transition hover:bg-red-500"
             title="Stop Agent"
           >
             <Square fill="currentColor" size={14} />
-          </button>
-        ) : (
-          <button
-            onClick={handleSend}
-            disabled={(!input.trim() && attachments.length === 0) || isBlocked}
-            className="rounded-lg bg-blue-600 p-2 text-white transition hover:bg-blue-500 disabled:opacity-50"
-            title="Send Message"
-          >
-            <Send size={14} />
           </button>
         )}
       </div>

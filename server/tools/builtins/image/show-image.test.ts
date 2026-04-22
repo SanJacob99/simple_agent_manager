@@ -4,6 +4,11 @@ import path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createShowImageTool } from './show-image';
 import { createAgentTools } from '../../tool-factory';
+import { initializeToolRegistry } from '../../tool-registry';
+
+beforeAll(async () => {
+  await initializeToolRegistry();
+});
 
 describe('show_image', () => {
   let tmpDir: string;

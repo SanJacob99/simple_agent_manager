@@ -10,18 +10,29 @@ const SETTINGS_FILE = 'settings.json';
  * smaller/older models that skim descriptions, and covers the
  * "one-tool-call-per-confirm-turn" rule that keeps parallel-tool-calling
  * providers (Claude 3.5+, GPT-4-turbo) from bypassing the gate.
+ *
+ * Three runtime placeholders — `{{READ_ONLY_TOOLS}}`,
+ * `{{STATE_MUTATING_TOOLS}}`, `{{DESTRUCTIVE_TOOLS}}` — are substituted
+ * by the agent runtime with the resolved tool list grouped by each
+ * module's `classification`. Users who edit their policy can strip the
+ * placeholders to fall back to a static (non-class-aware) policy.
  */
 export const DEFAULT_CONFIRMATION_POLICY = `## Confirmation policy
 
-Before you call ANY tool OTHER THAN \`confirm_action\` or \`ask_user\`, you MUST first call \`confirm_action\` with a short yes/no question summarizing what you are about to do, and wait for the answer. This applies to every tool — including read-only ones (\`web_search\`, \`read_file\`, \`list_directory\`, \`calculator\`, etc.) AND state-mutating ones (\`write_file\`, \`edit_file\`, \`apply_patch\`, \`exec\`, \`bash\`, \`image_generate\`, \`send_message\`, network requests).
+Tools are grouped by safety class. Your confirmation obligations differ per class:
+
+- **Read-only** tools do not write files, spend money, mutate shared state, or contact third parties on the user's behalf. You MAY call them without a prior \`confirm_action\`. Read-only tools: {{READ_ONLY_TOOLS}}
+- **State-mutating** tools write files, produce media, run code, or emit user-visible side effects. You MUST precede each call with a \`confirm_action\` in a dedicated turn. State-mutating tools: {{STATE_MUTATING_TOOLS}}
+- **Destructive** tools can overwrite, delete, or otherwise make hard-to-reverse changes. You MUST precede each call with a \`confirm_action\` whose question names the specific target — exact command, path, or resource — you are about to touch. Destructive tools: {{DESTRUCTIVE_TOOLS}}
 
 RULES:
-1. The confirmation call MUST be the ONLY tool call in that turn. Do NOT emit any other tool call alongside \`confirm_action\` — wait for the answer, then act on it in your next turn.
+1. When a confirmation is required, it MUST be the ONLY tool call in that turn. Do NOT emit any other tool call alongside \`confirm_action\` — wait for the answer, then act on it in your next turn.
 2. If the answer is "no" or the call is cancelled/timed out, you MUST abandon the action. Report what you would have done and stop.
 3. If you need freeform input from the user (not yes/no), call \`ask_user\` instead — this also satisfies the gate for the subsequent action you described.
-4. Exception: you do NOT need confirmation for calling \`ask_user\` or \`confirm_action\` themselves.
+4. You do NOT need confirmation for calling \`ask_user\` or \`confirm_action\` themselves.
+5. If a tool is not listed above (plugins, session tools, stubs), treat it as state-mutating and confirm before calling.
 
-Phrase the confirmation concretely — "I want to run \`exec\` with command \`rm -rf ./build\` — proceed?" — so the user can judge intent at a glance.`;
+Phrase destructive confirmations concretely — "I want to run \`exec\` with command \`rm -rf ./build\` — proceed?" — so the user can judge intent at a glance.`;
 
 export interface SafetySettings {
   /**
@@ -66,6 +77,19 @@ RULES:
 2. If the answer is "no" or the call is cancelled/timed out, you MUST abandon the action. Report what you would have done and stop.
 3. If you need freeform input from the user (not yes/no), call \`ask_user\` instead.
 4. Read-only operations (ls, cat, git status, web_search, calculator) do NOT require confirmation.`,
+  // Blanket "confirm everything" policy (pre-classification). Users on this
+  // default are migrated to the classification-aware version below.
+  `## Confirmation policy
+
+Before you call ANY tool OTHER THAN \`confirm_action\` or \`ask_user\`, you MUST first call \`confirm_action\` with a short yes/no question summarizing what you are about to do, and wait for the answer. This applies to every tool — including read-only ones (\`web_search\`, \`read_file\`, \`list_directory\`, \`calculator\`, etc.) AND state-mutating ones (\`write_file\`, \`edit_file\`, \`apply_patch\`, \`exec\`, \`bash\`, \`image_generate\`, \`send_message\`, network requests).
+
+RULES:
+1. The confirmation call MUST be the ONLY tool call in that turn. Do NOT emit any other tool call alongside \`confirm_action\` — wait for the answer, then act on it in your next turn.
+2. If the answer is "no" or the call is cancelled/timed out, you MUST abandon the action. Report what you would have done and stop.
+3. If you need freeform input from the user (not yes/no), call \`ask_user\` instead — this also satisfies the gate for the subsequent action you described.
+4. Exception: you do NOT need confirmation for calling \`ask_user\` or \`confirm_action\` themselves.
+
+Phrase the confirmation concretely — "I want to run \`exec\` with command \`rm -rf ./build\` — proceed?" — so the user can judge intent at a glance.`,
 ];
 
 export interface PersistedSettings {

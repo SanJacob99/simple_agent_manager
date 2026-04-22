@@ -1,12 +1,32 @@
 import type { ResolvedToolsConfig } from './agent-config';
 
-// Tool group definitions — shared between frontend UI and server runtime
+/**
+ * Tool name aliases — legacy names that map to canonical ones. The server
+ * registry's `TOOL_ALIASES` must stay in sync with this map. Keep this
+ * list tiny — aliases are a source of confusion and duplication bugs.
+ *
+ * The alias map is applied inside `resolveToolNames` so every downstream
+ * consumer (UI picker, system-prompt summary, server runtime) sees only
+ * canonical names. Saved agent configs that still reference an alias in
+ * `enabledTools` silently resolve to the canonical name.
+ */
+export const TOOL_NAME_ALIASES: Readonly<Record<string, string>> = {
+  bash: 'exec',
+};
+
+/** Resolve an alias to its canonical name, or return the input unchanged. */
+export function canonicalizeToolName(name: string): string {
+  return TOOL_NAME_ALIASES[name] ?? name;
+}
+
+// Tool group definitions — shared between frontend UI and server runtime.
+// Groups expand to canonical names only; aliases never appear here.
 export const TOOL_GROUPS: Record<string, string[]> = {
-  runtime: ['bash', 'code_interpreter'],
+  runtime: ['exec', 'code_interpreter'],
   fs: ['read_file', 'write_file', 'edit_file', 'list_directory', 'apply_patch'],
-  web: ['web_search', 'web_fetch'],
+  web: ['web_search', 'web_fetch', 'browser'],
   // memory tools are managed by the memory node, not the tools node
-  coding: ['bash', 'read_file', 'write_file', 'code_interpreter'],
+  coding: ['exec', 'read_file', 'write_file', 'code_interpreter'],
   media: ['image', 'image_generate', 'show_image', 'canva', 'music_generate'],
   communication: ['send_message', 'text_to_speech'],
   human: ['ask_user', 'confirm_action'],
@@ -39,9 +59,16 @@ export const TOOL_PROFILES: Record<string, string[]> = {
   custom: [],
 };
 
+/**
+ * Canonical tool names rendered in the Tools node's "Individual Tools"
+ * picker. Aliases (see `TOOL_NAME_ALIASES`) are NOT listed here —
+ * showing both sides of an alias led to configs enabling the same
+ * module twice and tripping Gemini's "Duplicate function declaration"
+ * validation. If a saved config still has an alias in `enabledTools`,
+ * `resolveToolNames` canonicalizes it on the way to the runtime.
+ */
 export const ALL_TOOL_NAMES = [
   'exec',
-  'bash',
   'code_execution',
   'code_interpreter',
   'read_file',
@@ -51,6 +78,7 @@ export const ALL_TOOL_NAMES = [
   'apply_patch',
   'web_search',
   'web_fetch',
+  'browser',
   'calculator',
   'canva',
   'image',
@@ -71,11 +99,12 @@ export const ALL_TOOL_NAMES = [
  */
 export const IMPLEMENTED_TOOL_NAMES = new Set<string>([
   'exec',
-  'bash', // alias for exec
+  'bash', // alias for exec — kept for backward compat with saved configs
   'code_execution',
   'calculator',
   'web_search',
   'web_fetch',
+  'browser',
   'read_file',
   'write_file',
   'edit_file',
@@ -102,6 +131,10 @@ export const IMPLEMENTED_TOOL_NAMES = new Set<string>([
  */
 export function resolveToolNames(config: ResolvedToolsConfig): string[] {
   const names = new Set<string>();
+  // Canonicalize at the add-site so aliases coming from any source
+  // (groups, saved `enabledTools`, plugin-declared tool lists) end up
+  // deduplicated under one canonical name.
+  const add = (tool: string) => names.add(canonicalizeToolName(tool));
 
   // Use enabledGroups as the source of truth when present.
   // Fall back to profile expansion only when no groups are explicitly enabled.
@@ -111,18 +144,18 @@ export function resolveToolNames(config: ResolvedToolsConfig): string[] {
 
   for (const group of activeGroups) {
     for (const tool of TOOL_GROUPS[group] ?? []) {
-      names.add(tool);
+      add(tool);
     }
   }
 
   for (const tool of config.resolvedTools) {
-    names.add(tool);
+    add(tool);
   }
 
   for (const plugin of config.plugins) {
     if (plugin.enabled) {
       for (const tool of plugin.tools) {
-        names.add(tool);
+        add(tool);
       }
     }
   }

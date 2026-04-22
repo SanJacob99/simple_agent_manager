@@ -211,20 +211,11 @@ export default defineTool({
 
 `create` may return `null` to indicate the tool isn't available for this config (missing auth, disabled capability, etc.). The factory skips nulls cleanly.
 
-### 2. Register it — one line
+### 2. Register it — nothing to do
 
-Open [server/tools/tool-registry.ts](../../server/tools/tool-registry.ts) and add the import + push a default into `TOOL_MODULES`:
+Filesystem-scan discovery in [server/tools/tool-registry.ts](../../server/tools/tool-registry.ts) auto-loads every `*.module.ts` under `server/tools/builtins/`. Drop the file and you're done. No barrel edit, no central import.
 
-```ts
-import weatherModule from './builtins/weather/weather.module';
-
-export const TOOL_MODULES: ToolModule[] = [
-  // existing…
-  weatherModule,
-];
-```
-
-That's the *only* registry edit. Name, group, description, config, and wiring all live in `weather.module.ts`. Future revisions ([tool-module-pattern.md](./tool-module-pattern.md) tracks this) will move to filesystem scanning so even this one line goes away.
+(See [user-tools-plan.md](./user-tools-plan.md) for how the same scan is wired to also load tools from `server/tools/user/`.)
 
 ### 3. Tests
 
@@ -247,7 +238,7 @@ The optional `classification` field on `ToolModule` tells the HITL system whethe
 - `state-mutating` — `write_file`, `edit_file`, `image_generate` (writes a file to disk), `send_message`. Reversible or scoped side effects.
 - `destructive` — `exec`, `bash`, `apply_patch`, operations with `rm`/`DELETE` semantics. Hard or impossible to undo.
 
-The global confirmation policy treats all three as needing confirmation. The classification becomes meaningful if/when we add per-classification policy overrides (e.g. "auto-confirm read-only", "always confirm destructive").
+The confirmation policy is class-aware. `read-only` tools may be called without prior confirmation; `state-mutating` tools require a `confirm_action` in a dedicated turn; `destructive` tools require a `confirm_action` whose question names the specific target. The policy template lives in [server/storage/settings-file-store.ts](../../server/storage/settings-file-store.ts) and is filled per-agent at prompt-build time using the resolved tool list (see `groupToolsByClassification` in [tool-registry.ts](../../server/tools/tool-registry.ts)).
 
 ---
 

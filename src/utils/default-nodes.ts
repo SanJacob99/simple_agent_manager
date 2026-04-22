@@ -76,6 +76,16 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
             portRangeEnd: 5273,
             skill: '',
           },
+          browser: {
+            userDataDir: '',
+            viewportWidth: 1280,
+            viewportHeight: 800,
+            timeoutMs: 30000,
+            autoScreenshot: true,
+            screenshotFormat: 'jpeg',
+            screenshotQuality: 60,
+            skill: '',
+          },
           textToSpeech: {
             preferredProvider: '',
             elevenLabsApiKey: '',
@@ -92,6 +102,8 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
             minimaxGroupId: '',
             minimaxDefaultVoice: '',
             minimaxDefaultModel: '',
+            openrouterVoice: '',
+            openrouterModel: '',
             skill: '',
           },
           musicGenerate: {

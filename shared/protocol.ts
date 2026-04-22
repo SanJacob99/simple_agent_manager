@@ -136,6 +136,26 @@ export interface ToolStartEvent {
   toolName: string;
 }
 
+export interface ToolResultImage {
+  mimeType: string;
+  /** Base64-encoded image bytes. */
+  data: string;
+}
+
+export interface ToolResultAudio {
+  mimeType: string;
+  /** Base64-encoded audio bytes. */
+  data: string;
+  /** Workspace-relative path to the saved file. */
+  path?: string;
+  /** Friendly download filename. */
+  filename?: string;
+  /** Original text that was spoken — surfaced as a caption. */
+  transcript?: string;
+  /** Synthesis provider id (openai, elevenlabs, ...). */
+  provider?: string;
+}
+
 export interface ToolEndEvent {
   type: 'tool:end';
   agentId: string;
@@ -144,6 +164,10 @@ export interface ToolEndEvent {
   toolName: string;
   result: string;
   isError: boolean;
+  /** Inline images the tool produced (e.g. `image_generate`, `show_image`). */
+  images?: ToolResultImage[];
+  /** Inline audio clips the tool produced (e.g. `text_to_speech`). */
+  audios?: ToolResultAudio[];
 }
 
 export interface AgentEndEvent {

@@ -265,6 +265,129 @@ describe('resolveAgentConfig', () => {
     expect(config?.systemPrompt.assembled).toBe('Full custom prompt.');
     expect(config?.systemPrompt.assembled).not.toContain('Be safe.');
   });
+
+  it('emits bundled skill references with the placeholder path, not inline content', () => {
+    const config = resolveAgentConfig(
+      'agent-1',
+      [
+        {
+          id: 'agent-1',
+          type: 'agent',
+          position: { x: 0, y: 0 },
+          data: {
+            type: 'agent',
+            name: 'Agent',
+            nameConfirmed: true,
+            systemPrompt: '',
+            systemPromptMode: 'append' as const,
+            modelId: 'claude-sonnet-4-20250514',
+            thinkingLevel: 'off',
+            description: '',
+            tags: [],
+            modelCapabilities: {},
+          },
+        },
+        {
+          id: 'tools-1',
+          type: 'tools',
+          position: { x: -200, y: 0 },
+          data: {
+            type: 'tools',
+            label: 'Tools',
+            profile: 'custom',
+            enabledTools: ['exec', 'web_search'],
+            enabledGroups: [],
+            skills: [],
+            plugins: [],
+            subAgentSpawning: false,
+            maxSubAgents: 3,
+            toolSettings: {
+              exec: { cwd: '', sandboxWorkdir: false, skill: '' },
+              codeExecution: { apiKey: '', model: '', skill: '' },
+              webSearch: { tavilyApiKey: '', skill: '' },
+              image: { openaiApiKey: '', geminiApiKey: '', preferredModel: '', skill: '' },
+              canva: { portRangeStart: 5173, portRangeEnd: 5273, skill: '' },
+              browser: { userDataDir: '', viewportWidth: 1280, viewportHeight: 800, timeoutMs: 30000, autoScreenshot: true, screenshotFormat: 'jpeg', screenshotQuality: 60, skill: '' },
+              textToSpeech: { preferredProvider: '', elevenLabsApiKey: '', elevenLabsDefaultVoice: '', elevenLabsDefaultModel: '', openaiVoice: '', openaiModel: '', geminiVoice: '', geminiModel: '', microsoftApiKey: '', microsoftRegion: '', microsoftDefaultVoice: '', minimaxApiKey: '', minimaxGroupId: '', minimaxDefaultVoice: '', minimaxDefaultModel: '', openrouterVoice: '', openrouterModel: '', skill: '' },
+              musicGenerate: { preferredProvider: '', geminiModel: '', minimaxModel: '', skill: '' },
+            },
+          },
+        },
+      ] as any,
+      [{ id: 'e1', source: 'tools-1', target: 'agent-1', type: 'data' }] as any,
+    );
+
+    const prompt = config!.systemPrompt.assembled;
+    expect(prompt).toContain('## Skills');
+    expect(prompt).toContain('### Available');
+    expect(prompt).toContain('{SAM_BUNDLED_ROOT}/exec/SKILL.md');
+    expect(prompt).toContain('{SAM_BUNDLED_ROOT}/web-search/SKILL.md');
+    // Only eligible skills show up
+    expect(prompt).not.toContain('/browser/SKILL.md');
+    // Content is not inlined
+    expect(prompt).not.toContain('Prefer `read_file`, `edit_file`');
+    // AgentConfig.tools.skills does not carry bundled refs
+    expect(config!.tools!.skills).toEqual([]);
+  });
+
+  it('falls back to an inline block when a tool has an author override', () => {
+    const config = resolveAgentConfig(
+      'agent-1',
+      [
+        {
+          id: 'agent-1',
+          type: 'agent',
+          position: { x: 0, y: 0 },
+          data: {
+            type: 'agent',
+            name: 'Agent',
+            nameConfirmed: true,
+            systemPrompt: '',
+            systemPromptMode: 'append' as const,
+            modelId: 'claude-sonnet-4-20250514',
+            thinkingLevel: 'off',
+            description: '',
+            tags: [],
+            modelCapabilities: {},
+          },
+        },
+        {
+          id: 'tools-1',
+          type: 'tools',
+          position: { x: -200, y: 0 },
+          data: {
+            type: 'tools',
+            label: 'Tools',
+            profile: 'custom',
+            enabledTools: ['exec'],
+            enabledGroups: [],
+            skills: [],
+            plugins: [],
+            subAgentSpawning: false,
+            maxSubAgents: 3,
+            toolSettings: {
+              exec: { cwd: '', sandboxWorkdir: false, skill: 'Run only make targets.' },
+              codeExecution: { apiKey: '', model: '', skill: '' },
+              webSearch: { tavilyApiKey: '', skill: '' },
+              image: { openaiApiKey: '', geminiApiKey: '', preferredModel: '', skill: '' },
+              canva: { portRangeStart: 5173, portRangeEnd: 5273, skill: '' },
+              browser: { userDataDir: '', viewportWidth: 1280, viewportHeight: 800, timeoutMs: 30000, autoScreenshot: true, screenshotFormat: 'jpeg', screenshotQuality: 60, skill: '' },
+              textToSpeech: { preferredProvider: '', elevenLabsApiKey: '', elevenLabsDefaultVoice: '', elevenLabsDefaultModel: '', openaiVoice: '', openaiModel: '', geminiVoice: '', geminiModel: '', microsoftApiKey: '', microsoftRegion: '', microsoftDefaultVoice: '', minimaxApiKey: '', minimaxGroupId: '', minimaxDefaultVoice: '', minimaxDefaultModel: '', openrouterVoice: '', openrouterModel: '', skill: '' },
+              musicGenerate: { preferredProvider: '', geminiModel: '', minimaxModel: '', skill: '' },
+            },
+          },
+        },
+      ] as any,
+      [{ id: 'e1', source: 'tools-1', target: 'agent-1', type: 'data' }] as any,
+    );
+
+    const prompt = config!.systemPrompt.assembled;
+    // The override is inlined under its own heading
+    expect(prompt).toContain('exec tool guidance (inline override)');
+    expect(prompt).toContain('Run only make targets.');
+    // Bundled exec reference is suppressed because it's been overridden
+    expect(prompt).not.toContain('{SAM_BUNDLED_ROOT}/exec/SKILL.md');
+  });
 });
 
 describe('provider node resolution', () => {

@@ -1,6 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { createImageGenerateTool } from './image-generate';
 import { createAgentTools } from '../../tool-factory';
+import { initializeToolRegistry } from '../../tool-registry';
+
+beforeAll(async () => {
+  await initializeToolRegistry();
+});
 
 describe('image_generate registration', () => {
   it('creates the tool with any (or no) API key', () => {

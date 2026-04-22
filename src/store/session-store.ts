@@ -23,6 +23,16 @@ export interface MessageImage {
   data: string; // base64
 }
 
+export interface MessageAudio {
+  mimeType: string;
+  /** Base64-encoded audio bytes — rendered via a `data:` URL. */
+  data: string;
+  path?: string;
+  filename?: string;
+  transcript?: string;
+  provider?: string;
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant' | 'tool';
@@ -35,6 +45,7 @@ export interface Message {
   toolName?: string;
   isToolError?: boolean;
   images?: MessageImage[];
+  audios?: MessageAudio[];
 }
 
 export interface ChatSession {
@@ -102,6 +113,37 @@ function extractImageContent(content: unknown): MessageImage[] | undefined {
   return images.length > 0 ? images : undefined;
 }
 
+/**
+ * Pull playable audio clips out of a tool result's `details` payload.
+ * Tools surface audio via `details.audio` (single) or `details.audios`
+ * (multi); anything else is ignored. See `TtsAudioDetails` in the TTS
+ * module for the producer side of this contract.
+ */
+function extractAudioDetails(details: unknown): MessageAudio[] | undefined {
+  if (!details || typeof details !== 'object') return undefined;
+  const d = details as { audio?: unknown; audios?: unknown };
+  const raw: unknown[] = Array.isArray(d.audios)
+    ? d.audios
+    : d.audio
+      ? [d.audio]
+      : [];
+  const audios: MessageAudio[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const a = item as Partial<MessageAudio>;
+    if (typeof a.mimeType !== 'string' || typeof a.data !== 'string') continue;
+    audios.push({
+      mimeType: a.mimeType,
+      data: a.data,
+      path: typeof a.path === 'string' ? a.path : undefined,
+      filename: typeof a.filename === 'string' ? a.filename : undefined,
+      transcript: typeof a.transcript === 'string' ? a.transcript : undefined,
+      provider: typeof a.provider === 'string' ? a.provider : undefined,
+    });
+  }
+  return audios.length > 0 ? audios : undefined;
+}
+
 function toStoredMessage(entry: SessionEntry): Message | null {
   if (entry.type === 'custom') {
     const customEntry = entry as SessionEntry & { customType?: unknown; data?: unknown };
@@ -131,6 +173,7 @@ function toStoredMessage(entry: SessionEntry): Message | null {
     usage?: MessageUsage;
     toolName?: string;
     isError?: boolean;
+    details?: unknown;
   } | undefined;
   if (!raw?.role) {
     return null;
@@ -152,6 +195,7 @@ function toStoredMessage(entry: SessionEntry): Message | null {
     toolName: role === 'tool' ? raw.toolName : undefined,
     isToolError: role === 'tool' ? raw.isError : undefined,
     images: extractImageContent(raw.content),
+    audios: role === 'tool' ? extractAudioDetails(raw.details) : undefined,
   };
 }
 

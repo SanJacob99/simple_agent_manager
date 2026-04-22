@@ -1,6 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { Type } from '@sinclair/typebox';
 import { createAgentTools } from './tool-factory';
+import { initializeToolRegistry } from './tool-registry';
+
+beforeAll(async () => {
+  await initializeToolRegistry();
+});
 
 describe('createAgentTools', () => {
   it('replaces enabled web tools with provider-backed implementations', () => {
