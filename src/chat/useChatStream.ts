@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useSessionStore } from '../store/session-store';
 import { useAgentConnectionStore } from '../store/agent-connection-store';
+import { useContextUsageStore } from '../store/context-usage-store';
 import { estimateTokens } from '../../shared/token-estimator';
 import type { ServerEvent } from '../../shared/protocol';
 import { agentClient } from '../client';
@@ -112,13 +113,19 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
   // Clean up on unmount
   useEffect(() => cleanup, [cleanup]);
 
-  // Persistent HITL event listener: outside the per-turn subscription in
-  // sendMessage so banners survive across turns and reconnects.
+  // Persistent HITL + context-usage event listener: outside the per-turn
+  // subscription in sendMessage so banners survive across turns and the
+  // context gauge updates even between runs / across reconnects.
   useEffect(() => {
     const unsub = agentClient.onEvent((event: ServerEvent) => {
       if (!('agentId' in event) || (event as any).agentId !== agentNodeId) return;
 
       switch (event.type) {
+        case 'context:usage': {
+          const e = event as Extract<ServerEvent, { type: 'context:usage' }>;
+          useContextUsageStore.getState().setUsage(e.usage);
+          break;
+        }
         case 'hitl:input_required': {
           const e = event as any;
           setPendingHitl({

@@ -17,6 +17,7 @@ import { groupToolsByClassification } from '../tools/tool-registry';
 import { resolveRuntimeModel } from './model-resolver';
 import { isToolErrorDetails } from '../tools/tool-adapter';
 import { substituteBundledSkillsRoot } from '../skills/bundled-skills-root';
+import { estimateTokens } from '../../shared/token-estimator';
 import { log } from '../logger';
 import type { HitlRegistry } from '../hitl/hitl-registry';
 import type { ServerEvent } from '../../shared/protocol';
@@ -26,7 +27,13 @@ export type RuntimeEvent =
   | AgentEvent
   | { type: 'runtime_ready'; config: AgentConfig }
   | { type: 'runtime_error'; error: string }
-  | { type: 'memory_compaction'; summary: string };
+  | { type: 'memory_compaction'; summary: string }
+  | {
+      type: 'context_usage_preview';
+      /** Estimated tokens in the payload about to be dispatched. */
+      estimatedTokens: number;
+      contextWindow: number;
+    };
 
 export type RuntimeEventListener = (event: RuntimeEvent) => void;
 
@@ -49,6 +56,23 @@ function fillConfirmationPolicyPlaceholders(
     .replace('{{READ_ONLY_TOOLS}}', fmt(readOnly))
     .replace('{{STATE_MUTATING_TOOLS}}', fmt([...stateMutating, ...unclassified]))
     .replace('{{DESTRUCTIVE_TOOLS}}', fmt(destructive));
+}
+
+/**
+ * Estimate the total tokens in an outbound payload using the shared
+ * CJK-aware char heuristic. We tokenize the final JSON-serialized
+ * payload string -- this captures system prompt, messages, tool
+ * schemas, and any other fields the provider will see. Accuracy is
+ * approximate (±15%) but model-agnostic; the authoritative value comes
+ * from the provider's reported usage post-turn.
+ */
+function estimatePayloadTokens(payload: unknown): number {
+  try {
+    const str = JSON.stringify(payload) ?? '';
+    return estimateTokens(str);
+  } catch {
+    return 0;
+  }
 }
 
 function summarizePayload(payload: any): string {
@@ -242,6 +266,20 @@ export class AgentRuntime {
       toolExecution: 'parallel',
       onPayload: (payload) => {
         log('pi-ai Request Payload', summarizePayload(payload));
+        // Predictive context-window signal: tokenize the outbound
+        // payload and emit before the HTTP call. The coordinator wraps
+        // this into a `context:usage` event with source='preview' so
+        // the UI can react instantly (e.g. when a new skill is added).
+        const estimatedTokens = estimatePayloadTokens(payload);
+        const contextWindow =
+          (payload as { model?: { contextWindow?: number } })?.model?.contextWindow
+          ?? (this.agent.state.model as { contextWindow?: number })?.contextWindow
+          ?? 0;
+        this.emit({
+          type: 'context_usage_preview',
+          estimatedTokens,
+          contextWindow,
+        });
       },
     });
 

@@ -81,6 +81,7 @@ export type CoordinatorEvent =
   | { type: 'lifecycle:start'; runId: string; agentId: string; sessionId: string; startedAt: number }
   | { type: 'lifecycle:end'; runId: string; status: 'ok'; startedAt: number; endedAt: number; payloads: RunPayload[]; usage?: RunUsage }
   | { type: 'lifecycle:error'; runId: string; status: 'error'; error: StructuredError; startedAt?: number; endedAt: number }
+  | { type: 'context:usage'; runId: string; agentId: string; sessionKey: string; usage: import('./context-usage').ContextUsage }
   | { type: 'stream'; runId: string; event: unknown };
 
 export type RunEventListener = (event: CoordinatorEvent) => void;

@@ -39,6 +39,10 @@ import {
   type RunDiagnosticData,
   type RunErrorDiagnosticData,
 } from '../../shared/session-diagnostics';
+import {
+  contextTokensFromUsage,
+  type ContextUsage,
+} from '../../shared/context-usage';
 import { RunConcurrencyController } from './run-concurrency-controller';
 import { SubAgentRegistry } from './sub-agent-registry';
 import { createSessionTools, type SessionToolContext } from '../sessions/session-tools';
@@ -690,6 +694,22 @@ export class RunCoordinator {
     };
 
     const unsubscribe = this.runtime.subscribe((event: RuntimeEvent) => {
+      // Predictive context-usage: emit as a first-class coordinator
+      // event so the UI updates before the provider responds. Does not
+      // touch the transcript and does not flow through the stream
+      // transforms.
+      if ('type' in event && event.type === 'context_usage_preview') {
+        const ev = event as { estimatedTokens: number; contextWindow: number };
+        this.emitContextUsage(
+          record.sessionKey,
+          undefined,
+          ev.estimatedTokens,
+          'preview',
+          record.runId,
+        );
+        return;
+      }
+
       if ('type' in event) {
         if (event.type === 'message_start' && (event as any).message?.role === 'assistant') {
           _apiCallCount++;
@@ -1027,15 +1047,69 @@ export class RunCoordinator {
     }
 
     const { usage, costTotalUsd } = this.normalizeUsage(assistantMessage.usage);
+    const runUsage: RunUsage = {
+      input: usage.input,
+      output: usage.output,
+      cacheRead: usage.cacheRead,
+      cacheWrite: usage.cacheWrite,
+      totalTokens: usage.totalTokens,
+    };
+    const contextTokens = contextTokensFromUsage(runUsage);
+
     await this.sessionRouter.updateAfterTurn(sessionKey, {
       updatedAt: new Date(assistantMessage.timestamp).toISOString(),
       inputTokens: status.inputTokens + usage.input,
       outputTokens: status.outputTokens + usage.output,
       totalTokens: status.totalTokens + usage.totalTokens,
+      // contextTokens is a non-cumulative snapshot of the most recent
+      // turn's context fill. Everything else in this object is cumulative.
+      contextTokens,
       cacheRead: status.cacheRead + usage.cacheRead,
       cacheWrite: status.cacheWrite + usage.cacheWrite,
       totalEstimatedCostUsd: status.totalEstimatedCostUsd + costTotalUsd,
     });
+
+    this.emitContextUsage(sessionKey, runUsage, contextTokens, 'actual');
+  }
+
+  /** Resolve the model's context window in tokens (override > catalog > default). */
+  private resolveContextWindow(): number {
+    const runtimeCw = (this.runtime.state.model as { contextWindow?: number })?.contextWindow;
+    if (typeof runtimeCw === 'number' && runtimeCw > 0) return runtimeCw;
+    const override = this.config.modelCapabilities?.contextWindow;
+    if (typeof override === 'number' && override > 0) return override;
+    return 128_000;
+  }
+
+  /** Emit a `context:usage` coordinator event (no runId binding). */
+  private emitContextUsage(
+    sessionKey: string,
+    usage: RunUsage | undefined,
+    contextTokens: number,
+    source: ContextUsage['source'],
+    runId?: string,
+  ): void {
+    const snapshot: ContextUsage = {
+      sessionKey,
+      runId,
+      at: Date.now(),
+      contextTokens,
+      contextWindow: this.resolveContextWindow(),
+      usage,
+      source,
+    };
+    const event: CoordinatorEvent = {
+      type: 'context:usage',
+      runId: runId ?? '',
+      agentId: this.agentId,
+      sessionKey,
+      usage: snapshot,
+    };
+    if (runId) {
+      this.emitForRun(runId, event);
+    } else {
+      this.emit(event);
+    }
   }
 
   private async finishTranscript(

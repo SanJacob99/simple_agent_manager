@@ -1,14 +1,12 @@
-import { useState, useMemo } from 'react';
+import { useMemo } from 'react';
 import { PieChart, Pie, Cell } from 'recharts';
-import { ChevronDown, ChevronUp, AlertCircle, Cpu, Wrench, BookOpen, Layers, Plug } from 'lucide-react';
-import type { Message } from '../store/session-store';
-import type { ContextWindowInfo, PeripheralReservation, ContextSource } from './useContextWindow';
+import type { ContextWindowInfo, ContextSource } from './useContextWindow';
+import type { ContextUsage } from '../../shared/context-usage';
 import { cssVar } from '../utils/css-var';
 
 interface ContextUsagePanelProps {
-  messages: Message[];
   contextInfo: ContextWindowInfo;
-  peripheralReservations: PeripheralReservation[];
+  usage: ContextUsage | undefined;
 }
 
 function formatTokenCount(count: number): string {
@@ -25,77 +23,52 @@ function sourceLabel(source: ContextSource): string {
   }
 }
 
+function kindLabel(source: ContextUsage['source'] | undefined): string | null {
+  if (!source) return null;
+  switch (source) {
+    case 'actual': return null;      // no badge -- ground truth is default
+    case 'preview': return 'preview';
+    case 'persisted': return 'last known';
+  }
+}
+
 const MINI_DONUT_SIZE = 36;
 
-const peripheralIcon = (type: string) => {
-  switch (type) {
-    case 'system-prompt': return <Cpu size={10} className="text-slate-400" />;
-    case 'tools': return <Wrench size={10} className="text-slate-400" />;
-    case 'skills': return <BookOpen size={10} className="text-slate-400" />;
-    case 'context-engine': return <Layers size={10} className="text-slate-400" />;
-    default: return <Plug size={10} className="text-slate-400" />;
-  }
-};
-
 export default function ContextUsagePanel({
-  messages,
   contextInfo,
-  peripheralReservations,
+  usage,
 }: ContextUsagePanelProps) {
-  const [expanded, setExpanded] = useState(false);
+  const usedTokens = usage?.contextTokens ?? 0;
+  const contextWindow = usage?.contextWindow ?? contextInfo.contextWindow;
+  const lastTurnUsage = usage?.usage;
 
-  const { usedTokens, lastTurnUsage } = useMemo(() => {
-    let total = 0;
-    let lastUsage: Message['usage'] | undefined;
+  const available = Math.max(0, contextWindow - usedTokens);
+  const usedPercent = contextWindow > 0
+    ? Math.round((usedTokens / contextWindow) * 100)
+    : 0;
 
-    for (const msg of messages) {
-      if (msg.tokenCount) {
-        total += msg.tokenCount;
-      }
-      if (msg.role === 'assistant' && msg.usage) {
-        lastUsage = msg.usage;
-      }
-    }
-
-    return { usedTokens: total, lastTurnUsage: lastUsage };
-  }, [messages]);
-
-  const reservedTokens = useMemo(() => {
-    return peripheralReservations.reduce((sum, r) => sum + r.tokenEstimate, 0);
-  }, [peripheralReservations]);
-
-  const { contextWindow } = contextInfo;
-  const available = Math.max(0, contextWindow - usedTokens - reservedTokens);
-  const usedPercent = Math.round((usedTokens / contextWindow) * 100);
-
-  // Donut chart data — colors resolved from CSS vars at render
   const chartData = useMemo(() => {
     const usedColor = cssVar('--c-blue-500');
-    const reservedColor = cssVar('--c-amber-500');
     const availableColor = cssVar('--c-slate-800');
     const emptyColor = cssVar('--c-slate-900');
     const data = [];
     if (usedTokens > 0) {
       data.push({ name: 'Used', value: usedTokens, color: usedColor });
     }
-    if (reservedTokens > 0) {
-      data.push({ name: 'Reserved', value: reservedTokens, color: reservedColor });
-    }
-    const avail = Math.max(0, contextWindow - usedTokens - reservedTokens);
-    if (avail > 0) {
-      data.push({ name: 'Available', value: avail, color: availableColor });
+    if (available > 0) {
+      data.push({ name: 'Available', value: available, color: availableColor });
     }
     if (data.length === 0) {
       data.push({ name: 'Empty', value: 1, color: emptyColor });
     }
     return data;
-  }, [usedTokens, reservedTokens, contextWindow]);
+  }, [usedTokens, available]);
+
+  const kind = kindLabel(usage?.source);
 
   return (
     <div className="border-t border-slate-800">
-      {/* Compact always-visible bar with donut */}
       <div className="flex items-center gap-2.5 px-3 py-1.5">
-        {/* Mini donut */}
         <div className="relative flex-shrink-0" style={{ width: MINI_DONUT_SIZE, height: MINI_DONUT_SIZE }}>
           <PieChart width={MINI_DONUT_SIZE} height={MINI_DONUT_SIZE}>
             <Pie
@@ -115,7 +88,6 @@ export default function ContextUsagePanel({
               ))}
             </Pie>
           </PieChart>
-          {/* Center percentage */}
           <span
             className="absolute inset-0 flex items-center justify-center text-[7px] font-bold tabular-nums"
             style={{ color: usedPercent > 80 ? 'var(--c-red-400)' : usedPercent > 50 ? 'var(--c-amber-400)' : 'var(--c-slate-400)' }}
@@ -124,7 +96,6 @@ export default function ContextUsagePanel({
           </span>
         </div>
 
-        {/* Stats */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 text-[10px]">
             <span className="text-slate-400">
@@ -135,18 +106,24 @@ export default function ContextUsagePanel({
             <span className="rounded bg-slate-800 px-1 py-0.5 text-[8px] text-slate-500 font-medium">
               {sourceLabel(contextInfo.source)}
             </span>
-          </div>
-          <div className="flex items-center gap-2 text-[9px] text-slate-500 mt-0.5">
-            <span>Available: {formatTokenCount(available)}</span>
-            {reservedTokens > 0 && (
-              <span className="text-amber-500/70">
-                Reserved: {formatTokenCount(reservedTokens)}
+            {kind && (
+              <span
+                className="rounded bg-slate-800 px-1 py-0.5 text-[8px] text-slate-400 font-medium"
+                title={
+                  usage?.source === 'preview'
+                    ? 'Predicted context for the next turn -- will be replaced when the model responds'
+                    : 'Last value persisted for this session -- waiting for a new turn to refresh'
+                }
+              >
+                {kind}
               </span>
             )}
           </div>
+          <div className="flex items-center gap-2 text-[9px] text-slate-500 mt-0.5">
+            <span>Available: {formatTokenCount(available)}</span>
+          </div>
         </div>
 
-        {/* Last turn usage */}
         {lastTurnUsage && (
           <div className="flex-shrink-0 text-right text-[9px] text-slate-500 hidden sm:block">
             <div>In: {formatTokenCount(lastTurnUsage.input)} Out: {formatTokenCount(lastTurnUsage.output)}</div>
@@ -157,48 +134,7 @@ export default function ContextUsagePanel({
             )}
           </div>
         )}
-
-        {/* Expand button */}
-        {peripheralReservations.length > 0 && (
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="flex-shrink-0 rounded p-0.5 text-slate-500 hover:text-slate-300 hover:bg-slate-800 transition"
-            title={expanded ? 'Hide reservations' : 'Show context reservations'}
-          >
-            {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-          </button>
-        )}
       </div>
-
-      {/* Expanded: Peripheral reservations */}
-      {expanded && peripheralReservations.length > 0 && (
-        <div className="border-t border-slate-800/60 px-3 py-2 space-y-1.5">
-          <div className="text-[9px] uppercase tracking-wider text-slate-600 font-semibold mb-1">
-            Context Reservations
-          </div>
-          {peripheralReservations.map((reservation, i) => (
-            <div key={i} className="flex items-center gap-2 text-[10px]">
-              {peripheralIcon(reservation.type)}
-              <span className="flex-1 text-slate-400 truncate">{reservation.label}</span>
-              <span className="tabular-nums text-slate-500 font-mono">
-                ~{formatTokenCount(reservation.tokenEstimate)}
-              </span>
-              {reservation.isTodo && (
-                <span
-                  className="flex items-center gap-0.5 rounded bg-amber-500/10 px-1 py-0.5 text-[8px] text-amber-400 font-medium"
-                  title="This estimate will improve when peripheral nodes report their actual context footprint"
-                >
-                  <AlertCircle size={8} />
-                  TODO
-                </span>
-              )}
-            </div>
-          ))}
-          <p className="text-[8px] text-slate-600 italic mt-1">
-            Estimates will improve when peripheral nodes report their actual context footprint.
-          </p>
-        </div>
-      )}
     </div>
   );
 }

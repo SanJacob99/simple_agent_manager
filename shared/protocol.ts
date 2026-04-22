@@ -339,6 +339,21 @@ export interface HitlResolvedEvent {
   reason?: 'timeout' | 'aborted';
 }
 
+/**
+ * Canonical context-window usage snapshot for a session. Emitted by the
+ * server every time the value changes: once as `preview` when a run's
+ * payload is about to dispatch, and once as `actual` after the provider
+ * returns real usage. The server persists the `actual` snapshot on the
+ * session entry so it survives reconnects.
+ */
+export interface ContextUsageEvent {
+  type: 'context:usage';
+  agentId: string;
+  runId?: string;
+  sessionKey: string;
+  usage: import('./context-usage').ContextUsage;
+}
+
 /** Server's reply to a `hitl:list` command — the current pending prompts for a session. */
 export interface HitlListResultEvent {
   type: 'hitl:list:result';
@@ -381,4 +396,5 @@ export type ServerEvent =
   | ToolSummaryEvent
   | HitlInputRequiredEvent
   | HitlResolvedEvent
-  | HitlListResultEvent;
+  | HitlListResultEvent
+  | ContextUsageEvent;
