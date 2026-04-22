@@ -89,6 +89,7 @@ export function useSessionContextUsage(
       cacheRead: sessionMeta.cacheRead,
       cacheWrite: sessionMeta.cacheWrite,
       totalTokens: sessionMeta.totalTokens,
+      breakdown: sessionMeta.contextBreakdown,
     });
   }, [sessionKey, sessionMeta, contextWindow, hydrate]);
 

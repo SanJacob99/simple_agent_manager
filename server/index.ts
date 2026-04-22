@@ -163,10 +163,15 @@ app.post('/api/sessions/:agentId/route', async (req, res) => {
   };
   try {
     const router = getOrCreateSessionRouter(config, agentName, req.params.agentId);
-    res.json(await router.route({
+    const routed = await router.route({
       agentId: req.params.agentId,
       ...(request ?? {}),
-    }));
+    });
+    // Seed the per-section breakdown so the UI's context panel can
+    // render immediately on session open, without waiting for the
+    // user to send a first message. No-op if the agent isn't running.
+    await agentManager.seedSessionContext(req.params.agentId, routed.sessionKey);
+    res.json(routed);
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
@@ -179,7 +184,11 @@ app.post('/api/sessions/:agentId/:sessionKey/reset', async (req, res) => {
   };
   try {
     const router = getOrCreateSessionRouter(config, agentName, req.params.agentId);
-    res.json(await router.resetSession(req.params.sessionKey));
+    const routed = await router.resetSession(req.params.sessionKey);
+    // Reset wipes counters and forks a new transcript -- reseed the
+    // breakdown so the panel reflects the fresh baseline immediately.
+    await agentManager.seedSessionContext(req.params.agentId, routed.sessionKey);
+    res.json(routed);
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
@@ -206,7 +215,11 @@ app.post('/api/sessions/:agentId/:sessionKey/clear', async (req, res) => {
   };
   try {
     const router = getOrCreateSessionRouter(config, agentName, req.params.agentId);
-    res.json(await router.clearMessages(req.params.sessionKey));
+    const cleared = await router.clearMessages(req.params.sessionKey);
+    // Clearing zeroes token counters; reseed so the panel shows the
+    // baseline instead of stale cumulative data.
+    await agentManager.seedSessionContext(req.params.agentId, cleared.sessionKey);
+    res.json(cleared);
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }

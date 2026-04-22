@@ -17,7 +17,7 @@ import { groupToolsByClassification } from '../tools/tool-registry';
 import { resolveRuntimeModel } from './model-resolver';
 import { isToolErrorDetails } from '../tools/tool-adapter';
 import { substituteBundledSkillsRoot } from '../skills/bundled-skills-root';
-import { estimateTokens } from '../../shared/token-estimator';
+import { estimatePayloadBreakdown } from './payload-breakdown';
 import { log } from '../logger';
 import type { HitlRegistry } from '../hitl/hitl-registry';
 import type { ServerEvent } from '../../shared/protocol';
@@ -33,6 +33,7 @@ export type RuntimeEvent =
       /** Estimated tokens in the payload about to be dispatched. */
       estimatedTokens: number;
       contextWindow: number;
+      breakdown: import('../../shared/context-usage').ContextUsageBreakdown;
     };
 
 export type RuntimeEventListener = (event: RuntimeEvent) => void;
@@ -56,23 +57,6 @@ function fillConfirmationPolicyPlaceholders(
     .replace('{{READ_ONLY_TOOLS}}', fmt(readOnly))
     .replace('{{STATE_MUTATING_TOOLS}}', fmt([...stateMutating, ...unclassified]))
     .replace('{{DESTRUCTIVE_TOOLS}}', fmt(destructive));
-}
-
-/**
- * Estimate the total tokens in an outbound payload using the shared
- * CJK-aware char heuristic. We tokenize the final JSON-serialized
- * payload string -- this captures system prompt, messages, tool
- * schemas, and any other fields the provider will see. Accuracy is
- * approximate (±15%) but model-agnostic; the authoritative value comes
- * from the provider's reported usage post-turn.
- */
-function estimatePayloadTokens(payload: unknown): number {
-  try {
-    const str = JSON.stringify(payload) ?? '';
-    return estimateTokens(str);
-  } catch {
-    return 0;
-  }
 }
 
 function summarizePayload(payload: any): string {
@@ -120,6 +104,7 @@ export class AgentRuntime {
   private unsubscribeAgent: (() => void) | null = null;
   private hookRegistry: HookRegistry | null = null;
   private baseTools: AgentTool<TSchema>[] = [];
+  private initialSystemPrompt: string = '';
   private getApiKeyFn: (provider: string) => Promise<string | undefined> | string | undefined;
   private getDiscoveredModelFn: (provider: string, modelId: string) => DiscoveredModelMetadata | undefined;
 
@@ -251,6 +236,10 @@ export class AgentRuntime {
 
     // Snapshot base tools so addTools can reset per-run injections
     this.baseTools = tools;
+    // Cache the finalized system prompt so `buildInitialBreakdown()`
+    // can tokenize it without reaching into pi-core's Agent state
+    // (which may swap it per-turn via setSystemPrompt).
+    this.initialSystemPrompt = systemPrompt;
 
     // Create Agent
     this.agent = new Agent({
@@ -267,18 +256,34 @@ export class AgentRuntime {
       onPayload: (payload) => {
         log('pi-ai Request Payload', summarizePayload(payload));
         // Predictive context-window signal: tokenize the outbound
-        // payload and emit before the HTTP call. The coordinator wraps
-        // this into a `context:usage` event with source='preview' so
-        // the UI can react instantly (e.g. when a new skill is added).
-        const estimatedTokens = estimatePayloadTokens(payload);
+        // payload, split into four mutually-exclusive sections
+        // (systemPrompt, skills, tools, messages), and emit before the
+        // HTTP call. The coordinator wraps this into a `context:usage`
+        // event with source='preview'. `actual` snapshots reuse the
+        // non-messages counts from this preview so the UI keeps a
+        // stable breakdown across the turn.
+        const skillInputs =
+          this.config.tools?.skills?.map((s) => ({
+            name: s.name ?? s.id ?? '(unnamed)',
+            content: s.content ?? '',
+          })) ?? [];
+        const breakdown = estimatePayloadBreakdown(payload, skillInputs);
         const contextWindow =
           (payload as { model?: { contextWindow?: number } })?.model?.contextWindow
           ?? (this.agent.state.model as { contextWindow?: number })?.contextWindow
           ?? 0;
         this.emit({
           type: 'context_usage_preview',
-          estimatedTokens,
+          estimatedTokens: breakdown.total,
           contextWindow,
+          breakdown: {
+            systemPrompt: breakdown.systemPrompt,
+            skills: breakdown.skills,
+            tools: breakdown.tools,
+            messages: breakdown.messages,
+            skillsEntries: breakdown.skillsEntries,
+            toolsEntries: breakdown.toolsEntries,
+          },
         });
       },
     });
@@ -318,6 +323,44 @@ export class AgentRuntime {
    */
   setSystemPrompt(prompt: string): void {
     this.agent.state.systemPrompt = prompt;
+  }
+
+  /**
+   * Compute a baseline context-usage breakdown for this agent before
+   * any turn has run. Uses the finalized system prompt + resolved base
+   * tools + configured skills; `messages` is 0. Used to seed a
+   * session's persisted `contextBreakdown` so the UI can show the
+   * per-section panel the moment a session is opened, without waiting
+   * for the first preview.
+   */
+  buildInitialBreakdown(): import('../../shared/context-usage').ContextUsageBreakdown {
+    const skillInputs =
+      this.config.tools?.skills?.map((s) => ({
+        name: s.name ?? s.id ?? '(unnamed)',
+        content: s.content ?? '',
+      })) ?? [];
+    // Synthesize the same payload shape the provider will see so the
+    // breakdown is consistent with the per-turn preview.
+    const payload = {
+      systemPrompt: this.initialSystemPrompt,
+      messages: [],
+      tools: this.baseTools,
+    };
+    const b = estimatePayloadBreakdown(payload, skillInputs);
+    return {
+      systemPrompt: b.systemPrompt,
+      skills: b.skills,
+      tools: b.tools,
+      messages: b.messages,
+      skillsEntries: b.skillsEntries,
+      toolsEntries: b.toolsEntries,
+    };
+  }
+
+  /** Sum the four aggregate buckets of a breakdown for total context tokens. */
+  buildInitialContextTokens(): number {
+    const b = this.buildInitialBreakdown();
+    return b.systemPrompt + b.skills + b.tools + b.messages;
   }
 
   /**

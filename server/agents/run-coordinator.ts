@@ -41,7 +41,9 @@ import {
 } from '../../shared/session-diagnostics';
 import {
   contextTokensFromUsage,
+  foldActualIntoBreakdown,
   type ContextUsage,
+  type ContextUsageBreakdown,
 } from '../../shared/context-usage';
 import { RunConcurrencyController } from './run-concurrency-controller';
 import { SubAgentRegistry } from './sub-agent-registry';
@@ -127,6 +129,15 @@ export class RunCoordinator {
   private readonly transcriptStore: SessionTranscriptStore | null;
   private readonly sessionRouter: SessionRouter | null;
   private readonly subAgentRegistry: SubAgentRegistry;
+
+  /**
+   * Last `preview` breakdown we saw, keyed by sessionKey. The provider
+   * returns a single total for `actual`, so we reuse the non-messages
+   * sections here and recompute `messages` as the remainder. This
+   * keeps the per-section display stable across the `preview -> actual`
+   * handoff within a single turn.
+   */
+  private readonly lastPreviewBreakdown = new Map<string, ContextUsageBreakdown>();
 
   constructor(
     private readonly agentId: string,
@@ -393,6 +404,14 @@ export class RunCoordinator {
     const routeRequest = await this.resolveRouteRequest(sessionKeyHint);
     const routed = await this.sessionRouter!.route(routeRequest);
 
+    // Seed the persisted context breakdown for newly created or reset
+    // sessions so reopening the session shows the per-section panel
+    // without waiting for the first turn. Uses a baseline breakdown
+    // (systemPrompt + skills + tools, messages = 0).
+    if (routed.created || routed.reset) {
+      await this.seedInitialContextBreakdown(routed.sessionKey);
+    }
+
     if (this.hooks && (routed.created || routed.reset)) {
       const sessionCtx: SessionLifecycleContext = {
         agentId: this.agentId,
@@ -404,6 +423,40 @@ export class RunCoordinator {
     }
 
     return routed;
+  }
+
+  /**
+   * Persist a baseline context-usage breakdown on the session entry.
+   * Uses the runtime's finalized system prompt + skills + resolved
+   * tools with messages = 0. The real value is refreshed every turn
+   * via `applyAssistantUsage`.
+   *
+   * Safe to call for already-persisted sessions: if a real turn has
+   * run (inputTokens > 0), we do NOT overwrite its breakdown with the
+   * naive baseline -- the turn's folded breakdown is more accurate.
+   * For zero-turn sessions (freshly created or opened for the first
+   * time), this seeds the panel so the UI can show it immediately.
+   */
+  async seedInitialContextBreakdown(sessionKey: string): Promise<void> {
+    if (!this.sessionRouter) return;
+    try {
+      const status = await this.sessionRouter.getStatus(sessionKey);
+      if (!status) return;
+      if (status.inputTokens > 0) return; // real turn data takes priority
+
+      const breakdown = this.runtime.buildInitialBreakdown();
+      const contextTokens =
+        breakdown.systemPrompt + breakdown.skills + breakdown.tools + breakdown.messages;
+      await this.sessionRouter.updateAfterTurn(sessionKey, {
+        contextTokens,
+        contextBreakdown: breakdown,
+      });
+      // Also emit the snapshot so any already-open client sees the
+      // baseline without refetching the session entry.
+      this.emitContextUsage(sessionKey, undefined, contextTokens, 'persisted', undefined, breakdown);
+    } catch (err) {
+      log('RunCoordinator', `seedInitialContextBreakdown failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   private tryStartNextRun(): void {
@@ -699,13 +752,19 @@ export class RunCoordinator {
       // touch the transcript and does not flow through the stream
       // transforms.
       if ('type' in event && event.type === 'context_usage_preview') {
-        const ev = event as { estimatedTokens: number; contextWindow: number };
+        const ev = event as {
+          estimatedTokens: number;
+          contextWindow: number;
+          breakdown: ContextUsageBreakdown;
+        };
+        this.lastPreviewBreakdown.set(record.sessionKey, ev.breakdown);
         this.emitContextUsage(
           record.sessionKey,
           undefined,
           ev.estimatedTokens,
           'preview',
           record.runId,
+          ev.breakdown,
         );
         return;
       }
@@ -1056,6 +1115,15 @@ export class RunCoordinator {
     };
     const contextTokens = contextTokensFromUsage(runUsage);
 
+    // Fold the provider's real total into the most recent preview's
+    // section shape so the UI keeps a stable breakdown. If there is no
+    // preview cached (e.g. turn ran before onPayload fired), omit the
+    // breakdown -- the client will degrade to showing only the total.
+    const previewBreakdown = this.lastPreviewBreakdown.get(sessionKey);
+    const breakdown = previewBreakdown
+      ? foldActualIntoBreakdown(previewBreakdown, contextTokens)
+      : undefined;
+
     await this.sessionRouter.updateAfterTurn(sessionKey, {
       updatedAt: new Date(assistantMessage.timestamp).toISOString(),
       inputTokens: status.inputTokens + usage.input,
@@ -1064,12 +1132,15 @@ export class RunCoordinator {
       // contextTokens is a non-cumulative snapshot of the most recent
       // turn's context fill. Everything else in this object is cumulative.
       contextTokens,
+      // Persist the per-section breakdown so reopening the session
+      // shows the panel immediately instead of waiting for a new turn.
+      ...(breakdown ? { contextBreakdown: breakdown } : {}),
       cacheRead: status.cacheRead + usage.cacheRead,
       cacheWrite: status.cacheWrite + usage.cacheWrite,
       totalEstimatedCostUsd: status.totalEstimatedCostUsd + costTotalUsd,
     });
 
-    this.emitContextUsage(sessionKey, runUsage, contextTokens, 'actual');
+    this.emitContextUsage(sessionKey, runUsage, contextTokens, 'actual', undefined, breakdown);
   }
 
   /** Resolve the model's context window in tokens (override > catalog > default). */
@@ -1081,13 +1152,14 @@ export class RunCoordinator {
     return 128_000;
   }
 
-  /** Emit a `context:usage` coordinator event (no runId binding). */
+  /** Emit a `context:usage` coordinator event (optionally run-scoped). */
   private emitContextUsage(
     sessionKey: string,
     usage: RunUsage | undefined,
     contextTokens: number,
     source: ContextUsage['source'],
     runId?: string,
+    breakdown?: ContextUsageBreakdown,
   ): void {
     const snapshot: ContextUsage = {
       sessionKey,
@@ -1096,6 +1168,7 @@ export class RunCoordinator {
       contextTokens,
       contextWindow: this.resolveContextWindow(),
       usage,
+      breakdown,
       source,
     };
     const event: CoordinatorEvent = {

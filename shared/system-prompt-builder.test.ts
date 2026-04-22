@@ -202,4 +202,138 @@ describe('buildSystemPrompt', () => {
     }));
     expect(result.userInstructions).toBe('My instructions');
   });
+
+  describe('SAM-owned sections', () => {
+    it('always emits the identity section in auto mode', () => {
+      const result = buildSystemPrompt(makeInput());
+      const identity = result.sections.find((s) => s.key === 'identity');
+      expect(identity).toBeDefined();
+      expect(identity!.content).toMatch(/Simple Agent Manager|SAM/);
+    });
+
+    it('always emits executionBias and safety + reasoning + runtime', () => {
+      const result = buildSystemPrompt(makeInput());
+      for (const key of ['executionBias', 'safety', 'reasoning', 'runtime']) {
+        expect(
+          result.sections.find((s) => s.key === key),
+          `missing section ${key}`,
+        ).toBeDefined();
+      }
+    });
+
+    it('appends user-supplied safetyGuardrails to the default safety block', () => {
+      const result = buildSystemPrompt(
+        makeInput({ safetyGuardrails: '## Safety\nAlways cite sources.' }),
+      );
+      const safety = result.sections.find((s) => s.key === 'safety')!;
+      // Default block is present...
+      expect(safety.content).toMatch(/power-seeking/);
+      // ...and the user addition is appended.
+      expect(safety.content).toContain('Always cite sources.');
+    });
+
+    it('still emits safety (with default) when user safetyGuardrails is empty', () => {
+      const result = buildSystemPrompt(makeInput({ safetyGuardrails: '' }));
+      expect(result.sections.find((s) => s.key === 'safety')).toBeDefined();
+    });
+
+    it('includes tooling guidance + enabled tool list under the tooling section', () => {
+      const result = buildSystemPrompt(makeInput({ toolsSummary: 'exec, read_file' }));
+      const tooling = result.sections.find((s) => s.key === 'tooling')!;
+      expect(tooling.content).toMatch(/source of truth|Structured tools/);
+      expect(tooling.content).toContain('exec, read_file');
+    });
+
+    it('emits selfUpdate section only when enabled', () => {
+      const off = buildSystemPrompt(makeInput());
+      expect(off.sections.find((s) => s.key === 'selfUpdate')).toBeUndefined();
+
+      const on = buildSystemPrompt(
+        makeInput({
+          selfUpdate: {
+            enabled: true,
+            protectedPaths: ['tools.exec.ask', 'tools.exec.security'],
+          },
+        }),
+      );
+      const section = on.sections.find((s) => s.key === 'selfUpdate')!;
+      expect(section.content).toContain('config.schema.lookup');
+      expect(section.content).toContain('config.patch');
+      expect(section.content).toContain('tools.exec.ask');
+    });
+
+    it('emits sandbox section when sandbox metadata is provided', () => {
+      const result = buildSystemPrompt(
+        makeInput({
+          sandbox: { mode: 'podman', sandboxed: true, elevatedExecAvailable: false, paths: ['/work'] },
+        }),
+      );
+      const section = result.sections.find((s) => s.key === 'sandbox')!;
+      expect(section.content).toContain('podman');
+      expect(section.content).toContain('/work');
+    });
+
+    it('emits documentation section when docsPath is provided', () => {
+      const result = buildSystemPrompt(makeInput({ docsPath: '/opt/sam/docs' }));
+      const section = result.sections.find((s) => s.key === 'documentation')!;
+      expect(section.content).toContain('/opt/sam/docs');
+    });
+
+    it('emits replyTags + heartbeats sections when configured', () => {
+      const result = buildSystemPrompt(
+        makeInput({
+          replyTags: { supported: true, example: '<reply to="main">hi</reply>' },
+          heartbeats: { enabled: true, prompt: 'PING', ack: 'PONG' },
+        }),
+      );
+      const tags = result.sections.find((s) => s.key === 'replyTags')!;
+      const hb = result.sections.find((s) => s.key === 'heartbeats')!;
+      expect(tags.content).toContain('<reply to="main">');
+      expect(hb.content).toContain('PING');
+      expect(hb.content).toContain('PONG');
+    });
+
+    it('produces a system prompt materially larger than the skeleton', () => {
+      // Regression: the old builder emitted ~100-500 tokens; the
+      // SAM-authored prompt should be substantially larger even with
+      // no skills or bootstrap files present.
+      const result = buildSystemPrompt(makeInput({ toolsSummary: 'exec, read_file' }));
+      expect(result.assembled.length).toBeGreaterThan(1500);
+    });
+
+    it('reasoning section exposes thinkingLevel + visibility', () => {
+      const result = buildSystemPrompt(
+        makeInput({
+          reasoningVisibility: 'high',
+          runtimeMeta: {
+            host: 'sam',
+            os: 'linux',
+            model: 'm',
+            thinkingLevel: 'medium',
+          },
+        }),
+      );
+      const section = result.sections.find((s) => s.key === 'reasoning')!;
+      expect(section.content).toContain('high');
+      expect(section.content).toContain('medium');
+    });
+
+    it('runtime line includes node + repo when supplied', () => {
+      const result = buildSystemPrompt(
+        makeInput({
+          runtimeMeta: {
+            host: 'sam',
+            os: 'darwin',
+            model: 'claude',
+            thinkingLevel: 'off',
+            nodeVersion: '22.1.0',
+            repoRoot: '/home/user/project',
+          },
+        }),
+      );
+      const runtime = result.sections.find((s) => s.key === 'runtime')!;
+      expect(runtime.content).toContain('node=22.1.0');
+      expect(runtime.content).toContain('repo=/home/user/project');
+    });
+  });
 });

@@ -1,5 +1,37 @@
 import type { RunUsage } from './run-types';
 
+/** Named row inside a breakdown (one skill, one tool, etc.). */
+export interface ContextUsageEntry {
+  name: string;
+  tokens: number;
+}
+
+/**
+ * Mutually-exclusive token counts for each chunk of the outbound
+ * payload. Sums to approximately `contextTokens` (within estimator
+ * noise). Only present on snapshots that were computed from the
+ * assembled payload -- the provider's post-turn usage is a single
+ * total, so `actual` snapshots reuse the most recent preview's
+ * per-section shape with `messages` recomputed as the remainder.
+ *
+ * `skills` is carved out of the system prompt (skills are folded in
+ * during prompt assembly). `systemPrompt` here is the non-skills
+ * remainder.
+ *
+ * `skillsEntries` / `toolsEntries` provide per-item detail so the UI
+ * can show which skills/tools are largest. They are sorted descending
+ * by tokens on the server. Each array's entries sum to the matching
+ * aggregate (`skills` / `tools`).
+ */
+export interface ContextUsageBreakdown {
+  systemPrompt: number;
+  skills: number;
+  tools: number;
+  messages: number;
+  skillsEntries?: ContextUsageEntry[];
+  toolsEntries?: ContextUsageEntry[];
+}
+
 /**
  * Unified, model-agnostic snapshot of how full the LLM's context window
  * is for one session. The backend owns this data: it is computed from
@@ -33,12 +65,47 @@ export interface ContextUsage {
   usage?: RunUsage;
 
   /**
+   * Per-section breakdown, when available. `preview` snapshots include
+   * a fresh breakdown from the assembled payload. `actual` snapshots
+   * carry forward the most recent preview's `systemPrompt`, `skills`,
+   * and `tools` counts (those chunks do not change within a turn) and
+   * recompute `messages` as the remainder. `persisted` snapshots have
+   * no breakdown.
+   */
+  breakdown?: ContextUsageBreakdown;
+
+  /**
    * Where the number came from.
    * - `actual`: provider reported this turn's usage.
    * - `preview`: estimated from the assembled payload before dispatch.
    * - `persisted`: loaded from the session store on session open.
    */
   source: 'actual' | 'preview' | 'persisted';
+}
+
+/**
+ * Re-derive `messages` in a breakdown using the real post-turn total
+ * while keeping the other sections stable. Never goes negative -- if
+ * the estimate overshoots, messages collapses to 0.
+ */
+export function foldActualIntoBreakdown(
+  previewBreakdown: ContextUsageBreakdown,
+  actualTotal: number,
+): ContextUsageBreakdown {
+  const nonMessages =
+    previewBreakdown.systemPrompt
+    + previewBreakdown.skills
+    + previewBreakdown.tools;
+  return {
+    systemPrompt: previewBreakdown.systemPrompt,
+    skills: previewBreakdown.skills,
+    tools: previewBreakdown.tools,
+    messages: Math.max(0, actualTotal - nonMessages),
+    // Per-entry arrays are fixed within a turn -- carry through
+    // unchanged so the UI keeps showing per-skill / per-tool rows.
+    skillsEntries: previewBreakdown.skillsEntries,
+    toolsEntries: previewBreakdown.toolsEntries,
+  };
 }
 
 /**

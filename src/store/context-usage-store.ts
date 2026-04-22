@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ContextUsage } from '../../shared/context-usage';
+import type { ContextUsage, ContextUsageBreakdown } from '../../shared/context-usage';
 
 /**
  * Per-session cache of the latest context-usage snapshot the server has
@@ -28,6 +28,7 @@ interface ContextUsageState {
     cacheRead?: number;
     cacheWrite?: number;
     totalTokens?: number;
+    breakdown?: ContextUsageBreakdown;
   }) => void;
   clearSession: (sessionKey: string) => void;
 }
@@ -52,6 +53,7 @@ export const useContextUsageStore = create<ContextUsageState>((set) => ({
     cacheRead,
     cacheWrite,
     totalTokens,
+    breakdown,
   }) =>
     set((state) => {
       const existing = state.usageBySessionKey[sessionKey];
@@ -77,6 +79,7 @@ export const useContextUsageStore = create<ContextUsageState>((set) => ({
                     totalTokens: totalTokens ?? 0,
                   }
                 : undefined,
+            breakdown,
             source: 'persisted',
           },
         },

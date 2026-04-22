@@ -270,6 +270,20 @@ export function resolveAgentConfig(
 
   const workspacePath = data.workingDirectory || null;
 
+  // Resolve the user's local timezone and current wall-clock time so
+  // the Time section has real content. These are browser-available
+  // and safe to call at prompt-build time.
+  let timezone: string | null = null;
+  let nowIso: string | undefined;
+  try {
+    timezone = Intl.DateTimeFormat().resolvedOptions().timeZone ?? null;
+    nowIso = new Date().toISOString();
+  } catch {
+    // Non-browser / exotic runtime -- leave both null; builder falls back.
+  }
+
+  const reasoningVisibility: string = data.showReasoning ? 'visible' : 'off';
+
   const systemPrompt = buildSystemPrompt({
     mode,
     userInstructions: data.systemPrompt,
@@ -280,7 +294,9 @@ export function resolveAgentConfig(
     bootstrapFiles: null,
     bootstrapMaxChars,
     bootstrapTotalMaxChars,
-    timezone: null,
+    timezone,
+    nowIso,
+    reasoningVisibility,
     runtimeMeta: {
       host: 'simple-agent-manager',
       os: typeof navigator !== 'undefined' ? navigator.platform : 'unknown',

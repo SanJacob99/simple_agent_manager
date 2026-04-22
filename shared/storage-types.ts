@@ -53,7 +53,15 @@ export interface SessionStoreEntry {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
+  /** Most recent non-cumulative context-window fill, in tokens. */
   contextTokens: number;
+  /**
+   * Per-section breakdown of the most recent context snapshot. Seeded
+   * at session creation with a baseline (messages=0) so the UI can
+   * render the prompt/skills/tools rows immediately on session open,
+   * refreshed on every turn. See `shared/context-usage.ts`.
+   */
+  contextBreakdown?: import('./context-usage').ContextUsageBreakdown;
   cacheRead: number;
   cacheWrite: number;
   totalEstimatedCostUsd: number;
