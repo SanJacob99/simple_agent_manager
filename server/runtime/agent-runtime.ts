@@ -16,6 +16,7 @@ import { resolveToolNames, createAgentTools } from '../tools/tool-factory';
 import { groupToolsByClassification } from '../tools/tool-registry';
 import { resolveRuntimeModel } from './model-resolver';
 import { isToolErrorDetails } from '../tools/tool-adapter';
+import { substituteBundledSkillsRoot } from '../skills/bundled-skills-root';
 import { log } from '../logger';
 import type { HitlRegistry } from '../hitl/hitl-registry';
 import type { ServerEvent } from '../../shared/protocol';
@@ -190,7 +191,9 @@ export class AgentRuntime {
 
     // Build system prompt — inject the runtime workspace path when the config
     // didn't have one (workingDirectory was empty, so no workspace section was built).
-    let systemPrompt = config.systemPrompt.assembled;
+    // Also substitute the bundled-skills-root placeholder so skill references
+    // in the Skills section resolve to real absolute paths the agent can read.
+    let systemPrompt = substituteBundledSkillsRoot(config.systemPrompt.assembled);
     if (workspaceCwd && !/Working directory: /.test(systemPrompt)) {
       systemPrompt += `\n\n## Workspace\n\nWorking directory: ${workspaceCwd}`;
     }

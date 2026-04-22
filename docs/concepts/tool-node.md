@@ -3,7 +3,7 @@
 > Configures which tools an agent can use through profiles, groups, direct enables, skills, and plugins.
 
 <!-- source: src/types/nodes.ts#ToolsNodeData -->
-<!-- last-verified: 2026-04-18 -->
+<!-- last-verified: 2026-04-21 -->
 
 ## Overview
 
@@ -30,7 +30,7 @@ Skills stored on the Tool Node are merged into system prompt content during grap
 | `maxSubAgents` | `number` | `3` | Maximum concurrent sub-agents |
 | `toolSettings.canva.portRangeStart` | `number` | `5173` | Lower bound of the port range canva auto-picks from |
 | `toolSettings.canva.portRangeEnd` | `number` | `5273` | Upper bound of the port range canva auto-picks from |
-| `toolSettings.canva.skill` | `string` | `""` | Markdown guidance injected into the system prompt for the canva tool |
+| `toolSettings.canva.skill` | `string` | `""` | Optional inline markdown override for the canva skill. When non-empty, it replaces the bundled `canva/SKILL.md` reference with the user-authored text injected directly into the system prompt |
 | `toolSettings.textToSpeech.preferredProvider` | `string` | `""` | Default TTS provider: `openai`, `elevenlabs`, `google`, `microsoft`, `minimax`, or `openrouter` |
 | `toolSettings.textToSpeech.elevenLabsApiKey` | `string` | `""` | ElevenLabs API key. Empty reads `ELEVENLABS_API_KEY` from env |
 | `toolSettings.textToSpeech.elevenLabsDefaultVoice` | `string` | `""` | ElevenLabs voice id (e.g. `21m00Tcm4TlvDq8ikWAM`) |
@@ -43,11 +43,11 @@ Skills stored on the Tool Node are merged into system prompt content during grap
 | `toolSettings.textToSpeech.minimaxGroupId` | `string` | `""` | MiniMax group id. Empty reads `MINIMAX_GROUP_ID` from env |
 | `toolSettings.textToSpeech.openrouterVoice` | `string` | `""` | Voice for the OpenRouter audio model (e.g. `alloy`). Uses the OpenRouter key from the global API key store |
 | `toolSettings.textToSpeech.openrouterModel` | `string` | `""` | OpenRouter audio-capable model id, e.g. `openai/gpt-4o-audio-preview` |
-| `toolSettings.textToSpeech.skill` | `string` | `""` | Markdown guidance injected into the system prompt for text_to_speech |
+| `toolSettings.textToSpeech.skill` | `string` | `""` | Optional inline markdown override for the text_to_speech skill. When non-empty, it replaces the bundled `text-to-speech/SKILL.md` reference with the user-authored text injected directly into the system prompt |
 | `toolSettings.musicGenerate.preferredProvider` | `string` | `""` | Default music provider: `google` or `minimax` |
 | `toolSettings.musicGenerate.geminiModel` | `string` | `""` | Google Lyria model override (reuses the image-tool Gemini API key) |
 | `toolSettings.musicGenerate.minimaxModel` | `string` | `""` | MiniMax music model override, e.g. `music-01` (reuses the text_to_speech MiniMax key and group id) |
-| `toolSettings.musicGenerate.skill` | `string` | `""` | Markdown guidance injected into the system prompt for music_generate |
+| `toolSettings.musicGenerate.skill` | `string` | `""` | Optional inline markdown override for the music_generate skill. When non-empty, it replaces the bundled `music-generate/SKILL.md` reference with the user-authored text injected directly into the system prompt |
 
 ## Runtime Behavior
 
@@ -71,7 +71,13 @@ Tool name resolution happens in `shared/resolve-tool-names.ts` in this order:
 - most other tools are still stubs
 - if the resolved tool list already includes `web_search` or `web_fetch` and the active provider plugin supplies replacements, `createAgentTools()` swaps in the provider-backed implementation instead of auto-adding new tools
 
-Tool skills from the Tool Node and connected Skills Nodes are merged during `resolveAgentConfig()` and then folded into the system prompt by `buildSystemPrompt()`.
+Skill handling happens in `resolveAgentConfig()` and feeds the `## Skills` section of the system prompt via `buildSystemPrompt()`. There are three buckets:
+
+1. **Available** — a compact list of bundled SKILL.md files whose triggering tools are enabled. Each line is `- <id> (<location>) — <description> → <path>`, where `<path>` contains the `{SAM_BUNDLED_ROOT}` placeholder the server substitutes at runtime. Bundled content lives on disk at `server/skills/bundled/<id>/SKILL.md`; the manifest that decides which ones are eligible is in `shared/default-tool-skills.ts`. The prompt tells the agent to `read_file` a SKILL.md only when its topic becomes relevant, so guidance stays out-of-band by default.
+2. **Tags** — bullet list of declarative skill names contributed by connected Skill Nodes.
+3. **Inline blocks** — full markdown content from `SkillDefinition` entries on the Tools Node and from any per-tool `toolSettings.<tool>.skill` overrides the user has typed. An inline override for a given tool suppresses that tool's bundled reference, so the user's text becomes the sole source of guidance for it.
+
+Bundled references are computed from the resolved tool list (not from the stored `tools.skills` array), so `AgentConfig.tools.skills` only round-trips custom `SkillDefinition` entries and overrides.
 
 ## Connections
 

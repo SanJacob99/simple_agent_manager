@@ -3,6 +3,7 @@ import type { Edge } from '@xyflow/react';
 import type { AgentConfig, ResolvedProviderConfig, SystemPromptMode } from '../../shared/agent-config';
 import { resolveToolNames, IMPLEMENTED_TOOL_NAMES } from '../../shared/resolve-tool-names';
 import { buildSystemPrompt } from '../../shared/system-prompt-builder';
+import { eligibleBundledSkills } from '../../shared/default-tool-skills';
 
 export function resolveAgentConfig(
   agentNodeId: string,
@@ -58,92 +59,55 @@ export function resolveAgentConfig(
   const toolsNode = connectedNodes.find((n) => n.data.type === 'tools');
   const skillsNodes = connectedNodes.filter((n) => n.data.type === 'skills');
 
-  // Collect skills from SkillsNode(s) + ToolsNode skills
+  // SkillDefinition entries live in AgentConfig.tools.skills and are tracked
+  // separately from bundled skill references. They cover:
+  //   - custom skills configured on the Tools Node
+  //   - standalone Skills Node names (declarative tags; empty content)
+  //   - user-authored inline overrides in toolSettings.<tool>.skill
+  //
+  // Bundled skill references are composed later for the Skills section of
+  // the system prompt; they never round-trip through this list because the
+  // guidance lives on disk at <SAM_BUNDLED_ROOT>/<id>/SKILL.md.
   const allSkills = toolsNode && toolsNode.data.type === 'tools'
     ? [...toolsNode.data.skills]
     : [];
 
-  // Collect skills from standalone SkillsNode as system-prompt injections
   for (const sn of skillsNodes) {
     if (sn.data.type === 'skills') {
       for (const skillName of sn.data.enabledSkills) {
         allSkills.push({
           id: skillName,
           name: skillName,
-          content: `You have the skill: ${skillName}`,
+          content: '',
           injectAs: 'system-prompt' as const,
         });
       }
     }
   }
 
-  // Collect per-tool skills from tool settings
+  // Track which tool ids already have an author-written inline override so
+  // we don't also emit the bundled reference for the same tool.
+  const overriddenToolIds = new Set<string>();
   if (toolsNode && toolsNode.data.type === 'tools') {
     const ts = toolsNode.data.toolSettings;
-    if (ts?.exec?.skill?.trim()) {
+    const addInline = (id: string, label: string, text: string | undefined) => {
+      if (!text?.trim()) return;
       allSkills.push({
-        id: 'tool-skill-exec',
-        name: 'exec tool guidance',
-        content: ts.exec.skill,
+        id: `tool-skill-${id}`,
+        name: `${label} (inline override)`,
+        content: text.trim(),
         injectAs: 'system-prompt' as const,
       });
-    }
-    if (ts?.codeExecution?.skill?.trim()) {
-      allSkills.push({
-        id: 'tool-skill-code-execution',
-        name: 'code_execution tool guidance',
-        content: ts.codeExecution.skill,
-        injectAs: 'system-prompt' as const,
-      });
-    }
-    if (ts?.webSearch?.skill?.trim()) {
-      allSkills.push({
-        id: 'tool-skill-web-search',
-        name: 'web_search tool guidance',
-        content: ts.webSearch.skill,
-        injectAs: 'system-prompt' as const,
-      });
-    }
-    if (ts?.image?.skill?.trim()) {
-      allSkills.push({
-        id: 'tool-skill-image',
-        name: 'image tool guidance',
-        content: ts.image.skill,
-        injectAs: 'system-prompt' as const,
-      });
-    }
-    if (ts?.canva?.skill?.trim()) {
-      allSkills.push({
-        id: 'tool-skill-canva',
-        name: 'canva tool guidance',
-        content: ts.canva.skill,
-        injectAs: 'system-prompt' as const,
-      });
-    }
-    if (ts?.browser?.skill?.trim()) {
-      allSkills.push({
-        id: 'tool-skill-browser',
-        name: 'browser tool guidance',
-        content: ts.browser.skill,
-        injectAs: 'system-prompt' as const,
-      });
-    }
-    if (ts?.textToSpeech?.skill?.trim()) {
-      allSkills.push({
-        id: 'tool-skill-text-to-speech',
-        name: 'text_to_speech tool guidance',
-        content: ts.textToSpeech.skill,
-        injectAs: 'system-prompt' as const,
-      });
-    }
-    if (ts?.musicGenerate?.skill?.trim()) {
-      allSkills.push({
-        id: 'tool-skill-music-generate',
-        name: 'music_generate tool guidance',
-        content: ts.musicGenerate.skill,
-        injectAs: 'system-prompt' as const,
-      });
-    }
+      overriddenToolIds.add(id);
+    };
+    addInline('exec', 'exec tool guidance', ts?.exec?.skill);
+    addInline('code-execution', 'code_execution tool guidance', ts?.codeExecution?.skill);
+    addInline('web-search', 'web_search tool guidance', ts?.webSearch?.skill);
+    addInline('image', 'image tool guidance', ts?.image?.skill);
+    addInline('canva', 'canva tool guidance', ts?.canva?.skill);
+    addInline('browser', 'browser tool guidance', ts?.browser?.skill);
+    addInline('text-to-speech', 'text_to_speech tool guidance', ts?.textToSpeech?.skill);
+    addInline('music-generate', 'music_generate tool guidance', ts?.musicGenerate?.skill);
   }
 
   const toolsConfig = toolsNode && toolsNode.data.type === 'tools'
@@ -261,13 +225,41 @@ export function resolveAgentConfig(
   const agentMode = (data as any).systemPromptMode as SystemPromptMode | undefined;
   const mode: SystemPromptMode = agentMode === 'manual' ? 'manual' : 'append';
 
+  const resolvedToolNamesList = toolsConfig ? resolveToolNames(toolsConfig) : [];
   const toolsSummary = toolsConfig
-    ? resolveToolNames(toolsConfig).filter((t) => IMPLEMENTED_TOOL_NAMES.has(t)).join(', ')
+    ? resolvedToolNamesList.filter((t) => IMPLEMENTED_TOOL_NAMES.has(t)).join(', ')
     : null;
 
-  const skillsSummary = allSkills.length > 0
-    ? allSkills.map(s => `- ${s.name}`).join('\n')
-    : null;
+  // Compose the Skills section of the system prompt. Three buckets:
+  //   1. Available — compact list of bundled SKILL.md files the agent can
+  //      `read_file` on demand. Skipped for any tool with an inline override.
+  //   2. Tags — declarative skill names from standalone Skills Nodes.
+  //   3. Inline — author-written overrides and custom SkillDefinitions with
+  //      full content baked into the prompt.
+  const bundledRefs = eligibleBundledSkills(resolvedToolNamesList)
+    .filter((ref) => !overriddenToolIds.has(ref.id));
+  const bareSkills = allSkills.filter((s) => !s.content.trim());
+  const richSkills = allSkills.filter((s) => s.content.trim());
+
+  const skillsSections: string[] = [];
+  if (bundledRefs.length > 0) {
+    const preamble =
+      'Load a skill with `read_file` only when its topic becomes relevant to the current task — don\'t preload them all.';
+    const lines = bundledRefs
+      .map((ref) => `- ${ref.id} (${ref.location}) — ${ref.description} → ${ref.path}`)
+      .join('\n');
+    skillsSections.push(`### Available\n\n${preamble}\n\n${lines}`);
+  }
+  if (bareSkills.length > 0) {
+    skillsSections.push(
+      `### Tags\n\n${bareSkills.map((s) => `- ${s.name}`).join('\n')}`,
+    );
+  }
+  for (const s of richSkills) {
+    skillsSections.push(`### ${s.name}\n\n${s.content.trim()}`);
+  }
+
+  const skillsSummary = skillsSections.length > 0 ? skillsSections.join('\n\n') : null;
 
   const bootstrapMaxChars = contextNode && contextNode.data.type === 'contextEngine'
     ? ((contextNode.data as any).bootstrapMaxChars ?? 20000)
