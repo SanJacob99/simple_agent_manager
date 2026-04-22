@@ -13,7 +13,8 @@ export type NodeType =
   | 'storage'
   | 'vectorDatabase'
   | 'cron'
-  | 'provider';
+  | 'provider'
+  | 'mcp';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -347,6 +348,48 @@ export interface ProviderNodeData {
   baseUrl: string;
 }
 
+// --- MCP Node ---
+
+/**
+ * Transport used to reach the MCP server.
+ * - `stdio`: local subprocess launched from `command` + `args`
+ * - `http`: remote JSON-RPC over HTTP
+ * - `sse`: remote Server-Sent Events stream
+ */
+export type McpTransport = 'stdio' | 'http' | 'sse';
+
+export type McpConnectionStatus =
+  | 'unknown'
+  | 'connecting'
+  | 'connected'
+  | 'error'
+  | 'disconnected';
+
+export interface MCPNodeData {
+  [key: string]: unknown;
+  type: 'mcp';
+  label: string;
+  transport: McpTransport;
+  /** Local stdio: executable to spawn (e.g. `npx`). */
+  command: string;
+  /** Local stdio: arguments passed to the command. */
+  args: string[];
+  /** Local stdio: extra env vars for the child process. */
+  env: Record<string, string>;
+  /** Local stdio: working directory for the subprocess. Empty = inherit server cwd. */
+  cwd: string;
+  /** Remote http/sse: full URL of the MCP server endpoint. */
+  url: string;
+  /** Remote http/sse: extra HTTP headers (e.g. `Authorization: Bearer ...`). */
+  headers: Record<string, string>;
+  /** Prefix applied to every tool name from this server to avoid collisions. */
+  toolPrefix: string;
+  /** Optional whitelist of tools to expose. Empty = all tools from the server. */
+  allowedTools: string[];
+  /** Connect when the agent starts. When false, a tool call triggers lazy connect. */
+  autoConnect: boolean;
+}
+
 // --- Union Types ---
 
 export type FlowNodeData =
@@ -360,6 +403,7 @@ export type FlowNodeData =
   | StorageNodeData
   | VectorDatabaseNodeData
   | CronNodeData
-  | ProviderNodeData;
+  | ProviderNodeData
+  | MCPNodeData;
 
 export type AppNode = Node<FlowNodeData>;

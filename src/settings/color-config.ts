@@ -118,6 +118,7 @@ export const COLOR_GROUPS: ColorVarGroup[] = [
       { name: '--c-node-vectordb', label: 'Vector DB' },
       { name: '--c-node-cron', label: 'Cron' },
       { name: '--c-node-provider', label: 'Provider' },
+      { name: '--c-node-mcp', label: 'MCP' },
     ],
   },
   {

@@ -51,6 +51,11 @@
       "doc": "provider-node.md",
       "type": "src/types/nodes.ts#ProviderNodeData",
       "runtime": "server/providers/plugin-registry.ts"
+    },
+    "mcp": {
+      "doc": "mcp-node.md",
+      "type": "src/types/nodes.ts#MCPNodeData",
+      "runtime": null
     }
   }
 }

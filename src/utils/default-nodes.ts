@@ -203,5 +203,20 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         envVar: 'OPENROUTER_API_KEY',
         baseUrl: '',
       };
+    case 'mcp':
+      return {
+        type: 'mcp',
+        label: 'MCP',
+        transport: 'stdio',
+        command: '',
+        args: [],
+        env: {},
+        cwd: '',
+        url: '',
+        headers: {},
+        toolPrefix: '',
+        allowedTools: [],
+        autoConnect: true,
+      };
   }
 }

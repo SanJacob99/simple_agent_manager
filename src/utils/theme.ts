@@ -12,6 +12,7 @@ export const NODE_COLORS: Record<NodeType, string> = {
   vectorDatabase: 'var(--c-node-vectordb)',
   cron: 'var(--c-node-cron)',
   provider: 'var(--c-node-provider)',
+  mcp: 'var(--c-node-mcp)',
 };
 
 export const NODE_LABELS: Record<NodeType, string> = {
@@ -26,4 +27,5 @@ export const NODE_LABELS: Record<NodeType, string> = {
   vectorDatabase: 'Vector DB',
   cron: 'Cron',
   provider: 'Provider',
+  mcp: 'MCP',
 };

@@ -221,6 +221,30 @@ export function resolveAgentConfig(
       };
     });
 
+  // --- MCP Servers ---
+  // Each MCP node resolves to a ResolvedMcpConfig. The node id is kept as
+  // `mcpNodeId` so the server can push `mcp:status` events back to the UI
+  // and the MCPNode component can light up a live connection hint.
+  const mcps = connectedNodes
+    .filter((n) => n.data.type === 'mcp')
+    .map((n) => {
+      if (n.data.type !== 'mcp') throw new Error('unreachable');
+      return {
+        mcpNodeId: n.id,
+        label: n.data.label,
+        transport: n.data.transport,
+        command: n.data.command,
+        args: n.data.args,
+        env: n.data.env,
+        cwd: n.data.cwd,
+        url: n.data.url,
+        headers: n.data.headers,
+        toolPrefix: n.data.toolPrefix,
+        allowedTools: n.data.allowedTools,
+        autoConnect: n.data.autoConnect,
+      };
+    });
+
   // --- Build structured system prompt ---
   const agentMode = (data as any).systemPromptMode as SystemPromptMode | undefined;
   const mode: SystemPromptMode = agentMode === 'manual' ? 'manual' : 'append';
@@ -324,6 +348,7 @@ export function resolveAgentConfig(
     storage,
     vectorDatabases,
     crons,
+    mcps,
     // Exec tool cwd overrides agent-level workingDirectory when set
     workspacePath:
       (toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.exec?.cwd)
