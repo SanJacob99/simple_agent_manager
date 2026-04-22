@@ -42,8 +42,10 @@ import {
 import {
   contextTokensFromUsage,
   foldActualIntoBreakdown,
+  TRANSCRIPT_SYSTEM_PROMPT_TYPE,
   type ContextUsage,
   type ContextUsageBreakdown,
+  type TranscriptSystemPromptData,
 } from '../../shared/context-usage';
 import { RunConcurrencyController } from './run-concurrency-controller';
 import { SubAgentRegistry } from './sub-agent-registry';
@@ -447,9 +449,14 @@ export class RunCoordinator {
       const breakdown = this.runtime.buildInitialBreakdown();
       const contextTokens =
         breakdown.systemPrompt + breakdown.skills + breakdown.tools + breakdown.messages;
+      // Persist the resolved system prompt (post runtime-injected
+      // sections) so `SystemPromptPreview` shows exactly what the LLM
+      // sees. Optional -- tests may mock AgentRuntime without this.
+      const resolvedSystemPrompt = this.runtime.getResolvedSystemPrompt?.();
       await this.sessionRouter.updateAfterTurn(sessionKey, {
         contextTokens,
         contextBreakdown: breakdown,
+        ...(resolvedSystemPrompt ? { resolvedSystemPrompt } : {}),
       });
       // Also emit the snapshot so any already-open client sees the
       // baseline without refetching the session entry.
@@ -882,6 +889,13 @@ export class RunCoordinator {
       return;
     }
 
+    // Record the exact system prompt pi-ai will send, right before the
+    // user turn that triggers the run. Uses pi-core's CustomEntry so
+    // it's a first-class transcript record but does NOT participate in
+    // LLM context on subsequent turns. Skipped when unchanged from the
+    // most recent recorded prompt to keep the transcript compact.
+    this.persistResolvedSystemPrompt(transcriptManager);
+
     transcriptManager.appendMessage(message);
     // Fire-and-forget: touchSession is a metadata timestamp update (read+write
     // of session JSON). It does not need to complete before the API call starts.
@@ -1082,6 +1096,39 @@ export class RunCoordinator {
     };
   }
 
+  /**
+   * Append a `sam.system_prompt` custom entry to the transcript
+   * carrying the resolved system prompt about to be sent. Skipped if
+   * the runtime doesn't expose the getter (test mocks) or if the
+   * prompt is identical (by `assembled` text) to the most recent
+   * recorded prompt. This keeps the transcript auditable without
+   * bloating it on multi-turn chats with a stable prompt.
+   */
+  private persistResolvedSystemPrompt(transcriptManager: SessionManager): void {
+    const resolved = this.runtime.getResolvedSystemPrompt?.();
+    if (!resolved) return;
+
+    const entries = transcriptManager.getEntries();
+    let lastAssembled: string | undefined;
+    for (let i = entries.length - 1; i >= 0; i -= 1) {
+      const entry = entries[i] as unknown as {
+        type?: string;
+        customType?: string;
+        data?: { assembled?: unknown };
+      };
+      if (entry?.type === 'custom' && entry.customType === TRANSCRIPT_SYSTEM_PROMPT_TYPE) {
+        const assembled = entry.data?.assembled;
+        if (typeof assembled === 'string') lastAssembled = assembled;
+        break;
+      }
+    }
+
+    if (lastAssembled === resolved.assembled) return;
+
+    const data: TranscriptSystemPromptData = resolved;
+    transcriptManager.appendCustomEntry(TRANSCRIPT_SYSTEM_PROMPT_TYPE, data);
+  }
+
   private async touchSession(sessionKey: string, timestamp: number): Promise<void> {
     if (!this.sessionRouter) {
       return;
@@ -1135,6 +1182,13 @@ export class RunCoordinator {
       // Persist the per-section breakdown so reopening the session
       // shows the panel immediately instead of waiting for a new turn.
       ...(breakdown ? { contextBreakdown: breakdown } : {}),
+      // Refresh the resolved system prompt every turn so any hook
+      // that rewrote it via setSystemPrompt() is reflected. Guarded
+      // to stay compatible with test mocks that don't define this
+      // optional runtime method.
+      ...(this.runtime.getResolvedSystemPrompt
+        ? { resolvedSystemPrompt: this.runtime.getResolvedSystemPrompt() }
+        : {}),
       cacheRead: status.cacheRead + usage.cacheRead,
       cacheWrite: status.cacheWrite + usage.cacheWrite,
       totalEstimatedCostUsd: status.totalEstimatedCostUsd + costTotalUsd,

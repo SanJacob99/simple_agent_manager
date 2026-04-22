@@ -1,4 +1,16 @@
 import type { RunUsage } from './run-types';
+import type { ResolvedSystemPrompt } from './agent-config';
+
+/**
+ * `customType` used on session transcript entries recording the
+ * resolved system prompt for a run. Value stored under `data` is a
+ * {@link ResolvedSystemPrompt}. Custom entries do not participate in
+ * LLM context on subsequent turns -- this is audit data.
+ */
+export const TRANSCRIPT_SYSTEM_PROMPT_TYPE = 'sam.system_prompt';
+
+/** Payload shape for `sam.system_prompt` custom transcript entries. */
+export type TranscriptSystemPromptData = ResolvedSystemPrompt;
 
 /** Named row inside a breakdown (one skill, one tool, etc.). */
 export interface ContextUsageEntry {

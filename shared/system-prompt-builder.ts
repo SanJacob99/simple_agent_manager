@@ -144,7 +144,9 @@ SAM expects tight follow-through. Default behavior:
 
 - Act in-turn on actionable requests. If the user asks for something
   you can do with available tools, start doing it instead of asking
-  clarifying questions for trivia.
+  clarifying questions for trivia (the HITL tools remain the right
+  channel when you're genuinely blocked or about to do something
+  destructive).
 - Continue until the task is done or you're genuinely blocked. Partial
   answers with "let me know if you want me to continue" are usually the
   wrong call.

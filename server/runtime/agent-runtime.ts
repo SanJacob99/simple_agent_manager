@@ -13,11 +13,11 @@ import { resolveProviderStreamFn } from '../providers/stream-resolver';
 import { MemoryEngine } from './memory-engine';
 import { ContextEngine } from './context-engine';
 import { resolveToolNames, createAgentTools } from '../tools/tool-factory';
-import { groupToolsByClassification } from '../tools/tool-registry';
 import { resolveRuntimeModel } from './model-resolver';
 import { isToolErrorDetails } from '../tools/tool-adapter';
-import { substituteBundledSkillsRoot } from '../skills/bundled-skills-root';
 import { estimatePayloadBreakdown } from './payload-breakdown';
+import { resolveOutboundSystemPrompt } from './resolve-system-prompt';
+import type { ResolvedSystemPrompt } from '../../shared/agent-config';
 import { log } from '../logger';
 import type { HitlRegistry } from '../hitl/hitl-registry';
 import type { ServerEvent } from '../../shared/protocol';
@@ -38,26 +38,6 @@ export type RuntimeEvent =
 
 export type RuntimeEventListener = (event: RuntimeEvent) => void;
 
-/**
- * Substitute `{{READ_ONLY_TOOLS}}` / `{{STATE_MUTATING_TOOLS}}` /
- * `{{DESTRUCTIVE_TOOLS}}` in the confirmation policy with the enabled
- * tools in each class. Unclassified tools (session tools, stubs,
- * plugin-supplied) are folded into the state-mutating list because the
- * policy treats them as the safe default.
- */
-function fillConfirmationPolicyPlaceholders(
-  policy: string,
-  toolNames: string[],
-): string {
-  const { readOnly, stateMutating, destructive, unclassified } =
-    groupToolsByClassification(toolNames);
-  const fmt = (names: string[]): string =>
-    names.length === 0 ? '(none enabled)' : names.map((n) => `\`${n}\``).join(', ');
-  return policy
-    .replace('{{READ_ONLY_TOOLS}}', fmt(readOnly))
-    .replace('{{STATE_MUTATING_TOOLS}}', fmt([...stateMutating, ...unclassified]))
-    .replace('{{DESTRUCTIVE_TOOLS}}', fmt(destructive));
-}
 
 function summarizePayload(payload: any): string {
   const model: string = payload.model ?? 'unknown';
@@ -105,6 +85,19 @@ export class AgentRuntime {
   private hookRegistry: HookRegistry | null = null;
   private baseTools: AgentTool<TSchema>[] = [];
   private initialSystemPrompt: string = '';
+  /**
+   * The system prompt as pi-ai will send it, broken into sections for
+   * UI display. Derived from `config.systemPrompt.sections` with
+   * bundled-skills-root substitution applied, plus any runtime-added
+   * sections (workspace fallback, HITL confirmation policy). Kept in
+   * sync with `initialSystemPrompt`.
+   */
+  private resolvedSystemPrompt: ResolvedSystemPrompt = {
+    mode: 'auto',
+    sections: [],
+    assembled: '',
+    userInstructions: '',
+  };
   private getApiKeyFn: (provider: string) => Promise<string | undefined> | string | undefined;
   private getDiscoveredModelFn: (provider: string, modelId: string) => DiscoveredModelMetadata | undefined;
 
@@ -198,30 +191,15 @@ export class AgentRuntime {
       tools = this.wrapToolsWithHooks(tools, config.id);
     }
 
-    // Build system prompt — inject the runtime workspace path when the config
-    // didn't have one (workingDirectory was empty, so no workspace section was built).
-    // Also substitute the bundled-skills-root placeholder so skill references
-    // in the Skills section resolve to real absolute paths the agent can read.
-    let systemPrompt = substituteBundledSkillsRoot(config.systemPrompt.assembled);
-    if (workspaceCwd && !/Working directory: /.test(systemPrompt)) {
-      systemPrompt += `\n\n## Workspace\n\nWorking directory: ${workspaceCwd}`;
-    }
-
-    // Confirmation policy — appended whenever either HITL tool is present in
-    // the resolved tool list. Teaches the model WHEN to call `confirm_action`
-    // / `ask_user` and enforces the one-tool-call-per-confirm-turn rule that
-    // keeps parallel-tool-calling providers from bypassing the gate.
-    //
-    // The policy template may contain `{{READ_ONLY_TOOLS}}`,
-    // `{{STATE_MUTATING_TOOLS}}`, `{{DESTRUCTIVE_TOOLS}}` placeholders;
-    // each is replaced with a comma-separated list of enabled tools in
-    // that safety class. A user who strips the placeholders from their
-    // custom policy still gets a working (but non-class-aware) policy.
-    const hasHitlTool = toolNames.includes('confirm_action') || toolNames.includes('ask_user');
-    const policy = this.safetySettings.confirmationPolicy?.trim();
-    if (hasHitlTool && policy) {
-      systemPrompt += `\n\n${fillConfirmationPolicyPlaceholders(policy, toolNames)}`;
-    }
+    // Build the system prompt via the single source of truth. This is
+    // the same function `SystemPromptPreview` calls via REST, so the
+    // panel and the outbound payload can never drift.
+    this.resolvedSystemPrompt = resolveOutboundSystemPrompt({
+      config,
+      safetySettings: this.safetySettings,
+      workspaceCwd,
+    });
+    const systemPrompt = this.resolvedSystemPrompt.assembled;
 
     const plugin = this.pluginRegistry?.get(config.provider.pluginId);
     const runtimeProviderId = plugin?.runtimeProviderId ?? config.provider.pluginId;
@@ -361,6 +339,16 @@ export class AgentRuntime {
   buildInitialContextTokens(): number {
     const b = this.buildInitialBreakdown();
     return b.systemPrompt + b.skills + b.tools + b.messages;
+  }
+
+  /**
+   * Return the system prompt as pi-ai will send it, broken into
+   * sections. `SystemPromptPreview` reads this (via the persisted
+   * `SessionStoreEntry.resolvedSystemPrompt`) so the panel matches
+   * the outbound payload exactly.
+   */
+  getResolvedSystemPrompt(): ResolvedSystemPrompt {
+    return this.resolvedSystemPrompt;
   }
 
   /**

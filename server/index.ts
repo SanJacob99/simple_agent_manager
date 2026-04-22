@@ -17,8 +17,9 @@ import { loadProviderPlugins } from './providers/provider-loader';
 import { initializeToolRegistry, TOOL_MODULES } from './tools/tool-registry';
 import { resolveProviderRuntimeAuth } from './providers/provider-auth';
 import { SettingsFileStore, DEFAULT_SAFETY_SETTINGS, type SafetySettings } from './storage/settings-file-store';
+import { resolveOutboundSystemPrompt } from './runtime/resolve-system-prompt';
 import path from 'path';
-import type { ResolvedStorageConfig } from '../shared/agent-config';
+import type { AgentConfig, ResolvedStorageConfig } from '../shared/agent-config';
 import type { SessionRouteRequest, SessionTranscriptResponse } from '../shared/session-routes';
 
 const app = express();
@@ -113,6 +114,33 @@ function forgetAgentStorage(config: ResolvedStorageConfig, agentName: string): v
     }
   }
 }
+
+// --- Agent introspection ---
+
+/**
+ * Resolve the system prompt as pi-ai will actually send it, including
+ * runtime-injected sections (workspace fallback, HITL confirmation
+ * policy) and bundled-skills-root substitution. Single source of truth
+ * for `SystemPromptPreview`.
+ *
+ * Pure computation -- does not require the agent to be started.
+ */
+app.post('/api/agents/:agentId/resolved-system-prompt', (req, res) => {
+  const { config, workspaceCwd } = req.body as {
+    config: AgentConfig;
+    workspaceCwd?: string;
+  };
+  try {
+    const resolved = resolveOutboundSystemPrompt({
+      config,
+      safetySettings: currentSafetySettings,
+      workspaceCwd: workspaceCwd ?? config.workspacePath ?? process.cwd(),
+    });
+    res.json(resolved);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
 
 // --- Storage initialization ---
 

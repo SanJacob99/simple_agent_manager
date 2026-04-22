@@ -342,6 +342,90 @@ describe('RunCoordinator', () => {
       );
     });
 
+    it('records the resolved system prompt on the transcript before the user message', async () => {
+      (runtime as any).getResolvedSystemPrompt = vi.fn(() => ({
+        mode: 'auto',
+        sections: [{ key: 'identity', label: 'Identity', content: 'You are SAM.', tokenEstimate: 3 }],
+        assembled: 'You are SAM.',
+        userInstructions: '',
+      }));
+
+      const result = await coordinator.dispatch({ sessionKey: 'record-prompt', text: 'Hello' });
+      await coordinator.wait(result.runId, 5000);
+
+      const entries = await readTranscript('record-prompt');
+      // The sam.system_prompt custom entry must come before the user message.
+      const customIdx = entries.findIndex(
+        (e: any) => e.type === 'custom' && e.customType === 'sam.system_prompt',
+      );
+      const userIdx = entries.findIndex(
+        (e: any) => e.type === 'message' && e.message?.role === 'user',
+      );
+      expect(customIdx).toBeGreaterThanOrEqual(0);
+      expect(customIdx).toBeLessThan(userIdx);
+      expect((entries[customIdx] as any).data.assembled).toBe('You are SAM.');
+    });
+
+    it('dedups consecutive identical prompts across turns', async () => {
+      (runtime as any).getResolvedSystemPrompt = vi.fn(() => ({
+        mode: 'auto',
+        sections: [{ key: 'identity', label: 'Identity', content: 'You are SAM.', tokenEstimate: 3 }],
+        assembled: 'You are SAM.',
+        userInstructions: '',
+      }));
+
+      const first = await coordinator.dispatch({ sessionKey: 'dedup-prompt', text: 'turn 1' });
+      await coordinator.wait(first.runId, 5000);
+      const second = await coordinator.dispatch({ sessionKey: 'dedup-prompt', text: 'turn 2' });
+      await coordinator.wait(second.runId, 5000);
+
+      const entries = await readTranscript('dedup-prompt');
+      const customCount = entries.filter(
+        (e: any) => e.type === 'custom' && e.customType === 'sam.system_prompt',
+      ).length;
+      expect(customCount).toBe(1);
+    });
+
+    it('records a new system prompt entry when the assembled text changes', async () => {
+      let current = 'V1 prompt';
+      (runtime as any).getResolvedSystemPrompt = vi.fn(() => ({
+        mode: 'auto',
+        sections: [{ key: 'identity', label: 'Identity', content: current, tokenEstimate: 3 }],
+        assembled: current,
+        userInstructions: '',
+      }));
+
+      const first = await coordinator.dispatch({ sessionKey: 'prompt-changes', text: 'turn 1' });
+      await coordinator.wait(first.runId, 5000);
+
+      current = 'V2 prompt'; // simulate a hook-driven change between turns
+      const second = await coordinator.dispatch({ sessionKey: 'prompt-changes', text: 'turn 2' });
+      await coordinator.wait(second.runId, 5000);
+
+      const entries = await readTranscript('prompt-changes');
+      const customs = entries.filter(
+        (e: any) => e.type === 'custom' && e.customType === 'sam.system_prompt',
+      );
+      expect(customs).toHaveLength(2);
+      expect((customs[0] as any).data.assembled).toBe('V1 prompt');
+      expect((customs[1] as any).data.assembled).toBe('V2 prompt');
+    });
+
+    it('skips the system-prompt entry when the runtime does not expose a getter', async () => {
+      // Mock runtime intentionally omits getResolvedSystemPrompt; the
+      // coordinator must not throw and must not persist an entry.
+      delete (runtime as any).getResolvedSystemPrompt;
+
+      const result = await coordinator.dispatch({ sessionKey: 'no-getter', text: 'Hello' });
+      await coordinator.wait(result.runId, 5000);
+
+      const entries = await readTranscript('no-getter');
+      const hasSystemPromptEntry = entries.some(
+        (e: any) => e.type === 'custom' && e.customType === 'sam.system_prompt',
+      );
+      expect(hasSystemPromptEntry).toBe(false);
+    });
+
     it('accepts a second dispatch on the same session and leaves it pending', async () => {
       const deferred = createDeferred<void>();
       (runtime.prompt as any).mockImplementationOnce(() => deferred.promise);
