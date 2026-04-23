@@ -177,18 +177,22 @@ export class StorageEngine {
   async getDiskUsage(): Promise<number> {
     try {
       const files = await fs.readdir(this.sessionsDir);
-      let total = 0;
-      for (const file of files) {
-        try {
-          const stat = await fs.stat(path.join(this.sessionsDir, file));
-          if (stat.isFile()) {
-            total += stat.size;
+
+      // ⚡ Bolt Optimization: Use Promise.all to fetch file stats concurrently
+      // instead of a sequential for...of loop. This eliminates N+1 I/O overhead.
+      const stats = await Promise.all(
+        files.map(async (file) => {
+          try {
+            const stat = await fs.stat(path.join(this.sessionsDir, file));
+            return stat.isFile() ? stat.size : 0;
+          } catch {
+            // Ignore files that disappear between readdir and stat
+            return 0;
           }
-        } catch {
-          // Ignore files that disappear between readdir and stat
-        }
-      }
-      return total;
+        })
+      );
+
+      return stats.reduce((acc, size) => acc + size, 0);
     } catch {
       return 0;
     }
