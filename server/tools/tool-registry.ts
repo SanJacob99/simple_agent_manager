@@ -32,6 +32,7 @@ import { pathToFileURL, fileURLToPath } from 'url';
 import type { AgentTool } from '@mariozechner/pi-agent-core';
 import type { TSchema } from '@sinclair/typebox';
 import type { AgentConfig } from '../../shared/agent-config';
+import type { ToolCatalogEntry } from '../../shared/tool-catalog';
 import type { ToolClassification, ToolModule, RuntimeHints } from './tool-module';
 
 // -- Mutable internal state --------------------------------------------------
@@ -39,6 +40,7 @@ import type { ToolClassification, ToolModule, RuntimeHints } from './tool-module
 const _TOOL_MODULES: ToolModule<any>[] = [];
 const _TOOL_MODULES_BY_NAME = new Map<string, ToolModule<any>>();
 const _REGISTERED_TOOL_NAMES = new Set<string>();
+const _TOOL_SOURCES = new Map<string, 'builtin' | 'user'>();
 
 let initialized = false;
 let initPromise: Promise<void> | null = null;
@@ -181,6 +183,7 @@ function resetState(): void {
   _TOOL_MODULES.length = 0;
   _TOOL_MODULES_BY_NAME.clear();
   _REGISTERED_TOOL_NAMES.clear();
+  _TOOL_SOURCES.clear();
   for (const alias of Object.keys(TOOL_ALIASES)) _REGISTERED_TOOL_NAMES.add(alias);
   initialized = false;
   initPromise = null;
@@ -212,6 +215,7 @@ export async function initializeToolRegistry(
     // name-collision from an extra dir is logged and skipped — user tools
     // cannot silently override a built-in.
     const byName = new Map<string, ToolModule<any>>();
+    const builtinNames = new Set<string>();
     for (const m of builtins) {
       if (byName.has(m.name)) {
         throw new Error(
@@ -219,6 +223,7 @@ export async function initializeToolRegistry(
         );
       }
       byName.set(m.name, m);
+      builtinNames.add(m.name);
     }
     for (const m of extras) {
       if (byName.has(m.name)) {
@@ -234,6 +239,7 @@ export async function initializeToolRegistry(
       _TOOL_MODULES.push(m);
       _TOOL_MODULES_BY_NAME.set(m.name, m);
       _REGISTERED_TOOL_NAMES.add(m.name);
+      _TOOL_SOURCES.set(m.name, builtinNames.has(m.name) ? 'builtin' : 'user');
     }
     initialized = true;
   })();
@@ -246,6 +252,40 @@ export async function initializeToolRegistry(
  */
 export function isToolRegistryInitialized(): boolean {
   return initialized;
+}
+
+/**
+ * Catalog projection used by `GET /api/tools` and by anything on the
+ * frontend that needs to know what tools exist (picker, system-prompt
+ * advertisement). Only the UI-facing fields are exposed — secrets,
+ * runtime factories, and config schemas stay server-side.
+ *
+ * The returned array is ordered by module-load order, which mirrors
+ * filesystem discovery order: built-ins first, then user tools.
+ */
+export function getToolCatalog(): ToolCatalogEntry[] {
+  ensureInitialized('getToolCatalog');
+  return _TOOL_MODULES.map((m) => ({
+    name: m.name,
+    label: m.label,
+    description: m.description,
+    group: m.group,
+    classification: m.classification,
+  }));
+}
+
+/**
+ * Counts of loaded modules by source, for the startup log. Safe to call
+ * after `initializeToolRegistry()` completes; returns `{0, 0}` before.
+ */
+export function getToolSourceCounts(): { builtin: number; user: number } {
+  let builtin = 0;
+  let user = 0;
+  for (const src of _TOOL_SOURCES.values()) {
+    if (src === 'builtin') builtin += 1;
+    else user += 1;
+  }
+  return { builtin, user };
 }
 
 function ensureInitialized(op: string): void {

@@ -14,7 +14,8 @@ import { createStartupErrorHandler } from './startup';
 import { ProviderPluginRegistry } from './providers/plugin-registry';
 import { ProviderCatalogCache, type ProviderCatalogRequest } from './providers/catalog-cache';
 import { loadProviderPlugins } from './providers/provider-loader';
-import { initializeToolRegistry, TOOL_MODULES } from './tools/tool-registry';
+import { initializeToolRegistry, getToolSourceCounts, getToolCatalog } from './tools/tool-registry';
+import { resolveUserToolsDir } from './tools/resolve-user-tools-dir';
 import { resolveProviderRuntimeAuth } from './providers/provider-auth';
 import { SettingsFileStore, DEFAULT_SAFETY_SETTINGS, type SafetySettings } from './storage/settings-file-store';
 import { resolveOutboundSystemPrompt } from './runtime/resolve-system-prompt';
@@ -529,6 +530,22 @@ app.get('/api/providers', (_req, res) => {
   res.json(pluginRegistry.listSummaries());
 });
 
+// --- Tool catalog ---
+//
+// Serves the UI-facing projection of every ToolModule loaded at startup
+// — both built-ins and user-installed tools. The frontend `tool-catalog-
+// store` fetches this once on app mount so the Tools-node picker can
+// render the live list (including user tools) instead of a hardcoded
+// constant. If the registry isn't initialized yet we return an empty
+// array rather than 500 — the store has its own offline fallback.
+app.get('/api/tools', (_req, res) => {
+  try {
+    res.json(getToolCatalog());
+  } catch {
+    res.json([]);
+  }
+});
+
 // --- Provider catalog ---
 
 app.post('/api/providers/catalog/load', async (req, res) => {
@@ -655,14 +672,19 @@ loadProviderPlugins(
 
 // Discover tool modules BEFORE the HTTP listener accepts connections.
 // Filesystem-scan-driven: every `*.module.ts` / `*.module.js` under
-// `server/tools/builtins/` is auto-registered. Extra directories (user
-// tools under `server/tools/user/`, or wherever `SAM_USER_TOOLS_DIR`
-// points) will plug in here once the user-tools loader is wired — see
+// `server/tools/builtins/` is auto-registered. User-installed tools
+// are loaded from the directory `resolveUserToolsDir()` returns — the
+// default is `server/tools/user/`, overridable via `SAM_USER_TOOLS_DIR`
+// and disableable via `SAM_DISABLE_USER_TOOLS=1`. See
 // `docs/concepts/user-tools-plan.md`. We block startup so the first
 // agent build can never race against an empty registry.
-initializeToolRegistry()
+const userToolsDir = resolveUserToolsDir();
+initializeToolRegistry({ extraDirs: userToolsDir.dirs })
   .then(() => {
-    console.log(`[Tools] ${TOOL_MODULES.length} tool module(s) discovered.`);
+    const { builtin, user } = getToolSourceCounts();
+    console.log(
+      `[Tools] ${builtin} built-in + ${user} user tool(s) loaded (${userToolsDir.describe}).`,
+    );
     httpServer.listen(PORT, () => {
       httpServer.off('error', handleStartupError);
       wss.off('error', handleStartupError);

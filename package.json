@@ -12,7 +12,8 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:openrouter": "vitest run --config vitest.openrouter.config.ts",
-    "test:e2e:openrouter": "playwright test --config playwright.openrouter.config.ts"
+    "test:e2e:openrouter": "playwright test --config playwright.openrouter.config.ts",
+    "scaffold:tool": "tsx scripts/scaffold-user-tool.ts"
   },
   "dependencies": {
     "@mariozechner/pi-agent-core": "^0.65.2",

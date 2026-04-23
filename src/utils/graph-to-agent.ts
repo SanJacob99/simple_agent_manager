@@ -4,6 +4,7 @@ import type { AgentConfig, ResolvedProviderConfig, SystemPromptMode } from '../.
 import { resolveToolNames, IMPLEMENTED_TOOL_NAMES } from '../../shared/resolve-tool-names';
 import { buildSystemPrompt } from '../../shared/system-prompt-builder';
 import { eligibleBundledSkills } from '../../shared/default-tool-skills';
+import { useToolCatalogStore } from '../store/tool-catalog-store';
 
 export function resolveAgentConfig(
   agentNodeId: string,
@@ -251,8 +252,20 @@ export function resolveAgentConfig(
   const mode: SystemPromptMode = agentMode === 'manual' ? 'manual' : 'append';
 
   const resolvedToolNamesList = toolsConfig ? resolveToolNames(toolsConfig) : [];
+  // System-prompt "Tools available" summary is filtered so the model is
+  // only told about tools it can actually call. The hardcoded
+  // `IMPLEMENTED_TOOL_NAMES` set is the offline baseline; the live
+  // `tool-catalog-store` (populated from `GET /api/tools` at app mount)
+  // adds any user-installed modules from `server/tools/user/` on top of
+  // that so they get advertised too.
+  const catalogState = useToolCatalogStore.getState();
+  const catalogKnown = catalogState.loaded
+    ? new Set(catalogState.tools.map((t) => t.name))
+    : null;
   const toolsSummary = toolsConfig
-    ? resolvedToolNamesList.filter((t) => IMPLEMENTED_TOOL_NAMES.has(t)).join(', ')
+    ? resolvedToolNamesList
+        .filter((t) => IMPLEMENTED_TOOL_NAMES.has(t) || catalogKnown?.has(t))
+        .join(', ')
     : null;
 
   // Compose the Skills section of the system prompt. Three buckets:

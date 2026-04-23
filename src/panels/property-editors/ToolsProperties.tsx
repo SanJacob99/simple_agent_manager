@@ -5,7 +5,9 @@ import { buildProviderCatalogKey, useModelCatalogStore } from '../../store/model
 import { useSettingsStore } from '../../settings/settings-store';
 import type { ToolsNodeData, ToolProfile, ToolGroup } from '../../types/nodes';
 import { Field, inputClass, selectClass } from './shared';
-import { ALL_TOOL_NAMES, TOOL_GROUPS, TOOL_PROFILES, canonicalizeToolName } from '../../../shared/resolve-tool-names';
+import { TOOL_GROUPS, TOOL_PROFILES, canonicalizeToolName } from '../../../shared/resolve-tool-names';
+import { useToolCatalogStore } from '../../store/tool-catalog-store';
+import type { ToolCatalogEntry } from '../../../shared/tool-catalog';
 import { SchemaForm } from './schema-form/SchemaForm';
 import {
   browserToolConfigSchema,
@@ -180,6 +182,43 @@ export default function ToolsProperties({ nodeId, data }: Props) {
       .filter(([, metadata]) => metadata.outputModalities?.includes('image'))
       .map(([id, metadata]) => ({ id, name: metadata.name ?? id }));
   }, [connectedProvider, modelsByKey]);
+
+  // Live tool catalog — includes every ToolModule registered at server
+  // startup (built-ins + any user-installed `server/tools/user/*.module.ts`).
+  // Falls back to a synthetic list of built-in names when the backend
+  // hasn't answered yet, so the picker is never empty on first render.
+  const toolCatalog = useToolCatalogStore((s) => s.entriesOrFallback());
+  const groupedToolEntries = useMemo(() => {
+    const buckets = new Map<string | undefined, ToolCatalogEntry[]>();
+    for (const entry of toolCatalog) {
+      const arr = buckets.get(entry.group) ?? [];
+      arr.push(entry);
+      buckets.set(entry.group, arr);
+    }
+    const out: Array<{ label: string; entries: ToolCatalogEntry[] }> = [];
+    // Render known groups in the shared canonical order so the picker
+    // layout is stable across built-in reshuffles.
+    for (const g of Object.keys(TOOL_GROUPS)) {
+      const entries = buckets.get(g);
+      if (entries) {
+        out.push({ label: g, entries });
+        buckets.delete(g);
+      }
+    }
+    // User-declared groups (alphabetical) come after the known ones.
+    const remainingGroups = [...buckets.keys()]
+      .filter((k): k is string => typeof k === 'string')
+      .sort((a, b) => a.localeCompare(b));
+    for (const g of remainingGroups) {
+      out.push({ label: g, entries: buckets.get(g)! });
+      buckets.delete(g);
+    }
+    const ungrouped = buckets.get(undefined);
+    if (ungrouped && ungrouped.length > 0) {
+      out.push({ label: 'other', entries: ungrouped });
+    }
+    return out;
+  }, [toolCatalog]);
 
   // Effective groups
   const profileGroups = (TOOL_PROFILES[data.profile] ?? []) as ToolGroup[];
@@ -690,41 +729,52 @@ export default function ToolsProperties({ nodeId, data }: Props) {
               </p>
             </div>
           )}
-          <div className="space-y-1">
-            {ALL_TOOL_NAMES.map((tool) => {
-              const isHitl = HITL_TOOLS.has(tool);
-              const locked = isHitl && !allowDisableHitl;
-              // Alias-aware "is this tool enabled" check: a saved
-              // `enabledTools` list may still contain a legacy alias
-              // (e.g. `bash`) from before aliases were hidden from the
-              // picker. Treat any alias of `tool` as the same tick.
-              const isChecked = data.enabledTools.some(
-                (saved) => saved === tool || canonicalizeToolName(saved) === tool,
-              );
-              return (
-                <label
-                  key={tool}
-                  className={`flex items-center gap-2 ${locked ? 'cursor-not-allowed' : ''}`}
-                  title={locked ? 'Locked by Safety settings — enable Dangerous Fully Auto to uncheck.' : undefined}
-                >
-                  <input
-                    type="checkbox"
-                    checked={isChecked}
-                    onChange={() => toggleTool(tool)}
-                    disabled={locked}
-                    className={`rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500/30 ${
-                      locked ? 'opacity-70' : ''
-                    }`}
-                  />
-                  <span className={`text-xs ${locked ? 'text-slate-400' : 'text-slate-300'}`}>
-                    {tool}
-                    {isHitl && (
-                      <span className="ml-1 text-[9px] text-amber-400/80">(safety)</span>
-                    )}
-                  </span>
-                </label>
-              );
-            })}
+          <div className="space-y-2">
+            {groupedToolEntries.map((group) => (
+              <div key={group.label} className="space-y-1">
+                <div className="text-[9px] uppercase tracking-wide text-slate-500">
+                  {group.label}
+                </div>
+                {group.entries.map((entry) => {
+                  const tool = entry.name;
+                  const isHitl = HITL_TOOLS.has(tool);
+                  const locked = isHitl && !allowDisableHitl;
+                  // Alias-aware "is this tool enabled" check: a saved
+                  // `enabledTools` list may still contain a legacy alias
+                  // (e.g. `bash`) from before aliases were hidden from the
+                  // picker. Treat any alias of `tool` as the same tick.
+                  const isChecked = data.enabledTools.some(
+                    (saved) => saved === tool || canonicalizeToolName(saved) === tool,
+                  );
+                  const tooltip = locked
+                    ? 'Locked by Safety settings — enable Dangerous Fully Auto to uncheck.'
+                    : entry.description || undefined;
+                  return (
+                    <label
+                      key={tool}
+                      className={`flex items-center gap-2 ${locked ? 'cursor-not-allowed' : ''}`}
+                      title={tooltip}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => toggleTool(tool)}
+                        disabled={locked}
+                        className={`rounded border-slate-600 bg-slate-800 text-orange-500 focus:ring-orange-500/30 ${
+                          locked ? 'opacity-70' : ''
+                        }`}
+                      />
+                      <span className={`text-xs ${locked ? 'text-slate-400' : 'text-slate-300'}`}>
+                        {entry.label || tool}
+                        {isHitl && (
+                          <span className="ml-1 text-[9px] text-amber-400/80">(safety)</span>
+                        )}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            ))}
           </div>
           <div className="mt-2 flex gap-1.5">
             <input

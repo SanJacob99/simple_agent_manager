@@ -7,7 +7,7 @@ This guide walks through adding a new tool to SAM end-to-end using a hypothetica
 There are two audiences:
 
 - **Developers extending the SAM codebase.** Drop a `*.module.ts` file under `server/tools/builtins/`. That is [the single-file path](#single-file-path-toolmodule) below.
-- **Power users who want to add tools to their own SAM install without forking.** Today, do the same single-file authoring under `server/tools/user/`. The loader accepts this directory already; wiring it through `server/index.ts` at startup is the only piece that remains — see [user-installed tools](#user-installed-tools).
+- **Power users who want to add tools to their own SAM install without forking.** Drop a `*.module.ts` file under `server/tools/user/` — the loader picks it up at startup. Start with [the user-tools guide](./user-tools-guide.md), which has the scaffold command, a worked `weather` example, and the stable import surface you should use.
 
 If you have never written a tool for SAM before, read [Anatomy of a tool](#anatomy-of-a-tool) first.
 
@@ -196,16 +196,18 @@ The default when `classification` is omitted is `state-mutating` — conservativ
 
 ## User-installed tools
 
-"User-installed" means a SAM operator adds a tool to their own install without editing the main codebase or publishing a package. The file format is identical to a built-in — same `ToolModule` interface, same `defineTool` import — but the file lives in a separate directory.
+"User-installed" means a SAM operator adds a tool to their own install without editing the main codebase or publishing a package. The file format is identical to a built-in — same `ToolModule` interface, same `defineTool` import — but the file lives in a separate directory and imports from the vendored [server/tools/sdk.ts](../../server/tools/sdk.ts) for stability.
 
-**Status as of 2026-04-23:** the registry accepts an `extraDirs` option that scans user directories alongside the built-ins ([tool-registry.ts:76-93](server/tools/tool-registry.ts#L76-L93)), and fails soft on missing/broken directories. The remaining wiring — resolving `server/tools/user/` (and `SAM_USER_TOOLS_DIR`) at startup in [server/index.ts](../../server/index.ts), and a `GET /api/tools` endpoint so the Tools node picker can render user tools dynamically — is tracked in [user-tools-plan.md](./user-tools-plan.md). Until that lands, the practical path for an end user is to fork and use the built-ins directory.
+**Status as of 2026-04-23:** M1 (loader plumbing) and M2 (UI discovery) are shipped — drop a `*.module.ts` under `server/tools/user/`, restart, and the tool appears in the Tools node picker. M3 (authoring UX) ships `npm run scaffold:tool -- <name>` and the [user-tools guide](./user-tools-guide.md). M4 (standalone SDK package) is still pending — see [user-tools-plan.md](./user-tools-plan.md).
 
-Once wired, the flow will be:
+The flow:
 
-1. Create `server/tools/user/<name>/<name>.module.ts` (or at the path `SAM_USER_TOOLS_DIR` points to).
-2. `export default defineTool({ ... })` exactly as a built-in does.
+1. `npm run scaffold:tool -- weather` (or manually create `server/tools/user/<name>/<name>.module.ts` / at `SAM_USER_TOOLS_DIR`).
+2. Edit the generated file — `export default defineTool({ ... })`, importing from `'../../sdk'`.
 3. Restart the server.
 4. Open the Tools node, find the tool under its declared `group`, enable it.
+
+The [user-tools guide](./user-tools-guide.md) has a fully worked `weather` example, the complete list of what you can read from `AgentConfig` and `RuntimeHints`, and troubleshooting.
 
 User tools run with the same privileges as the server process. There is no sandboxing — the operator owns the machine and vets what they install, same trust model as VS Code extensions or Vim plugins. A broken user module logs an error and is skipped; it does not crash the server.
 
@@ -215,7 +217,7 @@ Kill switch: `SAM_DISABLE_USER_TOOLS=1` skips the scan entirely. Use in CI or pr
 
 ## Troubleshooting
 
-- **Tool doesn't appear in the Tools node UI.** The picker reads from `IMPLEMENTED_TOOL_NAMES` in [shared/resolve-tool-names.ts](../../shared/resolve-tool-names.ts). If the set still gates your tool, add the name there. (This gate goes away once `GET /api/tools` exists — see `user-tools-plan.md`.)
+- **Tool doesn't appear in the Tools node UI.** The picker reads the live catalog served by `GET /api/tools` via [src/store/tool-catalog-store.ts](../../src/store/tool-catalog-store.ts). If your module loaded (`[Tools] … user tool(s) loaded` in the server log), a hard refresh should show it. If it didn't load, check the server log for a `[tool-registry]` line identifying the reason.
 - **Model calls the tool without confirming first.** The `ask_user` / `confirm_action` tools must be in the resolved tool list. They are force-injected by [agent-runtime.ts](../../server/runtime/agent-runtime.ts) when `safety.allowDisableHitl === false`. If you see bypass on a newly created agent, check `settings.json` for `safety.allowDisableHitl: true`.
 - **`create` returns null so the tool is invisible at runtime.** Intentional when config is missing, but easy to trip over. Log at construction time (`console.warn('[weather] skipped: no API key')`) if you want a boot-time hint.
 - **Gemini rejects the tool's schema.** The adapter ([server/tools/tool-adapter.ts](../../server/tools/tool-adapter.ts)) strips unsupported JSON Schema features (`anyOf`, `format`, etc.) for Gemini models. If a new feature is rejected, add it to `cleanSchemaForGemini`.
@@ -237,5 +239,6 @@ Before the `ToolModule` migration, adding a tool touched 5–9 files: the implem
 - [server/tools/tool-factory.ts](../../server/tools/tool-factory.ts) — the runtime assembly point. Registry-first; legacy `TOOL_CREATORS` fallback.
 - [server/tools/tool-adapter.ts](../../server/tools/tool-adapter.ts) — shared adapter that normalizes tool errors and cleans schemas.
 - [shared/resolve-tool-names.ts](../../shared/resolve-tool-names.ts) — tool groups, `ALL_TOOL_NAMES`, `IMPLEMENTED_TOOL_NAMES`.
-- [user-tools-plan.md](./user-tools-plan.md) — plan and remaining work for drop-a-file user-installed tools.
+- [user-tools-guide.md](./user-tools-guide.md) — author's guide for drop-a-file user-installed tools (scaffold, worked example, SDK surface, troubleshooting).
+- [user-tools-plan.md](./user-tools-plan.md) — architecture and remaining milestones for user-installed tools.
 - [tool-node.md](./tool-node.md) — the Tools Node that selects which tools an agent can use.

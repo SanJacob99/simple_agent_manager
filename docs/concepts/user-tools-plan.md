@@ -6,8 +6,8 @@
 > needs to be wired up before users can drop a `.module.ts` file into
 > `server/tools/user/` and have an agent use it.
 
-<!-- last-verified: 2026-04-18 -->
-<!-- status: draft / not implemented -->
+<!-- last-verified: 2026-04-23 -->
+<!-- status: M1 + M2 + M3 shipped — loader, UI discovery, and authoring UX. M4 (SDK package) still pending. -->
 
 ## Goal
 
@@ -56,10 +56,11 @@ Same as a built-in. A user tool is a single file ending in
 
 ```ts
 // server/tools/user/weather/weather.module.ts
-import { defineTool } from '../../tool-module';
-// Because user tools live inside the backend tree, they import the SDK
-// surface (`defineTool`, types) from the same relative path that built-ins
-// use. No package install required.
+import { defineTool } from '../../sdk';
+// `sdk.ts` is the stability contract for user tools — it re-exports
+// `defineTool` and the related types so internal refactors of
+// `tool-module.ts` don't break user code. The worked example in
+// `user-tools-guide.md` uses the same import.
 
 export default defineTool({
   name: 'weather',
@@ -98,20 +99,19 @@ export default defineTool({
 - rejects user tools whose `name` collides with a built-in (built-ins
   win; the user's collision is logged and ignored).
 
-What's still required:
+Status:
 
-1. **Resolve the user-tools dir at startup.** In
-   [server/index.ts](../../server/index.ts), pass
-   `extraDirs: resolveUserToolsDir()` into `initializeToolRegistry()`.
-   The helper expands `~`, honors `SAM_USER_TOOLS_DIR` and
-   `SAM_DISABLE_USER_TOOLS`, returns `[]` when disabled.
-2. **Surface the loaded list.** Print
-   `[Tools] N built-in + M user tool(s) loaded` so users can see their
-   module took effect at boot.
-3. **Expose a `/api/tools` endpoint** so the frontend can populate the
-   Tools node picker dynamically (today the picker is fed by the
-   hardcoded `IMPLEMENTED_TOOL_NAMES` constant in
-   [shared/resolve-tool-names.ts](../../shared/resolve-tool-names.ts)).
+1. **Resolve the user-tools dir at startup.** ✅ Shipped.
+   [server/tools/resolve-user-tools-dir.ts](../../server/tools/resolve-user-tools-dir.ts)
+   expands `~`, honors `SAM_USER_TOOLS_DIR` and `SAM_DISABLE_USER_TOOLS`,
+   and returns `{ dirs, describe }`. [server/index.ts](../../server/index.ts)
+   passes `dirs` as `extraDirs` to `initializeToolRegistry()`.
+2. **Surface the loaded list.** ✅ Shipped. Startup logs
+   `[Tools] N built-in + M user tool(s) loaded (<describe>).` The split
+   is computed via `getToolSourceCounts()` on the registry.
+3. **Expose a `/api/tools` endpoint.** ✅ Shipped. `GET /api/tools`
+   returns the catalog via `getToolCatalog()` on the registry. Shape
+   lives in [shared/tool-catalog.ts](../../shared/tool-catalog.ts).
 
 ## TypeScript-source vs compiled-JS
 
@@ -147,20 +147,25 @@ isn't yet used. That work is in
 
 ## UI integration
 
-The Tools node currently builds its picker from the hardcoded
-`IMPLEMENTED_TOOL_NAMES` set in
-[shared/resolve-tool-names.ts](../../shared/resolve-tool-names.ts).
-For user tools to show up there we need:
+Done in M2. The wiring:
 
-- A new HTTP endpoint `GET /api/tools` that returns
-  `{ name, label, group, classification, description }[]` for every
-  registered module.
-- A frontend store that fetches that list at app start, falls back to
-  `IMPLEMENTED_TOOL_NAMES` when offline.
-- The Tools node's "Individual Tools" picker reads from the store,
-  groups by `group`, displays the description in a tooltip.
-
-This is the largest piece of remaining work — about a day.
+- [server/index.ts](../../server/index.ts) exposes `GET /api/tools`,
+  which calls `getToolCatalog()` on the registry and returns the
+  array shape defined in
+  [shared/tool-catalog.ts](../../shared/tool-catalog.ts).
+- [src/store/tool-catalog-store.ts](../../src/store/tool-catalog-store.ts)
+  fetches the endpoint on app mount (see
+  [src/App.tsx](../../src/App.tsx)), exposes
+  `{ tools, loaded, loading, error }`, and synthesises fallback
+  entries from `ALL_TOOL_NAMES` when the backend is unreachable.
+- [src/panels/property-editors/ToolsProperties.tsx](../../src/panels/property-editors/ToolsProperties.tsx)
+  reads the live catalog, groups entries by `group` (known groups first
+  in canonical order, user-declared groups alphabetical, ungrouped
+  last), and uses each entry's `description` as the checkbox tooltip.
+- [src/utils/graph-to-agent.ts](../../src/utils/graph-to-agent.ts)
+  unions catalog-known names onto `IMPLEMENTED_TOOL_NAMES` when
+  composing the system-prompt "Tools available" summary, so user
+  tools get advertised to the model just like built-ins.
 
 ## Security model
 
@@ -179,24 +184,33 @@ This is the largest piece of remaining work — about a day.
 
 ## Authoring & dev loop
 
-For v1, a user authoring a tool will:
+The shipped flow (M3):
 
-1. Create `server/tools/user/<name>/<name>.module.ts`.
-2. Implement `ToolModule` (copy a built-in as a starting template).
-3. Restart the server.
-4. Open the Tools node, find their tool, enable it.
+1. `npm run scaffold:tool -- <name>` →
+   [scripts/scaffold-user-tool.ts](../../scripts/scaffold-user-tool.ts)
+   generates `server/tools/user/<name>/<name>.module.ts` from a
+   minimal runnable template. The script validates the name
+   (snake_case, no collision with a built-in) and refuses to
+   overwrite an existing directory.
+2. Edit the generated file. Import `defineTool` and types from
+   [server/tools/sdk.ts](../../server/tools/sdk.ts), not from
+   `tool-module.ts` directly — the vendored SDK is the stability
+   contract (see [user-tools-guide.md](./user-tools-guide.md)).
+3. Restart the server (`npm run dev:server`). The startup line
+   `[Tools] N built-in + M user tool(s) loaded (…)` confirms the
+   load; broken files get a `[tool-registry]` error and are skipped.
+4. Open the Tools node, find the tool under its `group` (or "other"
+   if ungrouped), enable it.
 5. Use it.
 
-For better UX later we can ship:
+Reference and troubleshooting: [user-tools-guide.md](./user-tools-guide.md).
 
-- A starter template generator (`npx @simple-agent-manager/scaffold weather`).
-- A docs page that lists every utility a user tool can import (the
-  shape of `RuntimeHints`, what's in `AgentConfig`, the `defineTool`
-  helper).
-- A small `@simple-agent-manager/tool-sdk` npm package that re-exports
-  `defineTool`, `ToolClassification`, common TypeBox helpers — so user
-  tools can `import` from a stable surface instead of digging into
-  internal paths.
+Still deferred (M4):
+
+- A standalone `@simple-agent-manager/tool-sdk` npm package that
+  re-exports the same names as `server/tools/sdk.ts`. Once it ships,
+  user tools switch their `'../../sdk'` import to the package name
+  and nothing else changes.
 
 ## Versioning / API stability
 
@@ -216,13 +230,28 @@ which gives us room to evolve without churning user code.
 
 A reasonable phasing once we decide to ship this:
 
-1. **M1 — Loader plumbing (½ day).** `resolveUserToolsDir()` helper,
-   pass `extraDirs` to `initializeToolRegistry()` from `server/index.ts`,
-   update startup log, write the env-var docs.
-2. **M2 — UI discovery (1 day).** `GET /api/tools` endpoint, frontend
-   tool catalog store, Tools node picker reads from the store.
-3. **M3 — Authoring UX (½ day).** Template generator, concept doc with
-   a worked example, vendored `defineTool` import path.
+1. **M1 — Loader plumbing (½ day).** ✅ Shipped. `resolveUserToolsDir()`
+   helper lives at
+   [server/tools/resolve-user-tools-dir.ts](../../server/tools/resolve-user-tools-dir.ts),
+   `extraDirs` is threaded through `initializeToolRegistry()` from
+   [server/index.ts](../../server/index.ts), and the startup log splits
+   built-in vs user counts via `getToolSourceCounts()`.
+2. **M2 — UI discovery (1 day).** ✅ Shipped. `GET /api/tools` lives in
+   [server/index.ts](../../server/index.ts), the Zustand
+   [tool-catalog-store](../../src/store/tool-catalog-store.ts) loads
+   at app mount, and the Tools-node picker in
+   [ToolsProperties.tsx](../../src/panels/property-editors/ToolsProperties.tsx)
+   reads from it with grouping and description tooltips.
+3. **M3 — Authoring UX (½ day).** ✅ Shipped.
+   `npm run scaffold:tool -- <name>` generates
+   `server/tools/user/<name>/<name>.module.ts` from a runnable template
+   (script:
+   [scripts/scaffold-user-tool.ts](../../scripts/scaffold-user-tool.ts)).
+   The worked example + authoring reference live in
+   [user-tools-guide.md](./user-tools-guide.md). User tools import the
+   stable surface re-exported from
+   [server/tools/sdk.ts](../../server/tools/sdk.ts) rather than
+   `tool-module.ts` directly, so internal refactors won't break them.
 4. **M4 — SDK package (deferred).** Extract `defineTool`,
    `ToolClassification`, `RuntimeHints` types into a published
    `@simple-agent-manager/tool-sdk` so user tools don't import from
