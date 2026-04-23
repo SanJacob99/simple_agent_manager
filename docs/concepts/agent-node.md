@@ -3,7 +3,7 @@
 > The central hub node that stores model and prompt settings while connected peripheral nodes supply runtime services.
 
 <!-- source: src/types/nodes.ts#AgentNodeData -->
-<!-- last-verified: 2026-04-13 -->
+<!-- last-verified: 2026-04-23 -->
 
 ## Overview
 
@@ -49,7 +49,7 @@ The Agent Node still owns `modelId`, `thinkingLevel`, and `modelCapabilities`. T
 
 1. `resolveAgentConfig()` collects incoming peripheral nodes and creates a serializable `AgentConfig`.
 2. The connected Provider Node is resolved into `AgentConfig.provider`. If no Provider Node is connected, config resolution still succeeds, but runtime validation reports the graph as unrunnable.
-3. `buildSystemPrompt()` assembles the final system prompt based on `systemPromptMode`, tool summaries, skills, workspace path, and runtime metadata. The Runtime section emits `Runtime: host=… | os=… | model=…` with **no** `thinking=<level>` field or prose reasoning line — the thinking level is communicated to the provider via the API `reasoning.effort` parameter, and plain-text thinking directives in the system prompt can cause Gemini 3 to switch to a "think silently" mode (documented by Google's Gemini 3 prompting guide).
+3. `buildSystemPrompt()` assembles the final system prompt based on `systemPromptMode`, tool summaries, skills, workspace path, and runtime metadata. The Runtime section emits `Runtime: host=… | os=… | model=…` with **no** `thinking=<level>` field or prose reasoning line — the thinking level is communicated to the provider via the API `reasoning.effort` parameter, and plain-text thinking directives in the system prompt can cause Gemini 3 to switch to a "think silently" mode (documented by Google's Gemini 3 prompting guide). See [system-prompt.md](system-prompt.md) for the full mode/section reference.
 4. `server/runtime/agent-runtime.ts` creates the runtime agent, and `server/runtime/model-resolver.ts` resolves the final runtime model using:
    - the provider plugin's runtime provider id
    - the stored `modelId`

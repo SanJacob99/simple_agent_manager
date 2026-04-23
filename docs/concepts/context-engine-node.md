@@ -19,13 +19,11 @@ In the current implementation, compaction is no longer only an in-memory concern
 | `label` | `string` | `"Context Engine"` | Display label on the canvas |
 | `tokenBudget` | `number` | Inherited from model | Max tokens for assembled context |
 | `reservedForResponse` | `number` | `4096` | Tokens reserved for the model response |
-| `ownsCompaction` | `boolean` | `true` | Whether this node owns compaction |
 | `compactionStrategy` | `CompactionStrategy` | `"summary"` | `summary`, `sliding-window`, `trim-oldest`, or `hybrid` |
 | `summaryModelId` | `string` | `""` | Model id used to produce summaries (only for `summary`/`hybrid`). Empty means inherit the agent's model |
 | `compactionTrigger` | `string` | `"auto"` | When compaction should become available |
 | `compactionThreshold` | `number` | `0.8` | Trigger threshold or token count, depending on mode |
-| `bootstrapMaxChars` | `number` | `20000` | Max characters per bootstrap file |
-| `bootstrapTotalMaxChars` | `number` | `150000` | Max total characters across bootstrap files |
+| `postCompactionTokenTarget` | `number` | `50000` | Token ceiling the assembled context should land at after compaction runs. Clamped to `tokenBudget - reservedForResponse`. |
 | `autoFlushBeforeCompact` | `boolean` | `true` | Flush pending buffers before compaction |
 | `ragEnabled` | `boolean` | `false` | Whether to enable RAG retrieval |
 | `ragTopK` | `number` | `5` | Number of RAG results to retrieve |
@@ -63,12 +61,10 @@ The context engine no longer owns system prompt additions. Prompt construction i
   "label": "Context Engine",
   "tokenBudget": 128000,
   "reservedForResponse": 4096,
-  "ownsCompaction": true,
   "compactionStrategy": "hybrid",
   "compactionTrigger": "auto",
   "compactionThreshold": 0.8,
-  "bootstrapMaxChars": 20000,
-  "bootstrapTotalMaxChars": 150000,
+  "postCompactionTokenTarget": 50000,
   "autoFlushBeforeCompact": true,
   "ragEnabled": false,
   "ragTopK": 5,
