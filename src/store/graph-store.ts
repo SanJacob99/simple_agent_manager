@@ -374,12 +374,12 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
           }
         }
         delete (node.data as any).systemPromptAdditions;
-        // Add bootstrap defaults
-        if (!('bootstrapMaxChars' in node.data)) {
-          (node.data as any).bootstrapMaxChars = 20000;
-        }
-        if (!('bootstrapTotalMaxChars' in node.data)) {
-          (node.data as any).bootstrapTotalMaxChars = 150000;
+        // Drop the old bootstrap-limit fields and seed the new
+        // post-compaction target on graphs that predate them.
+        delete (node.data as any).bootstrapMaxChars;
+        delete (node.data as any).bootstrapTotalMaxChars;
+        if (!('postCompactionTokenTarget' in node.data)) {
+          (node.data as any).postCompactionTokenTarget = 50000;
         }
       }
     }

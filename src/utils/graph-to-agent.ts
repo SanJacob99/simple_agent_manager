@@ -129,11 +129,11 @@ export function resolveAgentConfig(
     ? {
         tokenBudget: contextNode.data.tokenBudget,
         reservedForResponse: contextNode.data.reservedForResponse,
-        ownsCompaction: contextNode.data.ownsCompaction,
         compactionStrategy: contextNode.data.compactionStrategy,
         summaryModelId: contextNode.data.summaryModelId ?? '',
         compactionTrigger: contextNode.data.compactionTrigger,
         compactionThreshold: contextNode.data.compactionThreshold,
+        postCompactionTokenTarget: contextNode.data.postCompactionTokenTarget,
         autoFlushBeforeCompact: contextNode.data.autoFlushBeforeCompact,
         ragEnabled: contextNode.data.ragEnabled,
         ragTopK: contextNode.data.ragTopK,
@@ -286,12 +286,12 @@ export function resolveAgentConfig(
 
   const skillsSummary = skillsSections.length > 0 ? skillsSections.join('\n\n') : null;
 
-  const bootstrapMaxChars = contextNode && contextNode.data.type === 'contextEngine'
-    ? ((contextNode.data as any).bootstrapMaxChars ?? 20000)
-    : 20000;
-  const bootstrapTotalMaxChars = contextNode && contextNode.data.type === 'contextEngine'
-    ? ((contextNode.data as any).bootstrapTotalMaxChars ?? 150000)
-    : 150000;
+  // Hardcoded bootstrap truncation limits -- these are no longer user-
+  // facing on the Context Engine node. The system prompt builder still
+  // needs them to cap workspace bootstrap file content, so feed the
+  // same defaults the old UI used.
+  const bootstrapMaxChars = 20000;
+  const bootstrapTotalMaxChars = 150000;
 
   const workspacePath = data.workingDirectory || null;
 

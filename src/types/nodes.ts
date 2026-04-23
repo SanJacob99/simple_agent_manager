@@ -249,7 +249,6 @@ export interface ContextEngineNodeData {
   label: string;
   tokenBudget: number;
   reservedForResponse: number;
-  ownsCompaction: boolean;
   compactionStrategy: CompactionStrategy;
   /**
    * Model used to produce the summary when `compactionStrategy` is
@@ -258,12 +257,17 @@ export interface ContextEngineNodeData {
   summaryModelId?: string;
   compactionTrigger: 'auto' | 'manual' | 'threshold';
   compactionThreshold: number;
+  /**
+   * Target number of tokens the assembled context should land at after
+   * compaction runs. Acts as a post-compaction ceiling -- the runtime
+   * trims or summarizes until the message total is at or below this
+   * value. Must be <= (tokenBudget - reservedForResponse).
+   */
+  postCompactionTokenTarget: number;
   autoFlushBeforeCompact: boolean;
   ragEnabled: boolean;
   ragTopK: number;
   ragMinScore: number;
-  bootstrapMaxChars: number;
-  bootstrapTotalMaxChars: number;
 }
 
 // --- Agent Communication Node ---

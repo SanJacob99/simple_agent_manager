@@ -241,7 +241,6 @@ export interface ResolvedToolsConfig {
 export interface ResolvedContextEngineConfig {
   tokenBudget: number;
   reservedForResponse: number;
-  ownsCompaction: boolean;
   compactionStrategy: CompactionStrategy;
   /**
    * Model id used to produce summaries when `compactionStrategy` is
@@ -250,6 +249,11 @@ export interface ResolvedContextEngineConfig {
   summaryModelId?: string;
   compactionTrigger: string;
   compactionThreshold: number;
+  /**
+   * Target token count after compaction. Optional -- when omitted the
+   * runtime falls back to `tokenBudget - reservedForResponse`.
+   */
+  postCompactionTokenTarget?: number;
   autoFlushBeforeCompact: boolean;
   ragEnabled: boolean;
   ragTopK: number;
