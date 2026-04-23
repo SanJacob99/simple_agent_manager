@@ -3,7 +3,7 @@
 > Manages token budgets, compaction, and transcript-aware context assembly so conversations stay inside the model's context window.
 
 <!-- source: src/types/nodes.ts#ContextEngineNodeData -->
-<!-- last-verified: 2026-04-07 -->
+<!-- last-verified: 2026-04-23 -->
 <!-- token-budget-inheritance, compaction-trigger-modes, tooltips -->
 
 ## Overview
@@ -19,12 +19,11 @@ In the current implementation, compaction is no longer only an in-memory concern
 | `label` | `string` | `"Context Engine"` | Display label on the canvas |
 | `tokenBudget` | `number` | Inherited from model | Max tokens for assembled context |
 | `reservedForResponse` | `number` | `4096` | Tokens reserved for the model response |
-| `ownsCompaction` | `boolean` | `true` | Whether this node owns compaction |
-| `compactionStrategy` | `CompactionStrategy` | `"trim-oldest"` | `summary`, `sliding-window`, `trim-oldest`, or `hybrid` |
+| `compactionStrategy` | `CompactionStrategy` | `"summary"` | `summary`, `sliding-window`, or `trim-oldest` |
+| `summaryModelId` | `string` | `""` | Model id used to produce summaries (only for `summary`). Empty means inherit the agent's model |
 | `compactionTrigger` | `string` | `"auto"` | When compaction should become available |
 | `compactionThreshold` | `number` | `0.8` | Trigger threshold or token count, depending on mode |
-| `bootstrapMaxChars` | `number` | `20000` | Max characters per bootstrap file |
-| `bootstrapTotalMaxChars` | `number` | `150000` | Max total characters across bootstrap files |
+| `postCompactionTokenTarget` | `number` | `50000` | Token ceiling the assembled context should land at after compaction runs. Clamped to `tokenBudget - reservedForResponse`. |
 | `autoFlushBeforeCompact` | `boolean` | `true` | Flush pending buffers before compaction |
 | `ragEnabled` | `boolean` | `false` | Whether to enable RAG retrieval |
 | `ragTopK` | `number` | `5` | Number of RAG results to retrieve |
@@ -39,11 +38,13 @@ The runtime creates a `ContextEngine` that exposes:
 - `compact(messages)` to apply the configured reduction strategy
 - `afterTurn(messages)` for post-turn bookkeeping
 
+Manual compaction: the Context Engine property panel shows a **Compact Now** button when `compactionTrigger` is `"manual"`. It calls `POST /api/sessions/:agentId/:sessionKey/compact`, which runs the configured `compactionStrategy` against the session transcript until it reaches `postCompactionTokenTarget`. The agent must be started (the chat session must have been opened at least once), and no run can be active on the target session.
+
 Current compaction behavior:
 
 - `trim-oldest` and `sliding-window` keep the newest messages that fit
-- `summary` and `hybrid` keep the newest slice of conversation and replace older context with a generated summary message
-- when a live transcript is bound, summary/hybrid compaction appends a persisted `compaction` entry via `SessionManager.appendCompaction(...)`
+- `summary` keeps the newest slice of conversation and replaces older context with a generated summary message
+- when a live transcript is bound, summary compaction appends a persisted `compaction` entry via `SessionManager.appendCompaction(...)`
 - the runtime emits a `memory_compaction` event when one of these persisted summaries is written, so the UI can show compacting state
 
 The context engine no longer owns system prompt additions. Prompt construction is handled by the agent runtime's assembled system prompt.
@@ -62,12 +63,10 @@ The context engine no longer owns system prompt additions. Prompt construction i
   "label": "Context Engine",
   "tokenBudget": 128000,
   "reservedForResponse": 4096,
-  "ownsCompaction": true,
-  "compactionStrategy": "hybrid",
+  "compactionStrategy": "summary",
   "compactionTrigger": "auto",
   "compactionThreshold": 0.8,
-  "bootstrapMaxChars": 20000,
-  "bootstrapTotalMaxChars": 150000,
+  "postCompactionTokenTarget": 50000,
   "autoFlushBeforeCompact": true,
   "ragEnabled": false,
   "ragTopK": 5,

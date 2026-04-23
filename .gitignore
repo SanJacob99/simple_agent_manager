@@ -16,7 +16,7 @@ notes/
 browser-screenshots/
 
 # User-installed tools — loaded at runtime via filesystem scan.
-# See docs/concepts/user-tools-plan.md. Remove this line to commit a
+# See docs/concepts/user-tools-guide.md. Remove this line to commit a
 # shared team library of tools to the repo.
 server/tools/user/
 

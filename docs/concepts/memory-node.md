@@ -3,7 +3,7 @@
 > Gives an agent persistent memory — long-term storage, session message management, compaction, and searchable recall via exposed tools.
 
 <!-- source: src/types/nodes.ts#MemoryNodeData -->
-<!-- last-verified: 2026-04-03 -->
+<!-- last-verified: 2026-04-23 -->
 
 ## Overview
 
@@ -22,7 +22,7 @@ Three backends are available: `builtin` (in-memory Map, suitable for development
 | `maxSessionMessages` | `number` | `100` | Maximum session messages before trimming |
 | `persistAcrossSessions` | `boolean` | `false` | Whether memory persists between sessions |
 | `compactionEnabled` | `boolean` | `false` | Enable automatic message compaction |
-| `compactionStrategy` | `string` | `"summary"` | Strategy: `summary`, `sliding-window`, or `hybrid` |
+| `compactionStrategy` | `string` | `"summary"` | Strategy: `summary` or `sliding-window` |
 | `compactionThreshold` | `number` | `0.8` | Usage ratio that triggers compaction (0-1) |
 | `exposeMemorySearch` | `boolean` | `true` | Give the agent a `memory_search` tool |
 | `exposeMemoryGet` | `boolean` | `true` | Give the agent a `memory_get` tool |
@@ -42,7 +42,6 @@ At runtime, the Memory Node configuration is resolved into a `ResolvedMemoryConf
 **Compaction strategies**:
 - `sliding-window`: Keeps the most recent 30% of messages, drops the rest with a placeholder note
 - `summary`: Summarizes older messages into a system message, keeps recent 30%
-- `hybrid`: Same as `summary` (currently implemented identically)
 
 **Memory tools** (created by `MemoryEngine.createMemoryTools()`):
 - `memory_search` — Keyword search over long-term entries, returns top 10 by recency

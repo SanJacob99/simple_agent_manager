@@ -14,11 +14,13 @@ import { createStartupErrorHandler } from './startup';
 import { ProviderPluginRegistry } from './providers/plugin-registry';
 import { ProviderCatalogCache, type ProviderCatalogRequest } from './providers/catalog-cache';
 import { loadProviderPlugins } from './providers/provider-loader';
-import { initializeToolRegistry, TOOL_MODULES } from './tools/tool-registry';
+import { initializeToolRegistry, getToolSourceCounts, getToolCatalog } from './tools/tool-registry';
+import { resolveUserToolsDir } from './tools/resolve-user-tools-dir';
 import { resolveProviderRuntimeAuth } from './providers/provider-auth';
 import { SettingsFileStore, DEFAULT_SAFETY_SETTINGS, type SafetySettings } from './storage/settings-file-store';
+import { resolveOutboundSystemPrompt } from './runtime/resolve-system-prompt';
 import path from 'path';
-import type { ResolvedStorageConfig } from '../shared/agent-config';
+import type { AgentConfig, ResolvedStorageConfig } from '../shared/agent-config';
 import type { SessionRouteRequest, SessionTranscriptResponse } from '../shared/session-routes';
 
 const app = express();
@@ -114,6 +116,33 @@ function forgetAgentStorage(config: ResolvedStorageConfig, agentName: string): v
   }
 }
 
+// --- Agent introspection ---
+
+/**
+ * Resolve the system prompt as pi-ai will actually send it, including
+ * runtime-injected sections (workspace fallback, HITL confirmation
+ * policy) and bundled-skills-root substitution. Single source of truth
+ * for `SystemPromptPreview`.
+ *
+ * Pure computation -- does not require the agent to be started.
+ */
+app.post('/api/agents/:agentId/resolved-system-prompt', (req, res) => {
+  const { config, workspaceCwd } = req.body as {
+    config: AgentConfig;
+    workspaceCwd?: string;
+  };
+  try {
+    const resolved = resolveOutboundSystemPrompt({
+      config,
+      safetySettings: currentSafetySettings,
+      workspaceCwd: workspaceCwd ?? config.workspacePath ?? process.cwd(),
+    });
+    res.json(resolved);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 // --- Storage initialization ---
 
 app.post('/api/storage/init', async (req, res) => {
@@ -163,10 +192,15 @@ app.post('/api/sessions/:agentId/route', async (req, res) => {
   };
   try {
     const router = getOrCreateSessionRouter(config, agentName, req.params.agentId);
-    res.json(await router.route({
+    const routed = await router.route({
       agentId: req.params.agentId,
       ...(request ?? {}),
-    }));
+    });
+    // Seed the per-section breakdown so the UI's context panel can
+    // render immediately on session open, without waiting for the
+    // user to send a first message. No-op if the agent isn't running.
+    await agentManager.seedSessionContext(req.params.agentId, routed.sessionKey);
+    res.json(routed);
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
@@ -179,7 +213,11 @@ app.post('/api/sessions/:agentId/:sessionKey/reset', async (req, res) => {
   };
   try {
     const router = getOrCreateSessionRouter(config, agentName, req.params.agentId);
-    res.json(await router.resetSession(req.params.sessionKey));
+    const routed = await router.resetSession(req.params.sessionKey);
+    // Reset wipes counters and forks a new transcript -- reseed the
+    // breakdown so the panel reflects the fresh baseline immediately.
+    await agentManager.seedSessionContext(req.params.agentId, routed.sessionKey);
+    res.json(routed);
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
@@ -206,7 +244,29 @@ app.post('/api/sessions/:agentId/:sessionKey/clear', async (req, res) => {
   };
   try {
     const router = getOrCreateSessionRouter(config, agentName, req.params.agentId);
-    res.json(await router.clearMessages(req.params.sessionKey));
+    const cleared = await router.clearMessages(req.params.sessionKey);
+    // Clearing zeroes token counters; reseed so the panel shows the
+    // baseline instead of stale cumulative data.
+    await agentManager.seedSessionContext(req.params.agentId, cleared.sessionKey);
+    res.json(cleared);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.post('/api/sessions/:agentId/:sessionKey/compact', async (req, res) => {
+  try {
+    if (!agentManager.has(req.params.agentId)) {
+      res.status(400).json({
+        error: `Agent ${req.params.agentId} is not running. Open a chat session first to start the agent.`,
+      });
+      return;
+    }
+    const result = await agentManager.manualCompact(
+      req.params.agentId,
+      req.params.sessionKey,
+    );
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
@@ -488,6 +548,22 @@ app.get('/api/providers', (_req, res) => {
   res.json(pluginRegistry.listSummaries());
 });
 
+// --- Tool catalog ---
+//
+// Serves the UI-facing projection of every ToolModule loaded at startup
+// — both built-ins and user-installed tools. The frontend `tool-catalog-
+// store` fetches this once on app mount so the Tools-node picker can
+// render the live list (including user tools) instead of a hardcoded
+// constant. If the registry isn't initialized yet we return an empty
+// array rather than 500 — the store has its own offline fallback.
+app.get('/api/tools', (_req, res) => {
+  try {
+    res.json(getToolCatalog());
+  } catch {
+    res.json([]);
+  }
+});
+
 // --- Provider catalog ---
 
 app.post('/api/providers/catalog/load', async (req, res) => {
@@ -614,14 +690,19 @@ loadProviderPlugins(
 
 // Discover tool modules BEFORE the HTTP listener accepts connections.
 // Filesystem-scan-driven: every `*.module.ts` / `*.module.js` under
-// `server/tools/builtins/` is auto-registered. Extra directories (user
-// tools under `server/tools/user/`, or wherever `SAM_USER_TOOLS_DIR`
-// points) will plug in here once the user-tools loader is wired — see
-// `docs/concepts/user-tools-plan.md`. We block startup so the first
+// `server/tools/builtins/` is auto-registered. User-installed tools
+// are loaded from the directory `resolveUserToolsDir()` returns — the
+// default is `server/tools/user/`, overridable via `SAM_USER_TOOLS_DIR`
+// and disableable via `SAM_DISABLE_USER_TOOLS=1`. See
+// `docs/concepts/user-tools-guide.md`. We block startup so the first
 // agent build can never race against an empty registry.
-initializeToolRegistry()
+const userToolsDir = resolveUserToolsDir();
+initializeToolRegistry({ extraDirs: userToolsDir.dirs })
   .then(() => {
-    console.log(`[Tools] ${TOOL_MODULES.length} tool module(s) discovered.`);
+    const { builtin, user } = getToolSourceCounts();
+    console.log(
+      `[Tools] ${builtin} built-in + ${user} user tool(s) loaded (${userToolsDir.describe}).`,
+    );
     httpServer.listen(PORT, () => {
       httpServer.off('error', handleStartupError);
       wss.off('error', handleStartupError);

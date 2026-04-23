@@ -1,10 +1,15 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import {
   buildProviderCatalogKey,
   useModelCatalogStore,
 } from '../store/model-catalog-store';
 import type { AgentConfig } from '../../shared/agent-config';
-import { estimateTokens } from '../../shared/token-estimator';
+import type { SessionStoreEntry } from '../../shared/storage-types';
+import type { ContextUsage } from '../../shared/context-usage';
+import {
+  useContextUsageStore,
+  selectContextUsage,
+} from '../store/context-usage-store';
 
 export type ContextSource = 'override' | 'catalog' | 'default';
 
@@ -17,16 +22,12 @@ export interface ContextWindowInfo {
   source: ContextSource;
 }
 
-export interface PeripheralReservation {
-  label: string;
-  type: 'system-prompt' | 'tools' | 'skills' | 'context-engine' | 'other';
-  tokenEstimate: number;
-  isTodo: boolean; // flag: not yet accurately tracked
-}
-
 /**
- * Resolves the effective context window for an agent.
- * Priority: user override → catalog metadata → safe default (128K)
+ * Resolves the effective context window size (in tokens) for an agent.
+ * Priority: user override -> catalog metadata -> safe default (128K).
+ *
+ * This hook is purely about the *model's window*, not about how full it
+ * is. For current fill, see {@link useSessionContextUsage}.
  */
 export function useContextWindow(config: AgentConfig | null): ContextWindowInfo {
   const getModelMetadata = useModelCatalogStore((s) => s.getModelMetadata);
@@ -36,7 +37,6 @@ export function useContextWindow(config: AgentConfig | null): ContextWindowInfo 
       return { contextWindow: DEFAULT_CONTEXT_WINDOW, maxTokens: DEFAULT_MAX_TOKENS, source: 'default' as ContextSource };
     }
 
-    // 1. Check user overrides
     if (config.modelCapabilities?.contextWindow) {
       return {
         contextWindow: config.modelCapabilities.contextWindow,
@@ -45,7 +45,6 @@ export function useContextWindow(config: AgentConfig | null): ContextWindowInfo 
       };
     }
 
-    // 2. Check catalog metadata
     const catalogModel = getModelMetadata(
       buildProviderCatalogKey(config.provider),
       config.modelId,
@@ -58,80 +57,41 @@ export function useContextWindow(config: AgentConfig | null): ContextWindowInfo 
       };
     }
 
-    // 3. Safe default
     return { contextWindow: DEFAULT_CONTEXT_WINDOW, maxTokens: DEFAULT_MAX_TOKENS, source: 'default' as ContextSource };
   }, [config, getModelMetadata]);
 }
 
 /**
- * Estimates token reservations from connected peripheral nodes.
+ * Return the latest {@link ContextUsage} snapshot for a session. The
+ * backend is the authoritative source; this hook subscribes to the
+ * client-side read-through cache fed by `context:usage` WS events.
+ *
+ * When the in-memory cache is empty, hydrates from the persisted
+ * `SessionStoreEntry` so the gauge reflects the last known value even
+ * before a new turn runs.
  */
-export function usePeripheralReservations(config: AgentConfig | null): PeripheralReservation[] {
-  return useMemo(() => {
-    if (!config) return [];
-    const reservations: PeripheralReservation[] = [];
+export function useSessionContextUsage(
+  sessionKey: string | null | undefined,
+  contextWindow: number,
+  sessionMeta: SessionStoreEntry | null | undefined,
+): ContextUsage | undefined {
+  const hydrate = useContextUsageStore((s) => s.hydrateFromSession);
+  const usage = useContextUsageStore(selectContextUsage(sessionKey ?? null));
 
-    // System prompt
-    if (config.systemPrompt?.assembled) {
-      reservations.push({
-        label: 'System prompt',
-        type: 'system-prompt',
-        tokenEstimate: estimateTokens(config.systemPrompt.assembled),
-        isTodo: false, // We can measure this accurately
-      });
-    }
+  useEffect(() => {
+    if (!sessionKey || !sessionMeta) return;
+    hydrate({
+      sessionKey,
+      contextTokens: sessionMeta.contextTokens ?? 0,
+      contextWindow,
+      inputTokens: sessionMeta.inputTokens,
+      outputTokens: sessionMeta.outputTokens,
+      cacheRead: sessionMeta.cacheRead,
+      cacheWrite: sessionMeta.cacheWrite,
+      totalTokens: sessionMeta.totalTokens,
+      breakdown: sessionMeta.contextBreakdown,
+    });
+  }, [sessionKey, sessionMeta, contextWindow, hydrate]);
 
-    // Tools — estimate full JSON schema
-    if (config.tools && config.tools.resolvedTools.length > 0) {
-      // Rough estimate: each tool name + schema ≈ tool name length * 15 (for JSON schema overhead)
-      // In practice each tool definition in the API payload is ~200-500 tokens
-      const toolTokens = config.tools.resolvedTools.reduce((sum, toolName) => {
-        // Conservative estimate: tool name + description + schema ≈ 300 tokens per tool
-        return sum + Math.max(300, estimateTokens(toolName) * 20);
-      }, 0);
-
-      reservations.push({
-        label: `Tools (${config.tools.resolvedTools.length})`,
-        type: 'tools',
-        tokenEstimate: toolTokens,
-        isTodo: true, // TODO: wire up actual tool schema serialization for accurate counts
-      });
-    }
-
-    // Skills injections
-    if (config.tools?.skills && config.tools.skills.length > 0) {
-      const skillTokens = config.tools.skills.reduce((sum, skill) => {
-        return sum + estimateTokens(skill.content);
-      }, 0);
-
-      reservations.push({
-        label: `Skills (${config.tools.skills.length})`,
-        type: 'skills',
-        tokenEstimate: skillTokens,
-        isTodo: true, // TODO: measure actual injected content after template expansion
-      });
-    }
-
-    // Connectors (placeholder)
-    if (config.connectors.length > 0) {
-      reservations.push({
-        label: `Connectors (${config.connectors.length})`,
-        type: 'other',
-        tokenEstimate: config.connectors.length * 50,
-        isTodo: true,
-      });
-    }
-
-    // Agent communication
-    if (config.agentComm.length > 0) {
-      reservations.push({
-        label: `Agent comm (${config.agentComm.length})`,
-        type: 'other',
-        tokenEstimate: config.agentComm.length * 100,
-        isTodo: true,
-      });
-    }
-
-    return reservations;
-  }, [config]);
+  return usage;
 }

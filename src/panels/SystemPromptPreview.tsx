@@ -1,6 +1,6 @@
-import { useState, useMemo } from 'react';
-import { ChevronDown, ChevronRight, Maximize2, Minimize2 } from 'lucide-react';
-import type { SystemPromptSection } from '../../shared/agent-config';
+import { useState, useMemo, useEffect } from 'react';
+import { ChevronDown, ChevronRight, Maximize2, Minimize2, AlertCircle } from 'lucide-react';
+import type { ResolvedSystemPrompt, SystemPromptSection } from '../../shared/agent-config';
 import { useGraphStore } from '../store/graph-store';
 import { useSettingsStore } from '../settings/settings-store';
 import { resolveAgentConfig } from '../utils/graph-to-agent';
@@ -51,11 +51,48 @@ export default function SystemPromptPreview({ agentNodeId, onClose }: Props) {
     [agentNodeId, nodes, edges, safetyGuardrails],
   );
 
-  const sections = config?.systemPrompt.sections ?? [];
+  // Single source of truth: the server resolves the system prompt the
+  // same way AgentRuntime does at dispatch time -- bundled-skills-root
+  // substitution, workspace fallback, and HITL confirmation policy
+  // included. What the panel shows is exactly what the LLM receives.
+  const [resolved, setResolved] = useState<ResolvedSystemPrompt | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!config) {
+      setResolved(null);
+      return;
+    }
+    const controller = new AbortController();
+    (async () => {
+      try {
+        setError(null);
+        const res = await fetch(
+          `/api/agents/${encodeURIComponent(agentNodeId)}/resolved-system-prompt`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ config }),
+            signal: controller.signal,
+          },
+        );
+        if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+        const data = (await res.json()) as ResolvedSystemPrompt;
+        setResolved(data);
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        setError(err instanceof Error ? err.message : String(err));
+        setResolved(null);
+      }
+    })();
+    return () => controller.abort();
+  }, [agentNodeId, config]);
+
+  const sections = resolved?.sections ?? [];
   const totalTokens = sections.reduce((sum, s) => sum + s.tokenEstimate, 0);
 
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
-  const allExpanded = expandedKeys.size === sections.length;
+  const allExpanded = expandedKeys.size === sections.length && sections.length > 0;
 
   const toggleSection = (key: string) => {
     setExpandedKeys((prev) => {
@@ -77,11 +114,12 @@ export default function SystemPromptPreview({ agentNodeId, onClose }: Props) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-slate-800 px-3 py-2">
-        <h3 className="text-sm font-medium text-slate-200">System Prompt Preview</h3>
+        <h3 className="text-sm font-medium text-slate-200">System Prompt</h3>
         <div className="flex items-center gap-2">
           <button
             onClick={toggleAll}
-            className="text-[10px] text-slate-500 hover:text-slate-300 transition"
+            disabled={sections.length === 0}
+            className="text-[10px] text-slate-500 hover:text-slate-300 transition disabled:opacity-40"
             title={allExpanded ? 'Collapse all' : 'Expand all'}
           >
             {allExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
@@ -96,6 +134,20 @@ export default function SystemPromptPreview({ agentNodeId, onClose }: Props) {
       </div>
 
       <div className="flex-1 overflow-auto">
+        {error && (
+          <div className="flex items-start gap-2 px-3 py-3 text-[11px] text-red-400">
+            <AlertCircle size={12} className="mt-0.5 flex-shrink-0" />
+            <div>
+              <div className="font-medium">Couldn't resolve system prompt</div>
+              <div className="text-slate-500 mt-0.5">{error}</div>
+            </div>
+          </div>
+        )}
+        {!error && !resolved && (
+          <div className="px-3 py-3 text-[11px] text-slate-500 italic">
+            Resolving from server...
+          </div>
+        )}
         {sections.map((section) => (
           <SectionRow
             key={section.key}

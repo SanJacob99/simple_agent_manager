@@ -60,7 +60,7 @@ describe('ChatMessages', () => {
         suppressedReply={false}
         streamingMsgId=""
         contextInfo={contextInfo}
-        peripheralReservations={[]}
+
       />,
     );
 
@@ -102,7 +102,7 @@ describe('ChatMessages', () => {
         suppressedReply={false}
         streamingMsgId=""
         contextInfo={contextInfo}
-        peripheralReservations={[]}
+
       />,
     );
 
@@ -136,7 +136,7 @@ describe('ChatMessages', () => {
         suppressedReply={false}
         streamingMsgId=""
         contextInfo={contextInfo}
-        peripheralReservations={[]}
+
       />,
     );
 

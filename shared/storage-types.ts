@@ -53,7 +53,25 @@ export interface SessionStoreEntry {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
+  /** Most recent non-cumulative context-window fill, in tokens. */
   contextTokens: number;
+  /**
+   * Per-section breakdown of the most recent context snapshot. Seeded
+   * at session creation with a baseline (messages=0) so the UI can
+   * render the prompt/skills/tools rows immediately on session open,
+   * refreshed on every turn. See `shared/context-usage.ts`.
+   */
+  contextBreakdown?: import('./context-usage').ContextUsageBreakdown;
+  /**
+   * The system prompt exactly as pi-ai will send it to the provider,
+   * broken into sections for UI display. Captured server-side after
+   * all runtime-injected appends (workspace fallback, HITL
+   * confirmation policy, bundled-skills-root substitution). This is
+   * what `SystemPromptPreview` reads so the panel matches the Context
+   * breakdown and the actual LLM input. See
+   * `shared/agent-config.ResolvedSystemPrompt`.
+   */
+  resolvedSystemPrompt?: import('./agent-config').ResolvedSystemPrompt;
   cacheRead: number;
   cacheWrite: number;
   totalEstimatedCostUsd: number;

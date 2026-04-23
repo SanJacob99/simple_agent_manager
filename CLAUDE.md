@@ -8,7 +8,7 @@ Important current behavior:
 
 - Interactive chat requires both a connected `contextEngine` node and a connected `storage` node.
 - `src/runtime/` is browser-side support code. The actual agent runtime lives under `server/runtime/`.
-- Some schema surfaces are ahead of product wiring. Verify `connectors`, `agentComm`, `vectorDatabase`, and `cron` behavior in code before documenting them as fully implemented.
+- Some schema surfaces are ahead of product wiring. Verify `connectors`, `agentComm`, `vectorDatabase`, `cron`, and `mcp` behavior in code before documenting them as fully implemented.
 
 ## Architecture Split
 

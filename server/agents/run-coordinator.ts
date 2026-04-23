@@ -39,6 +39,15 @@ import {
   type RunDiagnosticData,
   type RunErrorDiagnosticData,
 } from '../../shared/session-diagnostics';
+import {
+  contextTokensFromUsage,
+  foldActualIntoBreakdown,
+  TRANSCRIPT_SYSTEM_PROMPT_TYPE,
+  type ContextUsage,
+  type ContextUsageBreakdown,
+  type TranscriptSystemPromptData,
+} from '../../shared/context-usage';
+import { estimateMessagesTokens } from '../../shared/token-estimator';
 import { RunConcurrencyController } from './run-concurrency-controller';
 import { SubAgentRegistry } from './sub-agent-registry';
 import { createSessionTools, type SessionToolContext } from '../sessions/session-tools';
@@ -123,6 +132,15 @@ export class RunCoordinator {
   private readonly transcriptStore: SessionTranscriptStore | null;
   private readonly sessionRouter: SessionRouter | null;
   private readonly subAgentRegistry: SubAgentRegistry;
+
+  /**
+   * Last `preview` breakdown we saw, keyed by sessionKey. The provider
+   * returns a single total for `actual`, so we reuse the non-messages
+   * sections here and recompute `messages` as the remainder. This
+   * keeps the per-section display stable across the `preview -> actual`
+   * handoff within a single turn.
+   */
+  private readonly lastPreviewBreakdown = new Map<string, ContextUsageBreakdown>();
 
   constructor(
     private readonly agentId: string,
@@ -344,6 +362,73 @@ export class RunCoordinator {
     return latest?.runId;
   }
 
+  /**
+   * Run compaction against the stored transcript for a given session
+   * outside of any active turn. Persists the compaction entry, snapshots
+   * the transcript file, bumps the session's compactionCount, and
+   * returns a summary of the token delta. Refuses to run if the session
+   * has an active run in flight -- the transform would then race with
+   * the coordinator's own compaction.
+   */
+  async manualCompact(sessionKey: string): Promise<{
+    compacted: boolean;
+    messagesBefore: number;
+    messagesAfter: number;
+    tokensBefore: number;
+    tokensAfter: number;
+  }> {
+    if (!this.transcriptStore || !this.sessionRouter || !this.storage) {
+      throw new Error('Cannot compact: storage is not configured for this agent');
+    }
+
+    for (const record of this.runs.values()) {
+      if (record.sessionKey !== sessionKey) continue;
+      if (record.status === 'pending' || record.status === 'running') {
+        throw new Error(`Cannot compact: session ${sessionKey} has an active run`);
+      }
+    }
+
+    const status = await this.sessionRouter.getStatus(sessionKey);
+    if (!status) {
+      throw new Error(`Session ${sessionKey} not found`);
+    }
+
+    const transcriptPath = this.storage.resolveTranscriptPath(status);
+    const transcriptManager = this.transcriptStore.openSession(transcriptPath);
+    const messagesBefore = transcriptManager.buildSessionContext().messages as AgentMessage[];
+    const tokensBefore = estimateMessagesTokens(
+      messagesBefore as Array<{ content?: string | unknown }>,
+    );
+
+    this.runtime.setActiveSession(transcriptManager);
+    let messagesAfter: AgentMessage[];
+    try {
+      messagesAfter = await this.runtime.runContextCompaction(messagesBefore);
+    } finally {
+      this.runtime.clearActiveSession();
+    }
+
+    const tokensAfter = estimateMessagesTokens(
+      messagesAfter as Array<{ content?: string | unknown }>,
+    );
+    const compacted = messagesAfter.length !== messagesBefore.length;
+
+    if (compacted) {
+      await this.transcriptStore.snapshot(transcriptManager);
+      await this.sessionRouter.updateAfterTurn(sessionKey, {
+        compactionCount: (status.compactionCount ?? 0) + 1,
+      });
+    }
+
+    return {
+      compacted,
+      messagesBefore: messagesBefore.length,
+      messagesAfter: messagesAfter.length,
+      tokensBefore,
+      tokensAfter,
+    };
+  }
+
   setRunPayloads(runId: string, payloads: RunPayload[], usage?: RunUsage): void {
     const record = this.runs.get(runId);
     if (!record) {
@@ -389,6 +474,14 @@ export class RunCoordinator {
     const routeRequest = await this.resolveRouteRequest(sessionKeyHint);
     const routed = await this.sessionRouter!.route(routeRequest);
 
+    // Seed the persisted context breakdown for newly created or reset
+    // sessions so reopening the session shows the per-section panel
+    // without waiting for the first turn. Uses a baseline breakdown
+    // (systemPrompt + skills + tools, messages = 0).
+    if (routed.created || routed.reset) {
+      await this.seedInitialContextBreakdown(routed.sessionKey);
+    }
+
     if (this.hooks && (routed.created || routed.reset)) {
       const sessionCtx: SessionLifecycleContext = {
         agentId: this.agentId,
@@ -400,6 +493,45 @@ export class RunCoordinator {
     }
 
     return routed;
+  }
+
+  /**
+   * Persist a baseline context-usage breakdown on the session entry.
+   * Uses the runtime's finalized system prompt + skills + resolved
+   * tools with messages = 0. The real value is refreshed every turn
+   * via `applyAssistantUsage`.
+   *
+   * Safe to call for already-persisted sessions: if a real turn has
+   * run (inputTokens > 0), we do NOT overwrite its breakdown with the
+   * naive baseline -- the turn's folded breakdown is more accurate.
+   * For zero-turn sessions (freshly created or opened for the first
+   * time), this seeds the panel so the UI can show it immediately.
+   */
+  async seedInitialContextBreakdown(sessionKey: string): Promise<void> {
+    if (!this.sessionRouter) return;
+    try {
+      const status = await this.sessionRouter.getStatus(sessionKey);
+      if (!status) return;
+      if (status.inputTokens > 0) return; // real turn data takes priority
+
+      const breakdown = this.runtime.buildInitialBreakdown();
+      const contextTokens =
+        breakdown.systemPrompt + breakdown.skills + breakdown.tools + breakdown.messages;
+      // Persist the resolved system prompt (post runtime-injected
+      // sections) so `SystemPromptPreview` shows exactly what the LLM
+      // sees. Optional -- tests may mock AgentRuntime without this.
+      const resolvedSystemPrompt = this.runtime.getResolvedSystemPrompt?.();
+      await this.sessionRouter.updateAfterTurn(sessionKey, {
+        contextTokens,
+        contextBreakdown: breakdown,
+        ...(resolvedSystemPrompt ? { resolvedSystemPrompt } : {}),
+      });
+      // Also emit the snapshot so any already-open client sees the
+      // baseline without refetching the session entry.
+      this.emitContextUsage(sessionKey, undefined, contextTokens, 'persisted', undefined, breakdown);
+    } catch (err) {
+      log('RunCoordinator', `seedInitialContextBreakdown failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   private tryStartNextRun(): void {
@@ -690,6 +822,28 @@ export class RunCoordinator {
     };
 
     const unsubscribe = this.runtime.subscribe((event: RuntimeEvent) => {
+      // Predictive context-usage: emit as a first-class coordinator
+      // event so the UI updates before the provider responds. Does not
+      // touch the transcript and does not flow through the stream
+      // transforms.
+      if ('type' in event && event.type === 'context_usage_preview') {
+        const ev = event as {
+          estimatedTokens: number;
+          contextWindow: number;
+          breakdown: ContextUsageBreakdown;
+        };
+        this.lastPreviewBreakdown.set(record.sessionKey, ev.breakdown);
+        this.emitContextUsage(
+          record.sessionKey,
+          undefined,
+          ev.estimatedTokens,
+          'preview',
+          record.runId,
+          ev.breakdown,
+        );
+        return;
+      }
+
       if ('type' in event) {
         if (event.type === 'message_start' && (event as any).message?.role === 'assistant') {
           _apiCallCount++;
@@ -802,6 +956,13 @@ export class RunCoordinator {
     if (!message) {
       return;
     }
+
+    // Record the exact system prompt pi-ai will send, right before the
+    // user turn that triggers the run. Uses pi-core's CustomEntry so
+    // it's a first-class transcript record but does NOT participate in
+    // LLM context on subsequent turns. Skipped when unchanged from the
+    // most recent recorded prompt to keep the transcript compact.
+    this.persistResolvedSystemPrompt(transcriptManager);
 
     transcriptManager.appendMessage(message);
     // Fire-and-forget: touchSession is a metadata timestamp update (read+write
@@ -1003,6 +1164,39 @@ export class RunCoordinator {
     };
   }
 
+  /**
+   * Append a `sam.system_prompt` custom entry to the transcript
+   * carrying the resolved system prompt about to be sent. Skipped if
+   * the runtime doesn't expose the getter (test mocks) or if the
+   * prompt is identical (by `assembled` text) to the most recent
+   * recorded prompt. This keeps the transcript auditable without
+   * bloating it on multi-turn chats with a stable prompt.
+   */
+  private persistResolvedSystemPrompt(transcriptManager: SessionManager): void {
+    const resolved = this.runtime.getResolvedSystemPrompt?.();
+    if (!resolved) return;
+
+    const entries = transcriptManager.getEntries();
+    let lastAssembled: string | undefined;
+    for (let i = entries.length - 1; i >= 0; i -= 1) {
+      const entry = entries[i] as unknown as {
+        type?: string;
+        customType?: string;
+        data?: { assembled?: unknown };
+      };
+      if (entry?.type === 'custom' && entry.customType === TRANSCRIPT_SYSTEM_PROMPT_TYPE) {
+        const assembled = entry.data?.assembled;
+        if (typeof assembled === 'string') lastAssembled = assembled;
+        break;
+      }
+    }
+
+    if (lastAssembled === resolved.assembled) return;
+
+    const data: TranscriptSystemPromptData = resolved;
+    transcriptManager.appendCustomEntry(TRANSCRIPT_SYSTEM_PROMPT_TYPE, data);
+  }
+
   private async touchSession(sessionKey: string, timestamp: number): Promise<void> {
     if (!this.sessionRouter) {
       return;
@@ -1027,15 +1221,90 @@ export class RunCoordinator {
     }
 
     const { usage, costTotalUsd } = this.normalizeUsage(assistantMessage.usage);
+    const runUsage: RunUsage = {
+      input: usage.input,
+      output: usage.output,
+      cacheRead: usage.cacheRead,
+      cacheWrite: usage.cacheWrite,
+      totalTokens: usage.totalTokens,
+    };
+    const contextTokens = contextTokensFromUsage(runUsage);
+
+    // Fold the provider's real total into the most recent preview's
+    // section shape so the UI keeps a stable breakdown. If there is no
+    // preview cached (e.g. turn ran before onPayload fired), omit the
+    // breakdown -- the client will degrade to showing only the total.
+    const previewBreakdown = this.lastPreviewBreakdown.get(sessionKey);
+    const breakdown = previewBreakdown
+      ? foldActualIntoBreakdown(previewBreakdown, contextTokens)
+      : undefined;
+
     await this.sessionRouter.updateAfterTurn(sessionKey, {
       updatedAt: new Date(assistantMessage.timestamp).toISOString(),
       inputTokens: status.inputTokens + usage.input,
       outputTokens: status.outputTokens + usage.output,
       totalTokens: status.totalTokens + usage.totalTokens,
+      // contextTokens is a non-cumulative snapshot of the most recent
+      // turn's context fill. Everything else in this object is cumulative.
+      contextTokens,
+      // Persist the per-section breakdown so reopening the session
+      // shows the panel immediately instead of waiting for a new turn.
+      ...(breakdown ? { contextBreakdown: breakdown } : {}),
+      // Refresh the resolved system prompt every turn so any hook
+      // that rewrote it via setSystemPrompt() is reflected. Guarded
+      // to stay compatible with test mocks that don't define this
+      // optional runtime method.
+      ...(this.runtime.getResolvedSystemPrompt
+        ? { resolvedSystemPrompt: this.runtime.getResolvedSystemPrompt() }
+        : {}),
       cacheRead: status.cacheRead + usage.cacheRead,
       cacheWrite: status.cacheWrite + usage.cacheWrite,
       totalEstimatedCostUsd: status.totalEstimatedCostUsd + costTotalUsd,
     });
+
+    this.emitContextUsage(sessionKey, runUsage, contextTokens, 'actual', undefined, breakdown);
+  }
+
+  /** Resolve the model's context window in tokens (override > catalog > default). */
+  private resolveContextWindow(): number {
+    const runtimeCw = (this.runtime.state.model as { contextWindow?: number })?.contextWindow;
+    if (typeof runtimeCw === 'number' && runtimeCw > 0) return runtimeCw;
+    const override = this.config.modelCapabilities?.contextWindow;
+    if (typeof override === 'number' && override > 0) return override;
+    return 128_000;
+  }
+
+  /** Emit a `context:usage` coordinator event (optionally run-scoped). */
+  private emitContextUsage(
+    sessionKey: string,
+    usage: RunUsage | undefined,
+    contextTokens: number,
+    source: ContextUsage['source'],
+    runId?: string,
+    breakdown?: ContextUsageBreakdown,
+  ): void {
+    const snapshot: ContextUsage = {
+      sessionKey,
+      runId,
+      at: Date.now(),
+      contextTokens,
+      contextWindow: this.resolveContextWindow(),
+      usage,
+      breakdown,
+      source,
+    };
+    const event: CoordinatorEvent = {
+      type: 'context:usage',
+      runId: runId ?? '',
+      agentId: this.agentId,
+      sessionKey,
+      usage: snapshot,
+    };
+    if (runId) {
+      this.emitForRun(runId, event);
+    } else {
+      this.emit(event);
+    }
   }
 
   private async finishTranscript(

@@ -64,20 +64,26 @@ export class ContextEngine {
    */
   async compact(messages: AgentMessage[]): Promise<AgentMessage[]> {
     const budget = this.config.tokenBudget - this.config.reservedForResponse;
+    // Prefer the explicit post-compaction target when the graph sets
+    // one; otherwise fall back to the hard budget ceiling. Clamp to
+    // `budget` so a misconfigured target can't inflate the final size.
+    const target = this.config.postCompactionTokenTarget != null
+      ? Math.max(512, Math.min(this.config.postCompactionTokenTarget, budget))
+      : budget;
     const strategy = this.config.compactionStrategy;
 
     if (strategy === 'trim-oldest') {
-      // Remove oldest messages until within budget
+      // Remove oldest messages until within the post-compaction target.
       let result = [...messages];
       while (
         result.length > 2 &&
-        estimateMessagesTokens(result as Array<{ content?: string | unknown }>) > budget
+        estimateMessagesTokens(result as Array<{ content?: string | unknown }>) > target
       ) {
         result = result.slice(1);
       }
       if (result.length < messages.length) {
         this.persistCompaction(
-          `[Compaction trimmed ${messages.length - result.length} older messages to stay within the token budget.]`,
+          `[Compaction trimmed ${messages.length - result.length} older messages to reach the ${target}-token post-compaction target.]`,
           result.length,
           messages,
         );
@@ -86,17 +92,17 @@ export class ContextEngine {
     }
 
     if (strategy === 'sliding-window') {
-      // Keep the most recent messages that fit within budget
+      // Keep the most recent messages that fit within the target size.
       let result = [...messages];
       while (
         result.length > 2 &&
-        estimateMessagesTokens(result as Array<{ content?: string | unknown }>) > budget
+        estimateMessagesTokens(result as Array<{ content?: string | unknown }>) > target
       ) {
         result = result.slice(1);
       }
       if (result.length < messages.length) {
         this.persistCompaction(
-          `[Compaction kept the newest ${result.length} messages and trimmed ${messages.length - result.length} older messages.]`,
+          `[Compaction kept the newest ${result.length} messages and trimmed ${messages.length - result.length} older messages to reach the ${target}-token target.]`,
           result.length,
           messages,
         );
@@ -104,11 +110,21 @@ export class ContextEngine {
       return result;
     }
 
-    if (strategy === 'summary' || strategy === 'hybrid') {
-      // Keep recent messages, summarize older ones
-      const keepCount = Math.max(4, Math.floor(messages.length * 0.3));
+    if (strategy === 'summary') {
+      // Keep recent messages, summarize older ones. Honor the
+      // post-compaction target by also trimming the "kept" tail
+      // until it fits -- the summary message itself contributes
+      // ~2KB of text but we account for it via the final pass.
+      let keepCount = Math.max(4, Math.floor(messages.length * 0.3));
+      let kept = messages.slice(-keepCount);
+      while (
+        kept.length > 2 &&
+        estimateMessagesTokens(kept as Array<{ content?: string | unknown }>) > target
+      ) {
+        keepCount -= 1;
+        kept = messages.slice(-keepCount);
+      }
       const toSummarize = messages.slice(0, -keepCount);
-      const kept = messages.slice(-keepCount);
 
       if (toSummarize.length === 0) return messages;
 

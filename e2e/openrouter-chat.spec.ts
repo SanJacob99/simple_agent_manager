@@ -57,7 +57,7 @@ function buildGraph(agentName: string, storagePath: string, modelId: string) {
             tokenBudget: 128000,
             reservedForResponse: 4096,
             ownsCompaction: false,
-            compactionStrategy: 'hybrid',
+            compactionStrategy: 'summary',
             compactionTrigger: 'auto',
             compactionThreshold: 0.8,
             bootstrapMaxChars: 20000,

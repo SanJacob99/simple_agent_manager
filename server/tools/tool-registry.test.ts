@@ -9,6 +9,7 @@ import {
   REGISTERED_TOOL_NAMES,
   getToolModule,
   getToolClassification,
+  getToolSourceCounts,
   groupToolsByClassification,
   buildToolFromModule,
   initializeToolRegistry,
@@ -258,6 +259,37 @@ describe('filesystem-scan discovery', () => {
     expect(REGISTERED_TOOL_NAMES.has('fake_user_tool')).toBe(true);
     // Built-ins still loaded.
     expect(getToolModule('calculator')).toBeDefined();
+  });
+
+  it('getToolSourceCounts separates built-ins from extra-dir tools', async () => {
+    const dir = await makeExtraDir();
+    await fs.writeFile(
+      path.join(dir, 'a.module.js'),
+      fakeModuleSource('fake_a', 'A'),
+    );
+    await fs.writeFile(
+      path.join(dir, 'b.module.js'),
+      fakeModuleSource('fake_b', 'B'),
+    );
+    await initializeToolRegistry({ resetForTests: true, extraDirs: [dir] });
+
+    const counts = getToolSourceCounts();
+    expect(counts.user).toBe(2);
+    expect(counts.builtin).toBe(TOOL_MODULES.length - 2);
+    expect(counts.builtin).toBeGreaterThan(0);
+  });
+
+  it('getToolSourceCounts does not double-count a user tool that collides with a built-in', async () => {
+    const dir = await makeExtraDir();
+    await fs.writeFile(
+      path.join(dir, 'imposter.module.js'),
+      fakeModuleSource('calculator', 'Imposter'),
+    );
+    await initializeToolRegistry({ resetForTests: true, extraDirs: [dir] });
+
+    const counts = getToolSourceCounts();
+    // Colliding extra is dropped; only the built-in calculator is counted.
+    expect(counts.user).toBe(0);
   });
 
   it('treats a missing extraDir as fail-soft (no crash, built-ins intact)', async () => {

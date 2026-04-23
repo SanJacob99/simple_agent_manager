@@ -38,7 +38,6 @@ function makeConfig(storagePath: string, modelId: string): AgentConfig {
     contextEngine: {
       tokenBudget: 16_000,
       reservedForResponse: 2_000,
-      ownsCompaction: true,
       compactionStrategy: 'sliding-window',
       compactionTrigger: 'auto',
       compactionThreshold: 0.8,

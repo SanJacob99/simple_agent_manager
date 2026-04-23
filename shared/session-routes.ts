@@ -27,3 +27,11 @@ export interface SessionTranscriptResponse {
   transcriptPath: string;
   entries: SessionEntry[];
 }
+
+export interface SessionCompactResponse {
+  compacted: boolean;
+  messagesBefore: number;
+  messagesAfter: number;
+  tokensBefore: number;
+  tokensAfter: number;
+}

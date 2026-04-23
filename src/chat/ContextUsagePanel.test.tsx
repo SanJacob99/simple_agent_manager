@@ -15,33 +15,29 @@ describe('ContextUsagePanel', () => {
 
     const { rerender, unmount } = render(
       <ContextUsagePanel
-        messages={[]}
         contextInfo={contextInfo}
-        peripheralReservations={[]}
+        usage={undefined}
       />,
     );
 
     rerender(
       <div style={{ width: 480 }}>
         <ContextUsagePanel
-          messages={[
-            {
-              id: 'm1',
-              role: 'assistant',
-              content: 'Used some context',
-              timestamp: Date.now(),
-              tokenCount: 250,
-            },
-          ]}
           contextInfo={contextInfo}
-          peripheralReservations={[
-            {
-              label: 'System prompt',
-              type: 'system-prompt',
-              tokenEstimate: 100,
-              isTodo: false,
+          usage={{
+            sessionKey: 'test',
+            at: Date.now(),
+            contextTokens: 250,
+            contextWindow: 1000,
+            usage: {
+              input: 200,
+              output: 50,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 250,
             },
-          ]}
+            source: 'actual',
+          }}
         />
       </div>,
     );

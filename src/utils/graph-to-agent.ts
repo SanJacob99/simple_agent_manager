@@ -4,6 +4,7 @@ import type { AgentConfig, ResolvedProviderConfig, SystemPromptMode } from '../.
 import { resolveToolNames, IMPLEMENTED_TOOL_NAMES } from '../../shared/resolve-tool-names';
 import { buildSystemPrompt } from '../../shared/system-prompt-builder';
 import { eligibleBundledSkills } from '../../shared/default-tool-skills';
+import { useToolCatalogStore } from '../store/tool-catalog-store';
 
 export function resolveAgentConfig(
   agentNodeId: string,
@@ -129,10 +130,11 @@ export function resolveAgentConfig(
     ? {
         tokenBudget: contextNode.data.tokenBudget,
         reservedForResponse: contextNode.data.reservedForResponse,
-        ownsCompaction: contextNode.data.ownsCompaction,
         compactionStrategy: contextNode.data.compactionStrategy,
+        summaryModelId: contextNode.data.summaryModelId ?? '',
         compactionTrigger: contextNode.data.compactionTrigger,
         compactionThreshold: contextNode.data.compactionThreshold,
+        postCompactionTokenTarget: contextNode.data.postCompactionTokenTarget,
         autoFlushBeforeCompact: contextNode.data.autoFlushBeforeCompact,
         ragEnabled: contextNode.data.ragEnabled,
         ragTopK: contextNode.data.ragTopK,
@@ -221,13 +223,49 @@ export function resolveAgentConfig(
       };
     });
 
+  // --- MCP Servers ---
+  // Each MCP node resolves to a ResolvedMcpConfig. The node id is kept as
+  // `mcpNodeId` so the server can push `mcp:status` events back to the UI
+  // and the MCPNode component can light up a live connection hint.
+  const mcps = connectedNodes
+    .filter((n) => n.data.type === 'mcp')
+    .map((n) => {
+      if (n.data.type !== 'mcp') throw new Error('unreachable');
+      return {
+        mcpNodeId: n.id,
+        label: n.data.label,
+        transport: n.data.transport,
+        command: n.data.command,
+        args: n.data.args,
+        env: n.data.env,
+        cwd: n.data.cwd,
+        url: n.data.url,
+        headers: n.data.headers,
+        toolPrefix: n.data.toolPrefix,
+        allowedTools: n.data.allowedTools,
+        autoConnect: n.data.autoConnect,
+      };
+    });
+
   // --- Build structured system prompt ---
   const agentMode = (data as any).systemPromptMode as SystemPromptMode | undefined;
   const mode: SystemPromptMode = agentMode === 'manual' ? 'manual' : 'append';
 
   const resolvedToolNamesList = toolsConfig ? resolveToolNames(toolsConfig) : [];
+  // System-prompt "Tools available" summary is filtered so the model is
+  // only told about tools it can actually call. The hardcoded
+  // `IMPLEMENTED_TOOL_NAMES` set is the offline baseline; the live
+  // `tool-catalog-store` (populated from `GET /api/tools` at app mount)
+  // adds any user-installed modules from `server/tools/user/` on top of
+  // that so they get advertised too.
+  const catalogState = useToolCatalogStore.getState();
+  const catalogKnown = catalogState.loaded
+    ? new Set(catalogState.tools.map((t) => t.name))
+    : null;
   const toolsSummary = toolsConfig
-    ? resolvedToolNamesList.filter((t) => IMPLEMENTED_TOOL_NAMES.has(t)).join(', ')
+    ? resolvedToolNamesList
+        .filter((t) => IMPLEMENTED_TOOL_NAMES.has(t) || catalogKnown?.has(t))
+        .join(', ')
     : null;
 
   // Compose the Skills section of the system prompt. Three buckets:
@@ -261,14 +299,28 @@ export function resolveAgentConfig(
 
   const skillsSummary = skillsSections.length > 0 ? skillsSections.join('\n\n') : null;
 
-  const bootstrapMaxChars = contextNode && contextNode.data.type === 'contextEngine'
-    ? ((contextNode.data as any).bootstrapMaxChars ?? 20000)
-    : 20000;
-  const bootstrapTotalMaxChars = contextNode && contextNode.data.type === 'contextEngine'
-    ? ((contextNode.data as any).bootstrapTotalMaxChars ?? 150000)
-    : 150000;
+  // Hardcoded bootstrap truncation limits -- these are no longer user-
+  // facing on the Context Engine node. The system prompt builder still
+  // needs them to cap workspace bootstrap file content, so feed the
+  // same defaults the old UI used.
+  const bootstrapMaxChars = 20000;
+  const bootstrapTotalMaxChars = 150000;
 
   const workspacePath = data.workingDirectory || null;
+
+  // Resolve the user's local timezone and current wall-clock time so
+  // the Time section has real content. These are browser-available
+  // and safe to call at prompt-build time.
+  let timezone: string | null = null;
+  let nowIso: string | undefined;
+  try {
+    timezone = Intl.DateTimeFormat().resolvedOptions().timeZone ?? null;
+    nowIso = new Date().toISOString();
+  } catch {
+    // Non-browser / exotic runtime -- leave both null; builder falls back.
+  }
+
+  const reasoningVisibility: string = data.showReasoning ? 'visible' : 'off';
 
   const systemPrompt = buildSystemPrompt({
     mode,
@@ -280,7 +332,9 @@ export function resolveAgentConfig(
     bootstrapFiles: null,
     bootstrapMaxChars,
     bootstrapTotalMaxChars,
-    timezone: null,
+    timezone,
+    nowIso,
+    reasoningVisibility,
     runtimeMeta: {
       host: 'simple-agent-manager',
       os: typeof navigator !== 'undefined' ? navigator.platform : 'unknown',
@@ -308,6 +362,7 @@ export function resolveAgentConfig(
     storage,
     vectorDatabases,
     crons,
+    mcps,
     // Exec tool cwd overrides agent-level workingDirectory when set
     workspacePath:
       (toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.exec?.cwd)

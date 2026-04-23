@@ -139,8 +139,37 @@ export class AgentManager {
       unsubscribe,
     });
 
+    // Seed context-usage breakdown for every zero-turn session this
+    // agent already has on disk. Ensures the UI can render the
+    // per-section panel immediately when a user opens an existing
+    // session, even if that session was created before this feature
+    // existed. Sessions with real turn data are left untouched.
+    if (storage) {
+      this.backfillInitialBreakdowns(config.id, storage).catch((err) => {
+        console.error(`[AgentManager] backfillInitialBreakdowns failed for ${config.id}:`, err);
+      });
+    }
+
     // Persist config for restart resilience
     this.persistConfig(config).catch(console.error);
+  }
+
+  /**
+   * Walk every session on disk for this agent and seed the per-section
+   * breakdown where missing. Runs fire-and-forget after `start()` so a
+   * slow storage enumeration never blocks the agent coming online.
+   */
+  private async backfillInitialBreakdowns(
+    agentId: string,
+    storage: StorageEngine,
+  ): Promise<void> {
+    const sessions = await storage.listSessions();
+    for (const entry of sessions) {
+      if (entry.agentId !== agentId) continue;
+      if (entry.inputTokens > 0) continue; // real turn data already there
+      if (entry.contextBreakdown) continue; // already seeded
+      await this.seedSessionContext(agentId, entry.sessionKey);
+    }
   }
 
   async dispatch(agentId: string, params: DispatchParams): Promise<DispatchResult> {
@@ -204,6 +233,40 @@ export class AgentManager {
 
   getBridge(agentId: string): EventBridge | undefined {
     return this.agents.get(agentId)?.bridge;
+  }
+
+  /**
+   * Seed a session's persisted context-usage breakdown using the
+   * agent's current runtime. Called by the REST session-open path so
+   * the UI can render the per-section panel before any turn runs.
+   * No-op if the agent has not been started.
+   */
+  async seedSessionContext(agentId: string, sessionKey: string): Promise<void> {
+    const managed = this.agents.get(agentId);
+    if (!managed) return;
+    await managed.coordinator.seedInitialContextBreakdown(sessionKey);
+  }
+
+  /**
+   * Manually run the configured compaction strategy on a session,
+   * outside of an active run. Fails if the agent has not been started.
+   */
+  async manualCompact(
+    agentId: string,
+    sessionKey: string,
+  ): Promise<{
+    compacted: boolean;
+    messagesBefore: number;
+    messagesAfter: number;
+    tokensBefore: number;
+    tokensAfter: number;
+  }> {
+    const managed = this.agents.get(agentId);
+    if (!managed) {
+      throw new Error(`Agent ${agentId} is not running`);
+    }
+    managed.lastActivity = Date.now();
+    return managed.coordinator.manualCompact(sessionKey);
   }
 
   addSocket(agentId: string, socket: WebSocket): void {

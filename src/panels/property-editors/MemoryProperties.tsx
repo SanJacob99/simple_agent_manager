@@ -4,7 +4,7 @@ import { Field, inputClass, selectClass } from './shared';
 
 const BACKENDS: MemoryBackend[] = ['builtin', 'external', 'cloud'];
 const SEARCH_MODES = ['keyword', 'semantic', 'hybrid'] as const;
-const COMPACTION_STRATEGIES = ['summary', 'sliding-window', 'hybrid'] as const;
+const COMPACTION_STRATEGIES = ['summary', 'sliding-window'] as const;
 
 interface Props {
   nodeId: string;

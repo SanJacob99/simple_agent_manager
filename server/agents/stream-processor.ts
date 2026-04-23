@@ -73,6 +73,20 @@ export class StreamProcessor {
       return;
     }
 
+    // Context-usage events are the single source of truth for the UI's
+    // context gauge. They ride alongside lifecycle events and don't need
+    // a per-run stream context — emit directly.
+    if (event.type === 'context:usage') {
+      this.emit({
+        type: 'context:usage',
+        agentId: this.agentId,
+        runId: event.runId || undefined,
+        sessionKey: event.sessionKey,
+        usage: event.usage,
+      });
+      return;
+    }
+
     // Resolve runId and context
     const runId = 'runId' in event ? event.runId : undefined;
     if (!runId) return;

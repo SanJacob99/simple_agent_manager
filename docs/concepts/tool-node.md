@@ -3,7 +3,7 @@
 > Configures which tools an agent can use through profiles, groups, direct enables, skills, and plugins.
 
 <!-- source: src/types/nodes.ts#ToolsNodeData -->
-<!-- last-verified: 2026-04-21 -->
+<!-- last-verified: 2026-04-23 -->
 
 ## Overview
 
@@ -78,6 +78,32 @@ Skill handling happens in `resolveAgentConfig()` and feeds the `## Skills` secti
 3. **Inline blocks** — full markdown content from `SkillDefinition` entries on the Tools Node and from any per-tool `toolSettings.<tool>.skill` overrides the user has typed. An inline override for a given tool suppresses that tool's bundled reference, so the user's text becomes the sole source of guidance for it.
 
 Bundled references are computed from the resolved tool list (not from the stored `tools.skills` array), so `AgentConfig.tools.skills` only round-trips custom `SkillDefinition` entries and overrides.
+
+## Authoring a New Tool
+
+To add a new tool — either into the SAM codebase or into your own install — write one file: a `ToolModule` that declares its name, group, classification, config, and a `create()` factory. The filesystem scan in [server/tools/tool-registry.ts](../../server/tools/tool-registry.ts) auto-loads every `*.module.ts` under `server/tools/builtins/` at startup; no central registry edit is required.
+
+Quick shape:
+
+```ts
+// server/tools/builtins/weather/weather.module.ts
+import { defineTool } from '../../tool-module';
+import { createWeatherTool } from './weather';
+
+export default defineTool({
+  name: 'weather',
+  group: 'web',
+  label: 'Weather',
+  description: 'Fetch current weather for a city',
+  classification: 'read-only',
+  resolveContext: (config) => ({ apiKey: config.weatherApiKey || process.env.WEATHER_API_KEY }),
+  create: (ctx) => (ctx.apiKey ? createWeatherTool({ apiKey: ctx.apiKey }) : null),
+});
+```
+
+See [adding-a-tool.md](./adding-a-tool.md) for the full step-by-step, including implementation file, TypeBox schema, classifications and HITL implications, tests, and the UI wiring needed only when the tool has per-agent settings.
+
+A separate **user-installed** path — dropping a module into `server/tools/user/` without forking — is fully wired: `npm run scaffold:tool -- <name>`, edit, restart, and the tool appears in the picker. See [user-tools-guide.md](./user-tools-guide.md).
 
 ## Connections
 

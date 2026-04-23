@@ -11,7 +11,7 @@ import ChatMessages from './ChatMessages';
 import HitlBanner from './HitlBanner';
 import { StorageClient } from '../runtime/storage-client';
 import { estimateTokens } from '../../shared/token-estimator';
-import { useContextWindow, usePeripheralReservations } from './useContextWindow';
+import { useContextWindow } from './useContextWindow';
 import { useChatStream } from './useChatStream';
 import { useRightAnchoredResize } from '../panels/useRightAnchoredResize';
 import PanelResizeHandle from '../panels/PanelResizeHandle';
@@ -159,9 +159,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Context window and peripheral reservations
   const contextInfo = useContextWindow(config);
-  const peripheralReservations = usePeripheralReservations(config);
 
   const chatStream = useChatStream(agentNodeId);
 
@@ -524,7 +522,6 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
         suppressedReply={chatStream.suppressedReply}
         streamingMsgId={chatStream.streamingMsgId}
         contextInfo={contextInfo}
-        peripheralReservations={peripheralReservations}
         hasTools={!!config.tools}
       />
 

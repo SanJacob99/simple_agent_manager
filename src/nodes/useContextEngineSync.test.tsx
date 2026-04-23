@@ -10,16 +10,14 @@ const contextNodeData: ContextEngineNodeData = {
   label: 'Context',
   tokenBudget: 1000,
   reservedForResponse: 200,
-  ownsCompaction: false,
   compactionStrategy: 'summary',
   compactionTrigger: 'auto',
   compactionThreshold: 0.8,
+  postCompactionTokenTarget: 500,
   autoFlushBeforeCompact: true,
   ragEnabled: false,
   ragTopK: 5,
   ragMinScore: 0.7,
-  bootstrapMaxChars: 20000,
-  bootstrapTotalMaxChars: 150000,
 };
 
 describe('useContextEngineSync', () => {

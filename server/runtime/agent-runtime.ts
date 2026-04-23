@@ -13,10 +13,11 @@ import { resolveProviderStreamFn } from '../providers/stream-resolver';
 import { MemoryEngine } from './memory-engine';
 import { ContextEngine } from './context-engine';
 import { resolveToolNames, createAgentTools } from '../tools/tool-factory';
-import { groupToolsByClassification } from '../tools/tool-registry';
 import { resolveRuntimeModel } from './model-resolver';
 import { isToolErrorDetails } from '../tools/tool-adapter';
-import { substituteBundledSkillsRoot } from '../skills/bundled-skills-root';
+import { estimatePayloadBreakdown } from './payload-breakdown';
+import { resolveOutboundSystemPrompt } from './resolve-system-prompt';
+import type { ResolvedSystemPrompt } from '../../shared/agent-config';
 import { log } from '../logger';
 import type { HitlRegistry } from '../hitl/hitl-registry';
 import type { ServerEvent } from '../../shared/protocol';
@@ -26,30 +27,17 @@ export type RuntimeEvent =
   | AgentEvent
   | { type: 'runtime_ready'; config: AgentConfig }
   | { type: 'runtime_error'; error: string }
-  | { type: 'memory_compaction'; summary: string };
+  | { type: 'memory_compaction'; summary: string }
+  | {
+      type: 'context_usage_preview';
+      /** Estimated tokens in the payload about to be dispatched. */
+      estimatedTokens: number;
+      contextWindow: number;
+      breakdown: import('../../shared/context-usage').ContextUsageBreakdown;
+    };
 
 export type RuntimeEventListener = (event: RuntimeEvent) => void;
 
-/**
- * Substitute `{{READ_ONLY_TOOLS}}` / `{{STATE_MUTATING_TOOLS}}` /
- * `{{DESTRUCTIVE_TOOLS}}` in the confirmation policy with the enabled
- * tools in each class. Unclassified tools (session tools, stubs,
- * plugin-supplied) are folded into the state-mutating list because the
- * policy treats them as the safe default.
- */
-function fillConfirmationPolicyPlaceholders(
-  policy: string,
-  toolNames: string[],
-): string {
-  const { readOnly, stateMutating, destructive, unclassified } =
-    groupToolsByClassification(toolNames);
-  const fmt = (names: string[]): string =>
-    names.length === 0 ? '(none enabled)' : names.map((n) => `\`${n}\``).join(', ');
-  return policy
-    .replace('{{READ_ONLY_TOOLS}}', fmt(readOnly))
-    .replace('{{STATE_MUTATING_TOOLS}}', fmt([...stateMutating, ...unclassified]))
-    .replace('{{DESTRUCTIVE_TOOLS}}', fmt(destructive));
-}
 
 function summarizePayload(payload: any): string {
   const model: string = payload.model ?? 'unknown';
@@ -96,6 +84,20 @@ export class AgentRuntime {
   private unsubscribeAgent: (() => void) | null = null;
   private hookRegistry: HookRegistry | null = null;
   private baseTools: AgentTool<TSchema>[] = [];
+  private initialSystemPrompt: string = '';
+  /**
+   * The system prompt as pi-ai will send it, broken into sections for
+   * UI display. Derived from `config.systemPrompt.sections` with
+   * bundled-skills-root substitution applied, plus any runtime-added
+   * sections (workspace fallback, HITL confirmation policy). Kept in
+   * sync with `initialSystemPrompt`.
+   */
+  private resolvedSystemPrompt: ResolvedSystemPrompt = {
+    mode: 'auto',
+    sections: [],
+    assembled: '',
+    userInstructions: '',
+  };
   private getApiKeyFn: (provider: string) => Promise<string | undefined> | string | undefined;
   private getDiscoveredModelFn: (provider: string, modelId: string) => DiscoveredModelMetadata | undefined;
 
@@ -189,30 +191,15 @@ export class AgentRuntime {
       tools = this.wrapToolsWithHooks(tools, config.id);
     }
 
-    // Build system prompt — inject the runtime workspace path when the config
-    // didn't have one (workingDirectory was empty, so no workspace section was built).
-    // Also substitute the bundled-skills-root placeholder so skill references
-    // in the Skills section resolve to real absolute paths the agent can read.
-    let systemPrompt = substituteBundledSkillsRoot(config.systemPrompt.assembled);
-    if (workspaceCwd && !/Working directory: /.test(systemPrompt)) {
-      systemPrompt += `\n\n## Workspace\n\nWorking directory: ${workspaceCwd}`;
-    }
-
-    // Confirmation policy — appended whenever either HITL tool is present in
-    // the resolved tool list. Teaches the model WHEN to call `confirm_action`
-    // / `ask_user` and enforces the one-tool-call-per-confirm-turn rule that
-    // keeps parallel-tool-calling providers from bypassing the gate.
-    //
-    // The policy template may contain `{{READ_ONLY_TOOLS}}`,
-    // `{{STATE_MUTATING_TOOLS}}`, `{{DESTRUCTIVE_TOOLS}}` placeholders;
-    // each is replaced with a comma-separated list of enabled tools in
-    // that safety class. A user who strips the placeholders from their
-    // custom policy still gets a working (but non-class-aware) policy.
-    const hasHitlTool = toolNames.includes('confirm_action') || toolNames.includes('ask_user');
-    const policy = this.safetySettings.confirmationPolicy?.trim();
-    if (hasHitlTool && policy) {
-      systemPrompt += `\n\n${fillConfirmationPolicyPlaceholders(policy, toolNames)}`;
-    }
+    // Build the system prompt via the single source of truth. This is
+    // the same function `SystemPromptPreview` calls via REST, so the
+    // panel and the outbound payload can never drift.
+    this.resolvedSystemPrompt = resolveOutboundSystemPrompt({
+      config,
+      safetySettings: this.safetySettings,
+      workspaceCwd,
+    });
+    const systemPrompt = this.resolvedSystemPrompt.assembled;
 
     const plugin = this.pluginRegistry?.get(config.provider.pluginId);
     const runtimeProviderId = plugin?.runtimeProviderId ?? config.provider.pluginId;
@@ -227,6 +214,10 @@ export class AgentRuntime {
 
     // Snapshot base tools so addTools can reset per-run injections
     this.baseTools = tools;
+    // Cache the finalized system prompt so `buildInitialBreakdown()`
+    // can tokenize it without reaching into pi-core's Agent state
+    // (which may swap it per-turn via setSystemPrompt).
+    this.initialSystemPrompt = systemPrompt;
 
     // Create Agent
     this.agent = new Agent({
@@ -242,6 +233,36 @@ export class AgentRuntime {
       toolExecution: 'parallel',
       onPayload: (payload) => {
         log('pi-ai Request Payload', summarizePayload(payload));
+        // Predictive context-window signal: tokenize the outbound
+        // payload, split into four mutually-exclusive sections
+        // (systemPrompt, skills, tools, messages), and emit before the
+        // HTTP call. The coordinator wraps this into a `context:usage`
+        // event with source='preview'. `actual` snapshots reuse the
+        // non-messages counts from this preview so the UI keeps a
+        // stable breakdown across the turn.
+        const skillInputs =
+          this.config.tools?.skills?.map((s) => ({
+            name: s.name ?? s.id ?? '(unnamed)',
+            content: s.content ?? '',
+          })) ?? [];
+        const breakdown = estimatePayloadBreakdown(payload, skillInputs);
+        const contextWindow =
+          (payload as { model?: { contextWindow?: number } })?.model?.contextWindow
+          ?? (this.agent.state.model as { contextWindow?: number })?.contextWindow
+          ?? 0;
+        this.emit({
+          type: 'context_usage_preview',
+          estimatedTokens: breakdown.total,
+          contextWindow,
+          breakdown: {
+            systemPrompt: breakdown.systemPrompt,
+            skills: breakdown.skills,
+            tools: breakdown.tools,
+            messages: breakdown.messages,
+            skillsEntries: breakdown.skillsEntries,
+            toolsEntries: breakdown.toolsEntries,
+          },
+        });
       },
     });
 
@@ -280,6 +301,54 @@ export class AgentRuntime {
    */
   setSystemPrompt(prompt: string): void {
     this.agent.state.systemPrompt = prompt;
+  }
+
+  /**
+   * Compute a baseline context-usage breakdown for this agent before
+   * any turn has run. Uses the finalized system prompt + resolved base
+   * tools + configured skills; `messages` is 0. Used to seed a
+   * session's persisted `contextBreakdown` so the UI can show the
+   * per-section panel the moment a session is opened, without waiting
+   * for the first preview.
+   */
+  buildInitialBreakdown(): import('../../shared/context-usage').ContextUsageBreakdown {
+    const skillInputs =
+      this.config.tools?.skills?.map((s) => ({
+        name: s.name ?? s.id ?? '(unnamed)',
+        content: s.content ?? '',
+      })) ?? [];
+    // Synthesize the same payload shape the provider will see so the
+    // breakdown is consistent with the per-turn preview.
+    const payload = {
+      systemPrompt: this.initialSystemPrompt,
+      messages: [],
+      tools: this.baseTools,
+    };
+    const b = estimatePayloadBreakdown(payload, skillInputs);
+    return {
+      systemPrompt: b.systemPrompt,
+      skills: b.skills,
+      tools: b.tools,
+      messages: b.messages,
+      skillsEntries: b.skillsEntries,
+      toolsEntries: b.toolsEntries,
+    };
+  }
+
+  /** Sum the four aggregate buckets of a breakdown for total context tokens. */
+  buildInitialContextTokens(): number {
+    const b = this.buildInitialBreakdown();
+    return b.systemPrompt + b.skills + b.tools + b.messages;
+  }
+
+  /**
+   * Return the system prompt as pi-ai will send it, broken into
+   * sections. `SystemPromptPreview` reads this (via the persisted
+   * `SessionStoreEntry.resolvedSystemPrompt`) so the panel matches
+   * the outbound payload exactly.
+   */
+  getResolvedSystemPrompt(): ResolvedSystemPrompt {
+    return this.resolvedSystemPrompt;
   }
 
   /**
@@ -362,6 +431,20 @@ export class AgentRuntime {
 
   clearActiveSession(): void {
     this.contextEngine?.clearActiveSession();
+  }
+
+  /**
+   * Run the configured compaction strategy against an externally
+   * supplied message list. Used by the manual-compaction REST path,
+   * which operates outside of an active run. Returns the compacted
+   * messages; when no context engine is configured the input is
+   * returned unchanged.
+   */
+  async runContextCompaction(messages: AgentMessage[]): Promise<AgentMessage[]> {
+    if (!this.contextEngine) {
+      return messages;
+    }
+    return this.contextEngine.compact(messages);
   }
 
   // ---------------------------------------------------------------------------

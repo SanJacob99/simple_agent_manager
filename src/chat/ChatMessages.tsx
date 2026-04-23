@@ -1,7 +1,8 @@
 import { memo, useRef, useEffect, useCallback, useMemo, useLayoutEffect, useState } from 'react';
 import { RefreshCw, MessageSquareMore } from 'lucide-react';
 import { useSessionStore, type Message } from '../store/session-store';
-import type { ContextWindowInfo, PeripheralReservation } from './useContextWindow';
+import type { ContextWindowInfo } from './useContextWindow';
+import { useSessionContextUsage } from './useContextWindow';
 import ContextUsagePanel from './ContextUsagePanel';
 import MessageBubble from './MessageBubble';
 import {
@@ -24,7 +25,6 @@ interface ChatMessagesProps {
   suppressedReply: boolean;
   streamingMsgId: string;
   contextInfo: ContextWindowInfo;
-  peripheralReservations: PeripheralReservation[];
   hasTools?: boolean;
 }
 
@@ -38,7 +38,6 @@ function ChatMessages({
   suppressedReply,
   streamingMsgId,
   contextInfo,
-  peripheralReservations,
   hasTools,
 }: ChatMessagesProps) {
   // Stable fallback — must NOT be inline `?? []` inside the selector because
@@ -47,7 +46,16 @@ function ChatMessages({
   const messages = useSessionStore(
     (s) => s.sessions[activeSessionKey ?? '']?.messages ?? EMPTY,
   );
+  const sessionMeta = useSessionStore(
+    (s) => (activeSessionKey ? s.sessions[activeSessionKey]?.meta : undefined),
+  );
   const deleteMessage = useSessionStore((s) => s.deleteMessage);
+
+  const contextUsage = useSessionContextUsage(
+    activeSessionKey,
+    contextInfo.contextWindow,
+    sessionMeta,
+  );
 
   const handleDeleteMessage = useCallback(
     (messageId: string) => {
@@ -58,11 +66,6 @@ function ChatMessages({
     [activeSessionKey, deleteMessage],
   );
 
-  // ContextUsagePanel only needs tokenCount/usage — derive a stable array that
-  // does NOT change on content-only updates (streaming deltas).
-  const tokenKey = messages.map((m) => `${m.id}:${m.tokenCount ?? 0}`).join(',');
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const messagesForContext = useMemo(() => messages, [tokenKey]);
   const assistantMessageIds = useMemo(() => getAssistantMessageIds(messages), [messages]);
   const assistantIdKey = assistantMessageIds.join(',');
 
@@ -231,9 +234,8 @@ function ChatMessages({
 
       <div className={isBlocked || isTranscriptLoading ? 'pointer-events-none select-none blur-[2px]' : ''}>
         <ContextUsagePanel
-          messages={messagesForContext}
           contextInfo={contextInfo}
-          peripheralReservations={peripheralReservations}
+          usage={contextUsage}
         />
       </div>
     </>

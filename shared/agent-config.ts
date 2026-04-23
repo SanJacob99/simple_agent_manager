@@ -3,7 +3,7 @@
 export type MemoryBackend = 'builtin' | 'external' | 'cloud';
 export type ToolProfile = 'full' | 'coding' | 'messaging' | 'minimal' | 'custom';
 export type ToolGroup = 'runtime' | 'fs' | 'web' | 'coding' | 'media' | 'communication' | 'human';
-export type CompactionStrategy = 'summary' | 'sliding-window' | 'trim-oldest' | 'hybrid';
+export type CompactionStrategy = 'summary' | 'sliding-window' | 'trim-oldest';
 
 export type SystemPromptMode = 'auto' | 'append' | 'manual';
 
@@ -132,6 +132,7 @@ export interface AgentConfig {
   storage: ResolvedStorageConfig | null;
   vectorDatabases: ResolvedVectorDatabaseConfig[];
   crons: ResolvedCronConfig[];
+  mcps: ResolvedMcpConfig[];
 
   /** Working directory for shell commands (exec tool). Independent of storage path. */
   workspacePath: string | null;
@@ -240,10 +241,19 @@ export interface ResolvedToolsConfig {
 export interface ResolvedContextEngineConfig {
   tokenBudget: number;
   reservedForResponse: number;
-  ownsCompaction: boolean;
   compactionStrategy: CompactionStrategy;
+  /**
+   * Model id used to produce summaries when `compactionStrategy` is
+   * `summary`. Empty string means "inherit the agent's model".
+   */
+  summaryModelId?: string;
   compactionTrigger: string;
   compactionThreshold: number;
+  /**
+   * Target token count after compaction. Optional -- when omitted the
+   * runtime falls back to `tokenBudget - reservedForResponse`.
+   */
+  postCompactionTokenTarget?: number;
   autoFlushBeforeCompact: boolean;
   ragEnabled: boolean;
   ragTopK: number;
@@ -290,4 +300,23 @@ export interface ResolvedVectorDatabaseConfig {
   provider: string;
   collectionName: string;
   connectionString: string;
+}
+
+export type McpTransport = 'stdio' | 'http' | 'sse';
+
+/** Resolved MCP server entry. Keyed by `mcpNodeId` so the server can emit
+ *  `mcp:status` events that the UI can correlate back to a node. */
+export interface ResolvedMcpConfig {
+  mcpNodeId: string;
+  label: string;
+  transport: McpTransport;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  cwd: string;
+  url: string;
+  headers: Record<string, string>;
+  toolPrefix: string;
+  allowedTools: string[];
+  autoConnect: boolean;
 }
