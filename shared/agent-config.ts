@@ -132,6 +132,7 @@ export interface AgentConfig {
   storage: ResolvedStorageConfig | null;
   vectorDatabases: ResolvedVectorDatabaseConfig[];
   crons: ResolvedCronConfig[];
+  mcps: ResolvedMcpConfig[];
 
   /** Working directory for shell commands (exec tool). Independent of storage path. */
   workspacePath: string | null;
@@ -295,4 +296,23 @@ export interface ResolvedVectorDatabaseConfig {
   provider: string;
   collectionName: string;
   connectionString: string;
+}
+
+export type McpTransport = 'stdio' | 'http' | 'sse';
+
+/** Resolved MCP server entry. Keyed by `mcpNodeId` so the server can emit
+ *  `mcp:status` events that the UI can correlate back to a node. */
+export interface ResolvedMcpConfig {
+  mcpNodeId: string;
+  label: string;
+  transport: McpTransport;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  cwd: string;
+  url: string;
+  headers: Record<string, string>;
+  toolPrefix: string;
+  allowedTools: string[];
+  autoConnect: boolean;
 }

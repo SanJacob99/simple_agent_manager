@@ -8,6 +8,7 @@ import {
   HardDrive,
   Blocks,
   Cloud,
+  Plug,
   Search,
 } from 'lucide-react';
 import type { NodeType } from '../types/nodes';
@@ -61,6 +62,7 @@ const PERIPHERAL_ITEMS: PaletteItem[] = [
   { type: 'connectors', icon: <Cable size={18} /> },
   { type: 'storage', icon: <HardDrive size={18} /> },
   { type: 'vectorDatabase', icon: <Blocks size={18} /> },
+  { type: 'mcp', icon: <Plug size={18} /> },
   { type: 'provider' as NodeType, icon: <Cloud size={18} /> },
 ];
 

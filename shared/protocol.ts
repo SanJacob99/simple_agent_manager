@@ -354,6 +354,23 @@ export interface ContextUsageEvent {
   usage: import('./context-usage').ContextUsage;
 }
 
+/**
+ * Live connection status for an MCP server backing an MCP node. The server
+ * emits this whenever the runtime tries to connect, succeeds, or loses its
+ * connection so the node UI can show a hint.
+ *
+ * `agentId` is included so a client can scope the event to the active agent;
+ * the canonical key is `mcpNodeId`.
+ */
+export interface McpStatusEvent {
+  type: 'mcp:status';
+  agentId: string;
+  mcpNodeId: string;
+  status: 'unknown' | 'connecting' | 'connected' | 'error' | 'disconnected';
+  /** Human-readable detail when `status === 'error'`. */
+  error?: string;
+}
+
 /** Server's reply to a `hitl:list` command — the current pending prompts for a session. */
 export interface HitlListResultEvent {
   type: 'hitl:list:result';
@@ -397,4 +414,5 @@ export type ServerEvent =
   | HitlInputRequiredEvent
   | HitlResolvedEvent
   | HitlListResultEvent
-  | ContextUsageEvent;
+  | ContextUsageEvent
+  | McpStatusEvent;

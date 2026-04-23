@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { agentClient } from '../client';
 import type { AgentConfig } from '../../shared/agent-config';
 import type { ImageAttachment, ServerEvent } from '../../shared/protocol';
+import type { McpConnectionStatus } from '../types/nodes';
 
 export type AgentStatus = 'connecting' | 'idle' | 'running' | 'error' | 'disconnected';
 
@@ -9,11 +10,19 @@ interface AgentState {
   status: AgentStatus;
 }
 
+interface McpState {
+  status: McpConnectionStatus;
+  error?: string;
+}
+
 interface AgentConnectionStore {
   agents: Record<string, AgentState>;
+  /** Keyed by MCP node id. Server pushes updates via `mcp:status` events. */
+  mcps: Record<string, McpState>;
   connectionStatus: 'connecting' | 'connected' | 'disconnected';
   hasConnectedOnce: boolean;
   setConnectionStatus: (status: 'connecting' | 'connected' | 'disconnected') => void;
+  getMcpState: (mcpNodeId: string) => McpState;
 
   // Chat drawer UI state
   chatAgentNodeId: string | null;
@@ -61,6 +70,7 @@ const pendingStarts = new Map<
 
 export const useAgentConnectionStore = create<AgentConnectionStore>((set, get) => ({
   agents: {},
+  mcps: {},
 
   chatAgentNodeId: null,
   openChatDrawer: (agentId) => set({ chatAgentNodeId: agentId }),
@@ -177,11 +187,24 @@ export const useAgentConnectionStore = create<AgentConnectionStore>((set, get) =
           },
         }));
         break;
+
+      case 'mcp:status':
+        set((state) => ({
+          mcps: {
+            ...state.mcps,
+            [event.mcpNodeId]: { status: event.status, error: event.error },
+          },
+        }));
+        break;
     }
   },
 
   getAgentStatus: (agentId) => {
     return get().agents[agentId]?.status ?? 'disconnected';
+  },
+
+  getMcpState: (mcpNodeId) => {
+    return get().mcps[mcpNodeId] ?? { status: 'unknown' };
   },
 
   connectionStatus: agentClient.status,
@@ -199,6 +222,7 @@ export const useAgentConnectionStore = create<AgentConnectionStore>((set, get) =
     pendingStarts.clear();
     set({
       agents: {},
+      mcps: {},
       chatAgentNodeId: null,
       connectionStatus: 'disconnected',
       hasConnectedOnce: false,
