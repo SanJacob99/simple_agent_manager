@@ -254,6 +254,24 @@ app.post('/api/sessions/:agentId/:sessionKey/clear', async (req, res) => {
   }
 });
 
+app.post('/api/sessions/:agentId/:sessionKey/compact', async (req, res) => {
+  try {
+    if (!agentManager.has(req.params.agentId)) {
+      res.status(400).json({
+        error: `Agent ${req.params.agentId} is not running. Open a chat session first to start the agent.`,
+      });
+      return;
+    }
+    const result = await agentManager.manualCompact(
+      req.params.agentId,
+      req.params.sessionKey,
+    );
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 app.get('/api/sessions/:agentId/:sessionKey/transcript', async (req, res) => {
   const { config, agentName } = req.query as { config: string; agentName: string };
   try {

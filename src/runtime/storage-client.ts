@@ -1,6 +1,7 @@
 import type { ResolvedStorageConfig } from '../../shared/agent-config';
 import type { SessionStoreEntry, MemoryFileInfo, MaintenanceReport, BranchTree, SessionLineage } from '../../shared/storage-types';
 import type {
+  SessionCompactResponse,
   SessionRouteRequest,
   SessionRouteResponse,
   SessionTranscriptResponse,
@@ -78,6 +79,19 @@ export class StorageClient {
   async clearSessionMessages(sessionKey: string): Promise<SessionRouteResponse> {
     const res = await fetch(
       `/api/sessions/${encodeURIComponent(this.agentId)}/${encodeURIComponent(sessionKey)}/clear`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config: this.config, agentName: this.agentName }),
+      },
+    );
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  }
+
+  async compactSession(sessionKey: string): Promise<SessionCompactResponse> {
+    const res = await fetch(
+      `/api/sessions/${encodeURIComponent(this.agentId)}/${encodeURIComponent(sessionKey)}/compact`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

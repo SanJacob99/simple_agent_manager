@@ -247,6 +247,28 @@ export class AgentManager {
     await managed.coordinator.seedInitialContextBreakdown(sessionKey);
   }
 
+  /**
+   * Manually run the configured compaction strategy on a session,
+   * outside of an active run. Fails if the agent has not been started.
+   */
+  async manualCompact(
+    agentId: string,
+    sessionKey: string,
+  ): Promise<{
+    compacted: boolean;
+    messagesBefore: number;
+    messagesAfter: number;
+    tokensBefore: number;
+    tokensAfter: number;
+  }> {
+    const managed = this.agents.get(agentId);
+    if (!managed) {
+      throw new Error(`Agent ${agentId} is not running`);
+    }
+    managed.lastActivity = Date.now();
+    return managed.coordinator.manualCompact(sessionKey);
+  }
+
   addSocket(agentId: string, socket: WebSocket): void {
     this.agents.get(agentId)?.bridge.addSocket(socket);
   }

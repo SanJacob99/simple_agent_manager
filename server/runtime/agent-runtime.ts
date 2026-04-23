@@ -433,6 +433,20 @@ export class AgentRuntime {
     this.contextEngine?.clearActiveSession();
   }
 
+  /**
+   * Run the configured compaction strategy against an externally
+   * supplied message list. Used by the manual-compaction REST path,
+   * which operates outside of an active run. Returns the compacted
+   * messages; when no context engine is configured the input is
+   * returned unchanged.
+   */
+  async runContextCompaction(messages: AgentMessage[]): Promise<AgentMessage[]> {
+    if (!this.contextEngine) {
+      return messages;
+    }
+    return this.contextEngine.compact(messages);
+  }
+
   // ---------------------------------------------------------------------------
   // Tool hook wrapping
   // ---------------------------------------------------------------------------

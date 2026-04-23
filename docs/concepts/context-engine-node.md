@@ -38,6 +38,8 @@ The runtime creates a `ContextEngine` that exposes:
 - `compact(messages)` to apply the configured reduction strategy
 - `afterTurn(messages)` for post-turn bookkeeping
 
+Manual compaction: the Context Engine property panel shows a **Compact Now** button when `compactionTrigger` is `"manual"`. It calls `POST /api/sessions/:agentId/:sessionKey/compact`, which runs the configured `compactionStrategy` against the session transcript until it reaches `postCompactionTokenTarget`. The agent must be started (the chat session must have been opened at least once), and no run can be active on the target session.
+
 Current compaction behavior:
 
 - `trim-oldest` and `sliding-window` keep the newest messages that fit

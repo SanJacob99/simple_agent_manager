@@ -47,6 +47,7 @@ import {
   type ContextUsageBreakdown,
   type TranscriptSystemPromptData,
 } from '../../shared/context-usage';
+import { estimateMessagesTokens } from '../../shared/token-estimator';
 import { RunConcurrencyController } from './run-concurrency-controller';
 import { SubAgentRegistry } from './sub-agent-registry';
 import { createSessionTools, type SessionToolContext } from '../sessions/session-tools';
@@ -359,6 +360,73 @@ export class RunCoordinator {
       }
     }
     return latest?.runId;
+  }
+
+  /**
+   * Run compaction against the stored transcript for a given session
+   * outside of any active turn. Persists the compaction entry, snapshots
+   * the transcript file, bumps the session's compactionCount, and
+   * returns a summary of the token delta. Refuses to run if the session
+   * has an active run in flight -- the transform would then race with
+   * the coordinator's own compaction.
+   */
+  async manualCompact(sessionKey: string): Promise<{
+    compacted: boolean;
+    messagesBefore: number;
+    messagesAfter: number;
+    tokensBefore: number;
+    tokensAfter: number;
+  }> {
+    if (!this.transcriptStore || !this.sessionRouter || !this.storage) {
+      throw new Error('Cannot compact: storage is not configured for this agent');
+    }
+
+    for (const record of this.runs.values()) {
+      if (record.sessionKey !== sessionKey) continue;
+      if (record.status === 'pending' || record.status === 'running') {
+        throw new Error(`Cannot compact: session ${sessionKey} has an active run`);
+      }
+    }
+
+    const status = await this.sessionRouter.getStatus(sessionKey);
+    if (!status) {
+      throw new Error(`Session ${sessionKey} not found`);
+    }
+
+    const transcriptPath = this.storage.resolveTranscriptPath(status);
+    const transcriptManager = this.transcriptStore.openSession(transcriptPath);
+    const messagesBefore = transcriptManager.buildSessionContext().messages as AgentMessage[];
+    const tokensBefore = estimateMessagesTokens(
+      messagesBefore as Array<{ content?: string | unknown }>,
+    );
+
+    this.runtime.setActiveSession(transcriptManager);
+    let messagesAfter: AgentMessage[];
+    try {
+      messagesAfter = await this.runtime.runContextCompaction(messagesBefore);
+    } finally {
+      this.runtime.clearActiveSession();
+    }
+
+    const tokensAfter = estimateMessagesTokens(
+      messagesAfter as Array<{ content?: string | unknown }>,
+    );
+    const compacted = messagesAfter.length !== messagesBefore.length;
+
+    if (compacted) {
+      await this.transcriptStore.snapshot(transcriptManager);
+      await this.sessionRouter.updateAfterTurn(sessionKey, {
+        compactionCount: (status.compactionCount ?? 0) + 1,
+      });
+    }
+
+    return {
+      compacted,
+      messagesBefore: messagesBefore.length,
+      messagesAfter: messagesAfter.length,
+      tokensBefore,
+      tokensAfter,
+    };
   }
 
   setRunPayloads(runId: string, payloads: RunPayload[], usage?: RunUsage): void {

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { PieChart, Pie, Cell } from 'recharts';
 import { useGraphStore } from '../../store/graph-store';
 import type { ContextEngineNodeData, CompactionStrategy } from '../../types/nodes';
@@ -97,6 +97,36 @@ export default function ContextEngineProperties({ nodeId, data }: Props) {
   );
   const sessionUsage = useContextUsageStore(selectContextUsage(activeSessionKey ?? null));
   const usedTokens = sessionUsage?.contextTokens;
+
+  // "Compact now" state for the manual-trigger button. Scoped to the
+  // property panel so it can drive both the button label and a tiny
+  // result/error message inline.
+  const storageClient = useSessionStore((s) =>
+    connectedAgent ? s.storageEngines[connectedAgent.id] : undefined,
+  );
+  const [isCompacting, setIsCompacting] = useState(false);
+  const [compactResult, setCompactResult] = useState<
+    | { kind: 'ok'; messagesBefore: number; messagesAfter: number; tokensBefore: number; tokensAfter: number; compacted: boolean }
+    | { kind: 'err'; message: string }
+    | null
+  >(null);
+
+  const triggerManualCompaction = async () => {
+    if (!storageClient || !activeSessionKey) return;
+    setIsCompacting(true);
+    setCompactResult(null);
+    try {
+      const result = await storageClient.compactSession(activeSessionKey);
+      setCompactResult({ kind: 'ok', ...result });
+    } catch (err) {
+      setCompactResult({
+        kind: 'err',
+        message: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setIsCompacting(false);
+    }
+  };
 
   return (
     <div className="space-y-1">
@@ -241,21 +271,53 @@ export default function ContextEngineProperties({ nodeId, data }: Props) {
       )}
 
       {data.compactionTrigger === 'manual' && (
-        <Field label="Compaction Token Limit">
-          <input
-            className={inputClass}
-            type="number"
-            min={0}
-            step={1024}
-            value={data.compactionThreshold}
-            onChange={(e) =>
-              update(nodeId, { compactionThreshold: parseFloat(e.target.value) || 0 })
-            }
-          />
-          <p className="mt-0.5 text-[10px] text-slate-600">
-            Number of tokens after which to compact when triggered
-          </p>
-        </Field>
+        <>
+          <Field label="Compaction Token Limit">
+            <input
+              className={inputClass}
+              type="number"
+              min={0}
+              step={1024}
+              value={data.compactionThreshold}
+              onChange={(e) =>
+                update(nodeId, { compactionThreshold: parseFloat(e.target.value) || 0 })
+              }
+            />
+            <p className="mt-0.5 text-[10px] text-slate-600">
+              Number of tokens after which to compact when triggered
+            </p>
+          </Field>
+
+          <Field label="Compact Now">
+            <button
+              type="button"
+              disabled={!storageClient || !activeSessionKey || isCompacting}
+              onClick={triggerManualCompaction}
+              className="w-full rounded border border-blue-600/60 bg-blue-600/20 px-2 py-1 text-xs text-blue-200 hover:bg-blue-600/30 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {isCompacting
+                ? 'Compacting…'
+                : `Run ${data.compactionStrategy} compaction → ${data.postCompactionTokenTarget.toLocaleString()} tokens`}
+            </button>
+            {!activeSessionKey && (
+              <p className="mt-0.5 text-[10px] text-slate-600">
+                Open a chat session on the connected agent to enable manual compaction.
+              </p>
+            )}
+            {compactResult?.kind === 'ok' && (
+              <p className="mt-0.5 text-[10px] text-slate-500">
+                {compactResult.compacted
+                  ? `Compacted ${compactResult.messagesBefore} → ${compactResult.messagesAfter} messages (${compactResult.tokensBefore.toLocaleString()} → ${compactResult.tokensAfter.toLocaleString()} tokens).`
+                  : 'Nothing to compact — history already fits the target.'}
+              </p>
+            )}
+            {compactResult?.kind === 'err' && (
+              <p className="mt-0.5 text-[10px] text-red-400">
+                {compactResult.message}
+              </p>
+            )}
+          </Field>
+        </>
       )}
 
       {data.compactionTrigger === 'auto' && (
