@@ -17,3 +17,8 @@
 **Vulnerability:** The WebhookHandler used `crypto.timingSafeEqual` directly on user-provided signatures without checking their byte lengths, causing a RangeError crash when the lengths mismatched, leading to a Denial of Service (DoS) vulnerability.
 **Learning:** `crypto.timingSafeEqual` throws a `RangeError` if the two buffers passed to it are of different sizes. Passing unverified inputs directly to this function can crash the node process.
 **Prevention:** Always compare the `.byteLength` property of both Buffers before passing them to `crypto.timingSafeEqual`.
+
+## 2026-04-11 - [CRITICAL] Fix Path Traversal Bypass in Sandboxed Tools
+**Vulnerability:** The sandboxed path checks in file system and execution tools incorrectly validated if the resolved target path `startsWith` the base workspace path. For example, if the workspace is `/workspace`, a requested path traversing to `/workspace-secrets/key.txt` would bypass the check because it starts with `/workspace`, allowing arbitrary file access outside the sandbox.
+**Learning:** Checking path boundaries using just string prefixes without the directory separator `path.sep` allows traversal to adjacent directories sharing the same prefix string.
+**Prevention:** When validating path boundaries, explicitly ensure the resolved target starts with `basePath + path.sep`, or exactly matches the base path.

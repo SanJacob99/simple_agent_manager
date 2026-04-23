@@ -9,11 +9,12 @@ function textResult(text: string): AgentToolResult<undefined> {
 }
 
 function resolvePath(filePath: string, ctx: FsToolContext): string {
-  const resolved = path.resolve(ctx.cwd, filePath);
-  if (ctx.sandboxWorkdir && !resolved.startsWith(ctx.cwd)) {
+  const resolvedBase = path.resolve(ctx.cwd);
+  const resolvedTarget = path.resolve(resolvedBase, filePath);
+  if (ctx.sandboxWorkdir && !(resolvedTarget.startsWith(resolvedBase + path.sep) || resolvedTarget === resolvedBase)) {
     throw new Error(`Path "${filePath}" is outside the workspace. Access denied.`);
   }
-  return resolved;
+  return resolvedTarget;
 }
 
 export function createEditFileTool(ctx: FsToolContext): AgentTool<TSchema> {

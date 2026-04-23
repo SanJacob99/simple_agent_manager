@@ -37,11 +37,12 @@ function resolveWorkdir(
   sandboxed: boolean,
 ): string {
   if (!workdir) return defaultCwd;
-  const resolved = path.resolve(defaultCwd, workdir);
-  if (sandboxed && !resolved.startsWith(defaultCwd)) {
+  const resolvedBase = path.resolve(defaultCwd);
+  const resolvedTarget = path.resolve(resolvedBase, workdir);
+  if (sandboxed && !(resolvedTarget.startsWith(resolvedBase + path.sep) || resolvedTarget === resolvedBase)) {
     return defaultCwd;
   }
-  return resolved;
+  return resolvedTarget;
 }
 
 function truncateOutput(output: string): { text: string; truncated: boolean } {
