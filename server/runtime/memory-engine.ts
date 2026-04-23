@@ -103,7 +103,7 @@ export class MemoryEngine {
       return { compacted: kept, summary };
     }
 
-    if (strategy === 'summary' || strategy === 'hybrid') {
+    if (strategy === 'summary') {
       // Summarize older messages, keep recent ones
       const keepCount = Math.max(4, Math.floor(messages.length * 0.3));
       const toSummarize = messages.slice(0, -keepCount);

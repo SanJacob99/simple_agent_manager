@@ -14,7 +14,7 @@ import type { ThinkingLevel, CompactionStrategy, MemoryBackend } from '../../typ
 import type { DefaultsSubTab } from '../types';
 
 const THINKING_LEVELS: ThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
-const COMPACTION_STRATEGIES: CompactionStrategy[] = ['summary', 'sliding-window', 'trim-oldest', 'hybrid'];
+const COMPACTION_STRATEGIES: CompactionStrategy[] = ['summary', 'sliding-window', 'trim-oldest'];
 const MEMORY_BACKENDS: MemoryBackend[] = ['builtin', 'external', 'cloud'];
 
 const TABS: { id: DefaultsSubTab; label: string }[] = [

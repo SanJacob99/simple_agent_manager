@@ -110,7 +110,7 @@ export class ContextEngine {
       return result;
     }
 
-    if (strategy === 'summary' || strategy === 'hybrid') {
+    if (strategy === 'summary') {
       // Keep recent messages, summarize older ones. Honor the
       // post-compaction target by also trimming the "kept" tail
       // until it fits -- the summary message itself contributes

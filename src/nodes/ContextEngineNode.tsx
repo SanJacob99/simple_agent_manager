@@ -13,7 +13,6 @@ const STRATEGY_ABBREV: Record<CompactionStrategy, string> = {
   summary: 'SU',
   'sliding-window': 'SL',
   'trim-oldest': 'TR',
-  hybrid: 'HY',
 };
 
 type BudgetTier = 'XS' | 'S' | 'M' | 'L' | 'XL';

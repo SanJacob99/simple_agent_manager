@@ -50,7 +50,7 @@ export interface MemoryNodeData {
   maxSessionMessages: number;
   persistAcrossSessions: boolean;
   compactionEnabled: boolean;
-  compactionStrategy: 'summary' | 'sliding-window' | 'hybrid';
+  compactionStrategy: 'summary' | 'sliding-window';
   compactionThreshold: number;
   exposeMemorySearch: boolean;
   exposeMemoryGet: boolean;
@@ -241,7 +241,7 @@ export interface SkillsNodeData {
 
 // --- Context Engine Node (OpenClaw-inspired) ---
 
-export type CompactionStrategy = 'summary' | 'sliding-window' | 'trim-oldest' | 'hybrid';
+export type CompactionStrategy = 'summary' | 'sliding-window' | 'trim-oldest';
 
 export interface ContextEngineNodeData {
   [key: string]: unknown;
@@ -252,7 +252,7 @@ export interface ContextEngineNodeData {
   compactionStrategy: CompactionStrategy;
   /**
    * Model used to produce the summary when `compactionStrategy` is
-   * `summary` or `hybrid`. Empty string means "inherit the agent's model".
+   * `summary`. Empty string means "inherit the agent's model".
    */
   summaryModelId?: string;
   compactionTrigger: 'auto' | 'manual' | 'threshold';

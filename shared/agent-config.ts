@@ -3,7 +3,7 @@
 export type MemoryBackend = 'builtin' | 'external' | 'cloud';
 export type ToolProfile = 'full' | 'coding' | 'messaging' | 'minimal' | 'custom';
 export type ToolGroup = 'runtime' | 'fs' | 'web' | 'coding' | 'media' | 'communication' | 'human';
-export type CompactionStrategy = 'summary' | 'sliding-window' | 'trim-oldest' | 'hybrid';
+export type CompactionStrategy = 'summary' | 'sliding-window' | 'trim-oldest';
 
 export type SystemPromptMode = 'auto' | 'append' | 'manual';
 
@@ -244,7 +244,7 @@ export interface ResolvedContextEngineConfig {
   compactionStrategy: CompactionStrategy;
   /**
    * Model id used to produce summaries when `compactionStrategy` is
-   * `summary` or `hybrid`. Empty string means "inherit the agent's model".
+   * `summary`. Empty string means "inherit the agent's model".
    */
   summaryModelId?: string;
   compactionTrigger: string;

@@ -15,18 +15,17 @@ import {
 } from '../../store/context-usage-store';
 import { cssVar } from '../../utils/css-var';
 
-const COMPACTION_STRATEGIES: CompactionStrategy[] = ['summary', 'sliding-window', 'trim-oldest', 'hybrid'];
+const COMPACTION_STRATEGIES: CompactionStrategy[] = ['summary', 'sliding-window', 'trim-oldest'];
 const COMPACTION_TRIGGERS = ['auto', 'manual', 'threshold'] as const;
 
 const COMPACTION_STRATEGY_DESCRIPTIONS: Record<CompactionStrategy, string> = {
   summary: 'Keeps the most recent ~30% of messages and replaces the rest with a short text summary.',
   'sliding-window': 'Drops the oldest messages until the newest fit within the token budget. No summary is kept.',
   'trim-oldest': 'Removes oldest messages one-by-one until the conversation fits the budget.',
-  hybrid: 'Same behavior as summary today: keep recent turns, summarize older ones.',
 };
 
 function strategyUsesSummary(s: CompactionStrategy): boolean {
-  return s === 'summary' || s === 'hybrid';
+  return s === 'summary';
 }
 
 const COMPACTION_DONUT_SIZE = 72;

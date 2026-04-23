@@ -3,7 +3,7 @@
 > Manages token budgets, compaction, and transcript-aware context assembly so conversations stay inside the model's context window.
 
 <!-- source: src/types/nodes.ts#ContextEngineNodeData -->
-<!-- last-verified: 2026-04-22 -->
+<!-- last-verified: 2026-04-23 -->
 <!-- token-budget-inheritance, compaction-trigger-modes, tooltips -->
 
 ## Overview
@@ -19,8 +19,8 @@ In the current implementation, compaction is no longer only an in-memory concern
 | `label` | `string` | `"Context Engine"` | Display label on the canvas |
 | `tokenBudget` | `number` | Inherited from model | Max tokens for assembled context |
 | `reservedForResponse` | `number` | `4096` | Tokens reserved for the model response |
-| `compactionStrategy` | `CompactionStrategy` | `"summary"` | `summary`, `sliding-window`, `trim-oldest`, or `hybrid` |
-| `summaryModelId` | `string` | `""` | Model id used to produce summaries (only for `summary`/`hybrid`). Empty means inherit the agent's model |
+| `compactionStrategy` | `CompactionStrategy` | `"summary"` | `summary`, `sliding-window`, or `trim-oldest` |
+| `summaryModelId` | `string` | `""` | Model id used to produce summaries (only for `summary`). Empty means inherit the agent's model |
 | `compactionTrigger` | `string` | `"auto"` | When compaction should become available |
 | `compactionThreshold` | `number` | `0.8` | Trigger threshold or token count, depending on mode |
 | `postCompactionTokenTarget` | `number` | `50000` | Token ceiling the assembled context should land at after compaction runs. Clamped to `tokenBudget - reservedForResponse`. |
@@ -41,8 +41,8 @@ The runtime creates a `ContextEngine` that exposes:
 Current compaction behavior:
 
 - `trim-oldest` and `sliding-window` keep the newest messages that fit
-- `summary` and `hybrid` keep the newest slice of conversation and replace older context with a generated summary message
-- when a live transcript is bound, summary/hybrid compaction appends a persisted `compaction` entry via `SessionManager.appendCompaction(...)`
+- `summary` keeps the newest slice of conversation and replaces older context with a generated summary message
+- when a live transcript is bound, summary compaction appends a persisted `compaction` entry via `SessionManager.appendCompaction(...)`
 - the runtime emits a `memory_compaction` event when one of these persisted summaries is written, so the UI can show compacting state
 
 The context engine no longer owns system prompt additions. Prompt construction is handled by the agent runtime's assembled system prompt.
@@ -61,7 +61,7 @@ The context engine no longer owns system prompt additions. Prompt construction i
   "label": "Context Engine",
   "tokenBudget": 128000,
   "reservedForResponse": 4096,
-  "compactionStrategy": "hybrid",
+  "compactionStrategy": "summary",
   "compactionTrigger": "auto",
   "compactionThreshold": 0.8,
   "postCompactionTokenTarget": 50000,
