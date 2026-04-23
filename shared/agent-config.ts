@@ -242,6 +242,11 @@ export interface ResolvedContextEngineConfig {
   reservedForResponse: number;
   ownsCompaction: boolean;
   compactionStrategy: CompactionStrategy;
+  /**
+   * Model id used to produce summaries when `compactionStrategy` is
+   * `summary` or `hybrid`. Empty string means "inherit the agent's model".
+   */
+  summaryModelId?: string;
   compactionTrigger: string;
   compactionThreshold: number;
   autoFlushBeforeCompact: boolean;

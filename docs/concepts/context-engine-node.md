@@ -3,7 +3,7 @@
 > Manages token budgets, compaction, and transcript-aware context assembly so conversations stay inside the model's context window.
 
 <!-- source: src/types/nodes.ts#ContextEngineNodeData -->
-<!-- last-verified: 2026-04-07 -->
+<!-- last-verified: 2026-04-22 -->
 <!-- token-budget-inheritance, compaction-trigger-modes, tooltips -->
 
 ## Overview
@@ -20,7 +20,8 @@ In the current implementation, compaction is no longer only an in-memory concern
 | `tokenBudget` | `number` | Inherited from model | Max tokens for assembled context |
 | `reservedForResponse` | `number` | `4096` | Tokens reserved for the model response |
 | `ownsCompaction` | `boolean` | `true` | Whether this node owns compaction |
-| `compactionStrategy` | `CompactionStrategy` | `"trim-oldest"` | `summary`, `sliding-window`, `trim-oldest`, or `hybrid` |
+| `compactionStrategy` | `CompactionStrategy` | `"summary"` | `summary`, `sliding-window`, `trim-oldest`, or `hybrid` |
+| `summaryModelId` | `string` | `""` | Model id used to produce summaries (only for `summary`/`hybrid`). Empty means inherit the agent's model |
 | `compactionTrigger` | `string` | `"auto"` | When compaction should become available |
 | `compactionThreshold` | `number` | `0.8` | Trigger threshold or token count, depending on mode |
 | `bootstrapMaxChars` | `number` | `20000` | Max characters per bootstrap file |

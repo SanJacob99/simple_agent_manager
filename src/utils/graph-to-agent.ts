@@ -131,6 +131,7 @@ export function resolveAgentConfig(
         reservedForResponse: contextNode.data.reservedForResponse,
         ownsCompaction: contextNode.data.ownsCompaction,
         compactionStrategy: contextNode.data.compactionStrategy,
+        summaryModelId: contextNode.data.summaryModelId ?? '',
         compactionTrigger: contextNode.data.compactionTrigger,
         compactionThreshold: contextNode.data.compactionThreshold,
         autoFlushBeforeCompact: contextNode.data.autoFlushBeforeCompact,

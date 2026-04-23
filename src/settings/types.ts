@@ -121,7 +121,7 @@ export const DEFAULT_STORAGE_DEFAULTS: StorageDefaults = {
 export const DEFAULT_CONTEXT_ENGINE_DEFAULTS: ContextEngineDefaults = {
   tokenBudget: 128000,
   reservedForResponse: 4096,
-  compactionStrategy: 'trim-oldest',
+  compactionStrategy: 'summary',
   compactionThreshold: 0.8,
   ragEnabled: false,
   ragTopK: 5,

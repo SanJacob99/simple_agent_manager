@@ -1,11 +1,26 @@
+import { useMemo } from 'react';
 import { useGraphStore } from '../../store/graph-store';
 import type { ContextEngineNodeData, CompactionStrategy } from '../../types/nodes';
 import { Field, Tooltip, inputClass, selectClass } from './shared';
+import { useContextEngineSync } from '../../nodes/useContextEngineSync';
+import {
+  buildProviderCatalogKey,
+  useModelCatalogStore,
+} from '../../store/model-catalog-store';
 
 const COMPACTION_STRATEGIES: CompactionStrategy[] = ['summary', 'sliding-window', 'trim-oldest', 'hybrid'];
 const COMPACTION_TRIGGERS = ['auto', 'manual', 'threshold'] as const;
 
-import { useContextEngineSync } from '../../nodes/useContextEngineSync';
+const COMPACTION_STRATEGY_DESCRIPTIONS: Record<CompactionStrategy, string> = {
+  summary: 'Keeps the most recent ~30% of messages and replaces the rest with a short text summary.',
+  'sliding-window': 'Drops the oldest messages until the newest fit within the token budget. No summary is kept.',
+  'trim-oldest': 'Removes oldest messages one-by-one until the conversation fits the budget.',
+  hybrid: 'Same behavior as summary today: keep recent turns, summarize older ones.',
+};
+
+function strategyUsesSummary(s: CompactionStrategy): boolean {
+  return s === 'summary' || s === 'hybrid';
+}
 
 interface Props {
   nodeId: string;
@@ -14,7 +29,33 @@ interface Props {
 
 export default function ContextEngineProperties({ nodeId, data }: Props) {
   const update = useGraphStore((s) => s.updateNodeData);
+  const edges = useGraphStore((s) => s.edges);
+  const nodes = useGraphStore((s) => s.nodes);
+  const modelsByKey = useModelCatalogStore((s) => s.models);
   const { connectedAgent, modelId, modelContextWindow } = useContextEngineSync(nodeId, data);
+
+  // Find the provider node attached to the connected agent, so the summary
+  // model picker can offer that provider's discovered models.
+  const agentProviderCatalogKey = useMemo(() => {
+    if (!connectedAgent) return '';
+    const providerNode = edges
+      .filter((e) => e.target === connectedAgent.id)
+      .map((e) => nodes.find((n) => n.id === e.source))
+      .find((n) => n?.data.type === 'provider');
+    if (!providerNode || providerNode.data.type !== 'provider') return '';
+    return buildProviderCatalogKey({
+      pluginId: providerNode.data.pluginId,
+      baseUrl: providerNode.data.baseUrl,
+    });
+  }, [connectedAgent, edges, nodes]);
+
+  const providerModelIds = useMemo(() => {
+    if (!agentProviderCatalogKey) return [] as string[];
+    return Object.keys(modelsByKey[agentProviderCatalogKey] ?? {});
+  }, [agentProviderCatalogKey, modelsByKey]);
+
+  const showSummaryModel = strategyUsesSummary(data.compactionStrategy);
+  const summaryModelId = data.summaryModelId ?? '';
 
   return (
     <div className="space-y-1">
@@ -99,7 +140,32 @@ export default function ContextEngineProperties({ nodeId, data }: Props) {
             <option key={s} value={s}>{s}</option>
           ))}
         </select>
+        <p className="mt-0.5 text-[10px] text-slate-600">
+          {COMPACTION_STRATEGY_DESCRIPTIONS[data.compactionStrategy]}
+        </p>
       </Field>
+
+      {showSummaryModel && (
+        <Field label="Summary Model">
+          <input
+            className={inputClass}
+            list={`summary-model-options-${nodeId}`}
+            value={summaryModelId}
+            placeholder={modelId ? `Inherit from agent (${modelId})` : 'Inherit from agent'}
+            onChange={(e) => update(nodeId, { summaryModelId: e.target.value })}
+          />
+          {providerModelIds.length > 0 && (
+            <datalist id={`summary-model-options-${nodeId}`}>
+              {providerModelIds.map((m) => (
+                <option key={m} value={m} />
+              ))}
+            </datalist>
+          )}
+          <p className="mt-0.5 text-[10px] text-slate-600">
+            Leave empty to use the agent's own model. Set a different model id to delegate summarization.
+          </p>
+        </Field>
+      )}
 
       <Field label="Compaction Trigger">
         <select

@@ -250,6 +250,11 @@ export interface ContextEngineNodeData {
   reservedForResponse: number;
   ownsCompaction: boolean;
   compactionStrategy: CompactionStrategy;
+  /**
+   * Model used to produce the summary when `compactionStrategy` is
+   * `summary` or `hybrid`. Empty string means "inherit the agent's model".
+   */
+  summaryModelId?: string;
   compactionTrigger: 'auto' | 'manual' | 'threshold';
   compactionThreshold: number;
   autoFlushBeforeCompact: boolean;
