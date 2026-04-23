@@ -6,7 +6,7 @@
  * dynamically imports each one, and collects the `default` export as a
  * `ToolModule`. Built-in tools live under `server/tools/builtins/`; user
  * tools live under `server/tools/user/` (gitignored) and are loaded via
- * the `extraDirs` option — see `docs/concepts/user-tools-plan.md`.
+ * the `extraDirs` option — see `docs/concepts/user-tools-guide.md`.
  *
  * Consumer contract:
  *

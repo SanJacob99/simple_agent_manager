@@ -1,6 +1,6 @@
 /**
  * Resolve where the tool registry should look for user-installed tools
- * at startup. See `docs/concepts/user-tools-plan.md` § "Where tools live".
+ * at startup. See `docs/concepts/user-tools-guide.md` § "Where tools live".
  *
  * Precedence (first match wins):
  *   1. `SAM_DISABLE_USER_TOOLS=1` — kill switch. Returns zero dirs so

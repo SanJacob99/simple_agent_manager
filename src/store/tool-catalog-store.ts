@@ -3,7 +3,7 @@
  *
  * The Tools-node picker reads from this store so it can display every
  * ToolModule registered server-side — including user-installed ones
- * under `server/tools/user/` (see `docs/concepts/user-tools-plan.md`).
+ * under `server/tools/user/` (see `docs/concepts/user-tools-guide.md`).
  *
  * Offline fallback: when the backend is unreachable (or the store
  * hasn't loaded yet), `entriesOrFallback()` returns synthetic entries

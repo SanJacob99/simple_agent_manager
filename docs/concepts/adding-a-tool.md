@@ -198,8 +198,6 @@ The default when `classification` is omitted is `state-mutating` — conservativ
 
 "User-installed" means a SAM operator adds a tool to their own install without editing the main codebase or publishing a package. The file format is identical to a built-in — same `ToolModule` interface, same `defineTool` import — but the file lives in a separate directory and imports from the vendored [server/tools/sdk.ts](../../server/tools/sdk.ts) for stability.
 
-**Status as of 2026-04-23:** M1 (loader plumbing) and M2 (UI discovery) are shipped — drop a `*.module.ts` under `server/tools/user/`, restart, and the tool appears in the Tools node picker. M3 (authoring UX) ships `npm run scaffold:tool -- <name>` and the [user-tools guide](./user-tools-guide.md). M4 (standalone SDK package) is still pending — see [user-tools-plan.md](./user-tools-plan.md).
-
 The flow:
 
 1. `npm run scaffold:tool -- weather` (or manually create `server/tools/user/<name>/<name>.module.ts` / at `SAM_USER_TOOLS_DIR`).
@@ -239,6 +237,5 @@ Before the `ToolModule` migration, adding a tool touched 5–9 files: the implem
 - [server/tools/tool-factory.ts](../../server/tools/tool-factory.ts) — the runtime assembly point. Registry-first; legacy `TOOL_CREATORS` fallback.
 - [server/tools/tool-adapter.ts](../../server/tools/tool-adapter.ts) — shared adapter that normalizes tool errors and cleans schemas.
 - [shared/resolve-tool-names.ts](../../shared/resolve-tool-names.ts) — tool groups, `ALL_TOOL_NAMES`, `IMPLEMENTED_TOOL_NAMES`.
-- [user-tools-guide.md](./user-tools-guide.md) — author's guide for drop-a-file user-installed tools (scaffold, worked example, SDK surface, troubleshooting).
-- [user-tools-plan.md](./user-tools-plan.md) — architecture and remaining milestones for user-installed tools.
+- [user-tools-guide.md](./user-tools-guide.md) — author's guide and architectural reference for drop-a-file user-installed tools (scaffold, worked example, SDK surface, troubleshooting, design notes, open questions).
 - [tool-node.md](./tool-node.md) — the Tools Node that selects which tools an agent can use.

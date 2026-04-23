@@ -103,7 +103,7 @@ export default defineTool({
 
 See [adding-a-tool.md](./adding-a-tool.md) for the full step-by-step, including implementation file, TypeBox schema, classifications and HITL implications, tests, and the UI wiring needed only when the tool has per-agent settings.
 
-A separate **user-installed** path — dropping a module into `server/tools/user/` without forking — is partially wired (the registry accepts an `extraDirs` option). Status and remaining work live in [user-tools-plan.md](./user-tools-plan.md).
+A separate **user-installed** path — dropping a module into `server/tools/user/` without forking — is fully wired: `npm run scaffold:tool -- <name>`, edit, restart, and the tool appears in the picker. See [user-tools-guide.md](./user-tools-guide.md).
 
 ## Connections
 

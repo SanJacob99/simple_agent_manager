@@ -16,9 +16,9 @@
  * (`server/tools/sdk.ts`) rather than `tool-module.ts` directly, so
  * future internal refactors don't break user tools.
  *
- * Related docs:
- *   - docs/concepts/user-tools-guide.md — worked-example walkthrough
- *   - docs/concepts/user-tools-plan.md — architecture / roadmap
+ * Related doc: docs/concepts/user-tools-guide.md — authoring
+ * walkthrough plus the design notes (loader, UI integration,
+ * stability contract) at the bottom.
  */
 
 import { fileURLToPath } from 'url';
@@ -98,7 +98,7 @@ import { defineTool } from '../../sdk';
  * ${pascal} tool — user-installed.
  *
  * Loaded by the filesystem-scan registry at server startup (see
- * docs/concepts/user-tools-plan.md). Restart the server after editing.
+ * docs/concepts/user-tools-guide.md). Restart the server after editing.
  */
 export default defineTool<void>({
   name: '${name}',

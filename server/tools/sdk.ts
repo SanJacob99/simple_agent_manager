@@ -15,13 +15,8 @@
  *
  * Adding a new export is fine. Renaming or removing an export is a
  * breaking change for every user tool that imports it. See
- * `docs/concepts/user-tools-plan.md` § "Versioning / API stability"
+ * `docs/concepts/user-tools-guide.md` § "Versioning / API stability"
  * before changing this file.
- *
- * When M4 ships a standalone `@simple-agent-manager/tool-sdk` npm
- * package, it will re-export the same names — so switching from
- * `'../../sdk'` to `'@simple-agent-manager/tool-sdk'` will be a
- * find-and-replace.
  */
 
 export { defineTool } from './tool-module';

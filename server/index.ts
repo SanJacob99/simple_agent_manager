@@ -676,7 +676,7 @@ loadProviderPlugins(
 // are loaded from the directory `resolveUserToolsDir()` returns — the
 // default is `server/tools/user/`, overridable via `SAM_USER_TOOLS_DIR`
 // and disableable via `SAM_DISABLE_USER_TOOLS=1`. See
-// `docs/concepts/user-tools-plan.md`. We block startup so the first
+// `docs/concepts/user-tools-guide.md`. We block startup so the first
 // agent build can never race against an empty registry.
 const userToolsDir = resolveUserToolsDir();
 initializeToolRegistry({ extraDirs: userToolsDir.dirs })
