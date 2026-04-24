@@ -21,6 +21,16 @@
 export const CHARS_PER_TOKEN_ESTIMATE = 4;
 
 /**
+ * Per-image token cost for budget planning. Providers tokenize images via
+ * tiled attention rather than by raw byte size, so a single inlined screenshot
+ * costs a roughly fixed ~250-300 tokens regardless of resolution (Gemini:
+ * ~258, GPT-4o: ~255 at default detail). We slightly overestimate so a
+ * context crammed with screenshots trips compaction before blowing past the
+ * real budget.
+ */
+export const IMAGE_TOKEN_ESTIMATE = 300;
+
+/**
  * Matches CJK Unified Ideographs (U+2E80-U+9FFF), CJK Extension A
  * (U+A000-U+A4FF), Hangul Syllables (U+AC00-U+D7AF), CJK Compatibility
  * Ideographs (U+F900-U+FAFF), and CJK Extension B+ (U+20000-U+2FA1F).
@@ -80,7 +90,11 @@ export function estimateMessagesTokens(
       total += estimateTokens(msg.content);
     } else if (Array.isArray(msg.content)) {
       for (const part of msg.content) {
-        if (typeof part === 'object' && part !== null && 'text' in part) {
+        if (!part || typeof part !== 'object') continue;
+        const type = (part as { type?: unknown }).type;
+        if (type === 'image') {
+          total += IMAGE_TOKEN_ESTIMATE;
+        } else if ('text' in part && typeof (part as { text: unknown }).text === 'string') {
           total += estimateTokens((part as { text: string }).text);
         }
       }

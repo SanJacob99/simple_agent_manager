@@ -63,4 +63,15 @@ describe('exec tool', () => {
   it('rejects empty commands', async () => {
     await expect(tool.execute('t9', { command: '' })).rejects.toThrow('No command');
   });
+
+  it('strips null bytes from output (WSL UTF-16 stderr safety)', async () => {
+    // Emit "wsl\0:\0 \0" style garbage via printf \x00 — if the harness passes
+    // this through to a provider, OpenAI/OpenRouter rejects the payload.
+    const result = await tool.execute('t10', {
+      command: "printf 'a\\0b\\0c' && echo done",
+    });
+    const output = text(result);
+    expect(output).not.toMatch(/\x00/);
+    expect(output).toContain('done');
+  });
 });

@@ -203,7 +203,7 @@ export default function AgentProperties({ nodeId, data }: Props) {
     update(nodeId, {
       modelId: newModelId,
       modelCapabilities: caps,
-      ...(caps.reasoningSupported === false ? { thinkingLevel: 'off' } : {}),
+      thinkingLevel: caps.reasoningSupported === false ? 'off' : 'medium',
     });
   };
 

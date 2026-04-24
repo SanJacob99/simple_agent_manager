@@ -121,6 +121,15 @@ function hasThinkingContent(content: unknown): boolean {
   );
 }
 
+function hasToolCallContent(content: unknown): boolean {
+  if (!Array.isArray(content)) return false;
+  return content.some(
+    (block) =>
+      block && typeof block === 'object' &&
+      (block as { type?: string }).type === 'toolCall',
+  );
+}
+
 export class RunCoordinator {
   private readonly runs = new Map<string, RunRecord>();
   private readonly waiters = new Map<string, Array<(result: WaitResult) => void>>();
@@ -1012,11 +1021,12 @@ export class RunCoordinator {
       const fallbackText =
         transcriptState.assistantText || extractTextContent(raw.message.content);
       const thinkingOnly = !fallbackText && hasThinkingContent(raw.message.content);
+      const hasToolCalls = hasToolCallContent(raw.message.content);
 
       if (
-        !fallbackText && !thinkingOnly
+        (!fallbackText && !thinkingOnly && !hasToolCalls)
         || transcriptState.assistantSuppressed
-        || (!thinkingOnly && NO_REPLY_PATTERN.test((fallbackText ?? '').trim()))
+        || (!thinkingOnly && !hasToolCalls && NO_REPLY_PATTERN.test((fallbackText ?? '').trim()))
       ) {
         transcriptState.assistantText = '';
         transcriptState.assistantSuppressed = false;

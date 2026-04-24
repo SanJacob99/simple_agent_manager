@@ -5,6 +5,7 @@ import {
   estimateTokensFromChars,
   estimateMessagesTokens,
   CHARS_PER_TOKEN_ESTIMATE,
+  IMAGE_TOKEN_ESTIMATE,
 } from './token-estimator';
 
 describe('estimateStringChars', () => {
@@ -64,8 +65,22 @@ describe('estimateMessagesTokens', () => {
   it('walks array content for text blocks', () => {
     expect(
       estimateMessagesTokens([
-        { content: [{ type: 'text', text: 'x'.repeat(16) }, { type: 'image' }] },
+        { content: [{ type: 'text', text: 'x'.repeat(16) }] },
       ]),
     ).toBe(4);
+  });
+
+  it('charges a fixed per-image cost so screenshots count toward the budget', () => {
+    expect(
+      estimateMessagesTokens([
+        {
+          content: [
+            { type: 'text', text: 'x'.repeat(16) },
+            { type: 'image', mimeType: 'image/jpeg', data: 'fake-base64' },
+            { type: 'image', mimeType: 'image/png', data: 'fake-base64' },
+          ],
+        },
+      ]),
+    ).toBe(4 + 2 * IMAGE_TOKEN_ESTIMATE);
   });
 });

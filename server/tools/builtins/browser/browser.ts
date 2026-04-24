@@ -93,6 +93,11 @@ function truncate(s: string, max = MAX_TEXT_CHARS): string {
 interface InlineScreenshot {
   mimeType: string;
   data: string; // base64
+  /** Disk path the capture was also written to, relative to `ctx.cwd` when
+   *  possible (workspace-rooted) or absolute otherwise. Allows old
+   *  screenshots that get stripped from context to still be reachable via
+   *  `read_file` / `show_image`. */
+  savedPath: string;
 }
 
 async function captureInlineScreenshot(
@@ -107,9 +112,22 @@ async function captureInlineScreenshot(
     // Playwright rejects `quality` for PNG.
     if (format === 'jpeg') opts.quality = quality;
     const buffer = await page.screenshot(opts);
+
+    const dir = path.resolve(ctx.cwd || process.cwd(), SCREENSHOT_DIR);
+    await fs.mkdir(dir, { recursive: true });
+    const ext = format === 'png' ? 'png' : 'jpg';
+    const absPath = path.join(dir, `auto-${Date.now()}.${ext}`);
+    await fs.writeFile(absPath, buffer);
+
+    const base = ctx.cwd ? path.resolve(ctx.cwd) : '';
+    const savedPath = base && absPath.startsWith(base)
+      ? path.relative(base, absPath).replace(/\\/g, '/')
+      : absPath;
+
     return {
       mimeType: format === 'png' ? 'image/png' : 'image/jpeg',
       data: buffer.toString('base64'),
+      savedPath,
     };
   } catch {
     // A failing screenshot should never mask the action result. The
@@ -395,14 +413,26 @@ export function createBrowserTool(ctx: BrowserToolContext): AgentTool<TSchema> {
         }
 
         const content: AgentToolResult<undefined>['content'] = [];
+        let extraText = '';
         if (attachesScreenshot(outcome, ctx)) {
           const inst = INSTANCES.get(instanceKey(ctx));
           if (inst) {
             const shot = await captureInlineScreenshot(inst.page, ctx, outcome.fullPage === true);
-            if (shot) content.push({ type: 'image', mimeType: shot.mimeType, data: shot.data });
+            if (shot) {
+              // `savedPath` is an extra field pi-ai's serializers ignore but the
+              // context-engine uses it to keep the file reachable after the
+              // image bytes are stripped from older turns.
+              content.push({
+                type: 'image',
+                mimeType: shot.mimeType,
+                data: shot.data,
+                savedPath: shot.savedPath,
+              } as (typeof content)[number]);
+              extraText = `\n(Screenshot saved to ${shot.savedPath})`;
+            }
           }
         }
-        content.push({ type: 'text', text: outcome.text });
+        content.push({ type: 'text', text: outcome.text + extraText });
         return { content, details: undefined };
       } finally {
         signal?.removeEventListener('abort', onAbort);

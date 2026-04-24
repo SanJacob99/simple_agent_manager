@@ -4,6 +4,84 @@ import type { SessionManager, SessionEntry } from '@mariozechner/pi-coding-agent
 import { estimateMessagesTokens } from '../../shared/token-estimator';
 
 /**
+ * Number of most-recent tool results whose image blocks stay in context.
+ * Older tool result images are replaced with a short text placeholder so the
+ * base64 bytes stop travelling over the wire on every subsequent turn. Two
+ * keeps the current screenshot and the one before it — usually enough for
+ * "did that click do what I expected" comparisons without unbounded bloat.
+ */
+const KEEP_RECENT_IMAGE_TOOL_RESULTS = 2;
+
+interface ToolResultLike {
+  role?: unknown;
+  content?: unknown;
+}
+
+function isToolResultWithImage(msg: ToolResultLike): boolean {
+  if (msg.role !== 'toolResult' || !Array.isArray(msg.content)) return false;
+  return msg.content.some(
+    (block) =>
+      block && typeof block === 'object' &&
+      (block as { type?: unknown }).type === 'image',
+  );
+}
+
+/**
+ * Walks tool-result messages newest-to-oldest. The most recent
+ * `keepRecent` tool results that carry images keep them intact;
+ * anything older has its image blocks swapped for a short text
+ * placeholder. The original messages are not mutated.
+ *
+ * Non-toolResult messages (user/assistant) pass through unchanged —
+ * user-attached images are intentional and shouldn't be dropped
+ * behind the user's back.
+ */
+export function stripStaleToolResultImages(
+  messages: AgentMessage[],
+  keepRecent: number,
+): AgentMessage[] {
+  if (keepRecent < 0) keepRecent = 0;
+
+  let imagesSeen = 0;
+  const resultInReverse: AgentMessage[] = [];
+
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const msg = messages[i] as ToolResultLike;
+    if (!isToolResultWithImage(msg)) {
+      resultInReverse.push(messages[i]);
+      continue;
+    }
+
+    if (imagesSeen < keepRecent) {
+      imagesSeen += 1;
+      resultInReverse.push(messages[i]);
+      continue;
+    }
+
+    const content = msg.content as Array<{ type?: unknown } & Record<string, unknown>>;
+    let droppedCount = 0;
+    const rewritten = content.map((block) => {
+      if (block && typeof block === 'object' && block.type === 'image') {
+        droppedCount += 1;
+        const savedPath = typeof block.savedPath === 'string' && block.savedPath.length > 0
+          ? block.savedPath
+          : null;
+        const prefix = droppedCount === 1 ? '[screenshot' : `[screenshot #${droppedCount}`;
+        const text = savedPath
+          ? `${prefix} removed from context; reachable at ${savedPath}]`
+          : `${prefix} removed from context to save tokens]`;
+        return { type: 'text', text };
+      }
+      return block;
+    });
+
+    resultInReverse.push({ ...(messages[i] as object), content: rewritten } as unknown as AgentMessage);
+  }
+
+  return resultInReverse.reverse();
+}
+
+/**
  * ContextEngine implements the OpenClaw-inspired lifecycle:
  * assemble -> compact -> afterTurn
  *
@@ -44,7 +122,7 @@ export class ContextEngine {
     estimatedTokens: number;
   }> {
     const budget = this.config.tokenBudget - this.config.reservedForResponse;
-    let assembled = [...messages];
+    let assembled = stripStaleToolResultImages(messages, KEEP_RECENT_IMAGE_TOOL_RESULTS);
 
     const tokens = estimateMessagesTokens(assembled as Array<{ content?: string | unknown }>);
 

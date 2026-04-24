@@ -44,6 +44,30 @@ function resolveWorkdir(
   return resolved;
 }
 
+const UTF16_LE_BOM = [0xff, 0xfe];
+const UTF16_BE_BOM = [0xfe, 0xff];
+
+function decodeChunk(chunk: Buffer): string {
+  if (chunk.length >= 2 && chunk[0] === UTF16_LE_BOM[0] && chunk[1] === UTF16_LE_BOM[1]) {
+    return chunk.subarray(2).toString('utf16le');
+  }
+  if (chunk.length >= 2 && chunk[0] === UTF16_BE_BOM[0] && chunk[1] === UTF16_BE_BOM[1]) {
+    return chunk.subarray(2).swap16().toString('utf16le');
+  }
+  return chunk.toString('utf-8');
+}
+
+// Strip C0 control chars except 0x09/0x0A/0x0D, and DEL (0x7F). Null bytes in
+// particular are rejected by OpenAI/OpenRouter JSON payloads and can appear
+// when a subprocess (notably WSL) emits UTF-16 text decoded as UTF-8.
+const UNSAFE_CONTROL_CHARS = new RegExp(
+  '[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]',
+  'g',
+);
+function stripUnsafeControlChars(text: string): string {
+  return text.replace(UNSAFE_CONTROL_CHARS, '');
+}
+
 function truncateOutput(output: string): { text: string; truncated: boolean } {
   if (output.length <= MAX_OUTPUT_CHARS) {
     return { text: output, truncated: false };
@@ -63,7 +87,7 @@ function formatExecResult(params: {
   timedOut: boolean;
   killed: boolean;
 }): string {
-  const { text, truncated } = truncateOutput(params.output);
+  const { text, truncated } = truncateOutput(stripUnsafeControlChars(params.output));
   const parts: string[] = [];
 
   if (params.timedOut) {
@@ -164,11 +188,11 @@ export function createExecTool(ctx: ExecToolContext): AgentTool<TSchema> {
         let killed = false;
 
         child.stdout.on('data', (chunk: Buffer) => {
-          output += chunk.toString('utf-8');
+          output += decodeChunk(chunk);
         });
 
         child.stderr.on('data', (chunk: Buffer) => {
-          output += chunk.toString('utf-8');
+          output += decodeChunk(chunk);
         });
 
         // Respect abort signal from the agent runtime

@@ -314,6 +314,52 @@ describe('RunCoordinator', () => {
       expect(status?.totalTokens).toBe(15);
     });
 
+    it('persists an assistant message that contains only a tool call (no text, empty thinking)', async () => {
+      // Regression: previously these messages were treated as "empty" and dropped
+      // from the transcript, which left the following toolResult orphaned and
+      // skipped usage accounting. Gemini-style responses with thinkingSignature
+      // but empty thinking text hit this path.
+      (runtime.prompt as any).mockImplementationOnce(async () => {
+        (runtime as any).emitEvent({
+          type: 'message_end',
+          message: {
+            role: 'assistant',
+            content: [
+              { type: 'thinking', thinking: '', thinkingSignature: 'reasoning' },
+              {
+                type: 'toolCall',
+                id: 'tool_exec_1',
+                name: 'exec',
+                arguments: { command: 'echo hi' },
+              },
+            ],
+            api: 'openai-completions',
+            provider: 'openrouter',
+            model: 'google/gemini-3.1-pro-preview',
+            usage: makeUsage(),
+            stopReason: 'toolUse',
+            timestamp: Date.now(),
+          },
+        });
+      });
+
+      const result = await coordinator.dispatch({ sessionKey: 'tool-only', text: 'Do thing' });
+      await coordinator.wait(result.runId, 5000);
+
+      const entries = await readTranscript('tool-only');
+      const messages = entries.filter((entry) => entry.type === 'message');
+      const roles = messages.map((entry) => (entry as any).message.role);
+      expect(roles).toEqual(['user', 'assistant']);
+
+      const assistantContent = (messages[1] as any).message.content;
+      expect(Array.isArray(assistantContent)).toBe(true);
+      expect(assistantContent.some((b: any) => b.type === 'toolCall' && b.name === 'exec')).toBe(true);
+
+      const status = await getSession('tool-only');
+      expect(status?.inputTokens).toBe(10);
+      expect(status?.outputTokens).toBe(5);
+    });
+
     it('persists a durable diagnostic when the run fails before an assistant reply', async () => {
       (runtime.prompt as any).mockRejectedValueOnce(new Error('Model failed'));
 
