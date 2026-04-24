@@ -157,6 +157,8 @@ export interface AgentConfig {
 
   /** Path for the persistent browser profile. Absolute or relative to workspace. Empty = <cwd>/.browser-profile. */
   browserUserDataDir?: string;
+  /** When true Chromium runs without a visible window. Default true. */
+  browserHeadless?: boolean;
   browserViewportWidth?: number;
   browserViewportHeight?: number;
   /** Per-action timeout used for navigation, clicks, fills, and other Playwright ops. */

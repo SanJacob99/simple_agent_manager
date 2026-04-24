@@ -398,6 +398,9 @@ export function resolveAgentConfig(
     browserUserDataDir: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.browser?.userDataDir
       ? toolsNode.data.toolSettings.browser.userDataDir
       : undefined,
+    browserHeadless: toolsNode?.data.type === 'tools'
+      ? toolsNode.data.toolSettings?.browser?.headless
+      : undefined,
     browserViewportWidth: toolsNode?.data.type === 'tools'
       ? toolsNode.data.toolSettings?.browser?.viewportWidth
       : undefined,

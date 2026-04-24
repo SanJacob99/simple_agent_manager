@@ -101,6 +101,13 @@ export const browserToolConfigSchema: ObjectSchema<BrowserToolSettings> = {
       description:
         'Where Chromium stores cookies, localStorage, and login state. Relative paths resolve against the workspace.',
     },
+    headless: {
+      type: 'boolean',
+      title: 'Headless',
+      checkboxLabel: 'Run without opening a browser window',
+      description:
+        'Turn this off when users need to take over protected steps such as login, CAPTCHA, or payment in the live browser window.',
+    },
     viewportWidth: {
       type: 'integer',
       title: 'Viewport width',

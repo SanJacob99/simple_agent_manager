@@ -136,6 +136,8 @@ export interface CanvaToolSettings {
 export interface BrowserToolSettings {
   /** Persistent profile path. Absolute or relative to workspace. Empty = <cwd>/.browser-profile. */
   userDataDir: string;
+  /** When true Chromium runs without a visible window. Turn off for user handoff. */
+  headless: boolean;
   viewportWidth: number;
   viewportHeight: number;
   /** Per-action timeout (navigation, clicks, fills) in milliseconds. */

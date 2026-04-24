@@ -27,6 +27,7 @@ const DEFAULT_WEB_SEARCH_SETTINGS = { tavilyApiKey: '', skill: '' };
 const DEFAULT_CANVA_SETTINGS = { portRangeStart: 5173, portRangeEnd: 5273, skill: '' };
 const DEFAULT_BROWSER_SETTINGS = {
   userDataDir: '',
+  headless: true,
   viewportWidth: 1280,
   viewportHeight: 800,
   timeoutMs: 30000,
@@ -525,7 +526,7 @@ export default function ToolsProperties({ nodeId, data }: Props) {
 
         <div className="rounded-md border border-slate-700/50 bg-slate-800/30 px-3 py-2 mb-2 space-y-1">
           <p className="text-[10px] text-slate-400">
-            <strong className="text-slate-300">browser</strong> drives a real headless Chromium
+            <strong className="text-slate-300">browser</strong> drives a real Chromium
             via Playwright. The agent navigates, inspects via <em>snapshot</em> or{' '}
             <em>screenshot</em>, and acts with CSS / text / role selectors.
           </p>
@@ -533,6 +534,9 @@ export default function ToolsProperties({ nodeId, data }: Props) {
             One browser per workspace; the profile at <span className="font-mono">&lt;cwd&gt;/.browser-profile/</span>{' '}
             keeps cookies and logins between runs. Screenshots land in{' '}
             <span className="font-mono">&lt;cwd&gt;/browser-screenshots/</span>.
+          </p>
+          <p className="text-[10px] text-slate-500">
+            Turn off headless mode when the user needs to take over login, CAPTCHA, payment, or other protected steps in a visible browser window.
           </p>
         </div>
 

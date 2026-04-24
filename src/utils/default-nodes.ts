@@ -78,6 +78,7 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
           },
           browser: {
             userDataDir: '',
+            headless: true,
             viewportWidth: 1280,
             viewportHeight: 800,
             timeoutMs: 30000,
