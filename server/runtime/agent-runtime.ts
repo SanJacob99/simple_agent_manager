@@ -57,18 +57,7 @@ function summarizePayload(payload: any): string {
       }
     }
   }
-  const reasoning = payload.reasoning !== undefined
-    ? JSON.stringify(payload.reasoning)
-    : '(absent)';
-  const reasoningEffort = payload.reasoning_effort !== undefined
-    ? String(payload.reasoning_effort)
-    : '(absent)';
-  const topLevelKeys = Object.keys(payload).join(',');
-  return (
-    `model=${model} | messages=${messages.length} | tools=${tools.length} | ` +
-    `reasoning=${reasoning} | reasoning_effort=${reasoningEffort} | ` +
-    `keys=[${topLevelKeys}] | last_user=${lastUserText}`
-  );
+  return `model=${model} | messages=${messages.length} | tools=${tools.length} | last_user=${lastUserText}`;
 }
 
 /**
@@ -552,7 +541,10 @@ export class AgentRuntime {
       try {
         const response = await originalFetch(...args);
         log('pi-ai Fetch', `[STATUS] ${response.status} ${response.statusText}`);
-        if (!response.ok) {
+        const isOk = typeof response.ok === 'boolean'
+          ? response.ok
+          : response.status >= 200 && response.status < 300;
+        if (!isOk) {
           // Non-2xx: small error body, safe to await without blocking a stream.
           const clone = response.clone();
           try {

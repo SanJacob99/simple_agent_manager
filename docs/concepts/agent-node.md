@@ -3,7 +3,7 @@
 > The central hub node that stores model and prompt settings while connected peripheral nodes supply runtime services.
 
 <!-- source: src/types/nodes.ts#AgentNodeData -->
-<!-- last-verified: 2026-04-23 -->
+<!-- last-verified: 2026-04-25 -->
 
 ## Overview
 
@@ -56,6 +56,7 @@ The Agent Node still owns `modelId`, `thinkingLevel`, and `modelCapabilities`. T
    - the agent's snapshotted capability overrides
 5. The model picker UI in the Agent properties panel is driven by the connected Provider Node's catalog state, keyed by provider instance rather than a hardcoded provider string.
 6. Interactive chat requires a connected Provider Node, Context Engine Node, and Storage Node before the drawer can start a session.
+7. Runtime payload/fetch diagnostics in `AgentRuntime` are best-effort and non-blocking for successful streaming responses. The runtime avoids awaiting cloned 2xx response bodies, so debug logging cannot stall token streaming.
 
 ## Connections
 
