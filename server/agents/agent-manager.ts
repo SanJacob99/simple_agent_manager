@@ -308,18 +308,24 @@ export class AgentManager {
     let restored = 0;
     try {
       const entries = await fs.readdir(resolvedPath, { withFileTypes: true });
-      for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
+      // ⚡ Bolt Optimization: Use Promise.all to load agent configs from disk concurrently
+      // instead of sequentially via a for...of loop. This eliminates N+1 I/O overhead on server boot.
+      const promises = entries.map(async (entry) => {
+        if (!entry.isDirectory()) return false;
         const configPath = path.join(resolvedPath, entry.name, 'agent-config.json');
         try {
           const raw = await fs.readFile(configPath, 'utf-8');
           const config = JSON.parse(raw) as AgentConfig;
           await this.start(config);
-          restored++;
+          return true;
         } catch {
           // No config file in this directory — skip
+          return false;
         }
-      }
+      });
+
+      const results = await Promise.all(promises);
+      restored = results.filter(Boolean).length;
     } catch {
       // Storage path doesn't exist yet — nothing to restore
     }
