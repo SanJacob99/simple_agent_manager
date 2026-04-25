@@ -61,6 +61,7 @@ export const TOOL_MODULES: ReadonlyArray<ToolModule<any>> = _TOOL_MODULES;
  */
 export const TOOL_ALIASES: Readonly<Record<string, string>> = {
   bash: 'exec',
+  code_interpreter: 'code_execution',
 };
 
 /**

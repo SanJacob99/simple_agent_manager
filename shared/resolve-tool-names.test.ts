@@ -24,6 +24,7 @@ function baseConfig(overrides: Partial<ResolvedToolsConfig> = {}): ResolvedTools
 describe('alias canonicalization', () => {
   it('canonicalizeToolName maps known aliases to the canonical name', () => {
     expect(canonicalizeToolName('bash')).toBe('exec');
+    expect(canonicalizeToolName('code_interpreter')).toBe('code_execution');
   });
 
   it('canonicalizeToolName returns unknown names unchanged', () => {
@@ -71,12 +72,14 @@ describe('resolveToolNames canonicalization', () => {
   });
 
   it('canonicalizes tools pulled in by groups', () => {
-    // `runtime` expands to `exec`, not `bash`, after this change — but
-    // even if a downstream group map contained `bash`, resolveToolNames
-    // would still canonicalize it.
+    // `runtime` expands to canonical names only (`exec`, `code_execution`)
+    // after this change — but even if a downstream group map contained an
+    // alias, resolveToolNames would still canonicalize it.
     const names = resolveToolNames(baseConfig({ enabledGroups: ['runtime'] }));
     expect(names).toContain('exec');
+    expect(names).toContain('code_execution');
     expect(names).not.toContain('bash');
+    expect(names).not.toContain('code_interpreter');
   });
 
   it('canonicalizes plugin-declared tool lists', () => {
