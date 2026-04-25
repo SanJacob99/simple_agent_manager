@@ -3,7 +3,7 @@
 > Configures which tools an agent can use through profiles, groups, direct enables, skills, and plugins.
 
 <!-- source: src/types/nodes.ts#ToolsNodeData -->
-<!-- last-verified: 2026-04-23 -->
+<!-- last-verified: 2026-04-25 -->
 
 ## Overview
 
@@ -68,7 +68,7 @@ Tool name resolution happens in `shared/resolve-tool-names.ts` in this order:
 - `canva` writes HTML/CSS/JS into `<cwd>/.canva/<name>/` and serves each canvas from its own static HTTP server on a port auto-picked from the configured range
 - `text_to_speech` synthesizes audio via ElevenLabs, Google Gemini, Microsoft Azure, MiniMax, OpenAI, or OpenRouter (audio-capable chat model, e.g. `openai/gpt-4o-audio-preview`) and writes the resulting file into `<cwd>/audio/`
 - `music_generate` generates music or ambient audio via Google Lyria or MiniMax Music and writes the resulting file into `<cwd>/music/`. The Gemini API key is reused from the image settings, and the MiniMax API key and group id are reused from text_to_speech
-- most other tools are still stubs
+- `code_interpreter` is treated as a legacy alias and canonicalized to `code_execution` during tool-name resolution, so older saved configs still enable the same runtime tool
 - if the resolved tool list already includes `web_search` or `web_fetch` and the active provider plugin supplies replacements, `createAgentTools()` swaps in the provider-backed implementation instead of auto-adding new tools
 
 Skill handling happens in `resolveAgentConfig()` and feeds the `## Skills` section of the system prompt via `buildSystemPrompt()`. There are three buckets:
