@@ -17,3 +17,8 @@
 **Vulnerability:** The WebhookHandler used `crypto.timingSafeEqual` directly on user-provided signatures without checking their byte lengths, causing a RangeError crash when the lengths mismatched, leading to a Denial of Service (DoS) vulnerability.
 **Learning:** `crypto.timingSafeEqual` throws a `RangeError` if the two buffers passed to it are of different sizes. Passing unverified inputs directly to this function can crash the node process.
 **Prevention:** Always compare the `.byteLength` property of both Buffers before passing them to `crypto.timingSafeEqual`.
+
+## 2026-04-11 - [CRITICAL] Fix Path Traversal in FS Tools
+**Vulnerability:** The FS tools (`read_file`, `write_file`, `edit_file`, `list_directory`) used `!resolved.startsWith(ctx.cwd)` to ensure user-supplied paths were within the workspace. This is vulnerable to partial prefix matching, meaning a path like `/app/workspace-secrets` would pass the check if `ctx.cwd` was `/app/workspace`.
+**Learning:** Checking directory boundaries with simple string prefix matching (`startsWith`) on paths is dangerous. If the base path doesn't end with a trailing separator, sibling directories that start with the same name can be accessed.
+**Prevention:** Always append a directory separator to the base path before using `startsWith` (e.g. `resolved.startsWith(basePath + path.sep)`), or check for exact equality.
