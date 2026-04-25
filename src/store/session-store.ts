@@ -535,7 +535,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       : get().storageEngine;
     if (storageEngine) {
       try {
-        await storageEngine.clearSessionMessages(sessionKey);
+        await storageEngine.resetSession(sessionKey);
         const meta = await storageEngine.getSession(sessionKey);
         if (meta) {
           set((state) => ({
