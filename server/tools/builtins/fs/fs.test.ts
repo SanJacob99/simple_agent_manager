@@ -50,6 +50,14 @@ describe('read_file', () => {
     const tool = createReadFileTool({ cwd: tmpDir, sandboxWorkdir: true });
     await expect(tool.execute('t4', { path: '../../../etc/passwd' })).rejects.toThrow('outside');
   });
+
+  it('blocks prefix-matching path traversal bypass', async () => {
+    const baseName = path.basename(tmpDir);
+    // e.g. if tmpDir is /tmp/sam-fs-test-abc, bypass is /tmp/sam-fs-test-abc-secrets/passwd
+    const bypassPath = `../${baseName}-secrets/passwd`;
+    const tool = createReadFileTool({ cwd: tmpDir, sandboxWorkdir: true });
+    await expect(tool.execute('t5', { path: bypassPath })).rejects.toThrow('outside');
+  });
 });
 
 describe('write_file', () => {
