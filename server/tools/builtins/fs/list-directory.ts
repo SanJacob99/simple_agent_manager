@@ -9,8 +9,9 @@ function textResult(text: string): AgentToolResult<undefined> {
 }
 
 function resolvePath(dirPath: string, ctx: FsToolContext): string {
-  const resolved = path.resolve(ctx.cwd, dirPath);
-  if (ctx.sandboxWorkdir && !resolved.startsWith(ctx.cwd)) {
+  const resolvedBase = path.resolve(ctx.cwd);
+  const resolved = path.resolve(resolvedBase, dirPath);
+  if (ctx.sandboxWorkdir && !resolved.startsWith(resolvedBase + path.sep) && resolved !== resolvedBase) {
     throw new Error(`Path "${dirPath}" is outside the workspace. Access denied.`);
   }
   return resolved;
