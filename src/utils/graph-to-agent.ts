@@ -421,6 +421,21 @@ export function resolveAgentConfig(
     browserScreenshotQuality: toolsNode?.data.type === 'tools'
       ? toolsNode.data.toolSettings?.browser?.screenshotQuality
       : undefined,
+    browserStealth: toolsNode?.data.type === 'tools'
+      ? toolsNode.data.toolSettings?.browser?.stealth
+      : undefined,
+    browserLocale: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.browser?.locale
+      ? toolsNode.data.toolSettings.browser.locale
+      : undefined,
+    browserTimezone: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.browser?.timezone
+      ? toolsNode.data.toolSettings.browser.timezone
+      : undefined,
+    browserUserAgent: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.browser?.userAgent
+      ? toolsNode.data.toolSettings.browser.userAgent
+      : undefined,
+    browserCdpEndpoint: toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.browser?.cdpEndpoint
+      ? toolsNode.data.toolSettings.browser.cdpEndpoint
+      : undefined,
     ttsPreferredProvider: (() => {
       if (toolsNode?.data.type !== 'tools') return undefined;
       const value = toolsNode.data.toolSettings?.textToSpeech?.preferredProvider;

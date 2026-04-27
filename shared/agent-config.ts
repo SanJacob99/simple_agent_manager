@@ -169,6 +169,22 @@ export interface AgentConfig {
   browserScreenshotFormat?: 'jpeg' | 'png';
   /** JPEG quality 1-100. Ignored for PNG. Default 60. */
   browserScreenshotQuality?: number;
+  /** Apply puppeteer-extra-plugin-stealth on launch. Default true. */
+  browserStealth?: boolean;
+  /** BCP-47 locale (e.g. en-US). Empty = en-US. */
+  browserLocale?: string;
+  /** IANA timezone (e.g. America/New_York). Empty = host system timezone. */
+  browserTimezone?: string;
+  /** Override the outbound User-Agent string. Empty = Playwright/stealth default. */
+  browserUserAgent?: string;
+  /**
+   * Chrome DevTools Protocol endpoint (e.g. `http://127.0.0.1:9222`). When
+   * set, the browser tool attaches to the user's already-running Chrome
+   * via `connectOverCDP` and drives an isolated context inside it. Empty =
+   * launch our own Chromium via persistent context. Invalid or unreachable
+   * endpoints fall back to the persistent-context launch path.
+   */
+  browserCdpEndpoint?: string;
 
   /** Preferred default TTS provider. */
   ttsPreferredProvider?:

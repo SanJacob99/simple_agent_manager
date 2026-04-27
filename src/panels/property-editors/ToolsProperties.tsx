@@ -21,19 +21,115 @@ import {
   webSearchToolConfigSchema,
 } from './tool-config-schemas';
 
+function BrowserCdpLauncher({
+  endpoint,
+  onEndpointChange,
+}: {
+  endpoint: string;
+  onEndpointChange: (next: string) => void;
+}) {
+  const [port, setPort] = useState<number>(() => {
+    const m = endpoint.match(/:(\d+)$/);
+    return m ? parseInt(m[1], 10) : 9222;
+  });
+  const [status, setStatus] = useState<'idle' | 'launching' | 'ok' | 'error'>('idle');
+  const [message, setMessage] = useState<string>('');
+
+  const launch = async () => {
+    setStatus('launching');
+    setMessage('Launching Chrome…');
+    try {
+      const resp = await fetch('/api/browser/launch-chrome', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ port }),
+      });
+      const body = (await resp.json()) as {
+        endpoint?: string;
+        launched?: boolean;
+        binary?: string;
+        error?: string;
+      };
+      if (!resp.ok || !body.endpoint) {
+        throw new Error(body.error || `Launch failed (${resp.status})`);
+      }
+      onEndpointChange(body.endpoint);
+      setStatus('ok');
+      setMessage(
+        body.launched
+          ? `Chrome launched${body.binary ? ` (${body.binary})` : ''}. Endpoint set to ${body.endpoint}.`
+          : `Chrome was already listening on port ${port}. Endpoint set to ${body.endpoint}.`,
+      );
+    } catch (err) {
+      setStatus('error');
+      setMessage((err as Error).message);
+    }
+  };
+
+  return (
+    <div className="rounded-md border border-slate-700/50 bg-slate-800/30 px-3 py-2 mb-2 space-y-2">
+      <p className="text-[10px] text-slate-400">
+        <strong className="text-slate-300">Launch Chrome for CDP</strong> — spins up a Chrome instance
+        with the remote-debugging port open and fills in the <span className="font-mono">cdpEndpoint</span>{' '}
+        setting below. The browser tool then attaches to this Chrome (real TLS fingerprint, real IP,
+        your extensions) instead of spawning its own bundled Chromium. The launched Chrome runs under a
+        scratch profile so it does not disturb your primary browsing session.
+      </p>
+      <div className="flex items-center gap-2">
+        <label className="text-[10px] text-slate-400 shrink-0">Port</label>
+        <input
+          type="number"
+          min={1024}
+          max={65535}
+          value={port}
+          onChange={(e) => setPort(parseInt(e.target.value, 10) || 9222)}
+          className={`${inputClass} w-24`}
+        />
+        <button
+          type="button"
+          onClick={launch}
+          disabled={status === 'launching'}
+          className="inline-flex items-center gap-1 rounded-md bg-indigo-500/20 hover:bg-indigo-500/30 disabled:opacity-50 disabled:cursor-not-allowed px-3 py-1 text-xs text-indigo-200 border border-indigo-500/40"
+        >
+          <Chrome className="h-3 w-3" />
+          {status === 'launching' ? 'Launching…' : 'Launch Chrome'}
+        </button>
+      </div>
+      {message ? (
+        <p
+          className={
+            status === 'error'
+              ? 'text-[10px] text-rose-300'
+              : status === 'ok'
+                ? 'text-[10px] text-emerald-300'
+                : 'text-[10px] text-slate-400'
+          }
+        >
+          {message}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 const DEFAULT_EXEC_SETTINGS = { cwd: '', sandboxWorkdir: false, skill: '' };
 const DEFAULT_CODE_EXECUTION_SETTINGS = { apiKey: '', model: '', skill: '' };
 const DEFAULT_WEB_SEARCH_SETTINGS = { tavilyApiKey: '', skill: '' };
 const DEFAULT_CANVA_SETTINGS = { portRangeStart: 5173, portRangeEnd: 5273, skill: '' };
 const DEFAULT_BROWSER_SETTINGS = {
   userDataDir: '',
-  headless: true,
+  headless: false,
   viewportWidth: 1280,
   viewportHeight: 800,
   timeoutMs: 30000,
   autoScreenshot: true,
   screenshotFormat: 'jpeg' as const,
   screenshotQuality: 60,
+  stealth: true,
+  locale: '',
+  timezone: '',
+  userAgent: '',
+  cdpEndpoint: '',
   skill: '',
 };
 const DEFAULT_IMAGE_SETTINGS = {
@@ -536,9 +632,14 @@ export default function ToolsProperties({ nodeId, data }: Props) {
             <span className="font-mono">&lt;cwd&gt;/browser-screenshots/</span>.
           </p>
           <p className="text-[10px] text-slate-500">
-            Turn off headless mode when the user needs to take over login, CAPTCHA, payment, or other protected steps in a visible browser window.
+            Opens a visible window by default so the user can take over login, CAPTCHA, payment, or other protected steps. Falls back to headless automatically if no display is available. Enable headless to force it.
           </p>
         </div>
+
+        <BrowserCdpLauncher
+          endpoint={data.toolSettings?.browser?.cdpEndpoint ?? ''}
+          onEndpointChange={(next) => updateBrowser({ cdpEndpoint: next })}
+        />
 
         <SchemaForm
           schema={browserToolConfigSchema}
