@@ -8,7 +8,7 @@ import { loadEnvFile } from '../test-support/load-env-file';
 import type { AgentConfig } from '../../shared/agent-config';
 
 const DEFAULT_OPENROUTER_MODEL = 'openai/gpt-4o-mini';
-loadEnvFile();
+await loadEnvFile();
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const openrouterIt = OPENROUTER_API_KEY ? it : it.skip;
 

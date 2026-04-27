@@ -43,7 +43,7 @@ describe('loadEnvFile', () => {
 
     process.env.OPENROUTER_API_KEY = 'from-process';
 
-    const loaded = loadEnvFile(path.join(dir, '.env'));
+    const loaded = await loadEnvFile(path.join(dir, '.env'));
 
     expect(loaded).toEqual({
       OPENROUTER_API_KEY: 'from-file',
@@ -60,7 +60,7 @@ describe('loadEnvFile', () => {
     }
   });
 
-  it('returns an empty object when the file does not exist', () => {
-    expect(loadEnvFile(path.join(os.tmpdir(), 'missing-sam-env-file'))).toEqual({});
+  it('returns an empty object when the file does not exist', async () => {
+    expect(await loadEnvFile(path.join(os.tmpdir(), 'missing-sam-env-file'))).toEqual({});
   });
 });
