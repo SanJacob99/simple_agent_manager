@@ -1,5 +1,5 @@
 import { memo, useRef, useEffect, useCallback, useMemo, useLayoutEffect, useState } from 'react';
-import { RefreshCw, MessageSquareMore } from 'lucide-react';
+import { Hexagon, RefreshCw, MessageSquareMore } from 'lucide-react';
 import { useSessionStore, type Message } from '../store/session-store';
 import type { ContextWindowInfo } from './useContextWindow';
 import { useSessionContextUsage } from './useContextWindow';
@@ -68,6 +68,24 @@ function ChatMessages({
 
   const assistantMessageIds = useMemo(() => getAssistantMessageIds(messages), [messages]);
   const assistantIdKey = assistantMessageIds.join(',');
+
+  // "Working silently": run dispatched, but the user can't see anything
+  // happening yet. Covers the gap between Send and `message:start`, the
+  // `message:start` → first `message:delta` window, and any pure
+  // tool-running phase where the model hasn't streamed text yet.
+  // Reasoning/compaction have their own dedicated UI so we suppress
+  // this indicator while either is active.
+  const streamingMsg = useMemo(
+    () => (streamingMsgId ? messages.find((m) => m.id === streamingMsgId) : undefined),
+    [messages, streamingMsgId],
+  );
+  const hasVisibleAssistantContent = Boolean(
+    streamingMsg
+      && ((streamingMsg.content && streamingMsg.content.length > 0)
+        || (streamingMsg.thinking && streamingMsg.thinking.length > 0)),
+  );
+  const showThinkingIndicator =
+    isStreaming && !compacting && !isReasoning && !hasVisibleAssistantContent;
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -220,6 +238,19 @@ function ChatMessages({
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-amber-500/10 border border-amber-500/20">
             <RefreshCw size={12} className="text-amber-400 animate-spin" />
             <span className="text-[10px] text-amber-300">Compacting context...</span>
+          </div>
+        )}
+        {!isTranscriptLoading && showThinkingIndicator && (
+          <div className="flex justify-start" aria-live="polite">
+            <div className="flex items-center gap-2 rounded-lg border border-blue-500/20 bg-blue-500/10 px-3 py-2">
+              <Hexagon
+                size={14}
+                strokeWidth={1.75}
+                className="text-blue-300 animate-spin [animation-duration:2.5s] motion-reduce:animate-none"
+                aria-hidden="true"
+              />
+              <span className="text-[10px] text-blue-200">Agent is thinking...</span>
+            </div>
           </div>
         )}
         {!isTranscriptLoading && suppressedReply && !isStreaming && (

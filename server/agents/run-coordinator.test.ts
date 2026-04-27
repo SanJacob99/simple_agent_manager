@@ -77,7 +77,7 @@ function makeConfig(storagePath: string, overrides: Partial<AgentConfig> = {}): 
     tags: [],
     provider: 'openai',
     modelId: 'gpt-4',
-    thinkingLevel: 'none',
+    thinkingLevel: 'off',
     systemPrompt: {
       mode: 'manual',
       sections: [{ key: 'manual', label: 'Manual Prompt', content: 'Test', tokenEstimate: 1 }],
@@ -455,6 +455,115 @@ describe('RunCoordinator', () => {
       expect(customs).toHaveLength(2);
       expect((customs[0] as any).data.assembled).toBe('V1 prompt');
       expect((customs[1] as any).data.assembled).toBe('V2 prompt');
+    });
+
+    it('records a thinking_level_change when the configured level differs from the default baseline', async () => {
+      coordinator.destroy();
+      config = makeConfig(storagePath, { thinkingLevel: 'high' });
+      runtime = mockRuntime();
+      coordinator = new RunCoordinator('agent-1', runtime, config, storage);
+
+      const result = await coordinator.dispatch({ sessionKey: 'thinking-change', text: 'Hello' });
+      await coordinator.wait(result.runId, 5000);
+
+      const entries = await readTranscript('thinking-change');
+      const changes = entries.filter((e: any) => e.type === 'thinking_level_change');
+      expect(changes).toHaveLength(1);
+      expect((changes[0] as any).thinkingLevel).toBe('high');
+
+      // Must come before the user message so the level is correctly
+      // associated with the turn it influenced.
+      const changeIdx = entries.findIndex((e: any) => e.type === 'thinking_level_change');
+      const userIdx = entries.findIndex(
+        (e: any) => e.type === 'message' && e.message?.role === 'user',
+      );
+      expect(changeIdx).toBeLessThan(userIdx);
+    });
+
+    it('does not re-record the thinking level when it matches the previous turn', async () => {
+      coordinator.destroy();
+      config = makeConfig(storagePath, { thinkingLevel: 'high' });
+      runtime = mockRuntime();
+      coordinator = new RunCoordinator('agent-1', runtime, config, storage);
+
+      const first = await coordinator.dispatch({ sessionKey: 'thinking-stable', text: 'turn 1' });
+      await coordinator.wait(first.runId, 5000);
+      const second = await coordinator.dispatch({ sessionKey: 'thinking-stable', text: 'turn 2' });
+      await coordinator.wait(second.runId, 5000);
+
+      const entries = await readTranscript('thinking-stable');
+      const changes = entries.filter((e: any) => e.type === 'thinking_level_change');
+      expect(changes).toHaveLength(1);
+    });
+
+    it('records a model_change when the configured model drifts from the prior assistant message', async () => {
+      coordinator.destroy();
+      config = makeConfig(storagePath, {
+        provider: {
+          pluginId: 'openai',
+          authMethodId: '',
+          envVar: '',
+          baseUrl: '',
+        } as any,
+        modelId: 'gpt-4',
+      });
+      runtime = mockRuntime();
+      coordinator = new RunCoordinator('agent-1', runtime, config, storage);
+
+      // First turn: streams an assistant message that will serve as the
+      // implicit model baseline.
+      (runtime.prompt as any).mockImplementationOnce(async () => {
+        (runtime as any).emitEvent({
+          type: 'message_end',
+          message: {
+            role: 'assistant',
+            content: [{ type: 'text', text: 'hi' }],
+            api: 'openai-completions',
+            provider: 'openai',
+            model: 'gpt-4',
+            usage: makeUsage(),
+            stopReason: 'stop',
+            timestamp: Date.now(),
+          },
+        });
+      });
+
+      const first = await coordinator.dispatch({ sessionKey: 'model-change', text: 'turn 1' });
+      await coordinator.wait(first.runId, 5000);
+
+      // Simulate the user picking a different model on the agent node.
+      (coordinator as any).config.modelId = 'gpt-4o';
+
+      const second = await coordinator.dispatch({ sessionKey: 'model-change', text: 'turn 2' });
+      await coordinator.wait(second.runId, 5000);
+
+      const entries = await readTranscript('model-change');
+      const changes = entries.filter((e: any) => e.type === 'model_change');
+      expect(changes).toHaveLength(1);
+      expect((changes[0] as any).provider).toBe('openai');
+      expect((changes[0] as any).modelId).toBe('gpt-4o');
+    });
+
+    it('does not record a model_change on the first turn when no baseline exists', async () => {
+      coordinator.destroy();
+      config = makeConfig(storagePath, {
+        provider: {
+          pluginId: 'openai',
+          authMethodId: '',
+          envVar: '',
+          baseUrl: '',
+        } as any,
+        modelId: 'gpt-4',
+      });
+      runtime = mockRuntime();
+      coordinator = new RunCoordinator('agent-1', runtime, config, storage);
+
+      const result = await coordinator.dispatch({ sessionKey: 'first-turn-model', text: 'Hello' });
+      await coordinator.wait(result.runId, 5000);
+
+      const entries = await readTranscript('first-turn-model');
+      const changes = entries.filter((e: any) => e.type === 'model_change');
+      expect(changes).toHaveLength(0);
     });
 
     it('skips the system-prompt entry when the runtime does not expose a getter', async () => {

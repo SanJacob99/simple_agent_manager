@@ -135,6 +135,43 @@ function hasToolCallContent(content: unknown): boolean {
   );
 }
 
+function readLastRecordedModel(
+  entries: ReadonlyArray<unknown>,
+): { provider: string; modelId: string } | null {
+  for (let i = entries.length - 1; i >= 0; i -= 1) {
+    const entry = entries[i] as {
+      type?: string;
+      provider?: unknown;
+      modelId?: unknown;
+      message?: { role?: string; provider?: unknown; model?: unknown };
+    } | undefined;
+    if (!entry) continue;
+    if (entry.type === 'model_change'
+      && typeof entry.provider === 'string'
+      && typeof entry.modelId === 'string') {
+      return { provider: entry.provider, modelId: entry.modelId };
+    }
+    if (entry.type === 'message' && entry.message?.role === 'assistant') {
+      const provider = entry.message.provider;
+      const modelId = entry.message.model;
+      if (typeof provider === 'string' && provider && typeof modelId === 'string' && modelId) {
+        return { provider, modelId };
+      }
+    }
+  }
+  return null;
+}
+
+function readLastRecordedThinkingLevel(entries: ReadonlyArray<unknown>): string | null {
+  for (let i = entries.length - 1; i >= 0; i -= 1) {
+    const entry = entries[i] as { type?: string; thinkingLevel?: unknown } | undefined;
+    if (entry?.type === 'thinking_level_change' && typeof entry.thinkingLevel === 'string') {
+      return entry.thinkingLevel;
+    }
+  }
+  return null;
+}
+
 export class RunCoordinator {
   private readonly runs = new Map<string, RunRecord>();
   private readonly waiters = new Map<string, Array<(result: WaitResult) => void>>();
@@ -971,6 +1008,11 @@ export class RunCoordinator {
       return;
     }
 
+    // Record any drift in the agent's configured model/provider/thinking
+    // level since the last entry, so per-turn settings are auditable in
+    // the transcript when the user edits the agent between runs.
+    this.persistConfigChanges(transcriptManager);
+
     // Record the exact system prompt pi-ai will send, right before the
     // user turn that triggers the run. Uses pi-core's CustomEntry so
     // it's a first-class transcript record but does NOT participate in
@@ -1177,6 +1219,46 @@ export class RunCoordinator {
       usage,
       costTotalUsd: usage.cost.total,
     };
+  }
+
+  /**
+   * Append `model_change` / `thinking_level_change` entries when the
+   * agent's currently configured provider/modelId/thinkingLevel differ
+   * from the most recently recorded values in the transcript. Lets the
+   * user edit the agent between runs (model swap, thinking-level bump)
+   * and have those changes show up in the session log alongside the
+   * messages they affected.
+   *
+   * Baselines:
+   * - Model baseline = most recent `model_change` entry, or the
+   *   provider/model on the most recent assistant message (matches how
+   *   pi-coding-agent's `buildSessionContext` resolves the active
+   *   model). On a fresh session there is no baseline yet -- the first
+   *   assistant message will record the model implicitly, so we skip.
+   * - Thinking-level baseline = most recent `thinking_level_change`
+   *   entry, defaulting to `'off'` (pi's default) when none exist. We
+   *   record on the first turn too if the configured level differs
+   *   from `'off'`, so replays know what level was in effect.
+   */
+  private persistConfigChanges(transcriptManager: SessionManager): void {
+    const entries = transcriptManager.getEntries();
+
+    const provider = this.config.provider?.pluginId;
+    const modelId = this.config.modelId;
+    if (typeof provider === 'string' && provider && typeof modelId === 'string' && modelId) {
+      const lastModel = readLastRecordedModel(entries);
+      if (lastModel && (lastModel.provider !== provider || lastModel.modelId !== modelId)) {
+        transcriptManager.appendModelChange(provider, modelId);
+      }
+    }
+
+    const thinkingLevel = this.config.thinkingLevel;
+    if (typeof thinkingLevel === 'string' && thinkingLevel) {
+      const baseline = readLastRecordedThinkingLevel(entries) ?? 'off';
+      if (baseline !== thinkingLevel) {
+        transcriptManager.appendThinkingLevelChange(thinkingLevel);
+      }
+    }
   }
 
   /**
