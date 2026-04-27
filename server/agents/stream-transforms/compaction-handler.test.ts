@@ -23,22 +23,7 @@ describe('CompactionHandler', () => {
 
     expect(emitted).toHaveLength(2);
     expect(emitted[0]).toEqual({ type: 'compaction:start', agentId: '', runId: 'run-1' });
-    expect(emitted[1]).toEqual({ type: 'compaction:end', agentId: '', runId: 'run-1', retrying: false });
-  });
-
-  it('does not reset buffers when retrying is false', () => {
-    const handler = new CompactionHandler();
-    const ctx = createRunStreamContext('run-1');
-    ctx.textBuffer = 'some text';
-    ctx.reasoningBuffer = 'some reasoning';
-    ctx.toolSummaries = [{ toolCallId: 'tc-1', toolName: 'test', resultText: 'ok', isError: false }];
-    const emit = vi.fn();
-
-    handler.process(compactionEvent(), ctx, emit);
-
-    expect(ctx.textBuffer).toBe('some text');
-    expect(ctx.reasoningBuffer).toBe('some reasoning');
-    expect(ctx.toolSummaries).toHaveLength(1);
+    expect(emitted[1]).toEqual({ type: 'compaction:end', agentId: '', runId: 'run-1' });
   });
 
   it('ignores non-compaction events', () => {

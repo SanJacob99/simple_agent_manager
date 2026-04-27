@@ -15,7 +15,6 @@ export interface RunStreamContext {
   toolSummaries: ToolSummaryEntry[];
   noReplyDetected: boolean;
   messageSuppressed: boolean;
-  compactionRetrying: boolean;
   payloads: RunPayload[];
   usage?: RunUsage;
 }
@@ -34,7 +33,6 @@ export function createRunStreamContext(runId: string): RunStreamContext {
     toolSummaries: [],
     noReplyDetected: false,
     messageSuppressed: false,
-    compactionRetrying: false,
     payloads: [],
     usage: undefined,
   };

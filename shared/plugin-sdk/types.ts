@@ -42,7 +42,6 @@ export interface ProviderPluginDefinition {
   defaultBaseUrl: string;
   auth: ProviderAuthMethod[];
   catalog?: ProviderPluginCatalog;
-  streamFamily?: import('./stream').ProviderStreamFamily;
   wrapStreamFn?: (
     ctx: import('./stream').ProviderWrapStreamFnContext,
   ) => import('./stream').StreamFn | undefined;

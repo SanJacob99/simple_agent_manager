@@ -163,6 +163,15 @@ app.delete('/api/storage/agent-data', async (req, res) => {
     agentName: string;
   };
   try {
+    // Tear down any runtime that owns this storage first. Otherwise its
+    // in-flight transcript writes (already past their `await fs.writeFile`)
+    // can land after rm and recreate the directory with partial content.
+    for (const id of agentManager.findAgentsByStorage(config.storagePath, agentName)) {
+      agentManager.destroy(id);
+    }
+    // Drain window for writes whose `fs.writeFile` is already mid-flight
+    // and can't be aborted. Keep tight to avoid stalling the response.
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
     const engine = getOrCreateEngine(config, agentName);
     await engine.deleteAgentData();
     forgetAgentStorage(config, agentName);

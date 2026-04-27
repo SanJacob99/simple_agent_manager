@@ -9,7 +9,6 @@ export type {
 
 export type {
   StreamFn,
-  ProviderStreamFamily,
   ProviderStreamWrapperFactory,
   ProviderWrapStreamFnContext,
 } from './stream';

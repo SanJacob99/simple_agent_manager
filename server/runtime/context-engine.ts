@@ -231,10 +231,48 @@ export class ContextEngine {
   }
 
   /**
-   * After-turn hook for post-turn bookkeeping.
+   * After-turn hook. Implements proactive, trigger-aware compaction so
+   * the next turn starts with breathing room instead of waiting for
+   * `assemble()` to fire only when the budget overflows.
+   *
+   * - `auto`: fires at 80% of the post-reservation budget (matches what
+   *   the Context Engine property panel advertises).
+   * - `threshold`: fires at `compactionThreshold * budget` (a 0–1 ratio
+   *   the user sets in the panel).
+   * - `manual`: never fires here; only the "Compact Now" button does.
+   *
+   * `assemble()`'s overflow check (`tokens > budget`) stays as the
+   * safety net for when proactive compaction was skipped or insufficient.
    */
-  async afterTurn(_messages: AgentMessage[]): Promise<void> {
-    // Placeholder for future: save to memory, update stats, etc.
+  async afterTurn(messages: AgentMessage[]): Promise<void> {
+    const triggerTokens = this.resolveProactiveTriggerTokens();
+    if (triggerTokens <= 0) return;
+
+    const tokens = estimateMessagesTokens(
+      messages as Array<{ content?: string | unknown }>,
+    );
+    if (tokens > triggerTokens) {
+      await this.compact(messages);
+    }
+  }
+
+  /**
+   * Token count at which `afterTurn` should trigger proactive
+   * compaction. Returns 0 when the configured mode shouldn't fire from
+   * this hook (manual, or unrecognized modes).
+   */
+  private resolveProactiveTriggerTokens(): number {
+    const budget = this.config.tokenBudget - this.config.reservedForResponse;
+    if (budget <= 0) return 0;
+
+    if (this.config.compactionTrigger === 'auto') {
+      return budget * 0.8;
+    }
+    if (this.config.compactionTrigger === 'threshold') {
+      const ratio = Math.max(0, Math.min(1, this.config.compactionThreshold));
+      return budget * ratio;
+    }
+    return 0;
   }
 
   /**

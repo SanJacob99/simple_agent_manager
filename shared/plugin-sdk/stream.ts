@@ -1,11 +1,5 @@
 export type StreamFn = (...args: any[]) => any;
 
-export type ProviderStreamFamily =
-  | 'openrouter-thinking'
-  | 'openai-responses-defaults'
-  | 'google-thinking'
-  | 'tool-stream-default-on';
-
 export type ProviderStreamWrapperFactory =
   | ((streamFn: StreamFn | undefined) => StreamFn | undefined)
   | null

@@ -165,7 +165,7 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         sessionRetention: 50,
         memoryEnabled: true,
         dailyMemoryEnabled: true,
-        dailyResetEnabled: true,
+        dailyResetEnabled: false,
         dailyResetHour: 4,
         idleResetEnabled: false,
         idleResetMinutes: 60,

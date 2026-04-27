@@ -3,7 +3,7 @@
 > Provides filesystem-based persistence for agent sessions, routed transcripts, and memory files.
 
 <!-- source: src/types/nodes.ts#StorageNodeData -->
-<!-- last-verified: 2026-04-10 -->
+<!-- last-verified: 2026-04-27 -->
 
 ## Overview
 
@@ -29,7 +29,7 @@ Only one Storage Node can be connected per agent. For embedding or semantic retr
 | `sessionRetention` | `number` | `50` | Max routed sessions to retain before pruning older metadata entries |
 | `memoryEnabled` | `boolean` | `true` | Whether to create and manage memory `.md` files |
 | `dailyMemoryEnabled` | `boolean` | `true` | Whether to maintain `YYYY-MM-DD.md` daily log files |
-| `dailyResetEnabled` | `boolean` | `true` | Whether routed sessions should reset after the daily cutoff |
+| `dailyResetEnabled` | `boolean` | `false` | Whether routed sessions should reset after the daily cutoff. Off by default so sessions persist across days. |
 | `dailyResetHour` | `number` | `4` | Hour of day (0-23) used for daily reset checks |
 | `idleResetEnabled` | `boolean` | `false` | Whether inactive sessions should auto-reset |
 | `idleResetMinutes` | `number` | `60` | Idle timeout in minutes before an automatic reset |
@@ -73,7 +73,7 @@ When a user deletes an agent from the canvas and confirms "delete agent and data
   "sessionRetention": 50,
   "memoryEnabled": true,
   "dailyMemoryEnabled": true,
-  "dailyResetEnabled": true,
+  "dailyResetEnabled": false,
   "dailyResetHour": 4,
   "idleResetEnabled": false,
   "idleResetMinutes": 60,

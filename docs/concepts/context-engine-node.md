@@ -3,7 +3,7 @@
 > Manages token budgets, compaction, and transcript-aware context assembly so conversations stay inside the model's context window.
 
 <!-- source: src/types/nodes.ts#ContextEngineNodeData -->
-<!-- last-verified: 2026-04-23 -->
+<!-- last-verified: 2026-04-27 -->
 <!-- token-budget-inheritance, compaction-trigger-modes, tooltips -->
 
 ## Overview
@@ -21,8 +21,8 @@ In the current implementation, compaction is no longer only an in-memory concern
 | `reservedForResponse` | `number` | `4096` | Tokens reserved for the model response |
 | `compactionStrategy` | `CompactionStrategy` | `"summary"` | `summary`, `sliding-window`, or `trim-oldest` |
 | `summaryModelId` | `string` | `""` | Model id used to produce summaries (only for `summary`). Empty means inherit the agent's model |
-| `compactionTrigger` | `string` | `"auto"` | When compaction should become available |
-| `compactionThreshold` | `number` | `0.8` | Trigger threshold or token count, depending on mode |
+| `compactionTrigger` | `string` | `"auto"` | When proactive compaction fires from `afterTurn`. `auto` → at 80% of the post-reservation budget; `threshold` → at `compactionThreshold` (ratio) of the budget; `manual` → never auto-fires (only via the Compact Now button). `assemble()`'s overflow check stays on as a safety net for all modes. |
+| `compactionThreshold` | `number` | `0.8` | In `threshold` mode, the 0–1 ratio of the post-reservation budget at which compaction fires. In `manual` mode, an absolute token count surfaced in the panel preview. Ignored in `auto` mode. |
 | `postCompactionTokenTarget` | `number` | `50000` | Token ceiling the assembled context should land at after compaction runs. Clamped to `tokenBudget - reservedForResponse`. |
 | `autoFlushBeforeCompact` | `boolean` | `true` | Flush pending buffers before compaction |
 | `ragEnabled` | `boolean` | `false` | Whether to enable RAG retrieval |
@@ -34,9 +34,9 @@ In the current implementation, compaction is no longer only an in-memory concern
 The runtime creates a `ContextEngine` that exposes:
 
 - `buildTransformContext()` to plug into `pi-agent-core`
-- `assemble(messages)` to estimate tokens and call compaction when needed
+- `assemble(messages)` to estimate tokens and call compaction when the budget would overflow (safety net)
 - `compact(messages)` to apply the configured reduction strategy
-- `afterTurn(messages)` for post-turn bookkeeping
+- `afterTurn(messages)` to fire proactive compaction when the just-finished turn pushed usage past the trigger configured by `compactionTrigger` (see the table above)
 
 Manual compaction: the Context Engine property panel shows a **Compact Now** button when `compactionTrigger` is `"manual"`. It calls `POST /api/sessions/:agentId/:sessionKey/compact`, which runs the configured `compactionStrategy` against the session transcript until it reaches `postCompactionTokenTarget`. The agent must be started (the chat session must have been opened at least once), and no run can be active on the target session.
 

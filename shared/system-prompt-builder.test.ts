@@ -211,14 +211,40 @@ describe('buildSystemPrompt', () => {
       expect(identity!.content).toMatch(/Simple Agent Manager|SAM/);
     });
 
-    it('always emits executionBias and safety + reasoning + runtime', () => {
+    it('always emits executionBias, safety, trustBoundaries, reasoning, runtime', () => {
       const result = buildSystemPrompt(makeInput());
-      for (const key of ['executionBias', 'safety', 'reasoning', 'runtime']) {
+      for (const key of ['executionBias', 'safety', 'trustBoundaries', 'reasoning', 'runtime']) {
         expect(
           result.sections.find((s) => s.key === key),
           `missing section ${key}`,
         ).toBeDefined();
       }
+    });
+
+    it('Trust Boundaries names the standard injection vectors and gives concrete rules', () => {
+      const result = buildSystemPrompt(makeInput());
+      const tb = result.sections.find((s) => s.key === 'trustBoundaries')!;
+      expect(tb).toBeDefined();
+      // Identifies untrusted sources
+      expect(tb.content).toMatch(/[Tt]ool results/);
+      expect(tb.content).toMatch(/web fetches/i);
+      // Calls out classic override patterns
+      expect(tb.content).toMatch(/[Ii]gnore previous instructions/);
+      // Anchors authority on system + user
+      expect(tb.content).toMatch(/[Aa]uthoritative/);
+      // Has explicit refusal-to-act-on-untrusted-instructions rule
+      expect(tb.content).toMatch(/do NOT act on it|do not act on it/);
+      // Forbids credential exfiltration regardless of in-content claims
+      expect(tb.content).toMatch(/API keys|tokens|credentials/i);
+    });
+
+    it('Trust Boundaries appears immediately after Safety so the trust rules cluster together', () => {
+      const result = buildSystemPrompt(makeInput());
+      const keys = result.sections.map((s) => s.key);
+      const safetyIdx = keys.indexOf('safety');
+      const trustIdx = keys.indexOf('trustBoundaries');
+      expect(safetyIdx).toBeGreaterThanOrEqual(0);
+      expect(trustIdx).toBe(safetyIdx + 1);
     });
 
     it('appends user-supplied safetyGuardrails to the default safety block', () => {

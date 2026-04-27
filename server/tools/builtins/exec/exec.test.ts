@@ -5,6 +5,7 @@ import path from 'path';
 
 const cwd = os.tmpdir();
 const tool = createExecTool({ cwd });
+const isWin = process.platform === 'win32';
 
 function text(result: { content: { type: string; text?: string }[] }): string {
   return (result.content[0] as { text: string }).text;
@@ -17,8 +18,15 @@ describe('exec tool', () => {
     expect(text(result)).toContain('Exit code: 0');
   });
 
-  it('captures stderr', async () => {
+  it.skipIf(isWin)('captures stderr (bash redirect)', async () => {
     const result = await tool.execute('t2', { command: 'echo err >&2' });
+    expect(text(result)).toContain('err');
+  });
+
+  it.runIf(isWin)('captures stderr (PowerShell Write-Error)', async () => {
+    const result = await tool.execute('t2-ps', {
+      command: "[Console]::Error.WriteLine('err')",
+    });
     expect(text(result)).toContain('err');
   });
 
@@ -36,20 +44,22 @@ describe('exec tool', () => {
   });
 
   it('respects timeout', async () => {
+    // `sleep` works in bash and as a PowerShell alias for Start-Sleep.
     const result = await tool.execute('t6', { command: 'sleep 60', timeout: 1 });
     expect(text(result)).toMatch(/timed out|Exit code/);
   }, 10_000);
 
   it('uses workdir relative to cwd', async () => {
+    // `pwd` works in bash and as a PowerShell alias for Get-Location.
     const result = await tool.execute('t7', { command: 'pwd', workdir: '.' });
     const output = text(result);
-    // Should be within the configured cwd
     expect(output).toContain(path.resolve(cwd));
   });
 
   it('allows workdir outside cwd when sandbox is off (default)', async () => {
-    const result = await tool.execute('t8', { command: 'pwd', workdir: '/tmp' });
-    expect(text(result)).toContain('/tmp');
+    const outside = isWin ? process.env.TEMP || 'C:\\' : '/tmp';
+    const result = await tool.execute('t8', { command: 'pwd', workdir: outside });
+    expect(text(result)).toContain(outside);
   });
 
   it('prevents workdir escape when sandbox is enabled', async () => {
@@ -64,7 +74,7 @@ describe('exec tool', () => {
     await expect(tool.execute('t9', { command: '' })).rejects.toThrow('No command');
   });
 
-  it('strips null bytes from output (WSL UTF-16 stderr safety)', async () => {
+  it.skipIf(isWin)('strips null bytes from output (WSL UTF-16 stderr safety)', async () => {
     // Emit "wsl\0:\0 \0" style garbage via printf \x00 — if the harness passes
     // this through to a provider, OpenAI/OpenRouter rejects the payload.
     const result = await tool.execute('t10', {

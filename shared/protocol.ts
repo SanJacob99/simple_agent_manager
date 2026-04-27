@@ -297,7 +297,6 @@ export interface CompactionEndEvent {
   type: 'compaction:end';
   agentId: string;
   runId: string;
-  retrying: boolean;
 }
 
 export interface ToolSummaryEvent {

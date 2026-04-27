@@ -150,6 +150,13 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
     const { pendingDeleteAgent, nodes, edges, selectedNodeId } = get();
     if (!pendingDeleteAgent) return;
 
+    // Destroy the runtime BEFORE any storage delete so the WS teardown
+    // reaches the server before the HTTP DELETE; otherwise in-flight
+    // transcript writes can recreate the directory after rm. The backend
+    // also enforces this, but ordering here keeps the race window small.
+    useAgentConnectionStore.getState().destroyAgent(pendingDeleteAgent.nodeId);
+    useSessionStore.getState().clearActiveSession(pendingDeleteAgent.nodeId);
+
     if (deleteData) {
       const config = resolveAgentConfig(pendingDeleteAgent.nodeId, nodes, edges);
       if (config?.storage) {
@@ -164,8 +171,6 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
       }
       useSessionStore.getState().deleteAllSessionsForAgent(pendingDeleteAgent.nodeId);
     }
-    useSessionStore.getState().clearActiveSession(pendingDeleteAgent.nodeId);
-    useAgentConnectionStore.getState().destroyAgent(pendingDeleteAgent.nodeId);
 
     set({
       pendingDeleteAgent: null,
