@@ -57,6 +57,7 @@ describe('tool-registry', () => {
 
   it('resolveToolName maps aliases to canonical names', () => {
     expect(resolveToolName('bash')).toBe('exec');
+    expect(resolveToolName('code_interpreter')).toBe('code_execution');
     expect(resolveToolName('exec')).toBe('exec');
     expect(resolveToolName('calculator')).toBe('calculator');
     expect(resolveToolName('unknown')).toBe('unknown');

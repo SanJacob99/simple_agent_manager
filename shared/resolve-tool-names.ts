@@ -12,6 +12,7 @@ import type { ResolvedToolsConfig } from './agent-config';
  */
 export const TOOL_NAME_ALIASES: Readonly<Record<string, string>> = {
   bash: 'exec',
+  code_interpreter: 'code_execution',
 };
 
 /** Resolve an alias to its canonical name, or return the input unchanged. */
@@ -22,11 +23,11 @@ export function canonicalizeToolName(name: string): string {
 // Tool group definitions — shared between frontend UI and server runtime.
 // Groups expand to canonical names only; aliases never appear here.
 export const TOOL_GROUPS: Record<string, string[]> = {
-  runtime: ['exec', 'code_interpreter'],
+  runtime: ['exec', 'code_execution'],
   fs: ['read_file', 'write_file', 'edit_file', 'list_directory', 'apply_patch'],
   web: ['web_search', 'web_fetch', 'browser'],
   // memory tools are managed by the memory node, not the tools node
-  coding: ['exec', 'read_file', 'write_file', 'code_interpreter'],
+  coding: ['exec', 'read_file', 'write_file', 'code_execution'],
   media: ['image', 'image_generate', 'show_image', 'canva', 'music_generate'],
   communication: ['send_message', 'text_to_speech'],
   human: ['ask_user', 'confirm_action'],
@@ -70,7 +71,6 @@ export const TOOL_PROFILES: Record<string, string[]> = {
 export const ALL_TOOL_NAMES = [
   'exec',
   'code_execution',
-  'code_interpreter',
   'read_file',
   'write_file',
   'edit_file',
