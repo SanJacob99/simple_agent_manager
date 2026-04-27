@@ -59,7 +59,7 @@ export const BUNDLED_SKILLS: BundledSkillManifestEntry[] = [
   },
   {
     id: 'browser',
-    description: 'Driving the Playwright-backed browser tool',
+    description: 'Driving the Playwright-backed browser for research and user-directed actions',
     triggeredBy: ['browser'],
   },
   {

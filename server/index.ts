@@ -19,6 +19,7 @@ import { resolveUserToolsDir } from './tools/resolve-user-tools-dir';
 import { resolveProviderRuntimeAuth } from './providers/provider-auth';
 import { SettingsFileStore, DEFAULT_SAFETY_SETTINGS, type SafetySettings } from './storage/settings-file-store';
 import { resolveOutboundSystemPrompt } from './runtime/resolve-system-prompt';
+import { launchChromeForCdp } from './tools/builtins/browser/chrome-launcher';
 import path from 'path';
 import type { AgentConfig, ResolvedStorageConfig } from '../shared/agent-config';
 import type { SessionRouteRequest, SessionTranscriptResponse } from '../shared/session-routes';
@@ -413,6 +414,16 @@ app.get('/api/storage/memory/files', async (req, res) => {
     const engine = getOrCreateEngine(parsedConfig, agentName);
     const files = await engine.listMemoryFiles();
     res.json(files);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.post('/api/browser/launch-chrome', async (req, res) => {
+  const { port, userDataDir } = (req.body ?? {}) as { port?: number; userDataDir?: string };
+  try {
+    const result = await launchChromeForCdp({ port, userDataDir });
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }

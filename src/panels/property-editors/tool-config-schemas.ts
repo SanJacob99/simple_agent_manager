@@ -101,6 +101,13 @@ export const browserToolConfigSchema: ObjectSchema<BrowserToolSettings> = {
       description:
         'Where Chromium stores cookies, localStorage, and login state. Relative paths resolve against the workspace.',
     },
+    headless: {
+      type: 'boolean',
+      title: 'Headless',
+      checkboxLabel: 'Run without opening a browser window',
+      description:
+        'Off by default so users can take over protected steps (login, CAPTCHA, payment) in the live window; the tool automatically falls back to headless if the environment has no display. Turn this on to force headless even when a display is available.',
+    },
     viewportWidth: {
       type: 'integer',
       title: 'Viewport width',
@@ -142,6 +149,39 @@ export const browserToolConfigSchema: ObjectSchema<BrowserToolSettings> = {
       maximum: 100,
       description: 'Ignored for PNG. Lower = smaller payload. 60 is a good default.',
     },
+    stealth: {
+      type: 'boolean',
+      title: 'Stealth',
+      checkboxLabel: 'Apply the stealth plugin (hide common automation signals)',
+      description:
+        'Masks navigator.webdriver, Chromium plugin arrays, WebGL vendor, and the "HeadlessChrome" UA. Dramatically reduces entry-level bot-protection false positives. Does NOT defeat TLS/JA3 fingerprinting, IP reputation, or behavioral analysis. The underlying library has been unmaintained since 2023.',
+    },
+    locale: {
+      type: 'string',
+      title: 'Locale',
+      placeholder: 'en-US',
+      description: 'BCP-47 locale sent to the browser context and Accept-Language header.',
+    },
+    timezone: {
+      type: 'string',
+      title: 'Timezone',
+      placeholder: 'Host system timezone',
+      description: 'IANA timezone name (e.g. America/New_York). Leave empty to use the host system.',
+    },
+    userAgent: {
+      type: 'string',
+      title: 'User-Agent override',
+      placeholder: 'Leave empty to use Playwright/stealth default',
+      description:
+        'Override only if a specific site needs a specific UA. Stealth already rewrites the bundled Chromium UA to look non-headless.',
+    },
+    cdpEndpoint: {
+      type: 'string',
+      title: 'Attach to your Chrome (CDP)',
+      placeholder: 'http://127.0.0.1:9222',
+      description:
+        'When set, the tool attaches to a Chrome you launched with --remote-debugging-port=9222 instead of spawning its own Chromium. The agent drives a fresh isolated context inside your real browser — best defense against TLS/JA3 bot protection, and it inherits your cookies/extensions. Launch Chrome with: (Win) "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" --remote-debugging-port=9222  (mac) /Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --remote-debugging-port=9222  (Linux) google-chrome --remote-debugging-port=9222. Unreachable endpoints silently fall back to the normal launch path.',
+    },
     skill: {
       type: 'string',
       format: 'textarea',
@@ -156,6 +196,12 @@ export const browserToolConfigSchema: ObjectSchema<BrowserToolSettings> = {
       description:
         'Auto-attach screenshots so the user can watch the browser. Explicit `screenshot` calls are unaffected.',
       startAt: 'autoScreenshot',
+    },
+    {
+      title: 'Anti-detection & emulation',
+      description:
+        'Shape the browser fingerprint so pages treat it like an ordinary user. Defaults are sensible; override only when a specific site needs it.',
+      startAt: 'stealth',
     },
   ],
 };

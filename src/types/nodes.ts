@@ -136,6 +136,8 @@ export interface CanvaToolSettings {
 export interface BrowserToolSettings {
   /** Persistent profile path. Absolute or relative to workspace. Empty = <cwd>/.browser-profile. */
   userDataDir: string;
+  /** When true Chromium runs without a visible window. Turn off for user handoff. */
+  headless: boolean;
   viewportWidth: number;
   viewportHeight: number;
   /** Per-action timeout (navigation, clicks, fills) in milliseconds. */
@@ -146,6 +148,16 @@ export interface BrowserToolSettings {
   screenshotFormat: 'jpeg' | 'png';
   /** JPEG quality 1-100. Ignored for PNG. */
   screenshotQuality: number;
+  /** Apply puppeteer-extra-plugin-stealth on launch to mask common automation signals. */
+  stealth: boolean;
+  /** BCP-47 locale. Empty = en-US. */
+  locale: string;
+  /** IANA timezone. Empty = host system timezone. */
+  timezone: string;
+  /** Override the outbound User-Agent string. Empty = Playwright/stealth default. */
+  userAgent: string;
+  /** CDP endpoint (e.g. http://127.0.0.1:9222). Empty = launch our own Chromium. */
+  cdpEndpoint: string;
   /** Markdown guidance injected into the system prompt for this tool */
   skill: string;
 }

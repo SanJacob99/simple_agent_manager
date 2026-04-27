@@ -18,10 +18,11 @@ import { isToolErrorDetails } from '../tools/tool-adapter';
 import { estimatePayloadBreakdown } from './payload-breakdown';
 import { resolveOutboundSystemPrompt } from './resolve-system-prompt';
 import type { ResolvedSystemPrompt } from '../../shared/agent-config';
-import { log } from '../logger';
+import { log, logApiExchange } from '../logger';
 import type { HitlRegistry } from '../hitl/hitl-registry';
 import type { ServerEvent } from '../../shared/protocol';
 import { DEFAULT_SAFETY_SETTINGS, type SafetySettings } from '../storage/settings-file-store';
+import { wrappedStreamFn } from './stream-wrapper';
 
 export type RuntimeEvent =
   | AgentEvent
@@ -57,18 +58,40 @@ function summarizePayload(payload: any): string {
       }
     }
   }
-  const reasoning = payload.reasoning !== undefined
-    ? JSON.stringify(payload.reasoning)
-    : '(absent)';
-  const reasoningEffort = payload.reasoning_effort !== undefined
-    ? String(payload.reasoning_effort)
-    : '(absent)';
-  const topLevelKeys = Object.keys(payload).join(',');
-  return (
-    `model=${model} | messages=${messages.length} | tools=${tools.length} | ` +
-    `reasoning=${reasoning} | reasoning_effort=${reasoningEffort} | ` +
-    `keys=[${topLevelKeys}] | last_user=${lastUserText}`
-  );
+  return `model=${model} | messages=${messages.length} | tools=${tools.length} | last_user=${lastUserText}`;
+}
+
+function headersToRecord(
+  headers: HeadersInit | Headers | undefined,
+): Record<string, string> | undefined {
+  if (!headers) return undefined;
+  const out: Record<string, string> = {};
+  if (headers instanceof Headers) {
+    headers.forEach((value, key) => {
+      out[key] = redactSensitiveHeader(key, value);
+    });
+    return out;
+  }
+  if (Array.isArray(headers)) {
+    for (const [key, value] of headers) {
+      out[key] = redactSensitiveHeader(key, value);
+    }
+    return out;
+  }
+  for (const [key, value] of Object.entries(headers)) {
+    if (typeof value === 'string') {
+      out[key] = redactSensitiveHeader(key, value);
+    }
+  }
+  return out;
+}
+
+function redactSensitiveHeader(key: string, value: string): string {
+  const lower = key.toLowerCase();
+  if (lower === 'authorization' || lower === 'x-api-key' || lower.endsWith('-api-key')) {
+    return value.length > 12 ? `${value.slice(0, 6)}…${value.slice(-4)}` : '***';
+  }
+  return value;
 }
 
 /**
@@ -231,6 +254,7 @@ export class AgentRuntime {
       transformContext: this.contextEngine?.buildTransformContext(),
       getApiKey,
       toolExecution: 'parallel',
+      streamFn: wrappedStreamFn,
       onPayload: (payload) => {
         log('pi-ai Request Payload', summarizePayload(payload));
         // Predictive context-window signal: tokenize the outbound
@@ -547,17 +571,32 @@ export class AgentRuntime {
   async prompt(text: string, attachments?: ImageAttachment[]): Promise<void> {
     this.lastApiError = null;
     const originalFetch = globalThis.fetch;
+    // The wrapper is swapped into globalThis.fetch for the duration of the
+    // whole prompt(). Restoring it inside the wrapper's own `finally` (as a
+    // previous revision did) would unwrap after the very first fetch, so
+    // subsequent turns in the same agent loop would bypass logging.
     globalThis.fetch = async (...args) => {
-      log('pi-ai Fetch', `[START] URL: ${args[0]}`);
+      const url = typeof args[0] === 'string' ? args[0] : (args[0] as URL | Request).toString();
+      log('pi-ai Fetch', `[START] URL: ${url}`);
+
+      const init = args[1] as RequestInit | undefined;
+      const requestHeaders = headersToRecord(init?.headers);
+      const requestBody = typeof init?.body === 'string' ? init.body : undefined;
+
       try {
         const response = await originalFetch(...args);
         log('pi-ai Fetch', `[STATUS] ${response.status} ${response.statusText}`);
-        if (!response.ok) {
+        const responseHeaders = headersToRecord(response.headers);
+
+        const isOk = typeof response.ok === 'boolean'
+          ? response.ok
+          : response.status >= 200 && response.status < 300;
+        if (!isOk) {
           // Non-2xx: small error body, safe to await without blocking a stream.
           const clone = response.clone();
+          let bodyText = '';
           try {
-            const bodyText = await clone.text();
-            log('pi-ai Fetch', `[BODY] ${bodyText.substring(0, 1000)}`);
+            bodyText = await clone.text();
             const parsed = JSON.parse(bodyText);
             if (typeof parsed?.error?.message === 'string') {
               this.lastApiError = parsed.error.message;
@@ -565,13 +604,32 @@ export class AgentRuntime {
           } catch {
             // ignore parse failures
           }
+          const file = logApiExchange({
+            url,
+            requestHeaders,
+            requestBody,
+            status: response.status,
+            statusText: response.statusText,
+            responseHeaders,
+            responseBody: bodyText,
+          });
+          log('pi-ai Fetch', `[RAW] Full exchange written to ${file}`);
         } else {
           const clone = response.clone();
           // Never await the cloned body here: doing so buffers the full stream
           // before returning the Response and breaks live token streaming.
           void clone.text()
             .then((bodyText) => {
-              log('pi-ai Fetch', `[BODY] ${bodyText.substring(0, 1000)}`);
+              const file = logApiExchange({
+                url,
+                requestHeaders,
+                requestBody,
+                status: response.status,
+                statusText: response.statusText,
+                responseHeaders,
+                responseBody: bodyText,
+              });
+              log('pi-ai Fetch', `[RAW] Full exchange written to ${file}`);
             })
             .catch((err) => {
               log('pi-ai Fetch', `[BODY_ERROR] ${err instanceof Error ? err.message : String(err)}`);
@@ -579,10 +637,15 @@ export class AgentRuntime {
         }
         return response;
       } catch (err) {
-        log('pi-ai Fetch', `[ERROR] ${err instanceof Error ? err.message : String(err)}`);
+        const message = err instanceof Error ? err.message : String(err);
+        log('pi-ai Fetch', `[ERROR] ${message}`);
+        logApiExchange({
+          url,
+          requestHeaders,
+          requestBody,
+          error: message,
+        });
         throw err;
-      } finally {
-        globalThis.fetch = originalFetch;
       }
     };
 
@@ -600,6 +663,8 @@ export class AgentRuntime {
         error: error instanceof Error ? error.message : 'Unknown error',
       });
       throw error;
+    } finally {
+      globalThis.fetch = originalFetch;
     }
   }
 

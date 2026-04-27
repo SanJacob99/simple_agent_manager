@@ -40,7 +40,7 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
       return {
         type: 'tools',
         label: 'Tools',
-        profile: 'custom',
+        profile: 'full',
         // HITL (ask_user + confirm_action) is checked by default. The tools
         // node still shows the checkboxes, but they are locked unless the
         // user explicitly enables "Dangerous Fully Auto" mode in Settings.
@@ -78,12 +78,18 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
           },
           browser: {
             userDataDir: '',
+            headless: false,
             viewportWidth: 1280,
             viewportHeight: 800,
             timeoutMs: 30000,
             autoScreenshot: true,
             screenshotFormat: 'jpeg',
             screenshotQuality: 60,
+            stealth: true,
+            locale: '',
+            timezone: '',
+            userAgent: '',
+            cdpEndpoint: '',
             skill: '',
           },
           textToSpeech: {
