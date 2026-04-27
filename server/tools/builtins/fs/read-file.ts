@@ -15,8 +15,9 @@ export interface FsToolContext {
 }
 
 function resolvePath(filePath: string, ctx: FsToolContext): string {
-  const resolved = path.resolve(ctx.cwd, filePath);
-  if (ctx.sandboxWorkdir && !resolved.startsWith(ctx.cwd)) {
+  const resolvedBase = path.resolve(ctx.cwd);
+  const resolved = path.resolve(resolvedBase, filePath);
+  if (ctx.sandboxWorkdir && !resolved.startsWith(resolvedBase + path.sep) && resolved !== resolvedBase) {
     throw new Error(`Path "${filePath}" is outside the workspace. Access denied.`);
   }
   return resolved;

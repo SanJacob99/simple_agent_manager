@@ -308,17 +308,24 @@ export class AgentManager {
     let restored = 0;
     try {
       const entries = await fs.readdir(resolvedPath, { withFileTypes: true });
-      for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
-        const configPath = path.join(resolvedPath, entry.name, 'agent-config.json');
-        try {
-          const raw = await fs.readFile(configPath, 'utf-8');
-          const config = JSON.parse(raw) as AgentConfig;
-          await this.start(config);
-          restored++;
-        } catch {
-          // No config file in this directory — skip
-        }
+      const dirs = entries.filter((e) => e.isDirectory());
+
+      // ⚡ Bolt Optimization: Use chunked Promise.all to load agent configs concurrently
+      // Eliminates N+1 I/O overhead while preventing EMFILE errors on massive directories.
+      const CHUNK_SIZE = 50;
+      for (let i = 0; i < dirs.length; i += CHUNK_SIZE) {
+        const chunk = dirs.slice(i, i + CHUNK_SIZE);
+        await Promise.all(chunk.map(async (entry) => {
+          const configPath = path.join(resolvedPath, entry.name, 'agent-config.json');
+          try {
+            const raw = await fs.readFile(configPath, 'utf-8');
+            const config = JSON.parse(raw) as AgentConfig;
+            await this.start(config);
+            restored++;
+          } catch {
+            // No config file in this directory — skip
+          }
+        }));
       }
     } catch {
       // Storage path doesn't exist yet — nothing to restore
