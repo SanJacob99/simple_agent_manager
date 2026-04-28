@@ -17,7 +17,7 @@ import { loadProviderPlugins } from './providers/provider-loader';
 import { initializeToolRegistry, getToolSourceCounts, getToolCatalog } from './tools/tool-registry';
 import { resolveUserToolsDir } from './tools/resolve-user-tools-dir';
 import { resolveProviderRuntimeAuth } from './providers/provider-auth';
-import { writeServerPid, clearServerPid, reapSupervisorPid } from './runtime-state';
+import { writeServerPid, clearServerPid } from './runtime-state';
 import { SettingsFileStore, DEFAULT_SAFETY_SETTINGS, type SafetySettings } from './storage/settings-file-store';
 import { GraphFileStore, type PersistedGraph } from './storage/graph-file-store';
 import { resolveOutboundSystemPrompt } from './runtime/resolve-system-prompt';
@@ -775,10 +775,8 @@ initializeToolRegistry({ extraDirs: userToolsDir.dirs })
       console.log(`Server listening on http://localhost:${PORT}`);
       console.log(`WebSocket available at ws://localhost:${PORT}/ws`);
 
-      // Register this PID so `sam restart` can find us next time, then
-      // reap any supervisor left behind by the restart that spawned us.
+      // Register this PID so `sam restart` can find us next time.
       writeServerPid(process.pid);
-      reapSupervisorPid();
 
       // --- backend_start hook (global) ---
       const globalRegistry = getGlobalHookRegistry();
