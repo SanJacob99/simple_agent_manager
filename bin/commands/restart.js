@@ -90,10 +90,19 @@ async function stopExistingServer(healthUrl) {
 function spawnFreshServer(REPO_ROOT) {
   console.log('sam: starting new server');
   const logPath = path.join(SAM_DIR, 'server.log');
-  // Truncate the log on each restart so it reflects the current process,
-  // not a growing append from previous runs.
+  // Truncate so the log reflects this run, not a growing append.
   const out = fs.openSync(logPath, 'w');
   const err = fs.openSync(logPath, 'a');
+  // Known limitation on Windows: this spawn briefly pops a console
+  // window for the dev:server. Node's `windowsHide: true` only sets
+  // SW_HIDE (works for GUI apps); the flag that actually suppresses
+  // console allocation for a console app is CREATE_NO_WINDOW, which
+  // Node does not expose. The reliable workarounds (PowerShell
+  // Start-Process, VBS Shell.Run, `cmd /c start /B`) were attempted
+  // and each failed in this environment for different quoting /
+  // cwd reasons. Until that's resolved, the window is a known cost.
+  // If you want to avoid it, run `npm run dev:server` directly and
+  // skip `sam restart`.
   const child = spawn(
     process.execPath,
     ['--import', 'tsx', 'server/index.ts'],
