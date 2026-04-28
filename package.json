@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "bin": {
+    "sam": "./bin/sam.js"
+  },
   "scripts": {
     "dev": "concurrently --kill-others-on-fail -n vite,server -c cyan,magenta \"npm run dev:client\" \"npm run dev:server\"",
     "dev:client": "vite",
@@ -13,7 +16,8 @@
     "test:run": "vitest run",
     "test:openrouter": "vitest run --config vitest.openrouter.config.ts",
     "test:e2e:openrouter": "playwright test --config playwright.openrouter.config.ts",
-    "scaffold:tool": "tsx scripts/scaffold-user-tool.ts"
+    "scaffold:tool": "tsx scripts/scaffold-user-tool.ts",
+    "sam": "node bin/sam.js"
   },
   "dependencies": {
     "@mariozechner/pi-agent-core": "^0.65.2",

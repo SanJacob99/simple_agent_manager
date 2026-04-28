@@ -101,6 +101,31 @@ This starts:
 5. Configure the selected node in the right-hand properties panel.
 6. Open the chat drawer from the agent node and start a session.
 
+## SAM CLI
+
+`sam` is the operator CLI for repo-scoped maintenance tasks. After `npm install` it is reachable as `npx sam …` from anywhere inside the project, or as `npm run sam -- …` if you prefer the npm-script form. Run `sam help` for the live command list.
+
+Today:
+
+| Command                  | What it does                       |
+| ------------------------ | ---------------------------------- |
+| `sam help`               | Print the command list and exit.   |
+| `sam version`            | Print the SAM version from `package.json`. |
+| `sam diagnose`           | Probe the local backend (`/api/health`, `/api/tools`) and report the resolved user-tools directory and any `SAM_*` env overrides. Read-only. |
+| `sam install tool <url>` | Fetch a `*.module.ts` user tool from a GitHub repo (`https://github.com/owner/repo[/tree/<ref>]`), validate it, and install into the user-tools directory. Synthesizes a `sam.json` manifest if the repo doesn't ship one. |
+| `sam uninstall tool <name>` | Remove an installed user tool. Asks for the tool name as confirmation before deleting. |
+| `sam list tools`         | Print a table of installed user tools with name, version, source, and state. Disabled rows are dimmed. |
+| `sam enable tool <name>` / `sam disable tool <name>` | Flip the `disabled` flag in the tool's `sam.json` without touching the source. The server skips loading any `*.module.ts` in a directory whose `sam.json` has `disabled: true` (logs `[tool-registry] skipping <name>: disabled via sam.json` at startup). Restart the backend for the change to take effect. |
+| `sam restart`            | Restart the local backend by spawning a detached supervisor that stops the existing server, starts a fresh `dev:server`, and waits for `/api/health`. Returns immediately; run `sam diagnose` to confirm. |
+
+The user-tools directory follows the same precedence the server uses: `SAM_DISABLE_USER_TOOLS=1` short-circuits everything; otherwise `SAM_USER_TOOLS_DIR=<path>` overrides; otherwise `server/tools/user/`.
+
+After `sam install` or `sam uninstall`, run `sam restart` (or restart `npm run dev:server` manually) for the new tool to load.
+
+`sam restart` writes a temporary supervisor process under `.sam/` (gitignored). The supervisor exits on its own once the new server's `/api/health` responds; the new server's startup hook also reaps the supervisor as belt-and-suspenders. **Caveat:** restart targets the `dev:server` entry directly. If you launched the project via `npm run dev` (concurrently + vite), restart still works but vite tears down too because concurrently exits when one child dies — re-run `npm run dev` to bring vite back. Production supervisors (systemd, PM2) are not yet supported and `sam restart` will not detect that case.
+
+The CLI source lives under [bin/](bin/) — plain ESM Node, no build step. The dispatcher is [bin/sam.js](bin/sam.js); each command lives in its own file under [bin/commands/](bin/commands/) and shared helpers under [bin/lib/](bin/lib/). The `sam.json` schema (source of truth) is [shared/user-tool-manifest.ts](shared/user-tool-manifest.ts). Server-side restart coordination lives in [server/runtime-state.ts](server/runtime-state.ts); the `disabled`-flag filter lives in [server/tools/tool-registry.ts](server/tools/tool-registry.ts).
+
 ## Tests and verification
 
 ```bash
