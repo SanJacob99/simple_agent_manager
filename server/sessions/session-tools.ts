@@ -31,6 +31,50 @@ function truncate(str: string, max: number): string {
   return str.slice(0, max) + '...(truncated)';
 }
 
+const HISTORY_MESSAGE_CHAR_CAP = 500;
+const HISTORY_TOOL_CHAR_CAP = 200;
+const HISTORY_TOTAL_CHAR_BUDGET = 12_000;
+const HISTORY_DEFAULT_LIMIT = 20;
+const HISTORY_MAX_LIMIT = 200;
+
+function renderHistoryEntry(entry: any): Record<string, unknown> {
+  if (entry.type === 'toolResult') {
+    return {
+      id: entry.id,
+      type: 'toolResult',
+      toolName: entry.toolName,
+      timestamp: entry.timestamp,
+      text: truncate(extractEntryText(entry.content), HISTORY_TOOL_CHAR_CAP),
+    };
+  }
+
+  const role = entry.message?.role ?? 'unknown';
+  return {
+    id: entry.id,
+    type: 'message',
+    role,
+    timestamp: entry.timestamp,
+    text: truncate(extractEntryText(entry.message?.content), HISTORY_MESSAGE_CHAR_CAP),
+  };
+}
+
+function extractEntryText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    let out = '';
+    for (const block of content) {
+      if (block && typeof block === 'object' && (block as any).type === 'text') {
+        out += (block as any).text ?? '';
+      } else if (block && typeof block === 'object' && (block as any).type === 'toolCall') {
+        out += `\n[toolCall name=${(block as any).name}]`;
+      }
+    }
+    return out;
+  }
+  if (content == null) return '';
+  return String(content);
+}
+
 // --- Tool creators ---
 
 function createSessionsListTool(ctx: SessionToolContext): AgentTool<TSchema> {
@@ -148,10 +192,20 @@ function readPreview(
 function createSessionsHistoryTool(ctx: SessionToolContext): AgentTool<TSchema> {
   return {
     name: 'sessions_history',
-    description: 'Read the transcript history of a session. Messages are truncated at 500 chars.',
+    description:
+      'Read transcript entries from a session. Newest-first; paginate older with `before: <entryId>`. Messages truncated at 500 chars; tool results at 200 chars; total response capped near 12 000 chars (truncated:true + nextCursor when capped).',
     label: 'Sessions History',
     parameters: Type.Object({
       sessionKey: Type.String({ description: 'The session key to read history from' }),
+      limit: Type.Optional(
+        Type.Number({ description: `Max entries to return (default ${HISTORY_DEFAULT_LIMIT}, hard cap ${HISTORY_MAX_LIMIT})` }),
+      ),
+      before: Type.Optional(
+        Type.String({ description: 'EntryId cursor — only entries strictly older than this id are returned' }),
+      ),
+      includeToolResults: Type.Optional(
+        Type.Boolean({ description: 'Include toolResult entries (default true)' }),
+      ),
     }),
     execute: async (_id, params: any) => {
       try {
@@ -162,16 +216,59 @@ function createSessionsHistoryTool(ctx: SessionToolContext): AgentTool<TSchema> 
         }
 
         const transcriptPath = ctx.storageEngine.resolveTranscriptPath(session);
-        const entries = ctx.transcriptStore.readTranscript(transcriptPath);
+        const rawEntries = ctx.transcriptStore.readTranscript(transcriptPath) as any[];
 
-        const formatted = entries.map((entry) => {
-          const content = typeof entry.content === 'string'
-            ? entry.content
-            : JSON.stringify(entry.content ?? '');
-          return `[${entry.type}] ${truncate(content, 500)}`;
-        }).join('\n\n');
+        const includeToolResults = params.includeToolResults !== false;
+        const filtered = rawEntries.filter((e) => {
+          if (e?.type === 'message') return true;
+          if (e?.type === 'toolResult') return includeToolResults;
+          return false;
+        });
 
-        return textResult(formatted || '(empty transcript)');
+        const before = params.before as string | undefined;
+        let chronological = filtered;
+        if (before) {
+          const idx = filtered.findIndex((e) => e?.id === before);
+          if (idx === -1) {
+            return textResult(`Cursor not found: ${before}`);
+          }
+          chronological = filtered.slice(0, idx);
+        }
+
+        const requestedLimit = typeof params.limit === 'number'
+          ? Math.max(1, Math.min(params.limit, HISTORY_MAX_LIMIT))
+          : HISTORY_DEFAULT_LIMIT;
+
+        const slice = chronological.slice(-requestedLimit).reverse();
+
+        const formatted: Array<Record<string, unknown>> = [];
+        let used = 0;
+        let truncated = false;
+
+        for (const entry of slice) {
+          const rendered = renderHistoryEntry(entry);
+          const projectedSize = used + JSON.stringify(rendered).length + 2; // ", " overhead
+          if (formatted.length > 0 && projectedSize > HISTORY_TOTAL_CHAR_BUDGET) {
+            truncated = true;
+            break;
+          }
+          formatted.push(rendered);
+          used = projectedSize;
+        }
+
+        const nextCursor = formatted.length > 0
+          ? (formatted[formatted.length - 1].id as string | undefined)
+          : undefined;
+        const exhaustedLeft = !truncated && formatted.length === slice.length
+          && (chronological.length <= requestedLimit);
+
+        return textResult(JSON.stringify({
+          sessionKey,
+          entries: formatted,
+          nextCursor: exhaustedLeft ? undefined : nextCursor,
+          truncated,
+          totalEntries: filtered.length,
+        }, null, 2));
       } catch (e) {
         return textResult(`Error reading history: ${e instanceof Error ? e.message : 'Unknown error'}`);
       }

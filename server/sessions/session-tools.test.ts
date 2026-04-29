@@ -39,8 +39,20 @@ function createMockContext(overrides: Partial<SessionToolContext> = {}): Session
     } as any,
     transcriptStore: {
       readTranscript: vi.fn().mockReturnValue([
-        { type: 'user', id: 'e1', parentId: null, timestamp: '2026-04-08T00:00:00.000Z', content: 'Hello' },
-        { type: 'assistant', id: 'e2', parentId: 'e1', timestamp: '2026-04-08T00:01:00.000Z', content: 'Hi there, how can I help?' },
+        {
+          type: 'message',
+          id: 'e1',
+          parentId: null,
+          timestamp: '2026-04-08T00:00:00.000Z',
+          message: { role: 'user', content: 'Hello' },
+        },
+        {
+          type: 'message',
+          id: 'e2',
+          parentId: 'e1',
+          timestamp: '2026-04-08T00:01:00.000Z',
+          message: { role: 'assistant', content: 'Hi there, how can I help?' },
+        },
       ]),
     } as any,
     coordinator: {
@@ -154,7 +166,7 @@ describe('sessions_list', () => {
 });
 
 describe('sessions_history', () => {
-  it('returns formatted transcript', async () => {
+  it('returns JSON with entries newest-first', async () => {
     const ctx = createMockContext();
     const tools = createSessionTools(ctx);
     const tool = tools.find((t) => t.name === 'sessions_history')!;
@@ -163,8 +175,10 @@ describe('sessions_history', () => {
     expect(ctx.sessionRouter.getStatus).toHaveBeenCalledWith('agent:a1:main');
     expect(ctx.storageEngine.resolveTranscriptPath).toHaveBeenCalled();
     expect(ctx.transcriptStore.readTranscript).toHaveBeenCalled();
-    expect(result.content[0].text).toContain('Hello');
-    expect(result.content[0].text).toContain('Hi there');
+
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.sessionKey).toBe('agent:a1:main');
+    expect(Array.isArray(parsed.entries)).toBe(true);
   });
 });
 
@@ -319,5 +333,107 @@ describe('sessions_list filters', () => {
     await tool.execute('call-1', { preview: true });
 
     expect(ctx.transcriptStore.readTranscript).toHaveBeenCalledTimes(50);
+  });
+});
+
+function makeTranscriptEntries(n: number) {
+  return Array.from({ length: n }, (_, i) => ({
+    type: 'message',
+    id: `e${i + 1}`,
+    parentId: i === 0 ? null : `e${i}`,
+    timestamp: new Date(Date.parse('2026-04-08T00:00:00.000Z') + i * 60_000).toISOString(),
+    message: {
+      role: i % 2 === 0 ? 'user' : 'assistant',
+      content: `Message ${i + 1} body`,
+    },
+  }));
+}
+
+describe('sessions_history pagination', () => {
+  it('returns the most recent entries newest-first by default', async () => {
+    const ctx = createMockContext();
+    (ctx.transcriptStore.readTranscript as any).mockReturnValue(makeTranscriptEntries(50));
+
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_history')!;
+
+    const result = await tool.execute('call-1', { sessionKey: 'agent:a1:main' });
+    const parsed = JSON.parse(result.content[0].text);
+
+    expect(parsed.entries[0].id).toBe('e50');
+    expect(parsed.entries.at(-1).id).toBe('e31');
+    expect(parsed.entries).toHaveLength(20);
+    expect(parsed.nextCursor).toBe('e31');
+    expect(parsed.totalEntries).toBe(50);
+  });
+
+  it('respects the before cursor', async () => {
+    const ctx = createMockContext();
+    (ctx.transcriptStore.readTranscript as any).mockReturnValue(makeTranscriptEntries(50));
+
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_history')!;
+
+    const result = await tool.execute('call-1', { sessionKey: 'agent:a1:main', before: 'e31', limit: 10 });
+    const parsed = JSON.parse(result.content[0].text);
+
+    expect(parsed.entries[0].id).toBe('e30');
+    expect(parsed.entries.at(-1).id).toBe('e21');
+    expect(parsed.nextCursor).toBe('e21');
+  });
+
+  it('returns explicit error for unknown cursor', async () => {
+    const ctx = createMockContext();
+    (ctx.transcriptStore.readTranscript as any).mockReturnValue(makeTranscriptEntries(5));
+
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_history')!;
+
+    const result = await tool.execute('call-1', { sessionKey: 'agent:a1:main', before: 'nope' });
+    expect(result.content[0].text).toContain('Cursor not found');
+  });
+
+  it('truncates with truncated:true when total budget is exceeded', async () => {
+    const ctx = createMockContext();
+    const big = 'X'.repeat(2000);
+    (ctx.transcriptStore.readTranscript as any).mockReturnValue(
+      Array.from({ length: 30 }, (_, i) => ({
+        type: 'message',
+        id: `e${i + 1}`,
+        parentId: i === 0 ? null : `e${i}`,
+        timestamp: new Date(Date.parse('2026-04-08T00:00:00.000Z') + i * 60_000).toISOString(),
+        message: { role: 'assistant', content: big },
+      })),
+    );
+
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_history')!;
+
+    const result = await tool.execute('call-1', { sessionKey: 'agent:a1:main', limit: 30 });
+    const parsed = JSON.parse(result.content[0].text);
+
+    // Each entry text capped at 500 + JSON overhead. Budget = 12_000 chars; we should
+    // get fewer than 30 entries back and truncated must be true with a valid cursor.
+    expect(parsed.entries.length).toBeLessThan(30);
+    expect(parsed.truncated).toBe(true);
+    expect(parsed.nextCursor).toBeDefined();
+  });
+
+  it('excludes tool results when includeToolResults is false', async () => {
+    const ctx = createMockContext();
+    (ctx.transcriptStore.readTranscript as any).mockReturnValue([
+      { type: 'message', id: 'e1', message: { role: 'user', content: 'Hi' }, timestamp: '2026-04-08T00:00:00.000Z' },
+      { type: 'toolResult', id: 'e2', toolName: 'web_search', content: [{ type: 'text', text: 'long result' }], timestamp: '2026-04-08T00:00:30.000Z' },
+      { type: 'message', id: 'e3', message: { role: 'assistant', content: 'Done' }, timestamp: '2026-04-08T00:01:00.000Z' },
+    ]);
+
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_history')!;
+
+    const result = await tool.execute('call-1', { sessionKey: 'agent:a1:main', includeToolResults: false });
+    const parsed = JSON.parse(result.content[0].text);
+
+    expect(parsed.entries.map((e: any) => e.id)).toEqual(['e3', 'e1']);
+    expect(parsed.totalEntries).toBe(2);
   });
 });
