@@ -79,7 +79,6 @@ function createMockContext(overrides: Partial<SessionToolContext> = {}): Session
       listForParent: vi.fn().mockReturnValue([]),
       get: vi.fn().mockReturnValue(null),
       kill: vi.fn().mockReturnValue(false),
-      setYieldPending: vi.fn(),
     } as any,
     coordinatorLookup: vi.fn().mockReturnValue(null),
     subAgentSpawning: true,
@@ -402,13 +401,30 @@ describe('sessions_yield', () => {
     expect(opts.parentRunId).toBe('run-1');
   });
 
-  it('falls back to no-op text when ctx.resolveYield is undefined', async () => {
+  it('returns wiring-missing text when ctx.resolveYield is undefined', async () => {
     const ctx = createMockContext({ resolveYield: undefined });
     const tools = createSessionTools(ctx);
     const tool = tools.find((t) => t.name === 'sessions_yield')!;
 
     const result = await tool.execute('call-1', {});
-    expect(result.content[0].text).toContain('No sub-agents pending');
+    expect(result.content[0].text).toContain('Yield is not available in this context');
+  });
+
+  it('uses singular form for exactly 1 sub-agent', async () => {
+    const resolveYield = vi.fn().mockReturnValue({ setupOk: true });
+    const ctx = createMockContext({
+      resolveYield,
+      subAgentRegistry: {
+        ...createMockContext().subAgentRegistry,
+        listForParent: vi.fn().mockReturnValue([{ status: 'running' }]),
+      } as any,
+    });
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_yield')!;
+
+    const result = await tool.execute('call-1', {});
+    expect(result.content[0].text).toContain('1 sub-agent ');
+    expect(result.content[0].text).not.toContain('1 sub-agents');
   });
 });
 

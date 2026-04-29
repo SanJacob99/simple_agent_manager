@@ -281,11 +281,10 @@ The `sam.sub_agent_resume` custom entry is appended to the transcript file *befo
 ```ts
 export interface SessionToolContext {
   // existing fields...
-  resolveYield?: (parentSessionKey: string, opts: {
-    parentAgentId: string;
-    parentRunId: string;
-    timeoutMs: number;
-  }, onResolve: (payload: ResumePayload) => void) => { setupOk: boolean; reason?: string };
+  resolveYield?: (
+    parentSessionKey: string,
+    opts: SetYieldOpts,
+  ) => SetYieldResult;
 }
 ```
 

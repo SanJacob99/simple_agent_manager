@@ -418,7 +418,7 @@ function createSessionsYieldTool(ctx: SessionToolContext): AgentTool<TSchema> {
     execute: async (_id, params: any) => {
       try {
         if (!ctx.resolveYield) {
-          return textResult('No sub-agents pending; yield is a no-op.');
+          return textResult('Yield is not available in this context; ignoring.');
         }
 
         const timeoutMs = typeof params?.timeoutMs === 'number' && params.timeoutMs > 0
