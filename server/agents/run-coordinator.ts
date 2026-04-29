@@ -1610,18 +1610,21 @@ export class RunCoordinator {
 
     this.invokeAgentEndHook(record, 'completed');
 
-    // Notify SubAgentRegistry if this was a sub-agent run
-    if (record.sessionKey.startsWith('sub:')) {
-      // ⚡ Bolt Optimization: Single-pass loop to extract text without allocating intermediate arrays
-      let assistantText = '';
-      for (let i = 0; i < record.payloads.length; i++) {
-        const p = record.payloads[i];
-        if (p.type === 'text') {
-          assistantText += p.content;
-        }
+    // Notify SubAgentRegistry unconditionally — it tracks sub-agents by
+    // runId and is a safe no-op for runs it doesn't know about. We can't
+    // gate on sessionKey.startsWith('sub:') because SessionRouter.route()
+    // prefixes the SAM-generated `sub:<parent>:<uuid>` key with
+    // `agent:<agentId>:`, so the actual record.sessionKey is
+    // `agent:<agentId>:sub:<parent>:<uuid>` — that guard never matches and
+    // a yield would only ever resolve via the safety timeout.
+    let assistantText = '';
+    for (let i = 0; i < record.payloads.length; i++) {
+      const p = record.payloads[i];
+      if (p.type === 'text') {
+        assistantText += p.content;
       }
-      this.subAgentRegistry.onComplete(record.runId, assistantText);
     }
+    this.subAgentRegistry.onComplete(record.runId, assistantText);
 
     this.resolveWaiters(record);
     this.scheduleCleanup(record.runId);
@@ -1646,12 +1649,10 @@ export class RunCoordinator {
 
     this.invokeAgentEndHook(record, 'error', error);
 
-    // Notify SubAgentRegistry if this was a sub-agent run, so the parent's
-    // yield (if pending) resolves via the normal completion path instead of
-    // having to wait out the 10-minute safety timeout.
-    if (record.sessionKey.startsWith('sub:')) {
-      this.subAgentRegistry.onError(record.runId, error.message);
-    }
+    // See finalizeRunSuccess: notify unconditionally because the post-route
+    // sessionKey is `agent:<agentId>:sub:...`, not `sub:...`. The registry
+    // is a safe no-op for non-sub-agent runs.
+    this.subAgentRegistry.onError(record.runId, error.message);
 
     this.resolveWaiters(record);
     this.scheduleCleanup(record.runId);
