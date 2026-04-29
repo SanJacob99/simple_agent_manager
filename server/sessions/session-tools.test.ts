@@ -336,6 +336,82 @@ describe('sessions_list filters', () => {
   });
 });
 
+describe('sessions_yield', () => {
+  const DEFAULT_TIMEOUT_TEXT = 'timeout = 600s';
+
+  it('returns no-active-subs when registry reports none', async () => {
+    const resolveYield = vi.fn().mockReturnValue({ setupOk: false, reason: 'no-active-subs' });
+    const ctx = createMockContext({ resolveYield });
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_yield')!;
+
+    const result = await tool.execute('call-1', {});
+    expect(result.content[0].text).toContain('No sub-agents pending');
+    expect(resolveYield).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns already-pending when a yield is in progress', async () => {
+    const resolveYield = vi.fn().mockReturnValue({ setupOk: false, reason: 'already-pending' });
+    const ctx = createMockContext({ resolveYield });
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_yield')!;
+
+    const result = await tool.execute('call-1', {});
+    expect(result.content[0].text).toContain('Yield already pending');
+  });
+
+  it('reports active sub-agent count + timeout when registered', async () => {
+    const resolveYield = vi.fn().mockReturnValue({ setupOk: true });
+    const ctx = createMockContext({
+      resolveYield,
+      subAgentRegistry: {
+        ...createMockContext().subAgentRegistry,
+        listForParent: vi.fn().mockReturnValue([
+          { status: 'running' },
+          { status: 'running' },
+          { status: 'completed' },
+        ]),
+      } as any,
+    });
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_yield')!;
+
+    const result = await tool.execute('call-1', {});
+    expect(result.content[0].text).toContain('Yielded');
+    expect(result.content[0].text).toContain('2 sub-agent');
+    expect(result.content[0].text).toContain(DEFAULT_TIMEOUT_TEXT);
+  });
+
+  it('passes timeoutMs through to the registry', async () => {
+    const resolveYield = vi.fn().mockReturnValue({ setupOk: true });
+    const ctx = createMockContext({
+      resolveYield,
+      subAgentRegistry: {
+        ...createMockContext().subAgentRegistry,
+        listForParent: vi.fn().mockReturnValue([{ status: 'running' }]),
+      } as any,
+    });
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_yield')!;
+
+    await tool.execute('call-1', { timeoutMs: 30_000 });
+
+    const opts = (resolveYield as any).mock.calls[0][1];
+    expect(opts.timeoutMs).toBe(30_000);
+    expect(opts.parentAgentId).toBe('a1');
+    expect(opts.parentRunId).toBe('run-1');
+  });
+
+  it('falls back to no-op text when ctx.resolveYield is undefined', async () => {
+    const ctx = createMockContext({ resolveYield: undefined });
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_yield')!;
+
+    const result = await tool.execute('call-1', {});
+    expect(result.content[0].text).toContain('No sub-agents pending');
+  });
+});
+
 function makeTranscriptEntries(n: number) {
   return Array.from({ length: n }, (_, i) => ({
     type: 'message',

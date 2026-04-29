@@ -4,7 +4,7 @@ import type { AgentTool, AgentToolResult } from '@mariozechner/pi-agent-core';
 import type { SessionRouter } from './session-router';
 import type { StorageEngine } from '../storage/storage-engine';
 import type { SessionTranscriptStore } from './session-transcript-store';
-import type { SubAgentRegistry } from '../agents/sub-agent-registry';
+import type { SubAgentRegistry, SetYieldOpts, SetYieldResult } from '../agents/sub-agent-registry';
 import type { RunCoordinator } from '../agents/run-coordinator';
 import { SESSION_TOOL_NAMES } from '../../shared/resolve-tool-names';
 
@@ -20,6 +20,16 @@ export interface SessionToolContext {
   coordinatorLookup: (agentId: string) => RunCoordinator | null;
   subAgentSpawning: boolean;
   enabledToolNames: string[];
+  /**
+   * Optional callback wired by RunCoordinator. Forwards to
+   * SubAgentRegistry.setYieldPending; the coordinator owns the
+   * dispatch of the resume turn (the tool does not need the payload).
+   * Tests may stub it directly.
+   */
+  resolveYield?: (
+    parentSessionKey: string,
+    opts: SetYieldOpts,
+  ) => SetYieldResult;
 }
 
 function textResult(text: string): AgentToolResult<undefined> {
@@ -36,6 +46,7 @@ const HISTORY_TOOL_CHAR_CAP = 200;
 const HISTORY_TOTAL_CHAR_BUDGET = 12_000;
 const HISTORY_DEFAULT_LIMIT = 20;
 const HISTORY_MAX_LIMIT = 200;
+const YIELD_DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 
 function renderHistoryEntry(entry: any): Record<string, unknown> {
   if (entry.type === 'toolResult') {
@@ -396,21 +407,52 @@ function createSessionsSpawnTool(ctx: SessionToolContext): AgentTool<TSchema> {
 function createSessionsYieldTool(ctx: SessionToolContext): AgentTool<TSchema> {
   return {
     name: 'sessions_yield',
-    description: 'Signal that you are yielding execution until all sub-agents complete.',
+    description:
+      'End the current turn and wait for sub-agents spawned in this session to finish. Auto-resumes with their aggregated results as a new user turn. No-op when there are no running sub-agents. Optional timeoutMs (default 600000 = 10 min); on timeout the parent resumes with whatever results are available.',
     label: 'Sessions Yield',
-    parameters: Type.Object({}),
-    execute: async () => {
+    parameters: Type.Object({
+      timeoutMs: Type.Optional(
+        Type.Number({ description: 'Max wait before forced resume (default 600000)' }),
+      ),
+    }),
+    execute: async (_id, params: any) => {
       try {
-        ctx.subAgentRegistry.setYieldPending(
+        if (!ctx.resolveYield) {
+          return textResult('No sub-agents pending; yield is a no-op.');
+        }
+
+        const timeoutMs = typeof params?.timeoutMs === 'number' && params.timeoutMs > 0
+          ? params.timeoutMs
+          : YIELD_DEFAULT_TIMEOUT_MS;
+
+        const result = ctx.resolveYield(
           ctx.callerSessionKey,
           {
             parentAgentId: ctx.callerAgentId,
             parentRunId: ctx.callerRunId,
-            timeoutMs: 10 * 60 * 1000,
+            timeoutMs,
           },
-          () => undefined,
         );
-        return textResult('Yield pending — execution will pause until all sub-agents complete.');
+
+        if (result.setupOk) {
+          const running = ctx.subAgentRegistry
+            .listForParent(ctx.callerSessionKey)
+            .filter((r) => r.status === 'running').length;
+          const timeoutSeconds = Math.round(timeoutMs / 1000);
+          return textResult(
+            `Yielded; will resume when ${running} sub-agent${running === 1 ? '' : 's'} complete (timeout = ${timeoutSeconds}s).`,
+          );
+        }
+
+        if (result.reason === 'no-active-subs') {
+          return textResult('No sub-agents pending; yield is a no-op.');
+        }
+
+        if (result.reason === 'already-pending') {
+          return textResult('Yield already pending; ignoring.');
+        }
+
+        return textResult(`Could not yield: ${result.reason}`);
       } catch (e) {
         return textResult(`Error yielding: ${e instanceof Error ? e.message : 'Unknown error'}`);
       }
