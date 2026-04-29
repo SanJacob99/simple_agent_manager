@@ -57,7 +57,7 @@ function createSessionsListTool(ctx: SessionToolContext): AgentTool<TSchema> {
         Type.String({ description: 'Filter by agentId; must equal caller agentId in this version' }),
       ),
       preview: Type.Optional(
-        Type.Boolean({ description: 'Include preview text + messageCount per session (capped at 50)' }),
+        Type.Boolean({ description: 'Include preview (first user message, ≤120 chars) + messageCount (count of role-bearing message entries — excludes tool results / compactions) per session. Capped at 50 sessions.' }),
       ),
     }),
     execute: async (_id, params: any) => {
