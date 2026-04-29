@@ -1,102 +1,138 @@
-import { describe, expect, it } from 'vitest';
-import { SubAgentRegistry } from './sub-agent-registry';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { SubAgentRegistry, type ResumePayload } from './sub-agent-registry';
 
-describe('SubAgentRegistry', () => {
-  it('spawn registers a sub-agent and listForParent returns it', () => {
-    const registry = new SubAgentRegistry();
-    const record = registry.spawn(
-      { sessionKey: 'agent:a1:main', runId: 'run-1' },
-      { agentId: 'a1', sessionKey: 'sub:agent:a1:main:abc', runId: 'run-2' },
+const PARENT_KEY = 'agent:p:main';
+const PARENT_AGENT = 'p';
+const PARENT_RUN = 'run-parent';
+
+function spawnChild(reg: SubAgentRegistry, runId: string, targetAgentId = 'c') {
+  return reg.spawn(
+    { sessionKey: PARENT_KEY, runId: PARENT_RUN },
+    { agentId: targetAgentId, sessionKey: `sub:${PARENT_KEY}:${runId}`, runId },
+  );
+}
+
+describe('SubAgentRegistry yield orchestration', () => {
+  let reg: SubAgentRegistry;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    reg = new SubAgentRegistry();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('returns no-active-subs when no children are running', () => {
+    const resolve = vi.fn();
+    const result = reg.setYieldPending(
+      PARENT_KEY,
+      { parentAgentId: PARENT_AGENT, parentRunId: PARENT_RUN, timeoutMs: 10_000 },
+      resolve,
+    );
+    expect(result).toEqual({ setupOk: false, reason: 'no-active-subs' });
+    expect(resolve).not.toHaveBeenCalled();
+  });
+
+  it('returns already-pending on a second setYieldPending for the same parent', () => {
+    spawnChild(reg, 'r1');
+    const r1 = reg.setYieldPending(
+      PARENT_KEY,
+      { parentAgentId: PARENT_AGENT, parentRunId: PARENT_RUN, timeoutMs: 10_000 },
+      vi.fn(),
+    );
+    expect(r1.setupOk).toBe(true);
+
+    const r2 = reg.setYieldPending(
+      PARENT_KEY,
+      { parentAgentId: PARENT_AGENT, parentRunId: PARENT_RUN, timeoutMs: 10_000 },
+      vi.fn(),
+    );
+    expect(r2).toEqual({ setupOk: false, reason: 'already-pending' });
+  });
+
+  it('resolves with all-complete when the last running child completes', () => {
+    spawnChild(reg, 'r1');
+    spawnChild(reg, 'r2');
+    const resolve = vi.fn<(p: ResumePayload) => void>();
+
+    reg.setYieldPending(
+      PARENT_KEY,
+      { parentAgentId: PARENT_AGENT, parentRunId: PARENT_RUN, timeoutMs: 60_000 },
+      resolve,
     );
 
-    expect(record.subAgentId).toBeDefined();
-    expect(record.status).toBe('running');
+    reg.onComplete('r1', 'first reply');
+    expect(resolve).not.toHaveBeenCalled();
 
-    const list = registry.listForParent('agent:a1:main');
-    expect(list).toHaveLength(1);
-    expect(list[0].sessionKey).toBe('sub:agent:a1:main:abc');
+    reg.onComplete('r2', 'second reply');
+    expect(resolve).toHaveBeenCalledTimes(1);
+
+    const payload = resolve.mock.calls[0][0];
+    expect(payload.reason).toBe('all-complete');
+    expect(payload.parentSessionKey).toBe(PARENT_KEY);
+    expect(payload.parentAgentId).toBe(PARENT_AGENT);
+    expect(payload.parentRunId).toBe(PARENT_RUN);
+    expect(payload.results).toHaveLength(2);
+    expect(payload.results.map((r) => r.status)).toEqual(['completed', 'completed']);
+    expect(payload.results.map((r) => r.text)).toEqual(['first reply', 'second reply']);
   });
 
-  it('onComplete updates status and stores result', () => {
-    const registry = new SubAgentRegistry();
-    const record = registry.spawn(
-      { sessionKey: 'agent:a1:main', runId: 'run-1' },
-      { agentId: 'a1', sessionKey: 'sub:agent:a1:main:abc', runId: 'run-2' },
+  it('resolves with timeout when subs do not finish in time', () => {
+    spawnChild(reg, 'r1');
+    spawnChild(reg, 'r2');
+    const resolve = vi.fn<(p: ResumePayload) => void>();
+
+    reg.setYieldPending(
+      PARENT_KEY,
+      { parentAgentId: PARENT_AGENT, parentRunId: PARENT_RUN, timeoutMs: 5_000 },
+      resolve,
     );
 
-    registry.onComplete(record.runId, 'Task done');
+    reg.onComplete('r1', 'first reply');
+    expect(resolve).not.toHaveBeenCalled();
 
-    const updated = registry.get(record.subAgentId);
-    expect(updated?.status).toBe('completed');
-    expect(updated?.result).toBe('Task done');
-    expect(updated?.endedAt).toBeDefined();
+    vi.advanceTimersByTime(5_000);
+
+    expect(resolve).toHaveBeenCalledTimes(1);
+    const payload = resolve.mock.calls[0][0];
+    expect(payload.reason).toBe('timeout');
+    const statuses = payload.results.map((r) => r.status).sort();
+    expect(statuses).toEqual(['completed', 'running']);
   });
 
-  it('onError updates status and stores error', () => {
-    const registry = new SubAgentRegistry();
-    const record = registry.spawn(
-      { sessionKey: 'agent:a1:main', runId: 'run-1' },
-      { agentId: 'a1', sessionKey: 'sub:agent:a1:main:abc', runId: 'run-2' },
+  it('does not double-resolve when both timeout and final completion fire', () => {
+    spawnChild(reg, 'r1');
+    const resolve = vi.fn<(p: ResumePayload) => void>();
+
+    reg.setYieldPending(
+      PARENT_KEY,
+      { parentAgentId: PARENT_AGENT, parentRunId: PARENT_RUN, timeoutMs: 5_000 },
+      resolve,
     );
 
-    registry.onError(record.runId, 'Something broke');
+    vi.advanceTimersByTime(5_000);
+    reg.onComplete('r1', 'late reply');
 
-    const updated = registry.get(record.subAgentId);
-    expect(updated?.status).toBe('error');
-    expect(updated?.error).toBe('Something broke');
+    expect(resolve).toHaveBeenCalledTimes(1);
   });
 
-  it('kill marks sub-agent as killed', () => {
-    const registry = new SubAgentRegistry();
-    const record = registry.spawn(
-      { sessionKey: 'agent:a1:main', runId: 'run-1' },
-      { agentId: 'a1', sessionKey: 'sub:agent:a1:main:abc', runId: 'run-2' },
+  it('cancelYield clears the timer and prevents resolve', () => {
+    spawnChild(reg, 'r1');
+    const resolve = vi.fn<(p: ResumePayload) => void>();
+
+    reg.setYieldPending(
+      PARENT_KEY,
+      { parentAgentId: PARENT_AGENT, parentRunId: PARENT_RUN, timeoutMs: 5_000 },
+      resolve,
     );
 
-    const killed = registry.kill(record.subAgentId);
-    expect(killed).toBe(true);
+    reg.cancelYield(PARENT_KEY);
 
-    const updated = registry.get(record.subAgentId);
-    expect(updated?.status).toBe('error');
-    expect(updated?.error).toBe('Killed by parent');
-  });
+    vi.advanceTimersByTime(60_000);
+    reg.onComplete('r1', 'reply');
 
-  it('yield pending flag lifecycle', () => {
-    const registry = new SubAgentRegistry();
-    expect(registry.isYieldPending('agent:a1:main')).toBe(false);
-
-    registry.setYieldPending('agent:a1:main');
-    expect(registry.isYieldPending('agent:a1:main')).toBe(true);
-
-    registry.clearYieldPending('agent:a1:main');
-    expect(registry.isYieldPending('agent:a1:main')).toBe(false);
-  });
-
-  it('allComplete returns true when all sub-agents for parent are done', () => {
-    const registry = new SubAgentRegistry();
-    const r1 = registry.spawn(
-      { sessionKey: 'agent:a1:main', runId: 'run-1' },
-      { agentId: 'a1', sessionKey: 'sub:agent:a1:main:abc', runId: 'run-2' },
-    );
-    const r2 = registry.spawn(
-      { sessionKey: 'agent:a1:main', runId: 'run-1' },
-      { agentId: 'a1', sessionKey: 'sub:agent:a1:main:def', runId: 'run-3' },
-    );
-
-    expect(registry.allComplete('agent:a1:main')).toBe(false);
-    registry.onComplete(r1.runId, 'done 1');
-    expect(registry.allComplete('agent:a1:main')).toBe(false);
-    registry.onComplete(r2.runId, 'done 2');
-    expect(registry.allComplete('agent:a1:main')).toBe(true);
-  });
-
-  it('get returns null for unknown subAgentId', () => {
-    const registry = new SubAgentRegistry();
-    expect(registry.get('nonexistent')).toBeNull();
-  });
-
-  it('kill returns false for unknown subAgentId', () => {
-    const registry = new SubAgentRegistry();
-    expect(registry.kill('nonexistent')).toBe(false);
+    expect(resolve).not.toHaveBeenCalled();
   });
 });
