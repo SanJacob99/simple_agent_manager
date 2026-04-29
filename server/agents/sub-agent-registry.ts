@@ -159,6 +159,18 @@ export class SubAgentRegistry {
     this.yields.delete(parentSessionKey);
   }
 
+  /**
+   * Cancel every outstanding yield. Used by RunCoordinator.destroy()
+   * because the run-records map evicts completed runs after RUN_RECORD_TTL_MS
+   * (5 min) but yield timers default to 10 min, so iterating runs alone
+   * would miss yields whose parent runs were already cleaned up.
+   */
+  cancelAllYields(): void {
+    for (const parentSessionKey of [...this.yields.keys()]) {
+      this.cancelYield(parentSessionKey);
+    }
+  }
+
   isYieldPending(parentSessionKey: string): boolean {
     return this.yields.has(parentSessionKey);
   }

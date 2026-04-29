@@ -224,4 +224,36 @@ describe('SubAgentRegistry yield orchestration', () => {
 
     expect(resolve).not.toHaveBeenCalled();
   });
+
+  it('cancelAllYields cancels every outstanding yield', () => {
+    const PARENT_KEY_2 = 'agent:p:other';
+    const PARENT_RUN_2 = 'run-parent-2';
+
+    spawnChild(reg, 'r1');
+    reg.spawn(
+      { sessionKey: PARENT_KEY_2, runId: PARENT_RUN_2 },
+      { agentId: 'c', sessionKey: `sub:${PARENT_KEY_2}:r2`, runId: 'r2' },
+    );
+
+    const resolveA = vi.fn<(p: ResumePayload) => void>();
+    const resolveB = vi.fn<(p: ResumePayload) => void>();
+    reg.setYieldPending(
+      PARENT_KEY,
+      { parentAgentId: PARENT_AGENT, parentRunId: PARENT_RUN, timeoutMs: 5_000 },
+      resolveA,
+    );
+    reg.setYieldPending(
+      PARENT_KEY_2,
+      { parentAgentId: PARENT_AGENT, parentRunId: PARENT_RUN_2, timeoutMs: 5_000 },
+      resolveB,
+    );
+
+    reg.cancelAllYields();
+
+    vi.advanceTimersByTime(60_000);
+    expect(resolveA).not.toHaveBeenCalled();
+    expect(resolveB).not.toHaveBeenCalled();
+    expect(reg.isYieldPending(PARENT_KEY)).toBe(false);
+    expect(reg.isYieldPending(PARENT_KEY_2)).toBe(false);
+  });
 });

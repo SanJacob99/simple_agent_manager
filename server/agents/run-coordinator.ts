@@ -543,9 +543,11 @@ export class RunCoordinator {
   }
 
   destroy(): void {
-    for (const record of this.runs.values()) {
-      this.subAgentRegistry.cancelYield(record.sessionKey);
-    }
+    // Cancel ALL outstanding yields, not just those keyed by sessions in
+    // `this.runs`. Completed runs are evicted from `this.runs` after
+    // RUN_RECORD_TTL_MS (5 min) but yield timers default to 10 min, so a
+    // per-run loop would miss yields whose parent runs were already cleaned up.
+    this.subAgentRegistry.cancelAllYields();
 
     const pendingRunIds = new Set(this.concurrency.destroy());
 
