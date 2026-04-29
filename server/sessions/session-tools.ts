@@ -36,7 +36,8 @@ function truncate(str: string, max: number): string {
 function createSessionsListTool(ctx: SessionToolContext): AgentTool<TSchema> {
   return {
     name: 'sessions_list',
-    description: 'List active sessions for this agent. Optionally filter by kind or recency.',
+    description:
+      'List sessions for this agent. Filters: kind, recency (minutes), label (substring of displayName, case-insensitive), agent (must equal caller agentId for now), preview (boolean — when true, results include preview text + messageCount; capped at 50 sessions).',
     label: 'Sessions List',
     parameters: Type.Object({
       kind: Type.Optional(
@@ -49,9 +50,25 @@ function createSessionsListTool(ctx: SessionToolContext): AgentTool<TSchema> {
       recency: Type.Optional(
         Type.Number({ description: 'Only return sessions updated within this many minutes' }),
       ),
+      label: Type.Optional(
+        Type.String({ description: 'Substring match (case-insensitive) against displayName' }),
+      ),
+      agent: Type.Optional(
+        Type.String({ description: 'Filter by agentId; must equal caller agentId in this version' }),
+      ),
+      preview: Type.Optional(
+        Type.Boolean({ description: 'Include preview text + messageCount per session (capped at 50)' }),
+      ),
     }),
     execute: async (_id, params: any) => {
       try {
+        const requestedAgent = params.agent as string | undefined;
+        if (requestedAgent && requestedAgent !== ctx.callerAgentId) {
+          return textResult(
+            `Cross-agent listing is not yet supported; only the caller's own agentId ("${ctx.callerAgentId}") is accepted.`,
+          );
+        }
+
         let sessions = await ctx.sessionRouter.listSessions();
 
         const kind = (params.kind as string | undefined) ?? 'all';
@@ -67,14 +84,29 @@ function createSessionsListTool(ctx: SessionToolContext): AgentTool<TSchema> {
           sessions = sessions.filter((s) => s.updatedAt >= cutoffStr);
         }
 
-        const summary = sessions.map((s) => ({
-          sessionKey: s.sessionKey,
-          sessionId: s.sessionId,
-          chatType: s.chatType,
-          updatedAt: s.updatedAt,
-          totalTokens: s.totalTokens,
-          displayName: s.displayName,
-        }));
+        const label = params.label as string | undefined;
+        if (label) {
+          const needle = label.toLowerCase();
+          sessions = sessions.filter(
+            (s) => typeof s.displayName === 'string' && s.displayName.toLowerCase().includes(needle),
+          );
+        }
+
+        const wantsPreview = params.preview === true;
+        const previewCapped = wantsPreview ? sessions.slice(0, 50) : sessions;
+
+        const summary = previewCapped.map((s) => {
+          const base = {
+            sessionKey: s.sessionKey,
+            sessionId: s.sessionId,
+            chatType: s.chatType,
+            updatedAt: s.updatedAt,
+            totalTokens: s.totalTokens,
+            displayName: s.displayName,
+          };
+          if (!wantsPreview) return base;
+          return { ...base, ...readPreview(ctx, s) };
+        });
 
         return textResult(JSON.stringify(summary, null, 2));
       } catch (e) {
@@ -82,6 +114,35 @@ function createSessionsListTool(ctx: SessionToolContext): AgentTool<TSchema> {
       }
     },
   };
+}
+
+function readPreview(
+  ctx: SessionToolContext,
+  session: { sessionKey: string; sessionFile?: string } & Record<string, unknown>,
+): { preview: string; messageCount: number } {
+  try {
+    const transcriptPath = ctx.storageEngine.resolveTranscriptPath(session as any);
+    const entries = ctx.transcriptStore.readTranscript(transcriptPath);
+    let messageCount = 0;
+    let firstUserText: string | undefined;
+    for (const entry of entries as any[]) {
+      if (entry?.type !== 'message') continue;
+      messageCount += 1;
+      if (firstUserText === undefined && entry.message?.role === 'user') {
+        const content = entry.message.content;
+        if (typeof content === 'string') {
+          firstUserText = content;
+        } else if (Array.isArray(content)) {
+          const textBlock = content.find((b: any) => b?.type === 'text' && typeof b.text === 'string');
+          firstUserText = textBlock?.text;
+        }
+      }
+    }
+    const preview = (firstUserText ?? '').slice(0, 120);
+    return { preview, messageCount };
+  } catch {
+    return { preview: '', messageCount: 0 };
+  }
 }
 
 function createSessionsHistoryTool(ctx: SessionToolContext): AgentTool<TSchema> {

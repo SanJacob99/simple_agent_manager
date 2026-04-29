@@ -248,3 +248,76 @@ describe('sessions_spawn', () => {
     expect(result.content[0].text).toContain('sub:');
   });
 });
+
+describe('sessions_list filters', () => {
+  it('matches label substring case-insensitively', async () => {
+    const ctx = createMockContext();
+    (ctx.sessionRouter.listSessions as any).mockResolvedValue([
+      mockSession({ sessionKey: 'agent:a1:s1', displayName: 'Daily Standup' }),
+      mockSession({ sessionKey: 'agent:a1:s2', displayName: 'Bug Triage' }),
+      mockSession({ sessionKey: 'agent:a1:s3', displayName: undefined }),
+    ]);
+
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_list')!;
+
+    const result = await tool.execute('call-1', { label: 'standup' });
+    const parsed = JSON.parse(result.content[0].text);
+
+    expect(parsed.map((s: any) => s.sessionKey)).toEqual(['agent:a1:s1']);
+  });
+
+  it('rejects cross-agent agent filter with explicit text', async () => {
+    const ctx = createMockContext();
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_list')!;
+
+    const result = await tool.execute('call-1', { agent: 'other-agent' });
+
+    expect(result.content[0].text).toContain('Cross-agent listing is not yet supported');
+  });
+
+  it('accepts agent filter when it equals callerAgentId', async () => {
+    const ctx = createMockContext();
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_list')!;
+
+    const result = await tool.execute('call-1', { agent: 'a1' });
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed).toHaveLength(1);
+  });
+
+  it('includes preview text and messageCount when preview=true', async () => {
+    const ctx = createMockContext();
+    (ctx.transcriptStore.readTranscript as any).mockReturnValue([
+      { type: 'message', id: 'e1', message: { role: 'user', content: 'Tell me a long story about cats' }, timestamp: '2026-04-08T00:00:00.000Z' },
+      { type: 'message', id: 'e2', message: { role: 'assistant', content: 'Once upon a time...' }, timestamp: '2026-04-08T00:01:00.000Z' },
+      { type: 'message', id: 'e3', message: { role: 'user', content: 'Continue please' }, timestamp: '2026-04-08T00:02:00.000Z' },
+    ]);
+
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_list')!;
+
+    const result = await tool.execute('call-1', { preview: true });
+    const parsed = JSON.parse(result.content[0].text);
+
+    expect(parsed[0].preview).toBe('Tell me a long story about cats');
+    expect(parsed[0].messageCount).toBe(3);
+  });
+
+  it('caps preview reads at 50 sessions', async () => {
+    const ctx = createMockContext();
+    const sessions = Array.from({ length: 75 }, (_, i) =>
+      mockSession({ sessionKey: `agent:a1:s${i}`, sessionId: `sid-${i}` }),
+    );
+    (ctx.sessionRouter.listSessions as any).mockResolvedValue(sessions);
+    (ctx.transcriptStore.readTranscript as any).mockReturnValue([]);
+
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_list')!;
+
+    await tool.execute('call-1', { preview: true });
+
+    expect(ctx.transcriptStore.readTranscript).toHaveBeenCalledTimes(50);
+  });
+});
