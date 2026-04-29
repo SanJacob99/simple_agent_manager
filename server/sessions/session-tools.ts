@@ -247,7 +247,12 @@ function createSessionsHistoryTool(ctx: SessionToolContext): AgentTool<TSchema> 
 
         for (const entry of slice) {
           const rendered = renderHistoryEntry(entry);
-          const projectedSize = used + JSON.stringify(rendered).length + 2; // ", " overhead
+          // Estimator must match the actual serialization (pretty-printed below)
+          // so the 12k budget reflects the real response size; compact stringify
+          // under-counts indentation/newlines by ~6%.
+          const projectedSize = used + JSON.stringify(rendered, null, 2).length + 2;
+          // First entry is always admitted; per-entry caps (500/200 chars) keep
+          // any single rendered entry well under HISTORY_TOTAL_CHAR_BUDGET.
           if (formatted.length > 0 && projectedSize > HISTORY_TOTAL_CHAR_BUDGET) {
             truncated = true;
             break;
