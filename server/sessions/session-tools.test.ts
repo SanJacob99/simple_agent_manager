@@ -39,8 +39,20 @@ function createMockContext(overrides: Partial<SessionToolContext> = {}): Session
     } as any,
     transcriptStore: {
       readTranscript: vi.fn().mockReturnValue([
-        { type: 'user', id: 'e1', parentId: null, timestamp: '2026-04-08T00:00:00.000Z', content: 'Hello' },
-        { type: 'assistant', id: 'e2', parentId: 'e1', timestamp: '2026-04-08T00:01:00.000Z', content: 'Hi there, how can I help?' },
+        {
+          type: 'message',
+          id: 'e1',
+          parentId: null,
+          timestamp: '2026-04-08T00:00:00.000Z',
+          message: { role: 'user', content: 'Hello' },
+        },
+        {
+          type: 'message',
+          id: 'e2',
+          parentId: 'e1',
+          timestamp: '2026-04-08T00:01:00.000Z',
+          message: { role: 'assistant', content: 'Hi there, how can I help?' },
+        },
       ]),
     } as any,
     coordinator: {
@@ -67,7 +79,6 @@ function createMockContext(overrides: Partial<SessionToolContext> = {}): Session
       listForParent: vi.fn().mockReturnValue([]),
       get: vi.fn().mockReturnValue(null),
       kill: vi.fn().mockReturnValue(false),
-      setYieldPending: vi.fn(),
     } as any,
     coordinatorLookup: vi.fn().mockReturnValue(null),
     subAgentSpawning: true,
@@ -154,7 +165,7 @@ describe('sessions_list', () => {
 });
 
 describe('sessions_history', () => {
-  it('returns formatted transcript', async () => {
+  it('returns JSON with entries newest-first', async () => {
     const ctx = createMockContext();
     const tools = createSessionTools(ctx);
     const tool = tools.find((t) => t.name === 'sessions_history')!;
@@ -163,8 +174,10 @@ describe('sessions_history', () => {
     expect(ctx.sessionRouter.getStatus).toHaveBeenCalledWith('agent:a1:main');
     expect(ctx.storageEngine.resolveTranscriptPath).toHaveBeenCalled();
     expect(ctx.transcriptStore.readTranscript).toHaveBeenCalled();
-    expect(result.content[0].text).toContain('Hello');
-    expect(result.content[0].text).toContain('Hi there');
+
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.sessionKey).toBe('agent:a1:main');
+    expect(Array.isArray(parsed.entries)).toBe(true);
   });
 });
 
@@ -246,5 +259,273 @@ describe('sessions_spawn', () => {
     expect(targetCoordinator.dispatch).toHaveBeenCalled();
     expect(ctx.subAgentRegistry.spawn).toHaveBeenCalled();
     expect(result.content[0].text).toContain('sub:');
+  });
+});
+
+describe('sessions_list filters', () => {
+  it('matches label substring case-insensitively', async () => {
+    const ctx = createMockContext();
+    (ctx.sessionRouter.listSessions as any).mockResolvedValue([
+      mockSession({ sessionKey: 'agent:a1:s1', displayName: 'Daily Standup' }),
+      mockSession({ sessionKey: 'agent:a1:s2', displayName: 'Bug Triage' }),
+      mockSession({ sessionKey: 'agent:a1:s3', displayName: undefined }),
+    ]);
+
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_list')!;
+
+    const result = await tool.execute('call-1', { label: 'standup' });
+    const parsed = JSON.parse(result.content[0].text);
+
+    expect(parsed.map((s: any) => s.sessionKey)).toEqual(['agent:a1:s1']);
+  });
+
+  it('rejects cross-agent agent filter with explicit text', async () => {
+    const ctx = createMockContext();
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_list')!;
+
+    const result = await tool.execute('call-1', { agent: 'other-agent' });
+
+    expect(result.content[0].text).toContain('Cross-agent listing is not yet supported');
+  });
+
+  it('accepts agent filter when it equals callerAgentId', async () => {
+    const ctx = createMockContext();
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_list')!;
+
+    const result = await tool.execute('call-1', { agent: 'a1' });
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed).toHaveLength(1);
+  });
+
+  it('includes preview text and messageCount when preview=true', async () => {
+    const ctx = createMockContext();
+    (ctx.transcriptStore.readTranscript as any).mockReturnValue([
+      { type: 'message', id: 'e1', message: { role: 'user', content: 'Tell me a long story about cats' }, timestamp: '2026-04-08T00:00:00.000Z' },
+      { type: 'message', id: 'e2', message: { role: 'assistant', content: 'Once upon a time...' }, timestamp: '2026-04-08T00:01:00.000Z' },
+      { type: 'message', id: 'e3', message: { role: 'user', content: 'Continue please' }, timestamp: '2026-04-08T00:02:00.000Z' },
+    ]);
+
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_list')!;
+
+    const result = await tool.execute('call-1', { preview: true });
+    const parsed = JSON.parse(result.content[0].text);
+
+    expect(parsed[0].preview).toBe('Tell me a long story about cats');
+    expect(parsed[0].messageCount).toBe(3);
+  });
+
+  it('caps preview reads at 50 sessions', async () => {
+    const ctx = createMockContext();
+    const sessions = Array.from({ length: 75 }, (_, i) =>
+      mockSession({ sessionKey: `agent:a1:s${i}`, sessionId: `sid-${i}` }),
+    );
+    (ctx.sessionRouter.listSessions as any).mockResolvedValue(sessions);
+    (ctx.transcriptStore.readTranscript as any).mockReturnValue([]);
+
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_list')!;
+
+    await tool.execute('call-1', { preview: true });
+
+    expect(ctx.transcriptStore.readTranscript).toHaveBeenCalledTimes(50);
+  });
+});
+
+describe('sessions_yield', () => {
+  const DEFAULT_TIMEOUT_TEXT = 'timeout = 600s';
+
+  it('returns no-active-subs when registry reports none', async () => {
+    const resolveYield = vi.fn().mockReturnValue({ setupOk: false, reason: 'no-active-subs' });
+    const ctx = createMockContext({ resolveYield });
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_yield')!;
+
+    const result = await tool.execute('call-1', {});
+    expect(result.content[0].text).toContain('No sub-agents pending');
+    expect(resolveYield).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns already-pending when a yield is in progress', async () => {
+    const resolveYield = vi.fn().mockReturnValue({ setupOk: false, reason: 'already-pending' });
+    const ctx = createMockContext({ resolveYield });
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_yield')!;
+
+    const result = await tool.execute('call-1', {});
+    expect(result.content[0].text).toContain('Yield already pending');
+  });
+
+  it('reports active sub-agent count + timeout when registered', async () => {
+    const resolveYield = vi.fn().mockReturnValue({ setupOk: true });
+    const ctx = createMockContext({
+      resolveYield,
+      subAgentRegistry: {
+        ...createMockContext().subAgentRegistry,
+        listForParent: vi.fn().mockReturnValue([
+          { status: 'running' },
+          { status: 'running' },
+          { status: 'completed' },
+        ]),
+      } as any,
+    });
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_yield')!;
+
+    const result = await tool.execute('call-1', {});
+    expect(result.content[0].text).toContain('Yielded');
+    expect(result.content[0].text).toContain('2 sub-agent');
+    expect(result.content[0].text).toContain(DEFAULT_TIMEOUT_TEXT);
+  });
+
+  it('passes timeoutMs through to the registry', async () => {
+    const resolveYield = vi.fn().mockReturnValue({ setupOk: true });
+    const ctx = createMockContext({
+      resolveYield,
+      subAgentRegistry: {
+        ...createMockContext().subAgentRegistry,
+        listForParent: vi.fn().mockReturnValue([{ status: 'running' }]),
+      } as any,
+    });
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_yield')!;
+
+    await tool.execute('call-1', { timeoutMs: 30_000 });
+
+    const opts = (resolveYield as any).mock.calls[0][1];
+    expect(opts.timeoutMs).toBe(30_000);
+    expect(opts.parentAgentId).toBe('a1');
+    expect(opts.parentRunId).toBe('run-1');
+  });
+
+  it('returns wiring-missing text when ctx.resolveYield is undefined', async () => {
+    const ctx = createMockContext({ resolveYield: undefined });
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_yield')!;
+
+    const result = await tool.execute('call-1', {});
+    expect(result.content[0].text).toContain('Yield is not available in this context');
+  });
+
+  it('uses singular form for exactly 1 sub-agent', async () => {
+    const resolveYield = vi.fn().mockReturnValue({ setupOk: true });
+    const ctx = createMockContext({
+      resolveYield,
+      subAgentRegistry: {
+        ...createMockContext().subAgentRegistry,
+        listForParent: vi.fn().mockReturnValue([{ status: 'running' }]),
+      } as any,
+    });
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_yield')!;
+
+    const result = await tool.execute('call-1', {});
+    expect(result.content[0].text).toContain('1 sub-agent ');
+    expect(result.content[0].text).not.toContain('1 sub-agents');
+  });
+});
+
+function makeTranscriptEntries(n: number) {
+  return Array.from({ length: n }, (_, i) => ({
+    type: 'message',
+    id: `e${i + 1}`,
+    parentId: i === 0 ? null : `e${i}`,
+    timestamp: new Date(Date.parse('2026-04-08T00:00:00.000Z') + i * 60_000).toISOString(),
+    message: {
+      role: i % 2 === 0 ? 'user' : 'assistant',
+      content: `Message ${i + 1} body`,
+    },
+  }));
+}
+
+describe('sessions_history pagination', () => {
+  it('returns the most recent entries newest-first by default', async () => {
+    const ctx = createMockContext();
+    (ctx.transcriptStore.readTranscript as any).mockReturnValue(makeTranscriptEntries(50));
+
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_history')!;
+
+    const result = await tool.execute('call-1', { sessionKey: 'agent:a1:main' });
+    const parsed = JSON.parse(result.content[0].text);
+
+    expect(parsed.entries[0].id).toBe('e50');
+    expect(parsed.entries.at(-1).id).toBe('e31');
+    expect(parsed.entries).toHaveLength(20);
+    expect(parsed.nextCursor).toBe('e31');
+    expect(parsed.totalEntries).toBe(50);
+  });
+
+  it('respects the before cursor', async () => {
+    const ctx = createMockContext();
+    (ctx.transcriptStore.readTranscript as any).mockReturnValue(makeTranscriptEntries(50));
+
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_history')!;
+
+    const result = await tool.execute('call-1', { sessionKey: 'agent:a1:main', before: 'e31', limit: 10 });
+    const parsed = JSON.parse(result.content[0].text);
+
+    expect(parsed.entries[0].id).toBe('e30');
+    expect(parsed.entries.at(-1).id).toBe('e21');
+    expect(parsed.nextCursor).toBe('e21');
+  });
+
+  it('returns explicit error for unknown cursor', async () => {
+    const ctx = createMockContext();
+    (ctx.transcriptStore.readTranscript as any).mockReturnValue(makeTranscriptEntries(5));
+
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_history')!;
+
+    const result = await tool.execute('call-1', { sessionKey: 'agent:a1:main', before: 'nope' });
+    expect(result.content[0].text).toContain('Cursor not found');
+  });
+
+  it('truncates with truncated:true when total budget is exceeded', async () => {
+    const ctx = createMockContext();
+    const big = 'X'.repeat(2000);
+    (ctx.transcriptStore.readTranscript as any).mockReturnValue(
+      Array.from({ length: 30 }, (_, i) => ({
+        type: 'message',
+        id: `e${i + 1}`,
+        parentId: i === 0 ? null : `e${i}`,
+        timestamp: new Date(Date.parse('2026-04-08T00:00:00.000Z') + i * 60_000).toISOString(),
+        message: { role: 'assistant', content: big },
+      })),
+    );
+
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_history')!;
+
+    const result = await tool.execute('call-1', { sessionKey: 'agent:a1:main', limit: 30 });
+    const parsed = JSON.parse(result.content[0].text);
+
+    // Each entry text capped at 500 + JSON overhead. Budget = 12_000 chars; we should
+    // get fewer than 30 entries back and truncated must be true with a valid cursor.
+    expect(parsed.entries.length).toBeLessThan(30);
+    expect(parsed.truncated).toBe(true);
+    expect(parsed.nextCursor).toBeDefined();
+  });
+
+  it('excludes tool results when includeToolResults is false', async () => {
+    const ctx = createMockContext();
+    (ctx.transcriptStore.readTranscript as any).mockReturnValue([
+      { type: 'message', id: 'e1', message: { role: 'user', content: 'Hi' }, timestamp: '2026-04-08T00:00:00.000Z' },
+      { type: 'toolResult', id: 'e2', toolName: 'web_search', content: [{ type: 'text', text: 'long result' }], timestamp: '2026-04-08T00:00:30.000Z' },
+      { type: 'message', id: 'e3', message: { role: 'assistant', content: 'Done' }, timestamp: '2026-04-08T00:01:00.000Z' },
+    ]);
+
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_history')!;
+
+    const result = await tool.execute('call-1', { sessionKey: 'agent:a1:main', includeToolResults: false });
+    const parsed = JSON.parse(result.content[0].text);
+
+    expect(parsed.entries.map((e: any) => e.id)).toEqual(['e3', 'e1']);
+    expect(parsed.totalEntries).toBe(2);
   });
 });

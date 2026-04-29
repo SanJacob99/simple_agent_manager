@@ -15,6 +15,7 @@ provider-catalog*
 notes/
 .browser-profile/
 .sam/
+.tmp*
 browser-screenshots/
 
 # User-installed tools — loaded at runtime via filesystem scan.

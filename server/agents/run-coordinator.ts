@@ -36,8 +36,11 @@ import type {
 } from '../../shared/run-types';
 import {
   RUN_DIAGNOSTIC_CUSTOM_TYPE,
+  SUB_AGENT_RESUME_CUSTOM_TYPE,
   type RunDiagnosticData,
   type RunErrorDiagnosticData,
+  type SubAgentResumeData,
+  type SubAgentResumeResult,
 } from '../../shared/session-diagnostics';
 import {
   contextTokensFromUsage,
@@ -51,6 +54,7 @@ import { estimateMessagesTokens } from '../../shared/token-estimator';
 import { RunConcurrencyController } from './run-concurrency-controller';
 import { SubAgentRegistry } from './sub-agent-registry';
 import { createSessionTools, type SessionToolContext } from '../sessions/session-tools';
+import type { ResumePayload, SetYieldResult } from './sub-agent-registry';
 import { SESSION_TOOL_NAMES } from '../../shared/resolve-tool-names';
 
 export type RunStatus = 'pending' | 'running' | 'completed' | 'error';
@@ -480,6 +484,53 @@ export class RunCoordinator {
     };
   }
 
+  /**
+   * Build the aggregated user-message text + transcript marker for a
+   * yield resume, persist the marker, then dispatch a synthetic user
+   * turn against the parent's session. Errors are swallowed: a
+   * deleted parent session simply means the resume is dropped.
+   */
+  private async handleYieldResume(payload: ResumePayload): Promise<void> {
+    if (!this.transcriptStore || !this.sessionRouter) return;
+
+    const parent = await this.sessionRouter.getStatus(payload.parentSessionKey);
+    if (!parent) return;
+
+    const transcriptPath = this.storage!.resolveTranscriptPath(parent);
+    const text = formatYieldResumeText(payload);
+    const data: SubAgentResumeData = {
+      generatedFromRunId: payload.parentRunId,
+      reason: payload.reason,
+      generatedAt: Date.now(),
+      results: payload.results.map<SubAgentResumeResult>((r) => ({
+        subAgentId: r.subAgentId,
+        targetAgentId: r.targetAgentId,
+        sessionKey: r.sessionKey,
+        status: r.status,
+        startedAt: r.startedAt,
+        endedAt: r.endedAt,
+        durationMs: r.durationMs,
+        text: r.text,
+        error: r.error,
+      })),
+    };
+
+    try {
+      const transcriptManager = this.transcriptStore.openSession(transcriptPath);
+      transcriptManager.appendCustomEntry(SUB_AGENT_RESUME_CUSTOM_TYPE, data);
+      await this.transcriptStore.snapshot(transcriptManager);
+    } catch (err) {
+      console.error('[RunCoordinator] failed to persist sam.sub_agent_resume entry:', err);
+      // Continue and still dispatch — the marker is a UI hint, not load-bearing.
+    }
+
+    try {
+      await this.dispatch({ sessionKey: payload.parentSessionKey, text });
+    } catch (err) {
+      console.error('[RunCoordinator] yield resume dispatch failed:', err);
+    }
+  }
+
   setRunPayloads(runId: string, payloads: RunPayload[], usage?: RunUsage): void {
     const record = this.runs.get(runId);
     if (!record) {
@@ -492,6 +543,12 @@ export class RunCoordinator {
   }
 
   destroy(): void {
+    // Cancel ALL outstanding yields, not just those keyed by sessions in
+    // `this.runs`. Completed runs are evicted from `this.runs` after
+    // RUN_RECORD_TTL_MS (5 min) but yield timers default to 10 min, so a
+    // per-run loop would miss yields whose parent runs were already cleaned up.
+    this.subAgentRegistry.cancelAllYields();
+
     const pendingRunIds = new Set(this.concurrency.destroy());
 
     for (const record of this.runs.values()) {
@@ -676,6 +733,14 @@ export class RunCoordinator {
           coordinatorLookup: () => null, // Cross-agent lookup wired at server level later
           subAgentSpawning: this.config.tools?.subAgentSpawning ?? false,
           enabledToolNames: enabledSessionToolNames,
+          resolveYield: (parentSessionKey, opts): SetYieldResult => {
+            const onResolve = (payload: ResumePayload) => {
+              this.handleYieldResume(payload).catch((err) => {
+                console.error('[RunCoordinator] yield resume failed:', err);
+              });
+            };
+            return this.subAgentRegistry.setYieldPending(parentSessionKey, opts, onResolve);
+          },
         };
         const sessionTools = createSessionTools(sessionToolCtx);
         if (sessionTools.length > 0) {
@@ -1545,18 +1610,21 @@ export class RunCoordinator {
 
     this.invokeAgentEndHook(record, 'completed');
 
-    // Notify SubAgentRegistry if this was a sub-agent run
-    if (record.sessionKey.startsWith('sub:')) {
-      // ⚡ Bolt Optimization: Single-pass loop to extract text without allocating intermediate arrays
-      let assistantText = '';
-      for (let i = 0; i < record.payloads.length; i++) {
-        const p = record.payloads[i];
-        if (p.type === 'text') {
-          assistantText += p.content;
-        }
+    // Notify SubAgentRegistry unconditionally — it tracks sub-agents by
+    // runId and is a safe no-op for runs it doesn't know about. We can't
+    // gate on sessionKey.startsWith('sub:') because SessionRouter.route()
+    // prefixes the SAM-generated `sub:<parent>:<uuid>` key with
+    // `agent:<agentId>:`, so the actual record.sessionKey is
+    // `agent:<agentId>:sub:<parent>:<uuid>` — that guard never matches and
+    // a yield would only ever resolve via the safety timeout.
+    let assistantText = '';
+    for (let i = 0; i < record.payloads.length; i++) {
+      const p = record.payloads[i];
+      if (p.type === 'text') {
+        assistantText += p.content;
       }
-      this.subAgentRegistry.onComplete(record.runId, assistantText);
     }
+    this.subAgentRegistry.onComplete(record.runId, assistantText);
 
     this.resolveWaiters(record);
     this.scheduleCleanup(record.runId);
@@ -1580,6 +1648,12 @@ export class RunCoordinator {
     });
 
     this.invokeAgentEndHook(record, 'error', error);
+
+    // See finalizeRunSuccess: notify unconditionally because the post-route
+    // sessionKey is `agent:<agentId>:sub:...`, not `sub:...`. The registry
+    // is a safe no-op for non-sub-agent runs.
+    this.subAgentRegistry.onError(record.runId, error.message);
+
     this.resolveWaiters(record);
     this.scheduleCleanup(record.runId);
   }
@@ -1721,4 +1795,38 @@ export function classifyError(error: unknown): StructuredError {
 
   const message = error instanceof Error ? error.message : 'Unknown error';
   return { code: 'internal', message, retriable: false };
+}
+
+const YIELD_RESUME_PER_SUB_CAP = 1500;
+const YIELD_RESUME_TOTAL_CAP = 8000;
+
+function formatYieldResumeText(payload: ResumePayload): string {
+  const header = `Sub-agents finished (N=${payload.results.length}, reason=${payload.reason}).`;
+  const lines: string[] = [header, ''];
+
+  let used = header.length + 1;
+  for (let i = 0; i < payload.results.length; i++) {
+    const r = payload.results[i];
+    const durationSec = (r.durationMs / 1000).toFixed(1);
+    const head = `[${i + 1}/${payload.results.length}] sub=${r.subAgentId.slice(0, 8)}... agent=${r.targetAgentId} status=${r.status} (${durationSec}s)`;
+    const body = r.status === 'error'
+      ? `error: ${r.error ?? 'unknown error'}`
+      : truncateForResume(r.text ?? '', YIELD_RESUME_PER_SUB_CAP);
+
+    const block = `${head}\n${body}`;
+    if (used + block.length + 2 > YIELD_RESUME_TOTAL_CAP) {
+      lines.push('…(truncated)');
+      break;
+    }
+    lines.push(block);
+    lines.push('');
+    used += block.length + 2;
+  }
+
+  return lines.join('\n').trimEnd();
+}
+
+function truncateForResume(value: string, cap: number): string {
+  if (value.length <= cap) return value;
+  return `${value.slice(0, cap)}…(truncated)`;
 }

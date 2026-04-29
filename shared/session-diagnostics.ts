@@ -79,3 +79,24 @@ export function formatRunDiagnostic(data: RunDiagnosticData): string {
   }
   return `Diagnostic (${data.phase}/${data.code}): ${data.message}`;
 }
+
+export const SUB_AGENT_RESUME_CUSTOM_TYPE = 'sam.sub_agent_resume';
+
+export interface SubAgentResumeResult {
+  subAgentId: string;
+  targetAgentId: string;
+  sessionKey: string;
+  status: 'completed' | 'error' | 'running';
+  startedAt: number;
+  endedAt?: number;
+  durationMs: number;
+  text?: string;
+  error?: string;
+}
+
+export interface SubAgentResumeData {
+  generatedFromRunId: string;
+  reason: 'all-complete' | 'timeout';
+  generatedAt: number;
+  results: SubAgentResumeResult[];
+}
