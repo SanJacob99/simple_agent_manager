@@ -24,7 +24,7 @@ The runtime model is **async resume**:
 
 1. The current turn ends cleanly. The parent's run completes from the UI's perspective.
 2. A timer + completion watcher in `SubAgentRegistry` waits for every running sub-agent under the caller's `parentSessionKey` to reach a terminal status.
-3. When all are done (or a safety timeout fires), the registry dispatches a **new turn** to the parent's coordinator. The new turn carries an aggregated user-facing text payload describing each sub-agent's outcome, plus a side-channel custom transcript entry the UI uses to render the resume distinctively (instead of as a generic user message).
+3. When all are done (or a safety timeout fires), the registry builds a `ResumePayload` with `reason` and `results` and calls `resolveFn`. The coordinator's `onResolve` callback (wired by `RunCoordinator`) reads `results` to format the aggregated user-message text and dispatch the synthetic resume turn. A side-channel custom transcript entry allows the UI to render the resume distinctively (instead of as a generic user message).
 
 ### Parameters
 
@@ -213,8 +213,7 @@ export interface ResumePayload {
   parentSessionKey: string;
   parentAgentId: string;
   parentRunId: string;
-  text: string;
-  results: SubAgentResumeResult[];
+  results: ResumeResult[];                     // see below
   reason: 'all-complete' | 'timeout';
 }
 ```
@@ -237,7 +236,7 @@ cancelYield(parentSessionKey: string): void;
 1. Looks up the `YieldState` for the parent. If none, return.
 2. Skips if `resolved` is already true (idempotent).
 3. Counts running children for that parent. If `> 0`, return.
-4. Builds a `ResumePayload` with `reason: 'all-complete'` and calls `resolve`. Marks `resolved: true`. Clears the timer.
+4. Builds a `ResumePayload` with `reason: 'all-complete'` and `results` (current child records) and calls `resolve`. Marks `resolved: true`. Clears the timer. Text formatting from `results` is the coordinator's responsibility, not the registry's.
 
 The timer fires `maybeResolveOnTimeout(parentSessionKey)`, which builds a payload from current child statuses (some may be `'running'`) with `reason: 'timeout'` and calls `resolve` once, idempotently.
 

@@ -238,7 +238,15 @@ function createSessionsYieldTool(ctx: SessionToolContext): AgentTool<TSchema> {
     parameters: Type.Object({}),
     execute: async () => {
       try {
-        ctx.subAgentRegistry.setYieldPending(ctx.callerSessionKey);
+        ctx.subAgentRegistry.setYieldPending(
+          ctx.callerSessionKey,
+          {
+            parentAgentId: ctx.callerAgentId,
+            parentRunId: ctx.callerRunId,
+            timeoutMs: 10 * 60 * 1000,
+          },
+          () => undefined,
+        );
         return textResult('Yield pending — execution will pause until all sub-agents complete.');
       } catch (e) {
         return textResult(`Error yielding: ${e instanceof Error ? e.message : 'Unknown error'}`);
