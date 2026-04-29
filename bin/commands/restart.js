@@ -11,12 +11,11 @@
  * — required on Windows so the child survives our own exit, and useful
  * everywhere because crash output isn't lost.
  *
- * Why no `--watch-path`: Node's internal `--watch[-path]` mode spawns
- * the watched script in its own subprocess, and that internal spawn
- * does not inherit our `windowsHide`, so the inner console window
- * pops up on Windows. Auto-reload-on-edit is what the long-running
- * `npm run dev:server` is for; `sam restart` is the manual restart
- * trigger and stays clean.
+ * No `--watch-path` here: a long-lived watcher accumulates zombies
+ * when terminals close without Ctrl+C, and the inner spawn pops a
+ * console window on Windows. Reload is always explicit — `sam restart`
+ * is the trigger; `npm run dev:server` runs a plain (non-watching)
+ * server that you stop+start yourself.
  *
  * Caveat: if the project was launched via `npm run dev` (concurrently
  * + vite), tearing down the server takes vite with it because

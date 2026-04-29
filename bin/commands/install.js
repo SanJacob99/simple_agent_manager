@@ -130,7 +130,7 @@ export async function runInstall(args) {
     console.log(`  path     ${targetDir}`);
     console.log('');
     console.log(
-      'Restart the backend (`sam restart` once available, or restart `npm run dev:server`) for the new tool to load.',
+      'Restart the backend (`sam restart`, or stop+restart `npm run dev:server`) for the new tool to load.',
     );
   } catch (err) {
     console.error(`sam: install failed — ${err.message}`);

@@ -120,11 +120,11 @@ Today:
 
 The user-tools directory follows the same precedence the server uses: `SAM_DISABLE_USER_TOOLS=1` short-circuits everything; otherwise `SAM_USER_TOOLS_DIR=<path>` overrides; otherwise `server/tools/user/`.
 
-After `sam install` or `sam uninstall`, run `sam restart` (or restart `npm run dev:server` manually) for the new tool to load.
+After `sam install` or `sam uninstall`, run `sam restart` (or stop+restart `npm run dev:server`) for the new tool to load.
 
-`sam restart` deliberately spawns the new server **without** Node's `--watch-path` mode — that mode opens an extra console window on Windows that can't be hidden. The trade-off is that file edits aren't picked up automatically: re-run `sam restart` to load new code. If you want auto-reload during normal development, keep using `npm run dev:server` directly; `sam restart` is the manual restart trigger. Server logs go to `.sam/server.log` (truncated each restart).
+`npm run dev:server` runs a single, plain `node --import tsx server/index.ts` — no `--watch` mode. File edits are not picked up automatically; reload is always explicit, via `sam restart` or by restarting the dev:server process yourself. This is deliberate: a long-lived watcher accumulates zombies when terminals close without Ctrl+C, and on every save those zombies fight for port 3210. Server logs go to `.sam/server.log` (truncated each `sam restart`).
 
-**Known issue on Windows:** the dev:server spawn pops a brief console window. Node's `windowsHide: true` only sets `SW_HIDE` (a GUI-app flag); it does not set `CREATE_NO_WINDOW`, which is what suppresses the console for a console app like `node.exe`, and Node doesn't expose that flag. If the popping window is bothersome, run `npm run dev:server` in a separate terminal and skip `sam restart` — manual ctrl-C + re-run does the same thing without the flash.
+**Known issue on Windows:** `sam restart` pops a brief console window when it spawns the new detached server. Node's `windowsHide: true` only sets `SW_HIDE` (a GUI-app flag); it does not set `CREATE_NO_WINDOW`, which is what suppresses the console for a console app like `node.exe`, and Node doesn't expose that flag. If the popping window is bothersome, run `npm run dev:server` in a separate terminal and skip `sam restart` — manual Ctrl+C and re-run does the same thing without the flash.
 
 **Caveat:** if the project was launched via `npm run dev` (concurrently + vite), restart still stops the server, but vite goes down with it because concurrently exits when one child dies — re-run `npm run dev` to bring vite back. Production supervisors (systemd, PM2) are not detected.
 
