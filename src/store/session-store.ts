@@ -68,14 +68,17 @@ function extractMessageContent(content: unknown): string {
   }
 
   if (Array.isArray(content)) {
-    return content
-      .map((part) => {
-        if (part && typeof part === 'object' && 'text' in part) {
-          return typeof part.text === 'string' ? part.text : '';
+    // ⚡ Bolt Optimization: Use single-pass string building to avoid intermediate
+    // .map() arrays in this high-frequency LLM payload path.
+    let text = '';
+    for (const part of content) {
+      if (part && typeof part === 'object' && 'text' in part) {
+        if (typeof part.text === 'string') {
+          text += part.text;
         }
-        return '';
-      })
-      .join('');
+      }
+    }
+    return text;
   }
 
   return '';
@@ -84,17 +87,17 @@ function extractMessageContent(content: unknown): string {
 function extractThinkingContent(content: unknown): string | undefined {
   if (!Array.isArray(content)) return undefined;
 
-  const parts = content
-    .map((part) => {
-      if (part && typeof part === 'object' && part !== null) {
-        const p = part as { type?: unknown; thinking?: unknown; text?: unknown };
-        if (p.type === 'thinking' && typeof p.thinking === 'string') {
-          return p.thinking;
-        }
+  // ⚡ Bolt Optimization: Replace chained .map().filter().join() with a single-pass loop
+  // to eliminate intermediate array allocations during session parsing.
+  const parts: string[] = [];
+  for (const part of content) {
+    if (part && typeof part === 'object') {
+      const p = part as { type?: unknown; thinking?: unknown; text?: unknown };
+      if (p.type === 'thinking' && typeof p.thinking === 'string' && p.thinking.length > 0) {
+        parts.push(p.thinking);
       }
-      return '';
-    })
-    .filter((t) => t.length > 0);
+    }
+  }
 
   return parts.length > 0 ? parts.join('\n\n') : undefined;
 }
