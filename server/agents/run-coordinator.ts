@@ -1645,6 +1645,14 @@ export class RunCoordinator {
     });
 
     this.invokeAgentEndHook(record, 'error', error);
+
+    // Notify SubAgentRegistry if this was a sub-agent run, so the parent's
+    // yield (if pending) resolves via the normal completion path instead of
+    // having to wait out the 10-minute safety timeout.
+    if (record.sessionKey.startsWith('sub:')) {
+      this.subAgentRegistry.onError(record.runId, error.message);
+    }
+
     this.resolveWaiters(record);
     this.scheduleCleanup(record.runId);
   }

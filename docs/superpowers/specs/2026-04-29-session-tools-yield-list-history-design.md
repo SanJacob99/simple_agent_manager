@@ -296,7 +296,7 @@ export interface SessionToolContext {
 | `false` | `'no-active-subs'` | `No sub-agents pending; yield is a no-op.` |
 | `false` | `'already-pending'` | `Yield already pending; ignoring.` |
 
-When `ctx.resolveYield` is undefined (e.g., older callers / tests that didn't wire it), the tool returns the no-op message and never registers.
+When `ctx.resolveYield` is undefined (e.g., older callers / tests that didn't wire it), the tool returns the distinct text `'Yield is not available in this context; ignoring.'` and never registers. The wording differs from the `no-active-subs` message so an agent (or log reader) can tell a wiring gap apart from a legitimate empty-children state.
 
 ## Tests
 

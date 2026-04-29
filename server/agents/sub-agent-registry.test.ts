@@ -168,6 +168,31 @@ describe('SubAgentRegistry yield orchestration', () => {
     expect(payload.results.map((r) => r.text)).toEqual(['first reply', 'second reply']);
   });
 
+  it('resolves with all-complete when a child errors as the last running sub', () => {
+    spawnChild(reg, 'r1');
+    spawnChild(reg, 'r2');
+    const resolve = vi.fn<(p: ResumePayload) => void>();
+
+    reg.setYieldPending(
+      PARENT_KEY,
+      { parentAgentId: PARENT_AGENT, parentRunId: PARENT_RUN, timeoutMs: 60_000 },
+      resolve,
+    );
+
+    reg.onComplete('r1', 'ok');
+    expect(resolve).not.toHaveBeenCalled();
+
+    reg.onError('r2', 'rate limited');
+    expect(resolve).toHaveBeenCalledTimes(1);
+
+    const payload = resolve.mock.calls[0][0];
+    expect(payload.reason).toBe('all-complete');
+    const sortedStatuses = payload.results.map((r) => r.status).sort();
+    expect(sortedStatuses).toEqual(['completed', 'error']);
+    const erroredResult = payload.results.find((r) => r.status === 'error');
+    expect(erroredResult?.error).toBe('rate limited');
+  });
+
   it('resolves with timeout when subs do not finish in time', () => {
     spawnChild(reg, 'r1');
     spawnChild(reg, 'r2');
