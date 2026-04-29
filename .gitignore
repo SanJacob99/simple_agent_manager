@@ -10,9 +10,11 @@ test-results/
 storage/
 logs/
 settings.json
+graph.json
 provider-catalog*
 notes/
 .browser-profile/
+.sam/
 browser-screenshots/
 
 # User-installed tools — loaded at runtime via filesystem scan.

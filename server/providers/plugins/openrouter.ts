@@ -99,7 +99,11 @@ export const openrouterPlugin = definePluginEntry({
       return { models, userModels };
     },
   },
-  streamFamily: 'openrouter-thinking',
-  // wrapStreamFn, webSearch, webFetch — deferred to a follow-up when
-  // the actual stream wrapper infrastructure is connected to pi-agent-core
+  // pi-ai's openai-completions stream already separates reasoning from
+  // content (parses `delta.reasoning`/`reasoning_content`/`reasoning_text`
+  // into thinking_* events; binds `reasoning.encrypted` blocks to tool
+  // calls via `thoughtSignature` for round-trip on continuation turns).
+  // No `wrapStreamFn` is needed today; add one here if a concrete
+  // OpenRouter-specific transform comes up (e.g. injecting `transforms:
+  // ['middle-out']` for prompt compression).
 });

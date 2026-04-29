@@ -124,7 +124,10 @@ function buildExecDescription(cwd: string): string {
   const platform = os.platform();
   const arch = os.arch();
   const release = os.release();
-  const shell = process.env.SHELL || '/bin/bash';
+  const isWin = platform === 'win32';
+  const shell = isWin
+    ? 'powershell.exe'
+    : (process.env.SHELL || '/bin/bash');
   const isWSL = release.toLowerCase().includes('microsoft') || release.toLowerCase().includes('wsl');
 
   const lines = [
@@ -135,8 +138,10 @@ function buildExecDescription(cwd: string): string {
     'Use for file operations, git, package managers, build tools, and general system tasks.',
   ];
 
-  if (platform === 'win32') {
-    lines.push('Run executables directly — do NOT wrap in cmd /c or powershell -Command.');
+  if (isWin) {
+    lines.push(
+      'Shell is Windows PowerShell 5.1 — use PowerShell syntax (Get-ChildItem, Test-Path, $env:NAME). `&&`/`||` chain operators are not available; use `;` or `if ($?) { ... }` instead. Avoid `2>&1` on native exes (it wraps stderr lines in ErrorRecord and flips $? to false).',
+    );
   }
 
   return lines.join(' ');
@@ -177,12 +182,24 @@ export function createExecTool(ctx: ExecToolContext): AgentTool<TSchema> {
       const startTime = Date.now();
 
       return new Promise<AgentToolResult<undefined>>((resolve) => {
-        const child = spawn('bash', ['-c', command], {
-          cwd,
-          env: { ...process.env, LANG: 'en_US.UTF-8' },
-          stdio: ['ignore', 'pipe', 'pipe'],
-          timeout: timeoutSec * 1000,
-        });
+        const isWin = process.platform === 'win32';
+        const child = isWin
+          ? spawn(
+              'powershell.exe',
+              ['-NoProfile', '-NonInteractive', '-Command', command],
+              {
+                cwd,
+                env: { ...process.env },
+                stdio: ['ignore', 'pipe', 'pipe'],
+                timeout: timeoutSec * 1000,
+              },
+            )
+          : spawn('bash', ['-c', command], {
+              cwd,
+              env: { ...process.env, LANG: 'en_US.UTF-8' },
+              stdio: ['ignore', 'pipe', 'pipe'],
+              timeout: timeoutSec * 1000,
+            });
 
         let output = '';
         let timedOut = false;

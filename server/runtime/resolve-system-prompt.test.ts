@@ -148,6 +148,38 @@ describe('resolveOutboundSystemPrompt', () => {
     expect(result.sections.find((s) => s.key === 'confirmationPolicy')).toBeUndefined();
   });
 
+  it("rewrites the runtime section's os= field to the backend platform", () => {
+    const config = makeConfig();
+    const fakeRuntimeContent =
+      '## Runtime\n\nRuntime: host=simple-agent-manager | os=Win32 | model=test-model';
+    config.systemPrompt.sections = [
+      ...config.systemPrompt.sections,
+      {
+        key: 'runtime',
+        label: 'Runtime',
+        content: fakeRuntimeContent,
+        tokenEstimate: 10,
+      },
+    ];
+    config.systemPrompt.assembled = `${config.systemPrompt.assembled}\n\n${fakeRuntimeContent}`;
+
+    const result = resolveOutboundSystemPrompt({
+      config,
+      safetySettings: { ...DEFAULT_SAFETY_SETTINGS, allowDisableHitl: true, confirmationPolicy: '' },
+    });
+
+    const runtime = result.sections.find((s) => s.key === 'runtime');
+    expect(runtime).toBeDefined();
+    // Frontend value is gone, backend value is in.
+    expect(runtime!.content).not.toContain('os=Win32');
+    expect(runtime!.content).toContain(`os=${process.platform}`);
+    expect(result.assembled).not.toContain('os=Win32');
+    expect(result.assembled).toContain(`os=${process.platform}`);
+    // Other fields untouched.
+    expect(runtime!.content).toContain('host=simple-agent-manager');
+    expect(runtime!.content).toContain('model=test-model');
+  });
+
   it('persists userInstructions + mode unchanged', () => {
     const config = makeConfig();
     config.systemPrompt.userInstructions = 'User says hi';

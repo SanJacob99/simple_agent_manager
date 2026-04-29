@@ -138,6 +138,58 @@ async function walkModuleFiles(
   return results;
 }
 
+/**
+ * For each `*.module.ts/.js` discovered under a user-tools directory,
+ * check the containing directory's `sam.json` and drop the file when
+ * `disabled === true`. A missing or malformed manifest leaves the
+ * module enabled (the registry's job is loading code, not policing
+ * manifests). The CLI's `sam install` writes a manifest with
+ * `disabled: false`, so this is a no-op for freshly installed tools.
+ */
+async function filterDisabledByManifest(files: string[]): Promise<string[]> {
+  const cache = new Map<string, boolean>(); // dir -> disabled?
+  const result: string[] = [];
+  for (const file of files) {
+    const dir = path.dirname(file);
+    let disabled = cache.get(dir);
+    if (disabled === undefined) {
+      disabled = await readDisabledFromManifest(dir);
+      cache.set(dir, disabled);
+    }
+    if (disabled) {
+      console.log(
+        `[tool-registry] skipping ${path.basename(dir)}: disabled via sam.json`,
+      );
+      continue;
+    }
+    result.push(file);
+  }
+  return result;
+}
+
+async function readDisabledFromManifest(dir: string): Promise<boolean> {
+  const manifestPath = path.join(dir, 'sam.json');
+  let raw: string;
+  try {
+    raw = await fs.readFile(manifestPath, 'utf8');
+  } catch (err: any) {
+    if (err?.code === 'ENOENT') return false;
+    console.warn(
+      `[tool-registry] cannot read ${manifestPath}: ${err?.message ?? err}`,
+    );
+    return false;
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' && parsed.disabled === true;
+  } catch (err: any) {
+    console.warn(
+      `[tool-registry] invalid JSON in ${manifestPath}: ${err?.message ?? err}`,
+    );
+    return false;
+  }
+}
+
 function isToolModule(candidate: unknown): candidate is ToolModule<any> {
   if (!candidate || typeof candidate !== 'object') return false;
   const c = candidate as Record<string, unknown>;
@@ -209,7 +261,8 @@ export async function initializeToolRegistry(
     const extras: ToolModule<any>[] = [];
     for (const dir of opts.extraDirs ?? []) {
       const files = await walkModuleFiles(dir, { failSoft: true });
-      extras.push(...(await loadModulesFromFiles(files, 'extra')));
+      const enabled = await filterDisabledByManifest(files);
+      extras.push(...(await loadModulesFromFiles(enabled, 'extra')));
     }
 
     // Dedup by name: built-ins win, extras fill in anything new. A

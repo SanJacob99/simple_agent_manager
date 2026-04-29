@@ -3,7 +3,7 @@
 > The central hub node that stores model and prompt settings while connected peripheral nodes supply runtime services.
 
 <!-- source: src/types/nodes.ts#AgentNodeData -->
-<!-- last-verified: 2026-04-25 -->
+<!-- last-verified: 2026-04-27 -->
 
 ## Overview
 
@@ -57,6 +57,7 @@ The Agent Node still owns `modelId`, `thinkingLevel`, and `modelCapabilities`. T
 5. The model picker UI in the Agent properties panel is driven by the connected Provider Node's catalog state, keyed by provider instance rather than a hardcoded provider string.
 6. Interactive chat requires a connected Provider Node, Context Engine Node, and Storage Node before the drawer can start a session.
 7. Runtime payload/fetch diagnostics in `AgentRuntime` are best-effort and non-blocking for successful streaming responses. The runtime avoids awaiting cloned 2xx response bodies, so debug logging cannot stall token streaming.
+8. Edits to `modelId`, the connected Provider Node, or `thinkingLevel` between turns are recorded in the session transcript. At the start of each run, `RunCoordinator.persistConfigChanges()` compares the current config against the last recorded baseline and appends pi-coding-agent's `model_change` / `thinking_level_change` entries when they drift. The model baseline is the most recent `model_change` entry, falling back to the provider/model on the most recent assistant message; the thinking-level baseline defaults to `'off'` when no prior change entry exists. No `model_change` is written on the first turn (the assistant message records the model implicitly), but a `thinking_level_change` is written on the first turn when the configured level differs from `'off'` so replays know what level was in effect.
 
 ## Connections
 

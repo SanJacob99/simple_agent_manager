@@ -15,7 +15,12 @@ import { createNodeId } from '../utils/id';
 import { getDefaultNodeData } from '../utils/default-nodes';
 import { resolveAgentConfig } from '../utils/graph-to-agent';
 import { StorageClient } from '../runtime/storage-client';
-import { saveGraph, loadGraph } from './storage';
+import {
+  saveGraph,
+  loadGraphRaw,
+  fetchGraphFromServer,
+  saveGraphToServer,
+} from './storage';
 import { useSessionStore } from './session-store';
 import { useAgentConnectionStore } from './agent-connection-store';
 import { useSettingsStore } from '../settings/settings-store';
@@ -150,6 +155,13 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
     const { pendingDeleteAgent, nodes, edges, selectedNodeId } = get();
     if (!pendingDeleteAgent) return;
 
+    // Destroy the runtime BEFORE any storage delete so the WS teardown
+    // reaches the server before the HTTP DELETE; otherwise in-flight
+    // transcript writes can recreate the directory after rm. The backend
+    // also enforces this, but ordering here keeps the race window small.
+    useAgentConnectionStore.getState().destroyAgent(pendingDeleteAgent.nodeId);
+    useSessionStore.getState().clearActiveSession(pendingDeleteAgent.nodeId);
+
     if (deleteData) {
       const config = resolveAgentConfig(pendingDeleteAgent.nodeId, nodes, edges);
       if (config?.storage) {
@@ -164,8 +176,6 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
       }
       useSessionStore.getState().deleteAllSessionsForAgent(pendingDeleteAgent.nodeId);
     }
-    useSessionStore.getState().clearActiveSession(pendingDeleteAgent.nodeId);
-    useAgentConnectionStore.getState().destroyAgent(pendingDeleteAgent.nodeId);
 
     set({
       pendingDeleteAgent: null,
@@ -387,17 +397,53 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   },
 }));
 
-// Auto-persist: debounce save on every state change
+// Hydration gate. The auto-save subscription below skips writes until
+// the boot sequence finishes resolving the backend copy, so we never
+// stomp the upstream graph with whatever transient state the store had
+// during initial render.
+let isHydrated = false;
+
+// Auto-persist: debounce save on every state change. Writes to BOTH
+// the backend (authoritative) and localStorage (offline cache). The
+// 500ms debounce keeps high-frequency drag/resize updates from
+// hammering the server.
 let saveTimeout: ReturnType<typeof setTimeout>;
 useGraphStore.subscribe((state) => {
+  if (!isHydrated) return;
   clearTimeout(saveTimeout);
   saveTimeout = setTimeout(() => {
-    saveGraph({ nodes: state.nodes, edges: state.edges });
+    const graph = { nodes: state.nodes, edges: state.edges };
+    saveGraph(graph);
+    void saveGraphToServer(graph);
   }, 500);
 });
 
-// Load persisted graph on startup
-const persisted = loadGraph();
-if (persisted && persisted.nodes.length > 0) {
-  useGraphStore.getState().loadGraph(persisted.nodes, persisted.edges);
+// Boot sequence:
+// 1. Apply the localStorage cache immediately so the canvas paints
+//    fast, even if the backend is slow or unreachable.
+// 2. Fetch the backend copy. If present, it wins (server is the
+//    source of truth on conflict). If absent, push the localStorage
+//    copy up so the server gets seeded on first run.
+// 3. Flip `isHydrated` so subsequent edits start auto-saving.
+async function hydrateGraph(): Promise<void> {
+  const local = loadGraphRaw();
+  if (local && local.graph.nodes.length > 0) {
+    useGraphStore.getState().loadGraph(local.graph.nodes, local.graph.edges);
+  }
+
+  const server = await fetchGraphFromServer();
+  if (server && server.graph.nodes.length > 0) {
+    useGraphStore.getState().loadGraph(server.graph.nodes, server.graph.edges);
+    // Mirror the authoritative copy into localStorage so an offline
+    // boot picks up where the last sync left off.
+    saveGraph(server.graph);
+  } else if (local && local.graph.nodes.length > 0) {
+    // Migration: backend has nothing yet, but the user already has a
+    // canvas in this browser. Seed the server.
+    void saveGraphToServer(local.graph);
+  }
+
+  isHydrated = true;
 }
+
+void hydrateGraph();

@@ -19,30 +19,9 @@ import type { AskUserContext } from './builtins/human/ask-user';
 // Re-export resolveToolNames from shared (used by agent-runtime.ts)
 export { resolveToolNames } from '../../shared/resolve-tool-names';
 
-// --- All known tool names (including unimplemented) ---
-
-export const ALL_TOOL_NAMES = [
-  'exec',
-  'bash',
-  'code_interpreter',
-  'read_file',
-  'write_file',
-  'list_directory',
-  'web_search',
-  'web_fetch',
-  'calculator',
-  'canva',
-  'memory_search',
-  'memory_get',
-  'memory_save',
-  'send_message',
-  'image_generation',
-  'text_to_speech',
-  'music_generate',
-  ...SESSION_TOOL_NAMES,
-];
-
-// Re-export for backward compatibility
+// Re-export for backward compatibility. The canonical `ALL_TOOL_NAMES`
+// lives in shared/resolve-tool-names.ts; importers should pull it from
+// there directly.
 export { IMPLEMENTED_TOOL_NAMES } from '../../shared/resolve-tool-names';
 
 // Stub creators for tools that have neither been migrated to a

@@ -62,6 +62,25 @@ export interface HitlListCommand {
   sessionKey: string;
 }
 
+/**
+ * Per-session config change emitted from the chat drawer when the user
+ * toggles a model or thinking level. Server records this as a discrete
+ * transcript event and mirrors the value onto the SessionStoreEntry.
+ *
+ * Per-toggle, immediate write — buffering happens at the router level
+ * via the same-value drop, not on the client.
+ */
+export type SessionConfigChange =
+  | { kind: 'model'; provider: string; modelId: string }
+  | { kind: 'thinking_level'; thinkingLevel: string };
+
+export interface SessionSetConfigCommand {
+  type: 'session:set-config';
+  agentId: string;
+  sessionKey: string;
+  change: SessionConfigChange;
+}
+
 export interface RunWaitCommand {
   type: 'run:wait';
   agentId: string;
@@ -84,7 +103,8 @@ export type Command =
   | RunWaitCommand
   | SetApiKeysCommand
   | HitlRespondCommand
-  | HitlListCommand;
+  | HitlListCommand
+  | SessionSetConfigCommand;
 
 // --- Events (backend → frontend) ---
 
@@ -297,7 +317,6 @@ export interface CompactionEndEvent {
   type: 'compaction:end';
   agentId: string;
   runId: string;
-  retrying: boolean;
 }
 
 export interface ToolSummaryEvent {

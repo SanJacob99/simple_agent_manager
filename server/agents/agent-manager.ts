@@ -223,6 +223,25 @@ export class AgentManager {
     return this.agents.has(agentId);
   }
 
+  /**
+   * Find managed agents that own the given storage destination
+   * (storagePath + agent name). Used by the storage delete endpoint to
+   * tear down running runtimes before wiping their directory, so
+   * in-flight transcript writes can't recreate files after rm.
+   */
+  findAgentsByStorage(storagePath: string, agentName: string): string[] {
+    const resolved = this.resolveStoragePath(storagePath);
+    const ids: string[] = [];
+    for (const [id, managed] of this.agents) {
+      if (managed.config.name !== agentName) continue;
+      if (!managed.config.storage) continue;
+      if (this.resolveStoragePath(managed.config.storage.storagePath) === resolved) {
+        ids.push(id);
+      }
+    }
+    return ids;
+  }
+
   /** Returns the agent's overall status based on active runs. */
   getStatus(agentId: string): 'idle' | 'running' | 'error' | 'not_found' {
     const managed = this.agents.get(agentId);

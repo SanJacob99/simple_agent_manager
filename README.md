@@ -101,6 +101,35 @@ This starts:
 5. Configure the selected node in the right-hand properties panel.
 6. Open the chat drawer from the agent node and start a session.
 
+## SAM CLI
+
+`sam` is the operator CLI for repo-scoped maintenance tasks. After `npm install` it is reachable as `npx sam …` from anywhere inside the project, or as `npm run sam -- …` if you prefer the npm-script form. Run `sam help` for the live command list.
+
+Today:
+
+| Command                  | What it does                       |
+| ------------------------ | ---------------------------------- |
+| `sam help`               | Print the command list and exit.   |
+| `sam version`            | Print the SAM version from `package.json`. |
+| `sam diagnose`           | Probe the local backend (`/api/health`, `/api/tools`) and report the resolved user-tools directory and any `SAM_*` env overrides. Read-only. |
+| `sam install tool <url>` | Fetch a `*.module.ts` user tool from a GitHub repo (`https://github.com/owner/repo[/tree/<ref>]`), validate it, and install into the user-tools directory. Synthesizes a `sam.json` manifest if the repo doesn't ship one. |
+| `sam uninstall tool <name>` | Remove an installed user tool. Asks for the tool name as confirmation before deleting. |
+| `sam list tools`         | Print a table of installed user tools with name, version, source, and state. Disabled rows are dimmed. |
+| `sam enable tool <name>` / `sam disable tool <name>` | Flip the `disabled` flag in the tool's `sam.json` without touching the source. The server skips loading any `*.module.ts` in a directory whose `sam.json` has `disabled: true` (logs `[tool-registry] skipping <name>: disabled via sam.json` at startup). Restart the backend for the change to take effect. |
+| `sam restart`            | Stop the running backend, start a fresh one, and wait for `/api/health`. Blocks for ~5–15s with progress output, then returns. The new server runs detached; its stdout/stderr is captured to `.sam/server.log`. |
+
+The user-tools directory follows the same precedence the server uses: `SAM_DISABLE_USER_TOOLS=1` short-circuits everything; otherwise `SAM_USER_TOOLS_DIR=<path>` overrides; otherwise `server/tools/user/`.
+
+After `sam install` or `sam uninstall`, run `sam restart` (or stop+restart `npm run dev:server`) for the new tool to load.
+
+`npm run dev:server` runs a single, plain `node --import tsx server/index.ts` — no `--watch` mode. File edits are not picked up automatically; reload is always explicit, via `sam restart` or by restarting the dev:server process yourself. This is deliberate: a long-lived watcher accumulates zombies when terminals close without Ctrl+C, and on every save those zombies fight for port 3210. Server logs go to `.sam/server.log` (truncated each `sam restart`).
+
+**Known issue on Windows:** `sam restart` pops a brief console window when it spawns the new detached server. Node's `windowsHide: true` only sets `SW_HIDE` (a GUI-app flag); it does not set `CREATE_NO_WINDOW`, which is what suppresses the console for a console app like `node.exe`, and Node doesn't expose that flag. If the popping window is bothersome, run `npm run dev:server` in a separate terminal and skip `sam restart` — manual Ctrl+C and re-run does the same thing without the flash.
+
+**Caveat:** if the project was launched via `npm run dev` (concurrently + vite), restart still stops the server, but vite goes down with it because concurrently exits when one child dies — re-run `npm run dev` to bring vite back. Production supervisors (systemd, PM2) are not detected.
+
+The CLI source lives under [bin/](bin/) — plain ESM Node, no build step. The dispatcher is [bin/sam.js](bin/sam.js); each command lives in its own file under [bin/commands/](bin/commands/) and shared helpers under [bin/lib/](bin/lib/). The `sam.json` schema (source of truth) is [shared/user-tool-manifest.ts](shared/user-tool-manifest.ts). Server-side restart coordination lives in [server/runtime-state.ts](server/runtime-state.ts); the `disabled`-flag filter lives in [server/tools/tool-registry.ts](server/tools/tool-registry.ts).
+
 ## Tests and verification
 
 ```bash

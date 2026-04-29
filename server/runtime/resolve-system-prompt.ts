@@ -6,6 +6,19 @@ import { resolveToolNames } from '../../shared/resolve-tool-names';
 import { DEFAULT_SAFETY_SETTINGS, type SafetySettings } from '../storage/settings-file-store';
 
 /**
+ * Rewrite the `os=` field in a runtime line / section content so it
+ * reflects the BACKEND platform instead of whatever the frontend
+ * `navigator.platform` reported. The frontend builds the runtime
+ * section, but the agent runs server-side, so the agent should see the
+ * server's OS for things like exec command syntax.
+ */
+function rewriteRuntimeOs(text: string, backendOs: string): string {
+  // Field shape: `os=<value>` where value runs to the next whitespace
+  // or `|` separator. Replace literally; if no match, return as-is.
+  return text.replace(/\bos=[^\s|]+/g, `os=${backendOs}`);
+}
+
+/**
  * Substitute `{{READ_ONLY_TOOLS}}` / `{{STATE_MUTATING_TOOLS}}` /
  * `{{DESTRUCTIVE_TOOLS}}` placeholders in the confirmation policy with
  * the enabled tools in each class. Unclassified tools are folded into
@@ -60,14 +73,24 @@ export function resolveOutboundSystemPrompt(
   // 1. Apply bundled-skills-root substitution to each section + to
   // the full assembled string. Substitution is idempotent; sections
   // without placeholders come through unchanged.
-  const substitutedAssembled = substituteBundledSkillsRoot(config.systemPrompt.assembled);
+  // Also rewrite the runtime section's `os=` to the backend's actual
+  // platform, since the frontend fills it from `navigator.platform`
+  // (the browser host) but the agent executes on the server.
+  const backendOs = process.platform;
+  const substitutedAssembled = rewriteRuntimeOs(
+    substituteBundledSkillsRoot(config.systemPrompt.assembled),
+    backendOs,
+  );
   const resolvedSections: SystemPromptSection[] = config.systemPrompt.sections.map((s) => {
-    const substituted = substituteBundledSkillsRoot(s.content);
-    if (substituted === s.content) return s;
+    const skillsSubstituted = substituteBundledSkillsRoot(s.content);
+    const osRewritten = s.key === 'runtime'
+      ? rewriteRuntimeOs(skillsSubstituted, backendOs)
+      : skillsSubstituted;
+    if (osRewritten === s.content) return s;
     return {
       ...s,
-      content: substituted,
-      tokenEstimate: estimateTokens(substituted),
+      content: osRewritten,
+      tokenEstimate: estimateTokens(osRewritten),
     };
   });
 

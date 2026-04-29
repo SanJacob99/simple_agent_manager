@@ -8,21 +8,13 @@ export class CompactionHandler implements StreamTransform {
     const raw = event.event as any;
     if (raw.type !== 'memory_compaction') return;
 
-    emit({ type: 'compaction:start', agentId: '', runId: context.runId } as any);
-
-    // In this layer, retrying is always false — the compaction trigger is not built yet.
-    // ToDo: Compaction Trigger
-    const retrying = false;
-
-    if (retrying) {
-      context.textBuffer = '';
-      context.reasoningBuffer = '';
-      context.toolSummaries = [];
-      context.noReplyDetected = false;
-      context.messageSuppressed = false;
-      context.compactionRetrying = true;
-    }
-
-    emit({ type: 'compaction:end', agentId: '', runId: context.runId, retrying } as any);
+    // ToDo: Compaction Trigger — when the auto-retry-after-compaction
+    // path is wired, this handler should clear `context.textBuffer`,
+    // `context.reasoningBuffer`, and `context.toolSummaries` before the
+    // next turn so the partial pre-compaction reply isn't replayed, and
+    // re-emit `compaction:end` with a `retrying` flag the frontend can
+    // use to suppress the discarded message.
+    emit({ type: 'compaction:start', agentId: '', runId: context.runId });
+    emit({ type: 'compaction:end', agentId: '', runId: context.runId });
   }
 }

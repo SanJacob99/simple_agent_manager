@@ -653,6 +653,8 @@ export class AgentRuntime {
       const images = attachments?.map((a) => ({ type: 'image' as const, data: a.data, mimeType: a.mimeType }));
       await this.agent.prompt(text, images?.length ? images : undefined);
 
+      this.warnIfReasoningSilentlyDropped();
+
       // After-turn bookkeeping
       if (this.contextEngine) {
         await this.contextEngine.afterTurn(this.agent.state.messages);
@@ -665,6 +667,49 @@ export class AgentRuntime {
       throw error;
     } finally {
       globalThis.fetch = originalFetch;
+    }
+  }
+
+  /**
+   * Warn when reasoning was requested but the model returned no
+   * thinking content. OpenRouter routes some models to non-reasoning
+   * provider variants, and some providers silently strip reasoning even
+   * when `supported_parameters` advertises it. We flag once per turn so
+   * users notice when their `thinkingLevel` setting isn't reaching the
+   * model. Pure read-side check on `agent.state.messages`; no effect on
+   * the turn that just completed.
+   */
+  private warnIfReasoningSilentlyDropped(): void {
+    const level = this.config.thinkingLevel;
+    if (!level || level === 'off') return;
+
+    const messages = this.agent.state.messages;
+    let lastAssistant: unknown;
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const msg = messages[i] as { role?: unknown };
+      if (msg?.role === 'assistant') {
+        lastAssistant = msg;
+        break;
+      }
+    }
+    if (!lastAssistant) return;
+
+    const content = (lastAssistant as { content?: unknown }).content;
+    if (!Array.isArray(content)) return;
+
+    const hasThinking = content.some((block) => {
+      if (!block || typeof block !== 'object') return false;
+      const b = block as { type?: unknown; thinking?: unknown };
+      return b.type === 'thinking'
+        && typeof b.thinking === 'string'
+        && b.thinking.length > 0;
+    });
+
+    if (!hasThinking) {
+      log(
+        'reasoning',
+        `[WARN] thinkingLevel=${level} requested for ${this.config.provider.pluginId}/${this.config.modelId} but the assistant turn returned no reasoning content. The model or OpenRouter route may have dropped it.`,
+      );
     }
   }
 

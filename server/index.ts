@@ -17,7 +17,9 @@ import { loadProviderPlugins } from './providers/provider-loader';
 import { initializeToolRegistry, getToolSourceCounts, getToolCatalog } from './tools/tool-registry';
 import { resolveUserToolsDir } from './tools/resolve-user-tools-dir';
 import { resolveProviderRuntimeAuth } from './providers/provider-auth';
+import { writeServerPid, clearServerPid } from './runtime-state';
 import { SettingsFileStore, DEFAULT_SAFETY_SETTINGS, type SafetySettings } from './storage/settings-file-store';
+import { GraphFileStore, type PersistedGraph } from './storage/graph-file-store';
 import { resolveOutboundSystemPrompt } from './runtime/resolve-system-prompt';
 import { launchChromeForCdp } from './tools/builtins/browser/chrome-launcher';
 import path from 'path';
@@ -34,6 +36,7 @@ const pluginRegistry = new ProviderPluginRegistry();
 const catalogCache = new ProviderCatalogCache();
 const hitlRegistry = new HitlRegistry();
 const settingsFile = new SettingsFileStore();
+const graphFile = new GraphFileStore();
 
 // Live safety settings — updated from the PUT /api/settings handler, read
 // lazily by AgentManager at agent-start time so newly started agents pick up
@@ -163,6 +166,15 @@ app.delete('/api/storage/agent-data', async (req, res) => {
     agentName: string;
   };
   try {
+    // Tear down any runtime that owns this storage first. Otherwise its
+    // in-flight transcript writes (already past their `await fs.writeFile`)
+    // can land after rm and recreate the directory with partial content.
+    for (const id of agentManager.findAgentsByStorage(config.storagePath, agentName)) {
+      agentManager.destroy(id);
+    }
+    // Drain window for writes whose `fs.writeFile` is already mid-flight
+    // and can't be aborted. Keep tight to avoid stalling the response.
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
     const engine = getOrCreateEngine(config, agentName);
     await engine.deleteAgentData();
     forgetAgentStorage(config, agentName);
@@ -553,6 +565,36 @@ app.put('/api/settings', async (req, res) => {
   }
 });
 
+// --- Graph (canvas) persistence ---
+//
+// Server-authoritative store for the single canvas blob. The client
+// fetches this on boot; an empty body (`null`) signals "no upstream
+// graph yet" so the client can migrate its localStorage cache up.
+
+app.get('/api/graph', async (_req, res) => {
+  try {
+    const graph = await graphFile.load();
+    res.json(graph);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.put('/api/graph', async (req, res) => {
+  try {
+    const body = req.body as PersistedGraph;
+    if (!body || typeof body !== 'object' || !body.graph
+        || !Array.isArray(body.graph.nodes) || !Array.isArray(body.graph.edges)) {
+      res.status(400).json({ error: 'Invalid graph payload' });
+      return;
+    }
+    await graphFile.save(body);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 // --- Provider registry ---
 
 app.get('/api/providers', (_req, res) => {
@@ -689,6 +731,19 @@ settingsFile.load().then((s) => {
   console.error('[Settings] Failed to load settings file:', err);
 });
 
+// Log canvas graph state at boot so users can find the file.
+graphFile.load().then((graph) => {
+  if (graph) {
+    const nodeCount = graph.graph?.nodes?.length ?? 0;
+    const edgeCount = graph.graph?.edges?.length ?? 0;
+    console.log(`[Graph] Loaded canvas (${nodeCount} nodes, ${edgeCount} edges) from ${graphFile.getFilePath()}`);
+  } else {
+    console.log(`[Graph] No persisted canvas yet at ${graphFile.getFilePath()} — will be created on first save.`);
+  }
+}).catch((err) => {
+  console.error('[Graph] Failed to load graph file:', err);
+});
+
 // Load provider plugins
 loadProviderPlugins(
   path.join(process.cwd(), 'providers.json'),
@@ -719,6 +774,9 @@ initializeToolRegistry({ extraDirs: userToolsDir.dirs })
       wss.off('error', handleStartupError);
       console.log(`Server listening on http://localhost:${PORT}`);
       console.log(`WebSocket available at ws://localhost:${PORT}/ws`);
+
+      // Register this PID so `sam restart` can find us next time.
+      writeServerPid(process.pid);
 
       // --- backend_start hook (global) ---
       const globalRegistry = getGlobalHookRegistry();
@@ -755,12 +813,14 @@ async function shutdown() {
   agentManager.shutdown()
     .then(() => {
       httpServer.close(() => {
+        clearServerPid();
         console.log('Server closed.');
         process.exit(0);
       });
     })
     .catch((err) => {
       console.error('Error during shutdown:', err);
+      clearServerPid();
       process.exit(1);
     });
 }
