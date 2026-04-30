@@ -113,6 +113,8 @@ function makeConfig(storagePath: string, overrides: Partial<AgentConfig> = {}): 
     },
     vectorDatabases: [],
     crons: [],
+    mcps: [],
+    subAgents: [],
     exportedAt: Date.now(),
     sourceGraphId: 'agent-1',
     runTimeoutMs: 172800000,

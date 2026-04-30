@@ -363,6 +363,7 @@ export function resolveAgentConfig(
     vectorDatabases,
     crons,
     mcps,
+    subAgents: [],
     // Exec tool cwd overrides agent-level workingDirectory when set
     workspacePath:
       (toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.exec?.cwd)
