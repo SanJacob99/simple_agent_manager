@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Land the backend foundation for declarative sub-agents — a new `SubAgentNode` peripheral declared in the graph, resolved into `AgentConfig.subAgents`, runnable via a non-blocking child executor with cap enforcement, override allowlist, durable history metadata, and REST kill — fully testable end-to-end without UI.
+**Goal:** Land the backend foundation for declarative sub-agents — a new `SubAgentNode` peripheral declared in the graph, resolved into `AgentConfig.subAgents`, runnable via a non-blocking one-shot child executor with override allowlist, durable history metadata, and REST kill — fully testable end-to-end without UI.
 
-**Architecture:** New `subAgent` node type with required dedicated `ToolsNode` and optional dedicated `ProviderNode`/`SkillsNode`/`MCPNode`. `resolveAgentConfig()` produces `ResolvedSubAgentConfig` per declared sub-agent. A new `SubAgentExecutor` builds a synthetic `AgentConfig` per spawn and runs the child alongside the parent without occupying the parent's queue slot — keyed by a child `runId` on the same event bus. `SubAgentRegistry` gains `messageCount`, `appliedOverrides`, a `killed` terminal state, and a durable `sam.sub_agent_spawn` custom transcript entry. `sessions_spawn` rewritten to take `subAgent` name + per-call `overrides` validated against the node's allowlist; `sessions_send` becomes cap-aware for sub-sessions; new `/api/subagents/*` REST surface.
+**Architecture:** New `subAgent` node type with required dedicated `ToolsNode` and optional dedicated `ProviderNode`/`SkillsNode`/`MCPNode`. `resolveAgentConfig()` produces `ResolvedSubAgentConfig` per declared sub-agent. A new `SubAgentExecutor` builds a synthetic `AgentConfig` per spawn and runs the child alongside the parent without occupying the parent's queue slot — keyed by a child `runId` on the same event bus. `SubAgentRegistry` gains `appliedOverrides`, one-shot sealing, a `killed` terminal state, and a durable `sam.sub_agent_spawn` custom transcript entry. `sessions_spawn` rewritten to take `subAgent` name + per-call `overrides` validated against the node's allowlist; `sessions_send` rejects sub-session re-engagement; new `/api/subagents/*` REST surface.
 
 **Tech Stack:** TypeScript, vitest, `@sinclair/typebox`, existing `RunCoordinator` / `SubAgentRegistry` / `SessionTranscriptStore`, Express.
 
@@ -13,7 +13,7 @@
 **Convention decisions locked by this plan:**
 
 - **Inheritance for `modelId` and `thinkingLevel`:** **mode field** approach. Add `modelIdMode: 'inherit' | 'custom'` and `thinkingLevelMode: 'inherit' | 'custom'` to `SubAgentNodeData`. The respective value field is honored only when mode is `'custom'`. Discoverable in the UI as a radio; consistent across both fields. Default for both is `'inherit'`.
-- **Persistence:** **both** a `sam.sub_agent_spawn` custom transcript entry on the parent's transcript at spawn time (immutable audit) **and** lightweight metadata on `SessionStoreEntry` for the sub-session (mutable: status / messageCount / sealed for fast list-view). Registry stays as the in-memory fast cache.
+- **Persistence:** **both** a `sam.sub_agent_spawn` custom transcript entry on the parent's transcript at spawn time (immutable audit) **and** lightweight metadata on `SessionStoreEntry` for the sub-session (mutable: status / sealed for fast list-view). Registry stays as the in-memory fast cache.
 - **Child executor:** build a dedicated `SubAgentExecutor` class. It constructs a synthetic `AgentConfig` per spawn and dispatches via a *separate* path that doesn't touch `RunConcurrencyController.enqueue`. Honors `coordinator.abort(childRunId)` and emits run-events on the same event bus (`stream-processor`).
 - **UI is out of scope for this plan.** Canvas node, property panel, inline card, and history drawer ship in a follow-up plan once this lands.
 
@@ -42,10 +42,10 @@
 | `shared/agent-config.ts` | `ResolvedSubAgentConfig`, `AgentConfig.subAgents` |
 | `shared/session-diagnostics.ts` | Add `SUB_AGENT_SPAWN_CUSTOM_TYPE` + `SubAgentSpawnData` |
 | `shared/storage-types.ts` | Add `subAgentMeta` to `SessionStoreEntry` |
-| `server/agents/sub-agent-registry.ts` | `subAgentName`, `messageCount`, `maxMessages`, `appliedOverrides`, `'killed'` status, `incrementMessageCount`, `seal`, `isSealed` |
-| `server/agents/sub-agent-registry.test.ts` | New cases for messageCount, sealing, kill terminal state |
+| `server/agents/sub-agent-registry.ts` | `subAgentName`, `appliedOverrides`, one-shot `sealed` state, `'killed'` status, `seal`, `isSealed` |
+| `server/agents/sub-agent-registry.test.ts` | New cases for one-shot sealing and kill terminal state |
 | `server/agents/run-coordinator.ts` | Construct `SubAgentExecutor`, pass to `SessionToolContext`, abort plumbing for child `runId`s, persist sub-agent metadata in `SessionStoreEntry` |
-| `server/sessions/session-tools.ts` | Rewrite `createSessionsSpawnTool` for new schema + override validation; cap-aware `sessions_send`; conditional registration on `agentConfig.subAgents.length > 0` |
+| `server/sessions/session-tools.ts` | Rewrite `createSessionsSpawnTool` for new schema + override validation; one-shot `sessions_send` rejection for sub-sessions; conditional registration on `agentConfig.subAgents.length > 0` |
 | `server/sessions/session-tools.test.ts` | New cases per Section 6 of spec |
 | `server/index.ts` | Mount `/api/subagents` routes |
 | `docs/concepts/_manifest.json` | Register `sub-agent-node` |
@@ -68,15 +68,13 @@ export type SubAgentOverridableField =
   | 'modelId'
   | 'thinkingLevel'
   | 'systemPromptAppend'
-  | 'enabledTools'
-  | 'maxMessages';
+  | 'enabledTools';
 
 export const ALL_SUB_AGENT_OVERRIDABLE_FIELDS: readonly SubAgentOverridableField[] = [
   'modelId',
   'thinkingLevel',
   'systemPromptAppend',
   'enabledTools',
-  'maxMessages',
 ] as const;
 
 /** The shape recorded on `SessionStoreEntry.subAgentMeta` for sub-sessions. */
@@ -86,8 +84,6 @@ export interface SubAgentSessionMeta {
   parentSessionKey: string;
   parentRunId: string;
   status: 'running' | 'completed' | 'error' | 'killed';
-  messageCount: number;
-  maxMessages: number;
   sealed: boolean;
   appliedOverrides: Record<string, unknown>;
   modelId: string;
@@ -128,7 +124,7 @@ export const SUB_AGENT_SPAWN_CUSTOM_TYPE = 'sam.sub_agent_spawn';
 
 /**
  * Persisted on the parent's transcript at spawn time. Immutable audit record;
- * the registry's mutable status (messageCount, sealed, killed) is in the
+ * the registry's mutable status (sealed, killed) is in the
  * sub-session's SessionStoreEntry.subAgentMeta.
  */
 export interface SubAgentSpawnData {
@@ -140,7 +136,6 @@ export interface SubAgentSpawnData {
   appliedOverrides: Record<string, unknown>;
   modelId: string;
   providerPluginId: string;
-  maxMessages: number;
   spawnedAt: number;
 }
 ```
@@ -175,7 +170,7 @@ Inside `SessionStoreEntry`, add:
 ```typescript
   /**
    * Sub-agent metadata for sub-sessions (sessionKey shape `sub:*` or wrapped
-   * `agent:<id>:sub:*`). Mutable: status / messageCount / sealed are updated
+   * `agent:<id>:sub:*`). Mutable: status / sealed are updated
    * by RunCoordinator as the sub-session progresses. Immutable audit lives
    * on the parent's transcript as a `sam.sub_agent_spawn` custom entry.
    */
@@ -260,7 +255,6 @@ export interface SubAgentNodeData {
   thinkingLevelMode: 'inherit' | 'custom';
   thinkingLevel: ThinkingLevel;                 // honored only when thinkingLevelMode === 'custom'
   modelCapabilities: ModelCapabilityOverrides;
-  maxMessages: number;                          // 1..6
   overridableFields: SubAgentOverridableField[];
   workingDirectoryMode: 'derived' | 'custom';
   workingDirectory: string;
@@ -306,7 +300,6 @@ Find the `switch (nodeType)` in `src/utils/default-nodes.ts` and add a case:
         thinkingLevelMode: 'inherit',
         thinkingLevel: 'off',
         modelCapabilities: {},
-        maxMessages: 6,
         overridableFields: [],
         workingDirectoryMode: 'derived',
         workingDirectory: '',
@@ -353,7 +346,6 @@ export interface ResolvedSubAgentConfig {
   modelId: string;                              // resolved (custom value or inherited from parent)
   thinkingLevel: string;                        // resolved
   modelCapabilities: ModelCapabilityOverrides;
-  maxMessages: number;
   overridableFields: SubAgentOverridableField[];
   workingDirectory: string;                     // resolved (derived or custom)
   recursiveSubAgentsEnabled: boolean;
@@ -699,9 +691,6 @@ function resolveSubAgent(
         ? posixPath.posix.join(parent.workspacePath.replace(/\\/g, '/'), 'subagent', data.name)
         : '';
 
-  // maxMessages clamp
-  const maxMessages = Math.max(1, Math.min(6, data.maxMessages ?? 6));
-
   return {
     name: data.name,
     description: data.description,
@@ -709,7 +698,6 @@ function resolveSubAgent(
     modelId,
     thinkingLevel,
     modelCapabilities,
-    maxMessages,
     overridableFields: [...data.overridableFields],
     workingDirectory,
     recursiveSubAgentsEnabled: data.recursiveSubAgentsEnabled,
@@ -888,7 +876,6 @@ describe('SubAgentNode resolution', () => {
     thinkingLevelMode: 'inherit',
     thinkingLevel: 'off',
     modelCapabilities: {},
-    maxMessages: 6,
     overridableFields: ['modelId', 'thinkingLevel'],
     workingDirectoryMode: 'derived',
     workingDirectory: '',
@@ -990,22 +977,13 @@ describe('SubAgentNode resolution', () => {
     expect(config?.subAgents[0].workingDirectory).toBe('/work/subagent/researcher');
   });
 
-  it('clamps maxMessages to [1, 6]', () => {
-    const oob = { ...subAgent, data: { ...subAgent.data, maxMessages: 99 } };
-    const config = resolveAgentConfig(
-      'agent-1',
-      [baseAgent, baseProvider, oob, subAgentToolsNode],
-      baseEdges,
-    );
-    expect(config?.subAgents[0].maxMessages).toBe(6);
-  });
 });
 ```
 
 - [ ] **Step 3: Run the tests (must pass)**
 
 Run: `npx vitest run src/utils/graph-to-agent.test.ts`
-Expected: PASS, all 9 sub-agent cases (plus any existing cases).
+Expected: PASS, all sub-agent cases (plus any existing cases).
 
 - [ ] **Step 4: Commit**
 
@@ -1016,7 +994,7 @@ git commit -m "test(sub-agent): cover SubAgentNode resolution paths"
 
 ---
 
-## Task 9: Extend `SubAgentRegistry` with `subAgentName`, `messageCount`, `'killed'` status, sealing
+## Task 9: Extend `SubAgentRegistry` with `subAgentName`, one-shot sealing, and `'killed'` status
 
 **Files:**
 - Modify: `server/agents/sub-agent-registry.ts`
@@ -1042,8 +1020,6 @@ export interface SubAgentRecord {
   endedAt?: number;
   result?: string;
   error?: string;
-  messageCount: number;
-  maxMessages: number;
   sealed: boolean;
   appliedOverrides: Record<string, unknown>;
 }
@@ -1061,7 +1037,6 @@ export interface SubAgentRecord {
       sessionKey: string;
       runId: string;
       subAgentName: string;
-      maxMessages: number;
       appliedOverrides: Record<string, unknown>;
     },
   ): SubAgentRecord {
@@ -1076,8 +1051,6 @@ export interface SubAgentRecord {
       runId: target.runId,
       status: 'running',
       startedAt: Date.now(),
-      messageCount: 1,
-      maxMessages: target.maxMessages,
       sealed: false,
       appliedOverrides: target.appliedOverrides,
     };
@@ -1087,35 +1060,9 @@ export interface SubAgentRecord {
   }
 ```
 
-- [ ] **Step 3: Add `incrementMessageCount`, `seal`, `isSealed`**
+- [ ] **Step 3: Add `seal`, `isSealed`, and `findBySessionKey`**
 
 ```typescript
-  /**
-   * Increment messageCount on the record matching `subAgentIdOrSessionKey`.
-   * Seals the record when count reaches maxMessages. Returns the new state.
-   * Returns null when no record matches.
-   */
-  incrementMessageCount(
-    subAgentIdOrSessionKey: string,
-  ): { messageCount: number; sealed: boolean } | null {
-    let record = this.records.get(subAgentIdOrSessionKey);
-    if (!record) {
-      // try session-key lookup
-      for (const r of this.records.values()) {
-        if (r.sessionKey === subAgentIdOrSessionKey) {
-          record = r;
-          break;
-        }
-      }
-    }
-    if (!record) return null;
-    record.messageCount += 1;
-    if (record.messageCount >= record.maxMessages) {
-      record.sealed = true;
-    }
-    return { messageCount: record.messageCount, sealed: record.sealed };
-  }
-
   isSealed(subAgentIdOrSessionKey: string): boolean {
     const record = this.records.get(subAgentIdOrSessionKey)
       ?? [...this.records.values()].find((r) => r.sessionKey === subAgentIdOrSessionKey);
@@ -1167,7 +1114,7 @@ Replace the existing `kill` method body:
   }
 ```
 
-(Note the `record.status !== 'running'` guard already prevents clobbering a `'killed'` record because `kill()` flips status to `'killed'` *before* the underlying coordinator abort fires `onError`. The order of operations is enforced in Task 14 by the REST handler and Task 13 by `RunCoordinator`.)
+(Note the `record.status !== 'running'` guard already prevents clobbering a `'killed'` record because `kill()` flips status to `'killed'` *before* the underlying coordinator abort fires `onError`. The order of operations is enforced in Task 16 by the REST handler and Task 13 by `RunCoordinator`.)
 
 - [ ] **Step 6: Update `onComplete` to seal on the way out**
 
@@ -1193,7 +1140,6 @@ In `server/agents/sub-agent-registry.test.ts`, every existing call to `spawn(...
         sessionKey: 'sub:agent:a:main:helper:abc',
         runId: 'r1',
         subAgentName: 'helper',
-        maxMessages: 6,
         appliedOverrides: {},
       },
 ```
@@ -1205,7 +1151,7 @@ Also: the existing test that asserts `error: 'Killed by parent'` after `kill()` 
 Append at the end of the existing `describe`:
 
 ```typescript
-  it('initializes messageCount to 1 on spawn', () => {
+  it('starts unsealed on spawn', () => {
     const registry = new SubAgentRegistry();
     const record = registry.spawn(
       { sessionKey: 'agent:a:main', runId: 'pr1' },
@@ -1214,30 +1160,27 @@ Append at the end of the existing `describe`:
         sessionKey: 'sub:agent:a:main:helper:abc',
         runId: 'cr1',
         subAgentName: 'helper',
-        maxMessages: 6,
         appliedOverrides: { modelId: 'foo' },
       },
     );
-    expect(record.messageCount).toBe(1);
     expect(record.sealed).toBe(false);
     expect(record.appliedOverrides).toEqual({ modelId: 'foo' });
   });
 
-  it('seals when messageCount reaches maxMessages', () => {
+  it('onComplete seals the record', () => {
     const registry = new SubAgentRegistry();
-    registry.spawn(
+    const record = registry.spawn(
       { sessionKey: 'agent:a:main', runId: 'pr1' },
       {
         agentId: 'a',
         sessionKey: 'sub:agent:a:main:helper:abc',
         runId: 'cr1',
         subAgentName: 'helper',
-        maxMessages: 3,
         appliedOverrides: {},
       },
     );
-    expect(registry.incrementMessageCount('cr1')?.sealed).toBe(false); // 2
-    expect(registry.incrementMessageCount('cr1')?.sealed).toBe(true);  // 3
+    registry.onComplete('cr1', 'done');
+    expect(registry.get(record.subAgentId)?.status).toBe('completed');
     expect(registry.isSealed('sub:agent:a:main:helper:abc')).toBe(true);
   });
 
@@ -1250,7 +1193,6 @@ Append at the end of the existing `describe`:
         sessionKey: 'sub:agent:a:main:helper:abc',
         runId: 'cr1',
         subAgentName: 'helper',
-        maxMessages: 6,
         appliedOverrides: {},
       },
     );
@@ -1269,7 +1211,6 @@ Append at the end of the existing `describe`:
         sessionKey: 'sub:agent:a:main:helper:abc',
         runId: 'cr1',
         subAgentName: 'helper',
-        maxMessages: 6,
         appliedOverrides: {},
       },
     );
@@ -1287,7 +1228,6 @@ Append at the end of the existing `describe`:
         sessionKey: 'sub:agent:a:main:helper:abc',
         runId: 'cr1',
         subAgentName: 'helper',
-        maxMessages: 6,
         appliedOverrides: {},
       },
     );
@@ -1305,14 +1245,14 @@ Expected: PASS, all old + new cases.
 
 ```bash
 git add server/agents/sub-agent-registry.ts server/agents/sub-agent-registry.test.ts
-git commit -m "feat(sub-agent): extend registry with messageCount, sealing, killed terminal state"
+git commit -m "feat(sub-agent): extend registry with one-shot sealing and killed terminal state"
 ```
 
 ---
 
 ## Task 10: Run-coordinator + caller fixes for the new `spawn` signature
 
-The new `spawn(...)` requires `subAgentName`, `maxMessages`, `appliedOverrides`. Existing callers in `session-tools.ts` and `run-coordinator.ts` will fail to typecheck.
+The new `spawn(...)` requires `subAgentName` and `appliedOverrides`. Existing callers in `session-tools.ts` and `run-coordinator.ts` will fail to typecheck.
 
 **Files:**
 - Modify: `server/sessions/session-tools.ts`
@@ -1323,7 +1263,7 @@ The new `spawn(...)` requires `subAgentName`, `maxMessages`, `appliedOverrides`.
 
 Run: `grep -rn "subAgentRegistry.spawn(" server`
 
-For each call, add `subAgentName: '<inferred-or-empty>'`, `maxMessages: 6`, `appliedOverrides: {}` to the `target` argument. These are placeholders — the real values flow through Task 12's spawn-tool rewrite.
+For each call, add `subAgentName: '<inferred-or-empty>'` and `appliedOverrides: {}` to the `target` argument. These are placeholders — the real values flow through Task 12's spawn-tool rewrite.
 
 - [ ] **Step 2: Verify build**
 
@@ -1402,7 +1342,6 @@ describe('buildSyntheticAgentConfig', () => {
     modelId: 'sub/model',
     thinkingLevel: 'medium',
     modelCapabilities: {},
-    maxMessages: 6,
     overridableFields: [],
     workingDirectory: '/parent/subagent/researcher',
     recursiveSubAgentsEnabled: false,
@@ -1946,7 +1885,6 @@ function createSessionsSpawnTool(ctx: SessionToolContext): AgentTool<TSchema> | 
           thinkingLevel: Type.Optional(Type.String()),
           systemPromptAppend: Type.Optional(Type.String()),
           enabledTools: Type.Optional(Type.Array(Type.String())),
-          maxMessages: Type.Optional(Type.Number()),
         }),
       ),
       wait: Type.Optional(Type.Boolean({ description: 'Wait for the sub-agent reply (default true)' })),
@@ -1981,8 +1919,6 @@ function createSessionsSpawnTool(ctx: SessionToolContext): AgentTool<TSchema> | 
           enabledToolsOverride: validation.values.enabledTools,
         });
 
-        const effectiveMaxMessages = validation.values.maxMessages ?? sub.maxMessages;
-
         const record = ctx.subAgentRegistry.spawn(
           { sessionKey: ctx.callerSessionKey, runId: ctx.callerRunId },
           {
@@ -1990,7 +1926,6 @@ function createSessionsSpawnTool(ctx: SessionToolContext): AgentTool<TSchema> | 
             sessionKey: subSessionKey,
             runId: childRunId,
             subAgentName: subName,
-            maxMessages: effectiveMaxMessages,
             appliedOverrides: validation.values as Record<string, unknown>,
           },
         );
@@ -2005,7 +1940,6 @@ function createSessionsSpawnTool(ctx: SessionToolContext): AgentTool<TSchema> | 
           appliedOverrides: validation.values as Record<string, unknown>,
           modelId: syntheticConfig.modelId,
           providerPluginId: syntheticConfig.provider.pluginId,
-          maxMessages: effectiveMaxMessages,
           spawnedAt: Date.now(),
         });
 
@@ -2016,8 +1950,6 @@ function createSessionsSpawnTool(ctx: SessionToolContext): AgentTool<TSchema> | 
           parentSessionKey: ctx.callerSessionKey,
           parentRunId: ctx.callerRunId,
           status: 'running',
-          messageCount: 1,
-          maxMessages: effectiveMaxMessages,
           sealed: false,
           appliedOverrides: validation.values as Record<string, unknown>,
           modelId: syntheticConfig.modelId,
@@ -2082,7 +2014,6 @@ interface OverrideValues {
   thinkingLevel?: string;
   systemPromptAppend?: string;
   enabledTools?: string[];
-  maxMessages?: number;
 }
 
 function validateOverrides(
@@ -2127,16 +2058,6 @@ function validateOverrides(
     }
     out.enabledTools = raw.enabledTools as string[];
   }
-  if (typeof raw.maxMessages === 'number') {
-    if (!Number.isInteger(raw.maxMessages) || raw.maxMessages < 1 || raw.maxMessages > sub.maxMessages) {
-      return {
-        error: `maxMessages override must be an integer in [1, ${sub.maxMessages}]. Got ${raw.maxMessages}.`,
-        values: out,
-      };
-    }
-    out.maxMessages = raw.maxMessages;
-  }
-
   return { error: null, values: out };
 }
 
@@ -2215,54 +2136,33 @@ git commit -m "feat(sub-agent): rewrite sessions_spawn for SubAgentNode + allowl
 
 ---
 
-## Task 15: Cap-aware `sessions_send`
+## Task 15: Reject `sessions_send` re-engagement for sub-sessions
 
 **Files:**
 - Modify: `server/sessions/session-tools.ts`
 - Modify: `server/sessions/session-tools.test.ts`
 
-- [ ] **Step 1: Add a sealed-check at the top of `createSessionsSendTool.execute`**
+- [ ] **Step 1: Add a one-shot rejection at the top of `createSessionsSendTool.execute`**
 
 Inside the `execute` function, after parsing `params.sessionKey`:
 
 ```typescript
         const parsed = parseSubSessionKey(params.sessionKey as string);
         if (parsed) {
-          if (ctx.subAgentRegistry.isSealed(params.sessionKey as string)) {
-            const r = ctx.subAgentRegistry.findBySessionKey(params.sessionKey as string);
-            return textResult(
-              `Sub-agent session sealed (reached maxMessages=${r?.maxMessages ?? '?'}); spawn a new sub-agent to continue.`,
-            );
-          }
-          // Not sealed: increment messageCount BEFORE dispatch; the sub's reply
-          // will increment again on completion (handled in run-coordinator).
-          ctx.subAgentRegistry.incrementMessageCount(params.sessionKey as string);
+          return textResult(
+            'Sub-agent sessions are one-shot and cannot be re-engaged with sessions_send; spawn a new sub-agent to continue.',
+          );
         }
 ```
 
 (`parseSubSessionKey` import added at top: `import { parseSubSessionKey } from '../agents/sub-session-key';`.)
 
-- [ ] **Step 2: Make sure the registry's `onComplete` path increments on sub final reply**
-
-In `RunCoordinator`, the existing `finalizeRunSuccess` for `sub:` keys must call `subAgentRegistry.incrementMessageCount(record.runId)` *in addition to* the existing `onComplete`. Find:
-
-```typescript
-this.subAgentRegistry.onComplete(record.runId, finalText);
-```
-
-and prepend:
-
-```typescript
-this.subAgentRegistry.incrementMessageCount(record.runId);
-```
-
-- [ ] **Step 3: Add a test for the seal-on-send path**
+- [ ] **Step 2: Add a test that sub-session sends never dispatch**
 
 In `server/sessions/session-tools.test.ts`, append:
 
 ```typescript
-it('sessions_send to a sealed sub-session returns sealed-error text', async () => {
-  // Build registry with a sealed record
+it('sessions_send to a sub-session returns one-shot error and does not dispatch', async () => {
   const registry = new SubAgentRegistry();
   registry.spawn(
     { sessionKey: 'agent:a:main', runId: 'pr1' },
@@ -2271,34 +2171,32 @@ it('sessions_send to a sealed sub-session returns sealed-error text', async () =
       sessionKey: 'sub:agent:a:main:helper:abc',
       runId: 'cr1',
       subAgentName: 'helper',
-      maxMessages: 1,        // already at cap after spawn
       appliedOverrides: {},
     },
   );
 
-  // Build a minimal SessionToolContext using existing helpers
   const ctx = makeMockContext({ subAgentRegistry: registry });
   const tools = createSessionTools(ctx);
   const send = tools.find((t) => t.name === 'sessions_send')!;
 
   const result = await send.execute('id', { sessionKey: 'sub:agent:a:main:helper:abc', message: 'again' });
-  expect(typeof result.payloads?.[0]?.content === 'string' ? result.payloads[0].content : '')
-    .toContain('Sub-agent session sealed');
+  expect(result.content).toContain('one-shot');
+  expect(ctx.coordinator.dispatch).not.toHaveBeenCalled();
 });
 ```
 
 (`makeMockContext` is whatever helper the existing tests use; if there's no shared helper, build one inline matching the `SessionToolContext` shape.)
 
-- [ ] **Step 4: Run the test**
+- [ ] **Step 3: Run the test**
 
 Run: `npx vitest run server/sessions/session-tools.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add server/sessions/session-tools.ts server/sessions/session-tools.test.ts server/agents/run-coordinator.ts
-git commit -m "feat(sub-agent): cap-aware sessions_send with sealed-state error"
+git add server/sessions/session-tools.ts server/sessions/session-tools.test.ts
+git commit -m "feat(sub-agent): reject sessions_send for one-shot sub-sessions"
 ```
 
 ---
@@ -2339,7 +2237,6 @@ function spawnRecord(registry: SubAgentRegistry) {
       sessionKey: 'sub:agent:a:main:helper:abc',
       runId: 'cr1',
       subAgentName: 'helper',
-      maxMessages: 6,
       appliedOverrides: {},
     },
   );
@@ -2585,7 +2482,7 @@ Create `docs/concepts/sub-agent-node.md` based on the template. Structure:
 
 ## Overview
 
-The Sub-Agent Node attaches to an Agent Node as a peripheral. Each declared sub-agent has its own system prompt, model, and dedicated Tools Node. The parent agent invokes a sub-agent by name through the `sessions_spawn` tool, which dispatches a one-shot run that reports back. The parent and sub may exchange up to `maxMessages` total before the sub-session is sealed.
+The Sub-Agent Node attaches to an Agent Node as a peripheral. Each declared sub-agent has its own system prompt, model, and dedicated Tools Node. The parent agent invokes a sub-agent by name through the `sessions_spawn` tool, which dispatches a one-shot run that reports back. Once the sub-agent returns, errors, or is killed, the sub-session is sealed; follow-up messages require spawning a fresh sub-agent.
 
 ## Configuration
 
@@ -2599,8 +2496,7 @@ The Sub-Agent Node attaches to an Agent Node as a peripheral. Each declared sub-
 | `thinkingLevelMode` | `'inherit' \| 'custom'` | `'inherit'` | Same convention as modelId |
 | `thinkingLevel` | `ThinkingLevel` | `'off'` | Honored only when `thinkingLevelMode === 'custom'` |
 | `modelCapabilities` | `ModelCapabilityOverrides` | `{}` | Snapshot/overrides like the Agent Node |
-| `maxMessages` | `number` | `6` | Total parent↔sub messages before the sub-session is sealed; `1..6` |
-| `overridableFields` | `SubAgentOverridableField[]` | `[]` | Fields the parent may override per-call (`modelId`, `thinkingLevel`, `systemPromptAppend`, `enabledTools`, `maxMessages`) |
+| `overridableFields` | `SubAgentOverridableField[]` | `[]` | Fields the parent may override per-call (`modelId`, `thinkingLevel`, `systemPromptAppend`, `enabledTools`) |
 | `workingDirectoryMode` | `'derived' \| 'custom'` | `'derived'` | When `derived`, cwd is `<parentCwd>/subagent/<name>` |
 | `workingDirectory` | `string` | `""` | Honored only when `workingDirectoryMode === 'custom'` |
 | `recursiveSubAgentsEnabled` | `boolean` | `false` | When true, the sub may call `sessions_spawn` itself. Marked **Unstable** in the UI |
@@ -2617,7 +2513,7 @@ The Sub-Agent Node attaches to an Agent Node as a peripheral. Each declared sub-
 2. The parent's `sessions_spawn` tool is auto-enabled when `agentConfig.subAgents.length > 0`. Its schema lists declared sub-agent names as a literal-union enum.
 3. When the parent calls `sessions_spawn({ subAgent: "<name>", message, overrides })`, the runtime validates `overrides` against `subAgent.overridableFields`, builds a synthetic `AgentConfig`, and dispatches via `SubAgentExecutor` — bypassing the parent's run-concurrency slot so the sub runs alongside the parent's tool call.
 4. Each sub-session uses a key of shape `sub:<parentSessionKey>:<subAgentName>:<shortUuid>`. Storage routes it under the parent's `StorageEngine`.
-5. The registry tracks `messageCount` (init 1 on spawn, +1 on each parent send and sub reply). When `messageCount >= maxMessages`, the sub-session is `sealed` — `sessions_send` returns a sealed-error and no further work is dispatched.
+5. The registry marks the sub-session `sealed` when the child run completes, errors, or is killed. `sessions_send` to any sub-session returns a one-shot error and no further work is dispatched.
 6. Kill (REST `/api/subagents/:id/kill` or agent-facing `subagents({action: 'kill'})`) marks the registry record as `killed` *before* aborting the run, so the abort path doesn't downgrade the terminal state to `error`.
 
 ## Inheritance
@@ -2646,7 +2542,6 @@ The Sub-Agent Node attaches to an Agent Node as a peripheral. Each declared sub-
   "thinkingLevelMode": "inherit",
   "thinkingLevel": "off",
   "modelCapabilities": {},
-  "maxMessages": 6,
   "overridableFields": ["thinkingLevel", "systemPromptAppend"],
   "workingDirectoryMode": "derived",
   "workingDirectory": "",
@@ -2711,7 +2606,7 @@ import { SubAgentRegistry } from './sub-agent-registry';
 import { SubAgentExecutor } from './sub-agent-executor';
 
 describe('sub-agent backend smoke', () => {
-  it('spawns, runs to completion, persists messageCount, returns final text', async () => {
+  it('spawns, runs to completion, seals the sub-session, returns final text', async () => {
     const registry = new SubAgentRegistry();
 
     const executor = new SubAgentExecutor({
@@ -2730,7 +2625,6 @@ describe('sub-agent backend smoke', () => {
         sessionKey: 'sub:agent:a:main:researcher:abc',
         runId: 'cr1',
         subAgentName: 'researcher',
-        maxMessages: 6,
         appliedOverrides: {},
       },
     );
@@ -2761,7 +2655,6 @@ describe('sub-agent backend smoke', () => {
         sessionKey: 'sub:agent:a:main:researcher:abc',
         runId: 'cr1',
         subAgentName: 'researcher',
-        maxMessages: 6,
         appliedOverrides: {},
       },
     );
@@ -2835,8 +2728,8 @@ Mirror the structure of `verify-session-tools.ts` with a flow that:
 1. Builds an `AgentConfig` with one declared sub-agent (`researcher`).
 2. Calls `sessions_spawn` with a message and `overrides: { thinkingLevel: 'high' }`.
 3. Awaits the reply.
-4. Calls `sessions_send` to the same sub-session twice more (to exercise message-count increment).
-5. On the 4th send, expects the sealed-error message.
+4. Calls `sessions_send` to the same sub-session once and expects the one-shot rejection message.
+5. Verifies no dispatch occurs for that rejected sub-session send.
 6. Spawns a fresh sub-agent and kills it via `POST /api/subagents/:id/kill` — verifies status is `killed`.
 7. Prints a tiny report (per-step pass/fail).
 
@@ -2869,8 +2762,8 @@ After completing all tasks, this plan implements:
 | §3.1 `sessions_spawn` schema rewrite + legacy `targetAgentId` removal | Task 14 |
 | §3.2 Override allowlist validation (effective-tools) | Task 14 |
 | §3.3 Session-key shape + helper | Task 6 |
-| §3.3 Registry record extensions (`messageCount`, `appliedOverrides`, sealed, killed) | Task 9 |
-| §3.4 Cap enforcement on send + on sub reply | Tasks 9, 15 |
+| §3.3 Registry record extensions (`appliedOverrides`, sealed, killed) | Task 9 |
+| §3.4 One-shot sub-session enforcement on `sessions_send` | Tasks 9, 15 |
 | §3.5 Recursive spawn gate (synthetic config exposes parent's subAgents only when flag is on) | Task 11 |
 | §3.6 cwd derivation | Task 7 |
 | §3.7 Abort-on-destroy / kill semantics | Tasks 9 (terminal state), 13 (abort plumbing), 16 (REST), 17 (tool) |
