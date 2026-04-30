@@ -29,6 +29,10 @@ export function parseSubSessionKey(sessionKey: string): ParsedSubSessionKey | nu
 
   const rest = working.slice('sub:'.length);
   // Last segment = shortUuid, second-to-last = subAgentName, everything before = parentSessionKey.
+  // v1: parents are agent:<id>:<subKey> (3 segs) + name (1) + uuid (1) = minimum 5.
+  // If sub-agents from cron:<id> or hook:<id> parents are added later, this check
+  // must be revisited — those parents have only 2 segments, so a min of 4 would
+  // be valid for them but would also accept truncated agent-parent keys.
   const segments = rest.split(':');
   if (segments.length < 5) {
     return null;
