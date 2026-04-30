@@ -14,6 +14,41 @@ The parent may pass per-call config overrides, but only for fields the SubAgentN
 
 The user can watch every sub-agent run live in the parent's chat drawer (inline card with stop button) and inspect a sub-agent's full history (across all parent sessions) from a dedicated drawer opened off the SubAgentNode.
 
+## Implementation guardrails from design review
+
+These points are part of the design, not optional cleanup. They close gaps between the intended product behavior and the current code shape.
+
+1. **Sub-agent execution must not deadlock the parent run.** The current `RunCoordinator` has a single active run slot (`RunConcurrencyController.activeRunId`). If `sessions_spawn({ wait: true })` dispatches the sub-agent through the same coordinator while the parent tool call is still waiting, the child run queues behind the parent and can only complete by timeout. Implementation must either:
+   - run sub-agents through a per-spawn child executor/runtime that is not blocked by the parent run's active slot, or
+   - remove/deprecate `wait` and require `sessions_yield` / async resume for sub-agent results.
+
+   Preferred path: keep `wait`, but implement a child runtime/executor path so the one-shot helper can run immediately while the parent turn is suspended inside the tool call. The child executor must:
+   - **Honor `coordinator.abort(childRunId)`** so the REST kill endpoint and the agent-facing `subagents({action: 'kill'})` tool both terminate the child immediately, regardless of the parent's run state.
+   - **Emit run-events on the same event bus** that the parent's WebSocket subscription consumes, keyed by the child's `runId`. The inline-card subscription path is unchanged — it just filters the same stream by the child's `runId` rather than the parent's.
+   - **Not occupy the parent's session-queue slot** in `RunConcurrencyController`. A child execution path that sits beside the queue (e.g. a dedicated child-executor pool with its own slot accounting, or an "inline child" mode that runs synchronously inside the parent's slot but accounts for it as nested work) is acceptable; what's not acceptable is the current `dispatch` path that enqueues children behind the parent.
+
+2. **Build each sub-agent from a synthetic resolved config.** `ResolvedSubAgentConfig` should be converted into a runtime-ready `AgentConfig` for that spawn, rather than mutating the parent's already-constructed runtime in place. The synthetic config uses the sub-agent provider/model/prompt/tools/workspace, keeps storage/session routing under the parent agent, disables context-engine compaction, and handles memory explicitly. If memory is shared, that should be a deliberate runtime option instead of an accidental consequence of sharing storage.
+
+3. **Canvas connection support is a real feature slice.** The current graph UI only accepts edges into `AgentNode`, and existing peripheral nodes expose source handles only. Implementing SubAgent-attached tools/providers/skills/MCPs requires explicit changes to connection validation, graph-store connection acceptance, and target handles on `SubAgentNode`.
+
+4. **Sub-agent session tools are auto-enabled by `subAgents.length`, not by `ToolsNode.subAgentSpawning`.** Runtime injection should add `sessions_spawn`, `sessions_yield`, and `subagents` when the resolved parent config has at least one runnable sub-agent, even if the parent Tools node does not list those tools. `sessions_send`, `sessions_history`, `sessions_list`, and `session_status` remain governed by storage/session-tool availability. The deprecated `subAgentSpawning` / `maxSubAgents` fields must not be used as the runtime gate.
+
+5. **Persist sub-agent metadata for history.** `SubAgentRegistry` is in-memory, so history drawer data that must survive restart or UI close needs durable storage. Add either a `subAgent` metadata block on `SessionStoreEntry` or a durable custom transcript entry at spawn time. It should include `subAgentId`, `subAgentName`, parent session key/id, status, `messageCount`, `maxMessages`, applied overrides, model/provider used, and sealed/killed state.
+
+6. **Account for stored session-key prefixes.** The logical sub-session key is `sub:<parentSessionKey>:<subAgentName>:<uuid>`, but persisted session keys are routed as `agent:<agentId>:<subKey>`. Any history filtering, `sessions_send` cap check, or REST lookup must parse both forms rather than relying on `sessionKey.startsWith("sub:")`.
+
+7. **Kill must preserve a killed terminal state and abort real work.** The user-visible kill path should abort the underlying run and mark the registry/session metadata as `killed`. Do not call `coordinator.abort()` in a way that first converts the record to generic `error` and then makes `kill()` a no-op. The agent-facing `subagents({ action: "kill" })` tool should use the same aborting path or clearly document that it is registry-only.
+
+8. **Override validation must use effective tools.** Validate `overrides.enabledTools` against `resolveToolNames(subAgent.tools)`, not `subAgent.tools.resolvedTools`, because profiles, groups, aliases, and enabled plugins expand only through the shared resolver.
+
+9. **Make `modelId` and `thinkingLevel` inheritance explicit, with the same convention.** Today's `modelId: ''` quietly means "inherit", and a default `thinkingLevel: 'off'` cannot distinguish "inherit from parent" from "force off". Both fields have the same problem and must use the same resolution convention so users don't have to learn two patterns. Pick one of:
+   - **Empty-string sentinel** for both: `modelId: ''` and `thinkingLevel: ''` mean inherit; any other value is custom. Smaller schema, smaller UI, but inheritance is implicit.
+   - **Explicit mode field** for both: `modelIdMode: 'inherit' | 'custom'` and `thinkingLevelMode: 'inherit' | 'custom'`, with the value field honored only when mode is `'custom'`. More discoverable in the UI (radio: *Inherit from parent / Custom*), but more schema surface.
+
+   The implementation plan must pick one and apply it consistently across `SubAgentNodeData`, `ResolvedSubAgentConfig`, and the property panel. Splitting the convention between the two fields is the explicit anti-goal here.
+
+10. **Treat MCP as schema-only unless runtime MCP work lands first.** The MCP node is currently resolved into config, but the concept doc says the runtime MCP client/tool exposure is not implemented. Sub-agent MCP merge behavior should be documented as deferred unless the runtime MCP manager ships in the same implementation slice.
+
 ## Architecture summary
 
 ```
