@@ -1,6 +1,7 @@
 import type { Node } from '@xyflow/react';
 import type { ModelCapabilityOverrides } from './model-metadata';
 import type { SystemPromptMode } from '../../shared/agent-config';
+import type { SubAgentOverridableField } from '../../shared/sub-agent-types';
 
 export type NodeType =
   | 'agent'
@@ -14,7 +15,8 @@ export type NodeType =
   | 'vectorDatabase'
   | 'cron'
   | 'provider'
-  | 'mcp';
+  | 'mcp'
+  | 'subAgent';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -411,6 +413,25 @@ export interface MCPNodeData {
   autoConnect: boolean;
 }
 
+// --- Sub-Agent Node ---
+
+export interface SubAgentNodeData {
+  [key: string]: unknown;
+  type: 'subAgent';
+  name: string;
+  description: string;
+  systemPrompt: string;
+  modelIdMode: 'inherit' | 'custom';
+  modelId: string;
+  thinkingLevelMode: 'inherit' | 'custom';
+  thinkingLevel: ThinkingLevel;
+  modelCapabilities: ModelCapabilityOverrides;
+  overridableFields: SubAgentOverridableField[];
+  workingDirectoryMode: 'derived' | 'custom';
+  workingDirectory: string;
+  recursiveSubAgentsEnabled: boolean;
+}
+
 // --- Union Types ---
 
 export type FlowNodeData =
@@ -425,6 +446,7 @@ export type FlowNodeData =
   | VectorDatabaseNodeData
   | CronNodeData
   | ProviderNodeData
-  | MCPNodeData;
+  | MCPNodeData
+  | SubAgentNodeData;
 
 export type AppNode = Node<FlowNodeData>;

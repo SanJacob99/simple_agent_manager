@@ -223,5 +223,22 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         allowedTools: [],
         autoConnect: true,
       };
+    case 'subAgent':
+      return {
+        type: 'subAgent',
+        name: '',
+        description: '',
+        systemPrompt:
+          'You are a focused assistant. Complete the parent agent\'s task and report back concisely.',
+        modelIdMode: 'inherit',
+        modelId: '',
+        thinkingLevelMode: 'inherit',
+        thinkingLevel: 'off',
+        modelCapabilities: {},
+        overridableFields: [],
+        workingDirectoryMode: 'derived',
+        workingDirectory: '',
+        recursiveSubAgentsEnabled: false,
+      };
   }
 }

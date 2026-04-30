@@ -13,6 +13,7 @@ export const NODE_COLORS: Record<NodeType, string> = {
   cron: 'var(--c-node-cron)',
   provider: 'var(--c-node-provider)',
   mcp: 'var(--c-node-mcp)',
+  subAgent: 'var(--c-node-agent)',
 };
 
 export const NODE_LABELS: Record<NodeType, string> = {
@@ -28,4 +29,5 @@ export const NODE_LABELS: Record<NodeType, string> = {
   cron: 'Cron',
   provider: 'Provider',
   mcp: 'MCP',
+  subAgent: 'Sub-Agent',
 };
