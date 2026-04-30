@@ -100,3 +100,22 @@ export interface SubAgentResumeData {
   generatedAt: number;
   results: SubAgentResumeResult[];
 }
+
+export const SUB_AGENT_SPAWN_CUSTOM_TYPE = 'sam.sub_agent_spawn';
+
+/**
+ * Persisted on the parent's transcript at spawn time. Immutable audit record;
+ * the registry's mutable status (sealed, killed) is in the
+ * sub-session's SessionStoreEntry.subAgentMeta.
+ */
+export interface SubAgentSpawnData {
+  subAgentId: string;
+  subAgentName: string;
+  subSessionKey: string;
+  parentRunId: string;
+  message: string;             // initial spawn message text
+  appliedOverrides: Record<string, unknown>;
+  modelId: string;
+  providerPluginId: string;
+  spawnedAt: number;
+}
