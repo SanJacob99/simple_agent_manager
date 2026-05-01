@@ -328,6 +328,20 @@ describe('sessions_send', () => {
     expect(ctx.coordinator.wait).toHaveBeenCalledWith('run-2', undefined);
     expect(result.content[0].text).toContain('Reply from agent');
   });
+
+  it('rejects sub-session re-engagement with one-shot error and does not dispatch', async () => {
+    const ctx = createMockContext();
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_send')!;
+
+    const result = await tool.execute('call-1', {
+      sessionKey: 'sub:agent:a1:main:helper:abc',
+      message: 'again',
+    });
+
+    expect(ctx.coordinator.dispatch).not.toHaveBeenCalled();
+    expect(result.content[0].text).toContain('one-shot');
+  });
 });
 
 describe('sessions_spawn', () => {

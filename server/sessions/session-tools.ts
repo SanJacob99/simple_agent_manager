@@ -12,6 +12,7 @@ import type { AgentConfig, ResolvedSubAgentConfig } from '../../shared/agent-con
 import type { SubAgentSpawnData } from '../../shared/session-diagnostics';
 import type { SubAgentSessionMeta } from '../../shared/sub-agent-types';
 import { buildSyntheticAgentConfig } from '../agents/sub-agent-executor';
+import { parseSubSessionKey } from '../agents/sub-session-key';
 
 export interface SessionToolContext {
   callerSessionKey: string;
@@ -337,6 +338,13 @@ function createSessionsSendTool(ctx: SessionToolContext): AgentTool<TSchema> {
         const message = params.message as string;
         const shouldWait = params.wait === true;
         const timeoutMs = params.timeoutMs as number | undefined;
+
+        // Sub-agent sessions are strictly one-shot. Reject re-engagement.
+        if (parseSubSessionKey(sessionKey)) {
+          return textResult(
+            'Sub-agent sessions are one-shot and cannot be re-engaged with sessions_send; spawn a new sub-agent to continue.',
+          );
+        }
 
         const dispatchResult = await ctx.coordinator.dispatch({
           sessionKey,
