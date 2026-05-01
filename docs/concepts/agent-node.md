@@ -61,7 +61,7 @@ The Agent Node still owns `modelId`, `thinkingLevel`, and `modelCapabilities`. T
 
 ## Connections
 
-- Receives from: Provider, Memory, Tools, Skills, Context Engine, Agent Comm, Connectors, Storage, Vector Database, and Cron nodes
+- Receives from: Provider, Memory, Tools, Skills, Context Engine, Agent Comm, Connectors, Storage, Vector Database, Cron, and Sub-Agent nodes
 - Sends to: None
 - Only peripheral-to-agent connections are supported
 - Runtime validation requires exactly one connected Provider Node
