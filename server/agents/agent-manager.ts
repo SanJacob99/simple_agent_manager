@@ -18,6 +18,7 @@ import type {
   WaitResult,
   RunEventListener,
 } from '../../shared/run-types';
+import type { RuntimeFactory } from './runtime-factory';
 import type WebSocket from 'ws';
 import fs from 'fs/promises';
 import path from 'path';
@@ -99,22 +100,30 @@ export class AgentManager {
     }
 
     // Create runtime with hook registry
-    const runtime = new AgentRuntime(
-      config,
-      (provider) => Promise.resolve(this.apiKeys.get(provider)),
-      undefined,
-      hooks,
-      this.pluginRegistry,
-      this.hitlRegistry,
-      this.getSafetySettings(),
-    );
+    const runtime = this.buildRuntime(config, hooks);
+
+    let bridge: EventBridge | null = null;
+    const runtimeFactory: RuntimeFactory = (childConfig) => {
+      const childRuntime = this.buildRuntime(childConfig, hooks);
+      childRuntime.setBroadcast?.((event) => bridge?.broadcast(event));
+      return childRuntime;
+    };
 
     // Create coordinator with hook registry
-    const coordinator = new RunCoordinator(config.id, runtime, config, storage, hooks);
+    const coordinator = new RunCoordinator(
+      config.id,
+      runtime,
+      config,
+      storage,
+      hooks,
+      undefined,
+      undefined,
+      runtimeFactory,
+    );
 
     const processor = new StreamProcessor(config.id, coordinator, config);
 
-    const bridge = new EventBridge(config.id, processor);
+    bridge = new EventBridge(config.id, processor);
 
     // Now that the bridge exists, let the runtime's HITL tool push events
     // directly to connected clients (bypassing the run-scoped stream).
@@ -308,6 +317,18 @@ export class AgentManager {
     return storagePath.startsWith('~')
       ? storagePath.replace('~', os.homedir())
       : storagePath;
+  }
+
+  private buildRuntime(config: AgentConfig, hooks: HookRegistry): AgentRuntime {
+    return new AgentRuntime(
+      config,
+      (provider) => Promise.resolve(this.apiKeys.get(provider)),
+      undefined,
+      hooks,
+      this.pluginRegistry,
+      this.hitlRegistry,
+      this.getSafetySettings(),
+    );
   }
 
   /** Persist agent config to disk for restart resilience. */
