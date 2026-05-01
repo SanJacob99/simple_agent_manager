@@ -1,4 +1,7 @@
-import type { AgentConfig, ResolvedSubAgentConfig, ResolvedSystemPrompt } from '../../shared/agent-config';
+import type { AgentConfig, ResolvedSubAgentConfig } from '../../shared/agent-config';
+import { buildSystemPrompt } from '../../shared/system-prompt-builder';
+import { resolveToolNames, IMPLEMENTED_TOOL_NAMES } from '../../shared/resolve-tool-names';
+import { eligibleBundledSkills } from '../../shared/default-tool-skills';
 
 export interface SubAgentSpawnOverrides {
   systemPromptAppend: string;
@@ -31,16 +34,64 @@ export function buildSyntheticAgentConfig(
     ? { ...baseTools, resolvedTools: [...overrides.enabledToolsOverride] }
     : baseTools;
 
+  // Build a structured system prompt for the sub-agent so it gets the same
+  // framework sections the parent does — identity, workspace, tools-available,
+  // time/timezone, runtime metadata, safety guardrails. The sub's user-typed
+  // text becomes `userInstructions`, joined with the per-spawn append override.
   const subPromptText = sub.systemPrompt;
   const appendText = overrides.systemPromptAppend?.trim();
-  const assembled = appendText ? `${subPromptText}\n\n${appendText}` : subPromptText;
+  const userInstructions = appendText ? `${subPromptText}\n\n${appendText}` : subPromptText;
 
-  const systemPrompt: ResolvedSystemPrompt = {
-    mode: 'manual',
-    sections: [],
-    assembled,
-    userInstructions: subPromptText,
-  };
+  const subToolNames = resolveToolNames(tools);
+  const toolsSummary = subToolNames
+    .filter((t) => IMPLEMENTED_TOOL_NAMES.has(t))
+    .join(', ') || null;
+
+  const bundledRefs = eligibleBundledSkills(subToolNames);
+  const skillsSections: string[] = [];
+  if (bundledRefs.length > 0) {
+    const preamble =
+      'Load a skill with `read_file` only when its topic becomes relevant to the current task — don\'t preload them all.';
+    const lines = bundledRefs
+      .map((ref) => `- ${ref.id} (${ref.location}) — ${ref.description} → ${ref.path}`)
+      .join('\n');
+    skillsSections.push(`### Available\n\n${preamble}\n\n${lines}`);
+  }
+  const richSkills = sub.skills.filter((s) => s.content.trim());
+  for (const s of richSkills) {
+    skillsSections.push(`### ${s.name}\n\n${s.content.trim()}`);
+  }
+  const skillsSummary = skillsSections.length > 0 ? skillsSections.join('\n\n') : null;
+
+  let timezone: string | null = null;
+  try {
+    timezone = Intl.DateTimeFormat().resolvedOptions().timeZone ?? null;
+  } catch {
+    timezone = null;
+  }
+
+  const subWorkspacePath = sub.workingDirectory || parent.workspacePath || null;
+
+  const systemPrompt = buildSystemPrompt({
+    mode: 'append',
+    userInstructions,
+    safetyGuardrails: '',
+    toolsSummary,
+    skillsSummary,
+    workspacePath: subWorkspacePath,
+    bootstrapFiles: null,
+    bootstrapMaxChars: 20000,
+    bootstrapTotalMaxChars: 150000,
+    timezone,
+    nowIso: new Date().toISOString(),
+    reasoningVisibility: parent.showReasoning ? 'visible' : 'off',
+    runtimeMeta: {
+      host: 'simple-agent-manager',
+      os: process.platform,
+      model: modelId,
+      thinkingLevel,
+    },
+  });
 
   return {
     id: `${parent.id}::sub::${sub.name}`,
