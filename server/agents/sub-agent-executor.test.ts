@@ -154,7 +154,7 @@ describe('SubAgentExecutor', () => {
   });
 
   it('honors abort via the registered callback', async () => {
-    let abortFn: (() => void) | null = null;
+    let abortFn: () => void = () => {};
     const runChild = vi.fn((opts: any) =>
       new Promise<{ status: string }>((resolve) => {
         opts.onAbort = () => resolve({ status: 'aborted' });
@@ -175,7 +175,7 @@ describe('SubAgentExecutor', () => {
       onAbortRegister: (fn) => { abortFn = fn; },
     });
 
-    abortFn?.();
+    abortFn();
     const result = await dispatchP;
     expect(result.status).toBe('aborted');
   });

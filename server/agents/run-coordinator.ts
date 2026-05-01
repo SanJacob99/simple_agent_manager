@@ -56,6 +56,11 @@ import { SubAgentRegistry } from './sub-agent-registry';
 import { createSessionTools, type SessionToolContext } from '../sessions/session-tools';
 import type { ResumePayload, SetYieldResult } from './sub-agent-registry';
 import { SESSION_TOOL_NAMES } from '../../shared/resolve-tool-names';
+import {
+  SubAgentExecutor,
+  type ChildRunOptions,
+  type ChildRunResult,
+} from './sub-agent-executor';
 
 export type RunStatus = 'pending' | 'running' | 'completed' | 'error';
 
@@ -187,6 +192,13 @@ export class RunCoordinator {
   private readonly transcriptStore: SessionTranscriptStore | null;
   private readonly sessionRouter: SessionRouter | null;
   private readonly subAgentRegistry: SubAgentRegistry;
+  private readonly subAgentExecutor: SubAgentExecutor;
+  /**
+   * Map of child runId -> abort handler. Populated by SessionToolContext's
+   * registerSubAgentAbort wiring and consumed by `abort(runId)` so REST kill
+   * and the `subagents` tool can terminate a running child.
+   */
+  private readonly childAborts = new Map<string, () => void>();
 
   /**
    * Last `preview` breakdown we saw, keyed by sessionKey. The provider
@@ -217,6 +229,25 @@ export class RunCoordinator {
         : null);
 
     this.subAgentRegistry = new SubAgentRegistry();
+
+    // Sub-agent executor: bridges to runChild() below, which constructs a
+    // dedicated runtime per spawn. emits run-events on the same stream the
+    // parent uses, tagged with the child runId so subscribers can filter.
+    this.subAgentExecutor = new SubAgentExecutor({
+      runChild: (o) => this.runChild(o),
+      eventBus: {
+        emit: (event) => {
+          // Best-effort forward to the same listener set used for parent
+          // events. Child events carry runId on the event itself; existing
+          // subscribers filter by runId so this is safe.
+          for (const listener of this.allSubscribers) {
+            try { listener(event as any); } catch (err) {
+              console.error('[RunCoordinator] sub-agent event listener threw:', err);
+            }
+          }
+        },
+      },
+    });
   }
 
   async dispatch(params: DispatchParams): Promise<DispatchResult> {
@@ -353,7 +384,43 @@ export class RunCoordinator {
     };
   }
 
+  /**
+   * Public accessor for the sub-agent executor — used by `SessionToolContext`
+   * wiring so that `sessions_spawn` can dispatch one-shot child runs without
+   * touching the parent's run-concurrency queue.
+   */
+  getSubAgentExecutor(): SubAgentExecutor {
+    return this.subAgentExecutor;
+  }
+
+  /** Public accessor for the sub-agent registry — used by REST routes. */
+  getSubAgentRegistry(): SubAgentRegistry {
+    return this.subAgentRegistry;
+  }
+
+  /**
+   * Register an abort handler for a child runId. Called by `sessions_spawn`
+   * when it kicks off a child run via the executor. Cleared by
+   * `unregisterSubAgentAbort` when the child run completes.
+   */
+  registerSubAgentAbort(childRunId: string, fn: () => void): void {
+    this.childAborts.set(childRunId, fn);
+  }
+
+  unregisterSubAgentAbort(childRunId: string): void {
+    this.childAborts.delete(childRunId);
+  }
+
   abort(runId: string): void {
+    // Sub-agent runs go through the executor and don't have RunRecords. If
+    // this runId matches a registered child abort, fire it.
+    const childAbort = this.childAborts.get(runId);
+    if (childAbort) {
+      childAbort();
+      this.childAborts.delete(runId);
+      return;
+    }
+
     const record = this.runs.get(runId);
     if (!record || record.status === 'completed' || record.status === 'error') {
       return;
@@ -662,6 +729,64 @@ export class RunCoordinator {
     void this.executeRun(record, params);
   }
 
+  /**
+   * Bridge implementation passed to `SubAgentExecutor`. For each one-shot
+   * sub-agent spawn, build the per-spawn runtime, send the message, await
+   * completion, and return the final assistant text.
+   *
+   * **Status: SCAFFOLDED.** The full integration with `AgentRuntime` is
+   * deferred to a follow-up. Today the parent's runtime is constructed once
+   * by `AgentManager.start()` and pinned to the parent's `AgentConfig`; a
+   * sub-agent run needs a *separate* runtime instance configured with the
+   * sub's synthetic `AgentConfig`. That construction lives in `AgentManager`,
+   * not in `RunCoordinator`, so threading the construction here cleanly
+   * requires either:
+   *   1. exposing a `buildRuntimeFromConfig(config)` factory from the
+   *      `AgentManager`, or
+   *   2. having `RunCoordinator` accept an optional runtime-factory in its
+   *      constructor and using it for sub-agent runs.
+   *
+   * Both are tractable but out of scope for the backend-foundation slice.
+   * For now `runChild` returns a structured error so callers (the rewritten
+   * `sessions_spawn` in Task 14) can surface "not yet integrated" upstream
+   * rather than silently producing empty results. The abort plumbing,
+   * SessionToolContext extensions, and event-emission tagging that depend
+   * on this method's *signature* are fully in place; only the runtime
+   * dispatch itself is stubbed.
+   *
+   * Once the runtime factory lands, this method:
+   *   - resolves the sub-session via `sessionRouter.routeBySessionKey`
+   *   - opens the transcript via `transcriptStore.openSession`
+   *   - constructs an `AgentRuntime` from `opts.syntheticConfig`
+   *   - calls `runtime.send(...)` and awaits the assistant message
+   *   - persists the message via the transcript store
+   *   - returns `{ status: 'completed', text }`
+   *
+   * Abort is honored throughout: callers register an abort handler on
+   * `opts.onAbort`, and the executor calls it when `coordinator.abort` fires
+   * for the child runId.
+   */
+  private async runChild(opts: ChildRunOptions): Promise<ChildRunResult> {
+    // Wire the abort plumbing immediately so callers can request abort even
+    // while the runtime construction is still stubbed.
+    const abortController = new AbortController();
+    opts.onAbort = () => abortController.abort();
+
+    if (abortController.signal.aborted) {
+      return { status: 'aborted' };
+    }
+
+    return {
+      status: 'error',
+      error:
+        'Sub-agent runtime dispatch is not yet integrated with AgentManager\'s ' +
+        'runtime factory; child runs cannot execute. The executor surface, ' +
+        'abort plumbing, and SessionToolContext wiring are in place — only ' +
+        'the runtime construction is stubbed. See run-coordinator.ts:runChild ' +
+        'for the integration plan.',
+    };
+  }
+
   private async executeRun(record: RunRecord, params: DispatchParams): Promise<void> {
     if (!this.transcriptStore) {
       throw new Error('Cannot execute run without transcript storage');
@@ -741,6 +866,9 @@ export class RunCoordinator {
             };
             return this.subAgentRegistry.setYieldPending(parentSessionKey, opts, onResolve);
           },
+          subAgentExecutor: this.subAgentExecutor,
+          registerSubAgentAbort: (id, fn) => this.registerSubAgentAbort(id, fn),
+          unregisterSubAgentAbort: (id) => this.unregisterSubAgentAbort(id),
         };
         const sessionTools = createSessionTools(sessionToolCtx);
         if (sessionTools.length > 0) {

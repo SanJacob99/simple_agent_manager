@@ -6,6 +6,7 @@ import type { StorageEngine } from '../storage/storage-engine';
 import type { SessionTranscriptStore } from './session-transcript-store';
 import type { SubAgentRegistry, SetYieldOpts, SetYieldResult } from '../agents/sub-agent-registry';
 import type { RunCoordinator } from '../agents/run-coordinator';
+import type { SubAgentExecutor } from '../agents/sub-agent-executor';
 import { SESSION_TOOL_NAMES } from '../../shared/resolve-tool-names';
 
 export interface SessionToolContext {
@@ -30,6 +31,21 @@ export interface SessionToolContext {
     parentSessionKey: string,
     opts: SetYieldOpts,
   ) => SetYieldResult;
+  /**
+   * Sub-agent executor (Task 12) wired by RunCoordinator (Task 13). Used by
+   * the rewritten sessions_spawn tool (Task 14) to dispatch a one-shot child
+   * run alongside the parent's run, without occupying the parent's queue
+   * slot. Optional so tests with no sub-agent surface can omit it.
+   */
+  subAgentExecutor?: SubAgentExecutor;
+  /**
+   * Register an abort handler for a child runId so that a REST kill or the
+   * agent-facing `subagents({action:'kill'})` tool can abort the running
+   * child by calling `coordinator.abort(childRunId)`.
+   */
+  registerSubAgentAbort?: (childRunId: string, fn: () => void) => void;
+  /** Mirror of registerSubAgentAbort for cleanup after the child run finishes. */
+  unregisterSubAgentAbort?: (childRunId: string) => void;
 }
 
 function textResult(text: string): AgentToolResult<undefined> {
