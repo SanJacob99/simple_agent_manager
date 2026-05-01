@@ -86,7 +86,7 @@ export interface SubAgentResumeResult {
   subAgentId: string;
   targetAgentId: string;
   sessionKey: string;
-  status: 'completed' | 'error' | 'running';
+  status: 'completed' | 'error' | 'running' | 'killed';
   startedAt: number;
   endedAt?: number;
   durationMs: number;
