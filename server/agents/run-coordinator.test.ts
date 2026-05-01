@@ -6,8 +6,10 @@ import { SessionManager } from '@mariozechner/pi-coding-agent';
 import { RunCoordinator } from './run-coordinator';
 import { StreamProcessor } from './stream-processor';
 import { StorageEngine } from '../storage/storage-engine';
+import { SessionTranscriptStore } from '../sessions/session-transcript-store';
 import type { AgentRuntime } from '../runtime/agent-runtime';
 import type { AgentConfig } from '../../shared/agent-config';
+import type { SubAgentSessionMeta } from '../../shared/sub-agent-types';
 import { HookRegistry } from '../hooks/hook-registry';
 import { HOOK_NAMES, type BeforeAgentReplyContext } from '../hooks/hook-types';
 
@@ -113,6 +115,8 @@ function makeConfig(storagePath: string, overrides: Partial<AgentConfig> = {}): 
     },
     vectorDatabases: [],
     crons: [],
+    mcps: [],
+    subAgents: [],
     exportedAt: Date.now(),
     sourceGraphId: 'agent-1',
     runTimeoutMs: 172800000,
@@ -158,6 +162,75 @@ describe('RunCoordinator', () => {
     expect(session).toBeTruthy();
     const transcriptPath = storage.resolveTranscriptPath(session!);
     return SessionManager.open(transcriptPath, storage.getSessionsDir(), process.cwd()).getEntries();
+  }
+
+  function makeSubAgentMeta(overrides: Partial<SubAgentSessionMeta> = {}): SubAgentSessionMeta {
+    return {
+      subAgentId: 'sub-1',
+      subAgentName: 'researcher',
+      parentSessionKey: 'agent:agent-1:main',
+      parentRunId: 'parent-run',
+      status: 'running',
+      sealed: false,
+      appliedOverrides: {},
+      modelId: 'gpt-4',
+      providerPluginId: 'openai',
+      startedAt: Date.now(),
+      ...overrides,
+    };
+  }
+
+  async function createStoredSubSession(
+    sessionKey: string,
+    meta: SubAgentSessionMeta = makeSubAgentMeta(),
+  ) {
+    const transcriptStore = new SessionTranscriptStore(storage.getSessionsDir(), process.cwd());
+    const created = await transcriptStore.createSession();
+    await storage.createSession({
+      sessionKey,
+      sessionId: created.sessionId,
+      agentId: 'agent-1',
+      sessionFile: path.relative(storage.getAgentDir(), created.sessionFile).replace(/\\/g, '/'),
+      createdAt: new Date(meta.startedAt).toISOString(),
+      updatedAt: new Date(meta.startedAt).toISOString(),
+      chatType: 'direct',
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      contextTokens: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalEstimatedCostUsd: 0,
+      compactionCount: 0,
+      subAgentMeta: meta,
+    });
+    return { transcriptStore, created };
+  }
+
+  function makeResolvedSubAgent() {
+    return {
+      name: 'researcher',
+      description: 'Research helper',
+      systemPrompt: 'You research one topic.',
+      modelId: 'gpt-4',
+      thinkingLevel: 'off',
+      modelCapabilities: {},
+      overridableFields: [],
+      workingDirectory: '',
+      recursiveSubAgentsEnabled: false,
+      provider: { pluginId: 'openai', authMethodId: '', envVar: '', baseUrl: '' },
+      tools: {
+        profile: 'minimal',
+        resolvedTools: ['exec'],
+        enabledGroups: [],
+        skills: [],
+        plugins: [],
+        subAgentSpawning: false,
+        maxSubAgents: 0,
+      },
+      skills: [],
+      mcps: [],
+    } as AgentConfig['subAgents'][number];
   }
 
   describe('dispatch', () => {
@@ -250,6 +323,80 @@ describe('RunCoordinator', () => {
       expect(runtime.addTools).toHaveBeenCalledTimes(1);
       const [tools] = (runtime.addTools as any).mock.calls[0];
       expect(tools.map((tool: any) => tool.name)).toEqual(['sessions_list']);
+    });
+
+    it('auto-injects sub-agent control tools when sub-agents are declared', async () => {
+      coordinator.destroy();
+      config = makeConfig(storagePath, {
+        subAgents: [makeResolvedSubAgent()],
+        tools: {
+          profile: 'custom',
+          resolvedTools: [],
+          enabledGroups: [],
+          skills: [],
+          plugins: [],
+          subAgentSpawning: false,
+          maxSubAgents: 0,
+        },
+      });
+      runtime = mockRuntime();
+      coordinator = new RunCoordinator('agent-1', runtime, config, storage);
+
+      const result = await coordinator.dispatch({ sessionKey: 'auto-sub-tools', text: 'Hello' });
+      await coordinator.wait(result.runId, 5000);
+
+      expect(runtime.addTools).toHaveBeenCalledTimes(1);
+      const [tools] = (runtime.addTools as any).mock.calls[0];
+      expect(tools.map((tool: any) => tool.name).sort()).toEqual([
+        'sessions_spawn',
+        'sessions_yield',
+        'subagents',
+      ].sort());
+    });
+
+    it('upserts a durable sub-session entry when sessions_spawn persists metadata', async () => {
+      coordinator.destroy();
+      config = makeConfig(storagePath, {
+        provider: { pluginId: 'openai', authMethodId: '', envVar: '', baseUrl: '' } as any,
+        subAgents: [makeResolvedSubAgent()],
+        tools: {
+          profile: 'custom',
+          resolvedTools: [],
+          enabledGroups: [],
+          skills: [],
+          plugins: [],
+          subAgentSpawning: false,
+          maxSubAgents: 0,
+        },
+      });
+      runtime = mockRuntime();
+      coordinator = new RunCoordinator('agent-1', runtime, config, storage);
+
+      const result = await coordinator.dispatch({ sessionKey: 'spawn-parent', text: 'Hello' });
+      await coordinator.wait(result.runId, 5000);
+      const [tools] = (runtime.addTools as any).mock.calls[0];
+      const spawnTool = tools.find((tool: any) => tool.name === 'sessions_spawn');
+
+      const spawnResult = await spawnTool.execute('tool-1', {
+        subAgent: 'researcher',
+        message: 'Do the research',
+        wait: false,
+      });
+      const parsed = JSON.parse(spawnResult.content[0].text);
+      const subSession = await storage.getSession(parsed.sessionKey);
+
+      expect(subSession).toEqual(expect.objectContaining({
+        sessionKey: parsed.sessionKey,
+        agentId: 'agent-1',
+        chatType: 'direct',
+      }));
+      expect(subSession?.subAgentMeta).toEqual(expect.objectContaining({
+        subAgentId: parsed.subAgentId,
+        subAgentName: 'researcher',
+        parentSessionKey: 'agent:agent-1:spawn-parent',
+        status: 'running',
+        sealed: false,
+      }));
     });
 
     it('persists tool and assistant transcript entries and updates usage counters', async () => {
@@ -665,6 +812,184 @@ describe('RunCoordinator', () => {
       expect(result.status).toBe('error');
       expect(result.error?.code).toBe('aborted');
       expect(runtime.abort).toHaveBeenCalled();
+    });
+  });
+
+  describe('sub-agent runtime bridge', () => {
+    function makeChildConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
+      return makeConfig(storagePath, {
+        id: 'agent-1::sub::researcher',
+        name: 'Test Agent/researcher',
+        provider: { pluginId: 'openai', authMethodId: '', envVar: '', baseUrl: '' } as any,
+        tools: {
+          profile: 'custom',
+          resolvedTools: ['exec', 'sessions_spawn'],
+          enabledGroups: [],
+          skills: [],
+          plugins: [],
+          subAgentSpawning: true,
+          maxSubAgents: 3,
+        },
+        subAgents: [makeResolvedSubAgent()],
+        ...overrides,
+      });
+    }
+
+    it('runs a child runtime to completion and persists its transcript and terminal metadata', async () => {
+      coordinator.destroy();
+      const sessionKey = 'sub:agent:agent-1:main:researcher:abc';
+      await createStoredSubSession(sessionKey);
+
+      const childRuntime = mockRuntime();
+      (childRuntime as any).getResolvedSystemPrompt = vi.fn(() => ({
+        mode: 'manual',
+        sections: [{ key: 'manual', label: 'Manual', content: 'Child prompt', tokenEstimate: 2 }],
+        assembled: 'Child prompt',
+        userInstructions: 'Child prompt',
+      }));
+      (childRuntime.prompt as any).mockImplementationOnce(async () => {
+        (childRuntime as any).emitEvent({
+          type: 'message_start',
+          message: { role: 'assistant' },
+        });
+        (childRuntime as any).emitEvent({
+          type: 'message_update',
+          assistantMessageEvent: {
+            type: 'text_delta',
+            contentIndex: 0,
+            delta: 'Child ',
+          },
+        });
+        (childRuntime as any).emitEvent({
+          type: 'message_update',
+          assistantMessageEvent: {
+            type: 'text_end',
+            contentIndex: 0,
+            content: 'Child reply',
+          },
+        });
+        (childRuntime as any).emitEvent({
+          type: 'message_end',
+          message: {
+            role: 'assistant',
+            content: [{ type: 'text', text: 'Child reply' }],
+            api: 'openai-completions',
+            provider: 'openai',
+            model: 'gpt-4',
+            usage: makeUsage(),
+            stopReason: 'stop',
+            timestamp: Date.now(),
+          },
+        });
+      });
+      const runtimeFactory = vi.fn((_childConfig: AgentConfig) => childRuntime);
+      coordinator = new RunCoordinator(
+        'agent-1',
+        runtime,
+        config,
+        storage,
+        null,
+        undefined,
+        undefined,
+        runtimeFactory,
+      );
+      const events: any[] = [];
+      const unsubscribe = coordinator.subscribeAll((event) => events.push(event));
+
+      try {
+        const result = await coordinator.getSubAgentExecutor().dispatch({
+          childRunId: 'child-run-1',
+          childSessionKey: sessionKey,
+          syntheticConfig: makeChildConfig(),
+          message: 'Research X',
+          onAbortRegister: () => {},
+        });
+
+        expect(result).toEqual({ status: 'completed', text: 'Child reply' });
+        expect(runtimeFactory).toHaveBeenCalledOnce();
+        expect(runtimeFactory.mock.calls[0][0].subAgents).toEqual([]);
+        expect(runtimeFactory.mock.calls[0][0].tools?.resolvedTools).not.toContain('sessions_spawn');
+        expect(events.some((event) => (event as any).runId === 'child-run-1')).toBe(true);
+
+        const stored = await storage.getSession(sessionKey);
+        expect(stored?.subAgentMeta).toEqual(expect.objectContaining({
+          status: 'completed',
+          sealed: true,
+        }));
+        expect(stored?.inputTokens).toBe(10);
+        expect(stored?.outputTokens).toBe(5);
+
+        const transcriptPath = storage.resolveTranscriptPath(stored!);
+        const entries = SessionManager.open(transcriptPath, storage.getSessionsDir(), process.cwd()).getEntries();
+        const roles = entries
+          .filter((entry) => entry.type === 'message')
+          .map((entry) => (entry as any).message.role);
+        expect(roles).toEqual(['user', 'assistant']);
+      } finally {
+        unsubscribe();
+      }
+    });
+
+    it('returns a structured error when no runtime factory is wired', async () => {
+      const result = await coordinator.getSubAgentExecutor().dispatch({
+        childRunId: 'child-run-missing-factory',
+        childSessionKey: 'sub:agent:agent-1:main:researcher:missing',
+        syntheticConfig: makeChildConfig(),
+        message: 'Research X',
+        onAbortRegister: () => {},
+      });
+
+      expect(result.status).toBe('error');
+      expect(result.error).toMatch(/no runtime factory/i);
+    });
+
+    it('aborts and destroys an in-flight child runtime', async () => {
+      coordinator.destroy();
+      const sessionKey = 'sub:agent:agent-1:main:researcher:def';
+      await createStoredSubSession(sessionKey);
+
+      const childRuntime = mockRuntime();
+      let resolvePrompt: (() => void) | undefined;
+      (childRuntime.prompt as any).mockImplementationOnce(() =>
+        new Promise<void>((resolve) => {
+          resolvePrompt = resolve;
+        }),
+      );
+      (childRuntime.abort as any).mockImplementation(() => {
+        resolvePrompt?.();
+      });
+      const runtimeFactory = vi.fn(() => childRuntime);
+      coordinator = new RunCoordinator(
+        'agent-1',
+        runtime,
+        config,
+        storage,
+        null,
+        undefined,
+        undefined,
+        runtimeFactory,
+      );
+
+      const dispatchP = coordinator.getSubAgentExecutor().dispatch({
+        childRunId: 'child-run-abort',
+        childSessionKey: sessionKey,
+        syntheticConfig: makeChildConfig(),
+        message: 'Research slowly',
+        onAbortRegister: (fn) => coordinator.registerSubAgentAbort('child-run-abort', fn),
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      coordinator.abort('child-run-abort');
+      const result = await dispatchP;
+
+      expect(result.status).toBe('aborted');
+      expect(childRuntime.abort).toHaveBeenCalled();
+      expect(childRuntime.destroy).toHaveBeenCalled();
+      const stored = await storage.getSession(sessionKey);
+      expect(stored?.subAgentMeta).toEqual(expect.objectContaining({
+        status: 'killed',
+        sealed: true,
+      }));
     });
   });
 

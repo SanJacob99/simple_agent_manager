@@ -13,6 +13,7 @@ import VectorDatabaseProperties from './property-editors/VectorDatabasePropertie
 import CronProperties from './property-editors/CronProperties';
 import ProviderProperties from './property-editors/ProviderProperties';
 import MCPProperties from './property-editors/MCPProperties';
+import SubAgentProperties from './property-editors/SubAgentProperties';
 import type { FlowNodeData } from '../types/nodes';
 import { useUILayoutStore } from '../store/ui-layout-store';
 import { useRightAnchoredResize } from './useRightAnchoredResize';
@@ -44,6 +45,8 @@ function PropertyEditorForType({ nodeId, data }: { nodeId: string; data: FlowNod
       return <ProviderProperties nodeId={nodeId} data={data as any} />;
     case 'mcp':
       return <MCPProperties nodeId={nodeId} data={data} />;
+    case 'subAgent':
+      return <SubAgentProperties nodeId={nodeId} data={data} />;
   }
 }
 

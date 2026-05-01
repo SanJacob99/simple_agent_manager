@@ -1,5 +1,9 @@
 // --- Shared type aliases (duplicated from src/types/ to keep shared/ self-contained) ---
 
+import type { SubAgentOverridableField } from './sub-agent-types';
+
+export type { SubAgentOverridableField } from './sub-agent-types';
+
 export type MemoryBackend = 'builtin' | 'external' | 'cloud';
 export type ToolProfile = 'full' | 'coding' | 'messaging' | 'minimal' | 'custom';
 export type ToolGroup = 'runtime' | 'fs' | 'web' | 'coding' | 'media' | 'communication' | 'human';
@@ -111,6 +115,23 @@ export interface ResolvedProviderConfig {
   baseUrl: string; // raw override from node; '' means server fills plugin.defaultBaseUrl
 }
 
+export interface ResolvedSubAgentConfig {
+  name: string;
+  description: string;
+  systemPrompt: string;
+  modelId: string;                              // resolved (custom value or inherited from parent)
+  thinkingLevel: string;                        // resolved
+  modelCapabilities: ModelCapabilityOverrides;
+  overridableFields: SubAgentOverridableField[];
+  workingDirectory: string;                     // resolved (derived or custom)
+  recursiveSubAgentsEnabled: boolean;
+
+  provider: ResolvedProviderConfig;             // dedicated wins; else parent's
+  tools: ResolvedToolsConfig;                   // dedicated; required
+  skills: SkillDefinition[];                    // parent ∪ dedicated; dedicated wins by id
+  mcps: ResolvedMcpConfig[];                    // parent ∪ dedicated; dedicated wins by mcpNodeId
+}
+
 export interface AgentConfig {
   id: string;
   version: number;
@@ -133,6 +154,7 @@ export interface AgentConfig {
   vectorDatabases: ResolvedVectorDatabaseConfig[];
   crons: ResolvedCronConfig[];
   mcps: ResolvedMcpConfig[];
+  subAgents: ResolvedSubAgentConfig[];
 
   /** Working directory for shell commands (exec tool). Independent of storage path. */
   workspacePath: string | null;

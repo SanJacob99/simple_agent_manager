@@ -1,24 +1,29 @@
 import { randomUUID } from 'crypto';
 
+export type SubAgentStatus = 'running' | 'completed' | 'error' | 'killed';
+
 export interface SubAgentRecord {
   subAgentId: string;
   parentSessionKey: string;
   parentRunId: string;
   targetAgentId: string;
+  subAgentName: string;
   sessionKey: string;
   runId: string;
-  status: 'running' | 'completed' | 'error';
+  status: SubAgentStatus;
   startedAt: number;
   endedAt?: number;
   result?: string;
   error?: string;
+  sealed: boolean;
+  appliedOverrides: Record<string, unknown>;
 }
 
 export interface ResumeResult {
   subAgentId: string;
   targetAgentId: string;
   sessionKey: string;
-  status: 'completed' | 'error' | 'running';
+  status: 'completed' | 'error' | 'running' | 'killed';
   startedAt: number;
   endedAt?: number;
   durationMs: number;
@@ -62,7 +67,13 @@ export class SubAgentRegistry {
 
   spawn(
     parent: { sessionKey: string; runId: string },
-    target: { agentId: string; sessionKey: string; runId: string },
+    target: {
+      agentId: string;
+      sessionKey: string;
+      runId: string;
+      subAgentName: string;
+      appliedOverrides: Record<string, unknown>;
+    },
   ): SubAgentRecord {
     const subAgentId = randomUUID();
     const record: SubAgentRecord = {
@@ -70,10 +81,13 @@ export class SubAgentRegistry {
       parentSessionKey: parent.sessionKey,
       parentRunId: parent.runId,
       targetAgentId: target.agentId,
+      subAgentName: target.subAgentName,
       sessionKey: target.sessionKey,
       runId: target.runId,
       status: 'running',
       startedAt: Date.now(),
+      sealed: false,
+      appliedOverrides: target.appliedOverrides,
     };
     this.records.set(subAgentId, record);
     this.byRunId.set(target.runId, subAgentId);
@@ -86,6 +100,7 @@ export class SubAgentRegistry {
     record.status = 'completed';
     record.result = result;
     record.endedAt = Date.now();
+    record.sealed = true;
     this.maybeResolveYield(record.parentSessionKey);
   }
 
@@ -95,6 +110,7 @@ export class SubAgentRegistry {
     record.status = 'error';
     record.error = error;
     record.endedAt = Date.now();
+    record.sealed = true;
     this.maybeResolveYield(record.parentSessionKey);
   }
 
@@ -108,12 +124,32 @@ export class SubAgentRegistry {
     return this.records.get(subAgentId) ?? null;
   }
 
+  isSealed(subAgentIdOrSessionKey: string): boolean {
+    const record = this.records.get(subAgentIdOrSessionKey)
+      ?? [...this.records.values()].find((r) => r.sessionKey === subAgentIdOrSessionKey);
+    return record?.sealed ?? false;
+  }
+
+  seal(subAgentId: string): void {
+    const record = this.records.get(subAgentId);
+    if (!record) return;
+    record.sealed = true;
+  }
+
+  findBySessionKey(sessionKey: string): SubAgentRecord | undefined {
+    for (const r of this.records.values()) {
+      if (r.sessionKey === sessionKey) return r;
+    }
+    return undefined;
+  }
+
   kill(subAgentId: string): boolean {
     const record = this.records.get(subAgentId);
     if (!record || record.status !== 'running') return false;
-    record.status = 'error';
-    record.error = 'Killed by parent';
+    record.status = 'killed';
+    record.error = 'Killed';
     record.endedAt = Date.now();
+    record.sealed = true;
     this.maybeResolveYield(record.parentSessionKey);
     return true;
   }

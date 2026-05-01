@@ -8,7 +8,13 @@ const PARENT_RUN = 'run-parent';
 function spawnChild(reg: SubAgentRegistry, runId: string, targetAgentId = 'c') {
   return reg.spawn(
     { sessionKey: PARENT_KEY, runId: PARENT_RUN },
-    { agentId: targetAgentId, sessionKey: `sub:${PARENT_KEY}:${runId}`, runId },
+    {
+      agentId: targetAgentId,
+      sessionKey: `sub:${PARENT_KEY}:${runId}`,
+      runId,
+      subAgentName: 'helper',
+      appliedOverrides: {},
+    },
   );
 }
 
@@ -17,7 +23,13 @@ describe('SubAgentRegistry record lifecycle', () => {
     const registry = new SubAgentRegistry();
     const record = registry.spawn(
       { sessionKey: 'agent:a1:main', runId: 'run-1' },
-      { agentId: 'a1', sessionKey: 'sub:agent:a1:main:abc', runId: 'run-2' },
+      {
+        agentId: 'a1',
+        sessionKey: 'sub:agent:a1:main:abc',
+        runId: 'run-2',
+        subAgentName: 'helper',
+        appliedOverrides: {},
+      },
     );
 
     expect(record.subAgentId).toBeDefined();
@@ -32,7 +44,13 @@ describe('SubAgentRegistry record lifecycle', () => {
     const registry = new SubAgentRegistry();
     const record = registry.spawn(
       { sessionKey: 'agent:a1:main', runId: 'run-1' },
-      { agentId: 'a1', sessionKey: 'sub:agent:a1:main:abc', runId: 'run-2' },
+      {
+        agentId: 'a1',
+        sessionKey: 'sub:agent:a1:main:abc',
+        runId: 'run-2',
+        subAgentName: 'helper',
+        appliedOverrides: {},
+      },
     );
 
     registry.onComplete(record.runId, 'Task done');
@@ -47,7 +65,13 @@ describe('SubAgentRegistry record lifecycle', () => {
     const registry = new SubAgentRegistry();
     const record = registry.spawn(
       { sessionKey: 'agent:a1:main', runId: 'run-1' },
-      { agentId: 'a1', sessionKey: 'sub:agent:a1:main:abc', runId: 'run-2' },
+      {
+        agentId: 'a1',
+        sessionKey: 'sub:agent:a1:main:abc',
+        runId: 'run-2',
+        subAgentName: 'helper',
+        appliedOverrides: {},
+      },
     );
 
     registry.onError(record.runId, 'Something broke');
@@ -61,26 +85,44 @@ describe('SubAgentRegistry record lifecycle', () => {
     const registry = new SubAgentRegistry();
     const record = registry.spawn(
       { sessionKey: 'agent:a1:main', runId: 'run-1' },
-      { agentId: 'a1', sessionKey: 'sub:agent:a1:main:abc', runId: 'run-2' },
+      {
+        agentId: 'a1',
+        sessionKey: 'sub:agent:a1:main:abc',
+        runId: 'run-2',
+        subAgentName: 'helper',
+        appliedOverrides: {},
+      },
     );
 
     const killed = registry.kill(record.subAgentId);
     expect(killed).toBe(true);
 
     const updated = registry.get(record.subAgentId);
-    expect(updated?.status).toBe('error');
-    expect(updated?.error).toBe('Killed by parent');
+    expect(updated?.status).toBe('killed');
+    expect(updated?.error).toBe('Killed');
   });
 
   it('allComplete returns true when all sub-agents for parent are done', () => {
     const registry = new SubAgentRegistry();
     const r1 = registry.spawn(
       { sessionKey: 'agent:a1:main', runId: 'run-1' },
-      { agentId: 'a1', sessionKey: 'sub:agent:a1:main:abc', runId: 'run-2' },
+      {
+        agentId: 'a1',
+        sessionKey: 'sub:agent:a1:main:abc',
+        runId: 'run-2',
+        subAgentName: 'helper',
+        appliedOverrides: {},
+      },
     );
     const r2 = registry.spawn(
       { sessionKey: 'agent:a1:main', runId: 'run-1' },
-      { agentId: 'a1', sessionKey: 'sub:agent:a1:main:def', runId: 'run-3' },
+      {
+        agentId: 'a1',
+        sessionKey: 'sub:agent:a1:main:def',
+        runId: 'run-3',
+        subAgentName: 'helper',
+        appliedOverrides: {},
+      },
     );
 
     expect(registry.allComplete('agent:a1:main')).toBe(false);
@@ -257,7 +299,13 @@ describe('SubAgentRegistry yield orchestration', () => {
     spawnChild(reg, 'r1');
     reg.spawn(
       { sessionKey: PARENT_KEY_2, runId: PARENT_RUN_2 },
-      { agentId: 'c', sessionKey: `sub:${PARENT_KEY_2}:r2`, runId: 'r2' },
+      {
+        agentId: 'c',
+        sessionKey: `sub:${PARENT_KEY_2}:r2`,
+        runId: 'r2',
+        subAgentName: 'helper',
+        appliedOverrides: {},
+      },
     );
 
     const resolveA = vi.fn<(p: ResumePayload) => void>();
@@ -280,5 +328,89 @@ describe('SubAgentRegistry yield orchestration', () => {
     expect(resolveB).not.toHaveBeenCalled();
     expect(reg.isYieldPending(PARENT_KEY)).toBe(false);
     expect(reg.isYieldPending(PARENT_KEY_2)).toBe(false);
+  });
+
+  it('starts unsealed on spawn', () => {
+    const registry = new SubAgentRegistry();
+    const record = registry.spawn(
+      { sessionKey: 'agent:a:main', runId: 'pr1' },
+      {
+        agentId: 'a',
+        sessionKey: 'sub:agent:a:main:helper:abc',
+        runId: 'cr1',
+        subAgentName: 'helper',
+        appliedOverrides: { modelId: 'foo' },
+      },
+    );
+    expect(record.sealed).toBe(false);
+    expect(record.appliedOverrides).toEqual({ modelId: 'foo' });
+  });
+
+  it('onComplete seals the record', () => {
+    const registry = new SubAgentRegistry();
+    const record = registry.spawn(
+      { sessionKey: 'agent:a:main', runId: 'pr1' },
+      {
+        agentId: 'a',
+        sessionKey: 'sub:agent:a:main:helper:abc',
+        runId: 'cr1',
+        subAgentName: 'helper',
+        appliedOverrides: {},
+      },
+    );
+    registry.onComplete('cr1', 'done');
+    expect(registry.get(record.subAgentId)?.status).toBe('completed');
+    expect(registry.isSealed('sub:agent:a:main:helper:abc')).toBe(true);
+  });
+
+  it('kill flips status to "killed" and seals', () => {
+    const registry = new SubAgentRegistry();
+    const record = registry.spawn(
+      { sessionKey: 'agent:a:main', runId: 'pr1' },
+      {
+        agentId: 'a',
+        sessionKey: 'sub:agent:a:main:helper:abc',
+        runId: 'cr1',
+        subAgentName: 'helper',
+        appliedOverrides: {},
+      },
+    );
+    expect(registry.kill(record.subAgentId)).toBe(true);
+    const updated = registry.get(record.subAgentId);
+    expect(updated?.status).toBe('killed');
+    expect(updated?.sealed).toBe(true);
+  });
+
+  it('onError after kill does NOT overwrite the killed status', () => {
+    const registry = new SubAgentRegistry();
+    const record = registry.spawn(
+      { sessionKey: 'agent:a:main', runId: 'pr1' },
+      {
+        agentId: 'a',
+        sessionKey: 'sub:agent:a:main:helper:abc',
+        runId: 'cr1',
+        subAgentName: 'helper',
+        appliedOverrides: {},
+      },
+    );
+    registry.kill(record.subAgentId);
+    registry.onError('cr1', 'aborted');
+    expect(registry.get(record.subAgentId)?.status).toBe('killed');
+  });
+
+  it('findBySessionKey returns the record', () => {
+    const registry = new SubAgentRegistry();
+    registry.spawn(
+      { sessionKey: 'agent:a:main', runId: 'pr1' },
+      {
+        agentId: 'a',
+        sessionKey: 'sub:agent:a:main:helper:abc',
+        runId: 'cr1',
+        subAgentName: 'helper',
+        appliedOverrides: {},
+      },
+    );
+    const r = registry.findBySessionKey('sub:agent:a:main:helper:abc');
+    expect(r?.runId).toBe('cr1');
   });
 });

@@ -56,6 +56,11 @@
       "doc": "mcp-node.md",
       "type": "src/types/nodes.ts#MCPNodeData",
       "runtime": null
+    },
+    "subAgent": {
+      "doc": "sub-agent-node.md",
+      "type": "src/types/nodes.ts#SubAgentNodeData",
+      "runtime": "server/runtime/sub-agent-executor.ts"
     }
   }
 }

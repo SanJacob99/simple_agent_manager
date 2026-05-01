@@ -215,10 +215,24 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   },
 
   onConnect: (connection: Connection) => {
-    // Validate: only peripheral -> agent connections
+    // Peripheral -> agent. Sub-agents are also valid targets so users can
+    // attach a dedicated Tools / Provider / Skills / MCP to a sub-agent
+    // (the resolver supports per-sub overrides).
     const { nodes } = get();
     const targetNode = nodes.find((n) => n.id === connection.target);
-    if (!targetNode || targetNode.data.type !== 'agent') return;
+    if (!targetNode) return;
+    const isAgent = targetNode.data.type === 'agent';
+    const isSubAgent = targetNode.data.type === 'subAgent';
+    if (!isAgent && !isSubAgent) return;
+
+    // Sub-agent peripherals are limited to the four nodes the resolver
+    // actually reads: tools, provider, skills, mcp. Anything else would
+    // be silently ignored, which is worse than refusing the connection.
+    if (isSubAgent) {
+      const sourceNode = nodes.find((n) => n.id === connection.source);
+      const allowed = new Set(['tools', 'provider', 'skills', 'mcp']);
+      if (!sourceNode || !allowed.has(sourceNode.data.type)) return;
+    }
 
     const edge: Edge = {
       ...connection,

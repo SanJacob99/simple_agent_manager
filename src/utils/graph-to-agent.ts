@@ -1,10 +1,158 @@
 import type { AppNode } from '../types/nodes';
 import type { Edge } from '@xyflow/react';
-import type { AgentConfig, ResolvedProviderConfig, SystemPromptMode } from '../../shared/agent-config';
+import type { AgentConfig, ResolvedProviderConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides } from '../../shared/agent-config';
 import { resolveToolNames, IMPLEMENTED_TOOL_NAMES } from '../../shared/resolve-tool-names';
 import { buildSystemPrompt } from '../../shared/system-prompt-builder';
 import { eligibleBundledSkills } from '../../shared/default-tool-skills';
 import { useToolCatalogStore } from '../store/tool-catalog-store';
+import type { SubAgentNodeData } from '../types/nodes';
+import { SUB_AGENT_NAME_REGEX } from '../../shared/sub-agent-types';
+import * as posixPath from 'path';
+
+function resolveSubAgent(
+  subAgentNode: AppNode & { data: SubAgentNodeData },
+  parent: {
+    provider: ResolvedProviderConfig;
+    modelId: string;
+    thinkingLevel: string;
+    modelCapabilities: ModelCapabilityOverrides;
+    skills: SkillDefinition[];
+    mcps: ResolvedMcpConfig[];
+    workspacePath: string;
+  },
+  nodes: AppNode[],
+  edges: Edge[],
+): ResolvedSubAgentConfig | null {
+  const data = subAgentNode.data;
+
+  // Validate name (callers handle the null return path)
+  if (!SUB_AGENT_NAME_REGEX.test(data.name)) {
+    return null;
+  }
+
+  // Walk peripherals attached to this sub-agent node
+  const subEdges = edges.filter((e) => e.target === subAgentNode.id);
+  const subInputs = subEdges
+    .map((e) => nodes.find((n) => n.id === e.source))
+    .filter((n): n is AppNode => n !== undefined);
+
+  // Required: dedicated Tools node
+  const toolsNodes = subInputs.filter((n) => n.data.type === 'tools');
+  if (toolsNodes.length !== 1) {
+    return null;
+  }
+  const toolsNode = toolsNodes[0];
+  if (toolsNode.data.type !== 'tools') return null;
+
+  // Optional: dedicated provider; else inherit
+  const dedicatedProviderNode = subInputs.find((n) => n.data.type === 'provider');
+  const provider: ResolvedProviderConfig =
+    dedicatedProviderNode && dedicatedProviderNode.data.type === 'provider'
+      ? {
+          pluginId: dedicatedProviderNode.data.pluginId as string,
+          authMethodId: dedicatedProviderNode.data.authMethodId as string,
+          envVar: dedicatedProviderNode.data.envVar as string,
+          baseUrl: dedicatedProviderNode.data.baseUrl as string,
+        }
+      : parent.provider;
+
+  // Resolve modelId / thinkingLevel via mode fields
+  const modelId = data.modelIdMode === 'custom' && data.modelId ? data.modelId : parent.modelId;
+  const thinkingLevel =
+    data.thinkingLevelMode === 'custom' ? data.thinkingLevel : parent.thinkingLevel;
+  // modelCapabilities: own when present; else inherit
+  const modelCapabilities =
+    Object.keys(data.modelCapabilities ?? {}).length > 0
+      ? data.modelCapabilities
+      : parent.modelCapabilities;
+
+  // Skills merge: parent ∪ dedicated, dedup by id, dedicated wins
+  const dedicatedSkillsNodes = subInputs.filter((n) => n.data.type === 'skills');
+  const dedicatedSkillsFromTools = toolsNode.data.type === 'tools' ? [...toolsNode.data.skills] : [];
+  const dedicatedSkills: SkillDefinition[] = [...dedicatedSkillsFromTools];
+  for (const sn of dedicatedSkillsNodes) {
+    if (sn.data.type !== 'skills') continue;
+    for (const skillName of sn.data.enabledSkills) {
+      dedicatedSkills.push({
+        id: skillName,
+        name: skillName,
+        content: '',
+        injectAs: 'system-prompt' as const,
+      });
+    }
+  }
+  const dedicatedIds = new Set(dedicatedSkills.map((s) => s.id));
+  const skills: SkillDefinition[] = [
+    ...parent.skills.filter((s) => !dedicatedIds.has(s.id)),
+    ...dedicatedSkills,
+  ];
+
+  // MCP merge: parent ∪ dedicated, dedup by mcpNodeId, dedicated wins
+  const dedicatedMcps: ResolvedMcpConfig[] = subInputs
+    .filter((n) => n.data.type === 'mcp')
+    .map((n) => {
+      if (n.data.type !== 'mcp') throw new Error('unreachable');
+      return {
+        mcpNodeId: n.id,
+        label: n.data.label,
+        transport: n.data.transport,
+        command: n.data.command,
+        args: n.data.args,
+        env: n.data.env,
+        cwd: n.data.cwd,
+        url: n.data.url,
+        headers: n.data.headers,
+        toolPrefix: n.data.toolPrefix,
+        allowedTools: n.data.allowedTools,
+        autoConnect: n.data.autoConnect,
+      };
+    });
+  const dedicatedMcpIds = new Set(dedicatedMcps.map((m) => m.mcpNodeId));
+  const mcps: ResolvedMcpConfig[] = [
+    ...parent.mcps.filter((m) => !dedicatedMcpIds.has(m.mcpNodeId)),
+    ...dedicatedMcps,
+  ];
+
+  // Tools resolved: same shape used for parent agents
+  const tools: ResolvedToolsConfig =
+    toolsNode.data.type === 'tools'
+      ? {
+          profile: toolsNode.data.profile,
+          resolvedTools: toolsNode.data.enabledTools,
+          enabledGroups: toolsNode.data.enabledGroups,
+          skills: dedicatedSkills,
+          plugins: toolsNode.data.plugins,
+          subAgentSpawning: toolsNode.data.subAgentSpawning,
+          maxSubAgents: toolsNode.data.maxSubAgents,
+        }
+      : (() => {
+          throw new Error('unreachable');
+        })();
+
+  // Working directory derivation
+  const workingDirectory =
+    data.workingDirectoryMode === 'custom'
+      ? data.workingDirectory
+      : parent.workspacePath
+        ? posixPath.posix.join(parent.workspacePath.replace(/\\/g, '/'), 'subagent', data.name)
+        : '';
+
+  return {
+    name: data.name,
+    description: data.description,
+    systemPrompt: data.systemPrompt,
+    modelId,
+    thinkingLevel,
+    modelCapabilities,
+    overridableFields: [...data.overridableFields],
+    workingDirectory,
+    recursiveSubAgentsEnabled: data.recursiveSubAgentsEnabled,
+    provider,
+    tools,
+    skills,
+    mcps,
+  };
+}
 
 export function resolveAgentConfig(
   agentNodeId: string,
@@ -343,6 +491,45 @@ export function resolveAgentConfig(
     },
   });
 
+  // --- Sub-Agents ---
+  const subAgentNodes = connectedNodes.filter(
+    (n): n is AppNode & { data: SubAgentNodeData } => n.data.type === 'subAgent',
+  );
+
+  const subAgents: ResolvedSubAgentConfig[] = [];
+  const seenNames = new Set<string>();
+  const conflictedNames = new Set<string>();
+
+  for (const sub of subAgentNodes) {
+    const name = sub.data.name;
+    if (seenNames.has(name)) {
+      conflictedNames.add(name);
+      continue;
+    }
+    seenNames.add(name);
+  }
+
+  for (const sub of subAgentNodes) {
+    if (conflictedNames.has(sub.data.name)) continue;
+    const resolved = resolveSubAgent(
+      sub,
+      {
+        provider: providerConfig,
+        modelId: data.modelId,
+        thinkingLevel: data.thinkingLevel,
+        modelCapabilities: data.modelCapabilities,
+        skills: allSkills,
+        mcps,
+        workspacePath: data.workingDirectory ?? '',
+      },
+      nodes,
+      edges,
+    );
+    if (resolved) {
+      subAgents.push(resolved);
+    }
+  }
+
   return {
     id: agentNodeId,
     version: 2,
@@ -363,6 +550,7 @@ export function resolveAgentConfig(
     vectorDatabases,
     crons,
     mcps,
+    subAgents,
     // Exec tool cwd overrides agent-level workingDirectory when set
     workspacePath:
       (toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.exec?.cwd)

@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import path from 'path';
 import type { SessionManager } from '@mariozechner/pi-coding-agent';
 import type { AgentMessage } from '@mariozechner/pi-agent-core';
 import type { AssistantMessage, ToolResultMessage, Usage, UserMessage } from '@mariozechner/pi-ai';
@@ -6,6 +7,7 @@ import type { AgentRuntime, RuntimeEvent } from '../runtime/agent-runtime';
 import type { StorageEngine } from '../storage/storage-engine';
 import type { AgentConfig } from '../../shared/agent-config';
 import type { SessionStoreEntry } from '../../shared/storage-types';
+import type { SubAgentSessionMeta } from '../../shared/sub-agent-types';
 import type { HookRegistry } from '../hooks/hook-registry';
 import { log } from '../logger';
 import { SessionRouter, type RouteRequest, type RouteResult } from '../sessions/session-router';
@@ -37,6 +39,7 @@ import type {
 import {
   RUN_DIAGNOSTIC_CUSTOM_TYPE,
   SUB_AGENT_RESUME_CUSTOM_TYPE,
+  SUB_AGENT_SPAWN_CUSTOM_TYPE,
   type RunDiagnosticData,
   type RunErrorDiagnosticData,
   type SubAgentResumeData,
@@ -56,6 +59,12 @@ import { SubAgentRegistry } from './sub-agent-registry';
 import { createSessionTools, type SessionToolContext } from '../sessions/session-tools';
 import type { ResumePayload, SetYieldResult } from './sub-agent-registry';
 import { SESSION_TOOL_NAMES } from '../../shared/resolve-tool-names';
+import {
+  SubAgentExecutor,
+  type ChildRunOptions,
+  type ChildRunResult,
+} from './sub-agent-executor';
+import type { RuntimeFactory } from './runtime-factory';
 
 export type RunStatus = 'pending' | 'running' | 'completed' | 'error';
 
@@ -187,6 +196,13 @@ export class RunCoordinator {
   private readonly transcriptStore: SessionTranscriptStore | null;
   private readonly sessionRouter: SessionRouter | null;
   private readonly subAgentRegistry: SubAgentRegistry;
+  private readonly subAgentExecutor: SubAgentExecutor;
+  /**
+   * Map of child runId -> abort handler. Populated by SessionToolContext's
+   * registerSubAgentAbort wiring and consumed by `abort(runId)` so REST kill
+   * and the `subagents` tool can terminate a running child.
+   */
+  private readonly childAborts = new Map<string, () => void>();
 
   /**
    * Last `preview` breakdown we saw, keyed by sessionKey. The provider
@@ -205,6 +221,7 @@ export class RunCoordinator {
     private readonly hooks: HookRegistry | null = null,
     sessionRouter?: SessionRouter,
     transcriptStore?: SessionTranscriptStore,
+    private readonly runtimeFactory?: RuntimeFactory,
   ) {
     this.transcriptStore = transcriptStore
       ?? (storage && config.storage
@@ -217,6 +234,25 @@ export class RunCoordinator {
         : null);
 
     this.subAgentRegistry = new SubAgentRegistry();
+
+    // Sub-agent executor: bridges to runChild() below, which constructs a
+    // dedicated runtime per spawn. emits run-events on the same stream the
+    // parent uses, tagged with the child runId so subscribers can filter.
+    this.subAgentExecutor = new SubAgentExecutor({
+      runChild: (o) => this.runChild(o),
+      eventBus: {
+        emit: (event) => {
+          // Best-effort forward to the same listener set used for parent
+          // events. Child events carry runId on the event itself; existing
+          // subscribers filter by runId so this is safe.
+          for (const listener of this.allSubscribers) {
+            try { listener(event as any); } catch (err) {
+              console.error('[RunCoordinator] sub-agent event listener threw:', err);
+            }
+          }
+        },
+      },
+    });
   }
 
   async dispatch(params: DispatchParams): Promise<DispatchResult> {
@@ -353,7 +389,124 @@ export class RunCoordinator {
     };
   }
 
+  /**
+   * Public accessor for the sub-agent executor — used by `SessionToolContext`
+   * wiring so that `sessions_spawn` can dispatch one-shot child runs without
+   * touching the parent's run-concurrency queue.
+   */
+  getSubAgentExecutor(): SubAgentExecutor {
+    return this.subAgentExecutor;
+  }
+
+  /** Public accessor for the sub-agent registry — used by REST routes. */
+  getSubAgentRegistry(): SubAgentRegistry {
+    return this.subAgentRegistry;
+  }
+
+  /**
+   * Register an abort handler for a child runId. Called by `sessions_spawn`
+   * when it kicks off a child run via the executor. Cleared by
+   * `unregisterSubAgentAbort` when the child run completes.
+   */
+  registerSubAgentAbort(childRunId: string, fn: () => void): void {
+    this.childAborts.set(childRunId, fn);
+  }
+
+  unregisterSubAgentAbort(childRunId: string): void {
+    this.childAborts.delete(childRunId);
+  }
+
+  private getEnabledSessionToolNames(config: AgentConfig): string[] {
+    const names = new Set(
+      config.tools?.resolvedTools.filter((toolName) => SESSION_TOOL_NAME_SET.has(toolName)) ?? [],
+    );
+
+    if ((config.subAgents?.length ?? 0) > 0) {
+      names.add('sessions_spawn');
+      names.add('sessions_yield');
+      names.add('subagents');
+    }
+
+    return [...names];
+  }
+
+  private async persistSubAgentSessionMeta(
+    sessionKey: string,
+    meta: SubAgentSessionMeta,
+  ): Promise<void> {
+    if (!this.storage || !this.transcriptStore || !this.config.storage) {
+      return;
+    }
+
+    const timestamp = new Date(meta.startedAt || Date.now()).toISOString();
+    const existing = await this.storage.getSession(sessionKey);
+    if (existing) {
+      await this.storage.updateSession(sessionKey, {
+        subAgentMeta: meta,
+        updatedAt: timestamp,
+      });
+      return;
+    }
+
+    const created = await this.transcriptStore.createSession();
+    const entry: SessionStoreEntry = {
+      sessionKey,
+      sessionId: created.sessionId,
+      agentId: this.agentId,
+      sessionFile: path.relative(this.storage.getAgentDir(), created.sessionFile).replace(/\\/g, '/'),
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      chatType: 'direct',
+      displayName: `${meta.subAgentName} sub-agent`,
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      contextTokens: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalEstimatedCostUsd: 0,
+      compactionCount: 0,
+      subAgentMeta: meta,
+    };
+
+    await this.storage.createSession(entry);
+    await this.storage.enforceRetention(this.config.storage.sessionRetention);
+  }
+
+  private async patchSubAgentSessionMeta(
+    sessionKey: string,
+    patch: Partial<SubAgentSessionMeta>,
+  ): Promise<void> {
+    if (!this.storage) {
+      return;
+    }
+
+    const existing = await this.storage.getSession(sessionKey);
+    if (!existing?.subAgentMeta) {
+      return;
+    }
+
+    const updatedMeta: SubAgentSessionMeta = {
+      ...existing.subAgentMeta,
+      ...patch,
+    };
+    const endedAt = patch.endedAt ?? updatedMeta.endedAt;
+    await this.storage.updateSession(sessionKey, {
+      subAgentMeta: updatedMeta,
+      updatedAt: new Date(endedAt ?? Date.now()).toISOString(),
+    });
+  }
+
   abort(runId: string): void {
+    // Sub-agent runs go through the executor and don't have RunRecords. If
+    // this runId matches a registered child abort, fire it.
+    const childAbort = this.childAborts.get(runId);
+    if (childAbort) {
+      childAbort();
+      this.childAborts.delete(runId);
+      return;
+    }
+
     const record = this.runs.get(runId);
     if (!record || record.status === 'completed' || record.status === 'error') {
       return;
@@ -549,6 +702,16 @@ export class RunCoordinator {
     // per-run loop would miss yields whose parent runs were already cleaned up.
     this.subAgentRegistry.cancelAllYields();
 
+    // Fire any registered child-abort handlers so in-flight sub-agent runs
+    // terminate cleanly on coordinator shutdown. Sub-agent runs don't have
+    // RunRecords on this coordinator, so the records loop below misses them.
+    for (const [, abortFn] of this.childAborts) {
+      try { abortFn(); } catch (err) {
+        console.error('[RunCoordinator] child abort handler threw on destroy:', err);
+      }
+    }
+    this.childAborts.clear();
+
     const pendingRunIds = new Set(this.concurrency.destroy());
 
     for (const record of this.runs.values()) {
@@ -662,6 +825,384 @@ export class RunCoordinator {
     void this.executeRun(record, params);
   }
 
+  /**
+   * Bridge implementation passed to `SubAgentExecutor`. Builds a fresh
+   * child runtime for each one-shot sub-agent spawn, persists the child
+   * transcript, and tears the runtime down on completion, error, or abort.
+   */
+  private async runChild(opts: ChildRunOptions): Promise<ChildRunResult> {
+    const abortController = new AbortController();
+    let aborted = false;
+    let childRuntime: AgentRuntime | null = null;
+    let unsubscribe: (() => void) | null = null;
+
+    opts.onAbort = () => {
+      aborted = true;
+      abortController.abort();
+      childRuntime?.abort();
+    };
+
+    if (abortController.signal.aborted) {
+      return { status: 'aborted' };
+    }
+
+    const runtimeFactory = this.runtimeFactory;
+    if (!runtimeFactory) {
+      return {
+        status: 'error',
+        error: 'No runtime factory is wired into RunCoordinator; sub-agent runs cannot execute.',
+      };
+    }
+
+    if (!this.storage || !this.transcriptStore || !this.sessionRouter) {
+      return {
+        status: 'error',
+        error: 'Sub-agent runs require storage, transcript storage, and session routing.',
+      };
+    }
+
+    let entry = await this.storage.getSession(opts.sessionKey);
+    if (!entry && !opts.sessionKey.startsWith(`agent:${this.agentId}:`)) {
+      entry = await this.storage.getSession(`agent:${this.agentId}:${opts.sessionKey}`);
+    }
+    if (!entry) {
+      return {
+        status: 'error',
+        error: `Sub-session entry not found for ${opts.sessionKey}; spawn metadata was not persisted.`,
+      };
+    }
+
+    const childConfig = this.buildChildRuntimeConfig(opts.syntheticConfig);
+    let promptText = opts.message;
+    let capturedAssistantText = '';
+    let streamingAssistantText = '';
+    let transcriptManager = this.transcriptStore.openSession(
+      this.storage.resolveTranscriptPath(entry),
+    );
+    const transcriptState: TranscriptState = {
+      assistantText: '',
+      assistantSuppressed: false,
+      compactionCount: 0,
+      assistantPersisted: false,
+      toolInvoked: false,
+    };
+    const childRecord: RunRecord = {
+      runId: opts.runId,
+      agentId: this.agentId,
+      sessionKey: entry.sessionKey,
+      sessionId: entry.sessionId,
+      transcriptPath: this.storage.resolveTranscriptPath(entry),
+      status: 'running',
+      acceptedAt: Date.now(),
+      startedAt: Date.now(),
+      payloads: [],
+      abortController,
+      timeoutTimer: null,
+    };
+
+    let transcriptWrites = Promise.resolve();
+    let transcriptFinalized = false;
+    const queueTranscriptWrite = (task: () => Promise<void>) => {
+      transcriptWrites = transcriptWrites
+        .then(task)
+        .catch((error) => {
+          console.error('[RunCoordinator] child transcript persistence failed:', error);
+        });
+    };
+    const finalizeTranscript = async () => {
+      if (transcriptFinalized) {
+        return;
+      }
+      transcriptFinalized = true;
+      await transcriptWrites;
+      this.appendPendingDiagnostic(childRecord, transcriptManager);
+      transcriptManager = await this.finishTranscript(childRecord, transcriptManager, transcriptState);
+      childRecord.transcriptPath = transcriptManager.getSessionFile() ?? childRecord.transcriptPath;
+    };
+
+    try {
+      childRuntime = runtimeFactory(childConfig);
+      childRuntime.setSessionContext(
+        transcriptManager.buildSessionContext().messages as AgentMessage[],
+      );
+      childRuntime.setActiveSession(transcriptManager);
+      childRuntime.setCurrentSessionKey(entry.sessionKey);
+
+      if (this.hooks) {
+        const modelCtx: BeforeModelResolveContext = {
+          agentId: this.agentId,
+          runId: opts.runId,
+          sessionId: entry.sessionId,
+          config: childConfig,
+          overrides: {},
+        };
+        await this.hooks.invoke(HOOK_NAMES.BEFORE_MODEL_RESOLVE, modelCtx);
+        if (modelCtx.overrides.provider || modelCtx.overrides.modelId) {
+          childRuntime.setModel(
+            modelCtx.overrides.provider ?? childConfig.provider.pluginId,
+            modelCtx.overrides.modelId ?? childConfig.modelId,
+          );
+        }
+
+        const promptCtx: BeforePromptBuildContext = {
+          agentId: this.agentId,
+          runId: opts.runId,
+          sessionId: entry.sessionId,
+          config: childConfig,
+          messages: childRuntime.state.messages,
+          overrides: {},
+        };
+        await this.hooks.invoke(HOOK_NAMES.BEFORE_PROMPT_BUILD, promptCtx);
+        if (promptCtx.overrides.systemPrompt) {
+          childRuntime.setSystemPrompt(promptCtx.overrides.systemPrompt);
+        } else if (promptCtx.overrides.prependSystemContext || promptCtx.overrides.appendSystemContext) {
+          let currentPrompt = childRuntime.getSystemPrompt();
+          if (promptCtx.overrides.prependSystemContext) {
+            currentPrompt = `${promptCtx.overrides.prependSystemContext}\n\n${currentPrompt}`;
+          }
+          if (promptCtx.overrides.appendSystemContext) {
+            currentPrompt = `${currentPrompt}\n\n${promptCtx.overrides.appendSystemContext}`;
+          }
+          childRuntime.setSystemPrompt(currentPrompt);
+        }
+        if (promptCtx.overrides.prependContext) {
+          promptText = `${promptCtx.overrides.prependContext}\n\n${promptText}`;
+        }
+      }
+
+      this.persistConfigChanges(transcriptManager, childConfig);
+      this.persistResolvedSystemPrompt(transcriptManager, childRuntime);
+      const userMessage = this.buildUserMessage({
+        sessionKey: entry.sessionKey,
+        text: opts.message,
+      });
+      if (userMessage) {
+        transcriptManager.appendMessage(userMessage);
+        await this.touchSession(entry.sessionKey, userMessage.timestamp);
+      }
+
+      if (this.hooks) {
+        const replyCtx: BeforeAgentReplyContext = {
+          agentId: this.agentId,
+          runId: opts.runId,
+          sessionId: entry.sessionId,
+          messages: childRuntime.state.messages,
+          claimed: false,
+          syntheticReply: undefined,
+          silent: false,
+        };
+        await this.hooks.invoke(HOOK_NAMES.BEFORE_AGENT_REPLY, replyCtx);
+        if (replyCtx.claimed) {
+          if (!replyCtx.silent && replyCtx.syntheticReply) {
+            const assistantMessage = this.buildAssistantMessage(
+              {
+                role: 'assistant',
+                content: [{ type: 'text', text: replyCtx.syntheticReply }],
+                provider: childConfig.provider.pluginId,
+                model: childConfig.modelId,
+                stopReason: 'stop',
+                timestamp: Date.now(),
+              },
+              replyCtx.syntheticReply,
+              childRuntime,
+              childConfig,
+            );
+            transcriptManager.appendMessage(assistantMessage);
+            await this.applyAssistantUsage(entry.sessionKey, assistantMessage);
+            capturedAssistantText = replyCtx.syntheticReply;
+            this.emitSyntheticChildAssistantReply(opts, assistantMessage, replyCtx.syntheticReply);
+          }
+          await finalizeTranscript();
+          childRecord.payloads = capturedAssistantText
+            ? [{ type: 'text', content: capturedAssistantText }]
+            : [];
+          childRecord.status = 'completed';
+          childRecord.endedAt = Date.now();
+          await this.patchSubAgentSessionMeta(entry.sessionKey, {
+            status: 'completed',
+            sealed: true,
+            endedAt: childRecord.endedAt,
+          });
+          this.invokeAgentEndHook(childRecord, 'completed');
+          return { status: 'completed', text: capturedAssistantText };
+        }
+      }
+
+      unsubscribe = childRuntime.subscribe((event: RuntimeEvent) => {
+        const raw = event as any;
+        if (raw.type === 'message_start' && raw.message?.role === 'assistant') {
+          streamingAssistantText = '';
+        } else if (raw.type === 'message_update') {
+          const assistantEvent = raw.assistantMessageEvent;
+          if (assistantEvent?.type === 'text_delta') {
+            streamingAssistantText += assistantEvent.delta ?? '';
+          } else if (assistantEvent?.type === 'text_end') {
+            const rawContent = typeof assistantEvent.content === 'string'
+              ? assistantEvent.content
+              : streamingAssistantText;
+            streamingAssistantText = sanitizeAssistantVisibleText(rawContent);
+          }
+        } else if (raw.type === 'message_end' && raw.message?.role === 'assistant') {
+          capturedAssistantText = streamingAssistantText
+            || sanitizeAssistantVisibleText(extractTextContent(raw.message.content));
+        }
+
+        queueTranscriptWrite(() =>
+          this.persistRuntimeEvent(
+            childRecord,
+            transcriptManager,
+            event,
+            transcriptState,
+            childRuntime!,
+            childConfig,
+          ),
+        );
+        opts.emit(event);
+      });
+
+      if (aborted) {
+        await this.patchSubAgentSessionMeta(entry.sessionKey, {
+          status: 'killed',
+          sealed: true,
+          endedAt: Date.now(),
+        });
+        return { status: 'aborted' };
+      }
+
+      await childRuntime.prompt(promptText);
+      if (aborted) {
+        const structured = {
+          code: 'aborted',
+          message: 'Sub-agent run aborted by caller',
+          retriable: false,
+        } satisfies StructuredError;
+        childRecord.pendingDiagnostic ??= this.buildRunDiagnostic(childRecord, structured);
+        await finalizeTranscript();
+        childRecord.status = 'error';
+        childRecord.error = structured;
+        childRecord.endedAt = Date.now();
+        await this.patchSubAgentSessionMeta(entry.sessionKey, {
+          status: 'killed',
+          sealed: true,
+          endedAt: childRecord.endedAt,
+        });
+        this.invokeAgentEndHook(childRecord, 'error', structured);
+        return { status: 'aborted' };
+      }
+
+      await transcriptWrites;
+      if (!transcriptState.assistantPersisted && !transcriptState.toolInvoked) {
+        childRecord.pendingDiagnostic ??= {
+          kind: 'empty_reply',
+          runId: opts.runId,
+          sessionId: entry.sessionId,
+          provider: childConfig.provider.pluginId,
+          modelId: childConfig.modelId,
+          apiError: childRuntime.lastApiError ?? undefined,
+          createdAt: Date.now(),
+        };
+      }
+      await finalizeTranscript();
+
+      const finalText = this.readLastAssistantText(transcriptManager) || capturedAssistantText;
+      childRecord.payloads = finalText ? [{ type: 'text', content: finalText }] : [];
+      childRecord.status = 'completed';
+      childRecord.endedAt = Date.now();
+      await this.patchSubAgentSessionMeta(entry.sessionKey, {
+        status: 'completed',
+        sealed: true,
+        endedAt: childRecord.endedAt,
+      });
+      this.invokeAgentEndHook(childRecord, 'completed');
+      return { status: 'completed', text: finalText };
+    } catch (error) {
+      const structured = aborted
+        ? { code: 'aborted', message: 'Sub-agent run aborted by caller', retriable: false } satisfies StructuredError
+        : classifyError(error);
+      childRecord.pendingDiagnostic ??= this.buildRunDiagnostic(childRecord, structured);
+      try {
+        await finalizeTranscript();
+      } catch (persistError) {
+        console.error('[RunCoordinator] failed to finalize child transcript:', persistError);
+      }
+      childRecord.status = 'error';
+      childRecord.error = structured;
+      childRecord.endedAt = Date.now();
+      await this.patchSubAgentSessionMeta(entry.sessionKey, {
+        status: aborted ? 'killed' : 'error',
+        sealed: true,
+        endedAt: childRecord.endedAt,
+      });
+      this.invokeAgentEndHook(childRecord, 'error', structured);
+      return aborted
+        ? { status: 'aborted' }
+        : { status: 'error', error: structured.message };
+    } finally {
+      unsubscribe?.();
+      childRuntime?.destroy();
+    }
+
+  }
+
+  private buildChildRuntimeConfig(config: AgentConfig): AgentConfig {
+    const strippedTools = config.tools
+      ? {
+          ...config.tools,
+          subAgentSpawning: false,
+          resolvedTools: config.tools.resolvedTools.filter(
+            (toolName) =>
+              toolName !== 'sessions_spawn'
+              && toolName !== 'sessions_yield'
+              && toolName !== 'subagents',
+          ),
+        }
+      : null;
+
+    return {
+      ...config,
+      tools: strippedTools,
+      subAgents: [],
+    };
+  }
+
+  private emitSyntheticChildAssistantReply(
+    opts: ChildRunOptions,
+    message: AssistantMessage,
+    content: string,
+  ): void {
+    opts.emit({ type: 'message_start', message });
+    opts.emit({
+      type: 'message_update',
+      message,
+      assistantMessageEvent: {
+        type: 'text_delta',
+        contentIndex: 0,
+        delta: content,
+      },
+    });
+    opts.emit({
+      type: 'message_update',
+      message,
+      assistantMessageEvent: {
+        type: 'text_end',
+        contentIndex: 0,
+        content,
+      },
+    });
+    opts.emit({ type: 'message_end', message });
+  }
+
+  private readLastAssistantText(transcriptManager: SessionManager): string {
+    const entries = transcriptManager.getEntries();
+    for (let i = entries.length - 1; i >= 0; i -= 1) {
+      const entry = entries[i] as any;
+      if (entry?.type === 'message' && entry.message?.role === 'assistant') {
+        return sanitizeAssistantVisibleText(extractTextContent(entry.message.content));
+      }
+    }
+    return '';
+  }
+
   private async executeRun(record: RunRecord, params: DispatchParams): Promise<void> {
     if (!this.transcriptStore) {
       throw new Error('Cannot execute run without transcript storage');
@@ -710,11 +1251,10 @@ export class RunCoordinator {
       this.runtime.setActiveSession(transcriptManager);
       this.runtime.setCurrentSessionKey(record.sessionKey);
 
-      const enabledSessionToolNames = this.config.tools?.resolvedTools.filter((toolName) =>
-        SESSION_TOOL_NAME_SET.has(toolName),
-      ) ?? [];
+      const enabledSessionToolNames = this.getEnabledSessionToolNames(this.config);
 
-      // Inject session tools only when explicitly resolved from the tool node.
+      // Inject session tools resolved from the Tools node, plus the sub-agent
+      // control tools when this agent declares runnable sub-agents.
       if (
         this.storage
         && this.sessionRouter
@@ -741,6 +1281,20 @@ export class RunCoordinator {
             };
             return this.subAgentRegistry.setYieldPending(parentSessionKey, opts, onResolve);
           },
+          subAgentExecutor: this.subAgentExecutor,
+          registerSubAgentAbort: (id, fn) => this.registerSubAgentAbort(id, fn),
+          unregisterSubAgentAbort: (id) => this.unregisterSubAgentAbort(id),
+          parentAgentConfig: this.config,
+          parentSubAgents: this.config.subAgents,
+          persistSubAgentSpawn: async (data) => {
+            if (!this.transcriptStore) return;
+            transcriptManager.appendCustomEntry(SUB_AGENT_SPAWN_CUSTOM_TYPE, data);
+            await this.transcriptStore.snapshot(transcriptManager);
+          },
+          persistSubAgentMeta: async (sessionKey, meta) => {
+            await this.persistSubAgentSessionMeta(sessionKey, meta);
+          },
+          abortRun: (runId) => this.abort(runId),
         };
         const sessionTools = createSessionTools(sessionToolCtx);
         if (sessionTools.length > 0) {
@@ -1098,6 +1652,8 @@ export class RunCoordinator {
     transcriptManager: SessionManager,
     event: RuntimeEvent,
     transcriptState: TranscriptState,
+    runtime: AgentRuntime = this.runtime,
+    config: AgentConfig = this.config,
   ): Promise<void> {
     const raw = event as any;
 
@@ -1145,7 +1701,7 @@ export class RunCoordinator {
         return;
       }
 
-      const assistantMessage = this.buildAssistantMessage(raw.message, fallbackText || '');
+      const assistantMessage = this.buildAssistantMessage(raw.message, fallbackText || '', runtime, config);
       transcriptManager.appendMessage(assistantMessage);
       await this.applyAssistantUsage(record.sessionKey, assistantMessage);
       transcriptState.assistantPersisted = true;
@@ -1244,18 +1800,23 @@ export class RunCoordinator {
     };
   }
 
-  private buildAssistantMessage(rawMessage: any, fallbackText: string): AssistantMessage {
+  private buildAssistantMessage(
+    rawMessage: any,
+    fallbackText: string,
+    runtime: AgentRuntime = this.runtime,
+    config: AgentConfig = this.config,
+  ): AssistantMessage {
     const normalized = this.normalizeUsage(rawMessage?.usage);
     const rawContent = Array.isArray(rawMessage?.content) && rawMessage.content.length > 0
       ? rawMessage.content
       : [{ type: 'text', text: fallbackText }];
-    const content = sanitizeAssistantContentBlocks(rawContent);
+    const content = sanitizeAssistantContentBlocks(rawContent) as AssistantMessage['content'];
     return {
       role: 'assistant',
       content,
-      api: rawMessage?.api ?? (this.runtime.state.model as any)?.api ?? 'openai-completions',
-      provider: rawMessage?.provider ?? this.config.provider.pluginId,
-      model: rawMessage?.model ?? this.config.modelId,
+      api: rawMessage?.api ?? (runtime.state.model as any)?.api ?? 'openai-completions',
+      provider: rawMessage?.provider ?? config.provider.pluginId,
+      model: rawMessage?.model ?? config.modelId,
       responseId: rawMessage?.responseId,
       usage: normalized.usage,
       stopReason: rawMessage?.stopReason ?? 'stop',
@@ -1305,11 +1866,14 @@ export class RunCoordinator {
    *   record on the first turn too if the configured level differs
    *   from `'off'`, so replays know what level was in effect.
    */
-  private persistConfigChanges(transcriptManager: SessionManager): void {
+  private persistConfigChanges(
+    transcriptManager: SessionManager,
+    config: AgentConfig = this.config,
+  ): void {
     const entries = transcriptManager.getEntries();
 
-    const provider = this.config.provider?.pluginId;
-    const modelId = this.config.modelId;
+    const provider = config.provider?.pluginId;
+    const modelId = config.modelId;
     if (typeof provider === 'string' && provider && typeof modelId === 'string' && modelId) {
       const lastModel = readLastRecordedModel(entries);
       if (lastModel && (lastModel.provider !== provider || lastModel.modelId !== modelId)) {
@@ -1317,7 +1881,7 @@ export class RunCoordinator {
       }
     }
 
-    const thinkingLevel = this.config.thinkingLevel;
+    const thinkingLevel = config.thinkingLevel;
     if (typeof thinkingLevel === 'string' && thinkingLevel) {
       const baseline = readLastRecordedThinkingLevel(entries) ?? 'off';
       if (baseline !== thinkingLevel) {
@@ -1334,8 +1898,11 @@ export class RunCoordinator {
    * recorded prompt. This keeps the transcript auditable without
    * bloating it on multi-turn chats with a stable prompt.
    */
-  private persistResolvedSystemPrompt(transcriptManager: SessionManager): void {
-    const resolved = this.runtime.getResolvedSystemPrompt?.();
+  private persistResolvedSystemPrompt(
+    transcriptManager: SessionManager,
+    runtime: AgentRuntime = this.runtime,
+  ): void {
+    const resolved = runtime.getResolvedSystemPrompt?.();
     if (!resolved) return;
 
     const entries = transcriptManager.getEntries();

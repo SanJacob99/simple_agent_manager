@@ -49,6 +49,8 @@ Skills stored on the Tool Node are merged into system prompt content during grap
 | `toolSettings.musicGenerate.minimaxModel` | `string` | `""` | MiniMax music model override, e.g. `music-01` (reuses the text_to_speech MiniMax key and group id) |
 | `toolSettings.musicGenerate.skill` | `string` | `""` | Optional inline markdown override for the music_generate skill. When non-empty, it replaces the bundled `music-generate/SKILL.md` reference with the user-authored text injected directly into the system prompt |
 
+> **Deprecated.** `subAgentSpawning` and `maxSubAgents` are no longer used by the runtime. Sub-agent capability is now declared via the [Sub-Agent Node](sub-agent-node.md). Existing graphs continue to load, but these fields have no effect.
+
 ## Runtime Behavior
 
 Tool name resolution happens in `shared/resolve-tool-names.ts` in this order:

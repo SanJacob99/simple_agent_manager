@@ -10,6 +10,7 @@ import VectorDatabaseNode from './VectorDatabaseNode';
 import CronNode from './CronNode';
 import ProviderNode from './ProviderNode';
 import MCPNode from './MCPNode';
+import SubAgentNode from './SubAgentNode';
 
 export const nodeTypes = {
   agent: AgentNode,
@@ -24,4 +25,5 @@ export const nodeTypes = {
   cron: CronNode,
   provider: ProviderNode,
   mcp: MCPNode,
+  subAgent: SubAgentNode,
 } as const;

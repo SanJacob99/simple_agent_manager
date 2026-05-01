@@ -1,3 +1,5 @@
+import type { SubAgentSessionMeta } from './sub-agent-types';
+
 export interface SessionSkillsSnapshot {
   version: number;
   prompt: string;
@@ -83,6 +85,14 @@ export interface SessionStoreEntry {
   memoryFlushAt?: string;
   memoryFlushCompactionCount?: number;
   parentSessionId?: string;
+
+  /**
+   * Sub-agent metadata for sub-sessions (sessionKey shape `sub:*` or wrapped
+   * `agent:<id>:sub:*`). Mutable: status / sealed are updated
+   * by RunCoordinator as the sub-session progresses. Immutable audit lives
+   * on the parent's transcript as a `sam.sub_agent_spawn` custom entry.
+   */
+  subAgentMeta?: SubAgentSessionMeta;
 }
 
 export interface SessionEntry {

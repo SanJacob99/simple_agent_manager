@@ -499,3 +499,200 @@ describe('validateAgentRuntimeGraph', () => {
     expect(errors).toEqual([{ code: 'empty_plugin_id', message: expect.any(String) }]);
   });
 });
+
+describe('SubAgentNode resolution', () => {
+  const baseAgent = {
+    id: 'agent-1',
+    type: 'agent',
+    position: { x: 0, y: 0 },
+    data: {
+      type: 'agent',
+      name: 'main',
+      nameConfirmed: true,
+      systemPrompt: 'You help.',
+      modelId: 'parent/model',
+      thinkingLevel: 'low',
+      description: '',
+      tags: [],
+      modelCapabilities: {},
+      systemPromptMode: 'auto',
+      showReasoning: false,
+      verbose: false,
+      workingDirectory: '/work',
+    },
+  };
+
+  const baseProvider = {
+    id: 'prov-1',
+    type: 'provider',
+    position: { x: 0, y: 0 },
+    data: {
+      type: 'provider',
+      label: 'p',
+      pluginId: 'parentProvider',
+      authMethodId: 'apikey',
+      envVar: '',
+      baseUrl: '',
+    },
+  };
+
+  const subAgentToolsNode = {
+    id: 'sub-tools-1',
+    type: 'tools',
+    position: { x: 0, y: 0 },
+    data: {
+      type: 'tools',
+      label: 't',
+      profile: 'minimal',
+      enabledTools: ['ask_user'],
+      enabledGroups: [],
+      skills: [],
+      plugins: [],
+      subAgentSpawning: false,
+      maxSubAgents: 0,
+      toolSettings: {
+        exec: { cwd: '', sandboxWorkdir: false, skill: '' },
+        codeExecution: { apiKey: '', model: '', skill: '' },
+        webSearch: { tavilyApiKey: '', skill: '' },
+        image: { openaiApiKey: '', geminiApiKey: '', preferredModel: '', skill: '' },
+        canva: { portRangeStart: 5173, portRangeEnd: 5273, skill: '' },
+        browser: {
+          userDataDir: '', headless: true, viewportWidth: 1280, viewportHeight: 800,
+          timeoutMs: 30000, autoScreenshot: false, screenshotFormat: 'jpeg',
+          screenshotQuality: 60, stealth: true, locale: '', timezone: '',
+          userAgent: '', cdpEndpoint: '', skill: '',
+        },
+        textToSpeech: {
+          preferredProvider: '', elevenLabsApiKey: '', elevenLabsDefaultVoice: '',
+          elevenLabsDefaultModel: '', openaiVoice: '', openaiModel: '',
+          geminiVoice: '', geminiModel: '', microsoftApiKey: '', microsoftRegion: '',
+          microsoftDefaultVoice: '', minimaxApiKey: '', minimaxGroupId: '',
+          minimaxDefaultVoice: '', minimaxDefaultModel: '', openrouterVoice: '',
+          openrouterModel: '', skill: '',
+        },
+        musicGenerate: { preferredProvider: '', geminiModel: '', minimaxModel: '', skill: '' },
+      },
+    },
+  };
+
+  const subAgent = {
+    id: 'sub-1',
+    type: 'subAgent',
+    position: { x: 0, y: 0 },
+    data: {
+      type: 'subAgent',
+      name: 'researcher',
+      description: 'Researches things',
+      systemPrompt: 'Research focused.',
+      modelIdMode: 'inherit',
+      modelId: '',
+      thinkingLevelMode: 'inherit',
+      thinkingLevel: 'off',
+      modelCapabilities: {},
+      overridableFields: ['modelId', 'thinkingLevel'],
+      workingDirectoryMode: 'derived',
+      workingDirectory: '',
+      recursiveSubAgentsEnabled: false,
+    },
+  };
+
+  const baseEdges = [
+    { id: 'e1', source: 'prov-1', target: 'agent-1' },
+    { id: 'e2', source: 'sub-1', target: 'agent-1' },
+    { id: 'e3', source: 'sub-tools-1', target: 'sub-1' },
+  ];
+
+  it('produces one ResolvedSubAgentConfig with required Tools', () => {
+    const config = resolveAgentConfig('agent-1', [baseAgent as any, baseProvider as any, subAgent as any, subAgentToolsNode as any], baseEdges as any);
+    expect(config?.subAgents).toHaveLength(1);
+    expect(config?.subAgents[0].name).toBe('researcher');
+    expect(config?.subAgents[0].tools.resolvedTools).toEqual(['ask_user']);
+  });
+
+  it('inherits modelId and thinkingLevel when mode is "inherit"', () => {
+    const config = resolveAgentConfig('agent-1', [baseAgent as any, baseProvider as any, subAgent as any, subAgentToolsNode as any], baseEdges as any);
+    expect(config?.subAgents[0].modelId).toBe('parent/model');
+    expect(config?.subAgents[0].thinkingLevel).toBe('low');
+  });
+
+  it('uses custom modelId when modelIdMode is "custom"', () => {
+    const customSub = { ...subAgent, data: { ...subAgent.data, modelIdMode: 'custom', modelId: 'custom/model' } };
+    const config = resolveAgentConfig('agent-1', [baseAgent as any, baseProvider as any, customSub as any, subAgentToolsNode as any], baseEdges as any);
+    expect(config?.subAgents[0].modelId).toBe('custom/model');
+  });
+
+  it('inherits parent provider when no dedicated provider is attached', () => {
+    const config = resolveAgentConfig('agent-1', [baseAgent as any, baseProvider as any, subAgent as any, subAgentToolsNode as any], baseEdges as any);
+    expect(config?.subAgents[0].provider.pluginId).toBe('parentProvider');
+  });
+
+  it('uses dedicated provider when one is attached to the SubAgentNode', () => {
+    const dedicatedProvider = {
+      id: 'sub-prov-1',
+      type: 'provider',
+      position: { x: 0, y: 0 },
+      data: {
+        type: 'provider',
+        label: 'dp',
+        pluginId: 'subProvider',
+        authMethodId: 'apikey',
+        envVar: '',
+        baseUrl: '',
+      },
+    };
+    const edges = [
+      ...baseEdges,
+      { id: 'e4', source: 'sub-prov-1', target: 'sub-1' },
+    ];
+    const config = resolveAgentConfig(
+      'agent-1',
+      [baseAgent as any, baseProvider as any, subAgent as any, subAgentToolsNode as any, dedicatedProvider as any],
+      edges as any,
+    );
+    expect(config?.subAgents[0].provider.pluginId).toBe('subProvider');
+  });
+
+  it('excludes a SubAgentNode without a Tools node', () => {
+    const edgesNoTools = [
+      { id: 'e1', source: 'prov-1', target: 'agent-1' },
+      { id: 'e2', source: 'sub-1', target: 'agent-1' },
+    ];
+    const config = resolveAgentConfig('agent-1', [baseAgent as any, baseProvider as any, subAgent as any], edgesNoTools as any);
+    expect(config?.subAgents).toHaveLength(0);
+  });
+
+  it('excludes ALL conflicting names when two SubAgentNodes share a name', () => {
+    const sub2 = { ...subAgent, id: 'sub-2', data: { ...subAgent.data } };
+    const tools2 = { ...subAgentToolsNode, id: 'sub-tools-2' };
+    const edges = [
+      ...baseEdges,
+      { id: 'e5', source: 'sub-2', target: 'agent-1' },
+      { id: 'e6', source: 'sub-tools-2', target: 'sub-2' },
+    ];
+    const config = resolveAgentConfig(
+      'agent-1',
+      [baseAgent as any, baseProvider as any, subAgent as any, subAgentToolsNode as any, sub2 as any, tools2 as any],
+      edges as any,
+    );
+    expect(config?.subAgents).toHaveLength(0);
+  });
+
+  it('excludes a SubAgentNode whose name fails the regex', () => {
+    const badSub = { ...subAgent, data: { ...subAgent.data, name: 'Researcher' } };
+    const config = resolveAgentConfig(
+      'agent-1',
+      [baseAgent as any, baseProvider as any, badSub as any, subAgentToolsNode as any],
+      baseEdges as any,
+    );
+    expect(config?.subAgents).toHaveLength(0);
+  });
+
+  it('derives cwd as <parentCwd>/subagent/<name>', () => {
+    const config = resolveAgentConfig(
+      'agent-1',
+      [baseAgent as any, baseProvider as any, subAgent as any, subAgentToolsNode as any],
+      baseEdges as any,
+    );
+    expect(config?.subAgents[0].workingDirectory).toBe('/work/subagent/researcher');
+  });
+});
