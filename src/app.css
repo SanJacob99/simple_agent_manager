@@ -92,6 +92,7 @@
   --color-node-cron: var(--c-node-cron);
   --color-node-provider: var(--c-node-provider);
   --color-node-mcp: var(--c-node-mcp);
+  --color-node-subagent: var(--c-node-subagent);
 }
 
 :root {
@@ -171,6 +172,7 @@
   --c-node-cron: #84cc16;       /* lime */
   --c-node-provider: #6366f1;   /* indigo */
   --c-node-mcp: #06b6d4;        /* cyan */
+  --c-node-subagent: #c084fc;   /* light purple — sibling of Agent's deeper purple */
 
   /* Surface colors that bypass the Tailwind palette */
   --c-code-bg: #0d1117;

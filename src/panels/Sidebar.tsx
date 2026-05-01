@@ -9,6 +9,7 @@ import {
   Blocks,
   Cloud,
   Plug,
+  Bot,
   Search,
 } from 'lucide-react';
 import type { NodeType } from '../types/nodes';
@@ -64,6 +65,7 @@ const PERIPHERAL_ITEMS: PaletteItem[] = [
   { type: 'vectorDatabase', icon: <Blocks size={18} /> },
   { type: 'mcp', icon: <Plug size={18} /> },
   { type: 'provider' as NodeType, icon: <Cloud size={18} /> },
+  { type: 'subAgent', icon: <Bot size={18} /> },
 ];
 
 function DraggableItem({ item }: { item: PaletteItem }) {
