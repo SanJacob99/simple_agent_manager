@@ -37,9 +37,11 @@ The Sub-Agent Node attaches to an Agent Node as a peripheral. Each declared sub-
 1. `resolveAgentConfig()` walks edges into each Sub-Agent Node, requires exactly one Tools Node, optionally accepts one Provider Node, and merges Skills/MCPs with the parent (dedicated wins by id).
 2. The parent's `sessions_spawn` tool is auto-enabled when `agentConfig.subAgents.length > 0`. Its schema lists declared sub-agent names as a literal-union enum.
 3. When the parent calls `sessions_spawn({ subAgent: "<name>", message, overrides })`, the runtime validates `overrides` against `subAgent.overridableFields`, builds a synthetic `AgentConfig`, and dispatches via `SubAgentExecutor` — bypassing the parent's run-concurrency slot so the sub runs alongside the parent's tool call.
-4. Each sub-session uses a key of shape `sub:<parentSessionKey>:<subAgentName>:<shortUuid>`. Storage routes it under the parent's `StorageEngine`.
-5. The registry marks the sub-session `sealed` when the child run completes, errors, or is killed. `sessions_send` to any sub-session returns a one-shot error and no further work is dispatched.
-6. Kill (REST `/api/subagents/:id/kill` or agent-facing `subagents({action: 'kill'})`) marks the registry record as `killed` *before* aborting the run, so the abort path doesn't downgrade the terminal state to `error`.
+4. Each sub-session uses a key of shape `sub:<parentSessionKey>:<subAgentName>:<shortUuid>` and gets a durable `SessionStoreEntry` under the parent's `StorageEngine` before child dispatch starts.
+5. `RunCoordinator` builds a fresh child `AgentRuntime` through its injected runtime factory, persists the child's user/assistant/tool transcript events, and destroys the child runtime on completion, error, or abort.
+6. The child runtime receives `subAgents: []` and has `sessions_spawn`, `sessions_yield`, and `subagents` stripped from its resolved tool list in v1, so recursive fan-out is disabled even if the node's recursive flag is set.
+7. The registry and durable sub-session metadata mark the sub-session `sealed` when the child run completes, errors, or is killed. `sessions_send` to any sub-session returns a one-shot error and no further work is dispatched.
+8. Kill (REST `/api/subagents/:id/kill` or agent-facing `subagents({action: 'kill'})`) marks the registry record as `killed` *before* aborting the run, so the abort path doesn't downgrade the terminal state to `error`.
 
 ## Inheritance
 
@@ -48,7 +50,7 @@ The Sub-Agent Node attaches to an Agent Node as a peripheral. Each declared sub-
 | Provider | Dedicated wins; else parent's |
 | Tools | Dedicated only (required) |
 | Storage | Inherited (sub-sessions live under parent's storage) |
-| Memory | Sub-sessions share the parent's `MemoryEngine`; sub-session's own message history starts empty per spawn |
+| Memory | None in v1 (`memory: null` on the synthetic config); sub-session message history starts empty per spawn |
 | Context Engine | None — sub-agents are one-shot |
 | Skills | Parent ∪ dedicated; dedicated wins on `id` collision |
 | MCP | Parent ∪ dedicated; dedicated wins on `mcpNodeId` collision |
