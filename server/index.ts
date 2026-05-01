@@ -22,6 +22,7 @@ import { SettingsFileStore, DEFAULT_SAFETY_SETTINGS, type SafetySettings } from 
 import { GraphFileStore, type PersistedGraph } from './storage/graph-file-store';
 import { resolveOutboundSystemPrompt } from './runtime/resolve-system-prompt';
 import { launchChromeForCdp } from './tools/builtins/browser/chrome-launcher';
+import { mountSubAgentRoutes } from './routes/subagents';
 import path from 'path';
 import type { AgentConfig, ResolvedStorageConfig } from '../shared/agent-config';
 import type { SessionRouteRequest, SessionTranscriptResponse } from '../shared/session-routes';
@@ -48,6 +49,43 @@ const agentManager = new AgentManager(
   hitlRegistry,
   () => currentSafetySettings,
 );
+
+// --- Sub-agent REST routes ---
+//
+// Aggregates across all coordinators managed by AgentManager: each coordinator
+// owns a SubAgentRegistry, so requests look up the correct one at request time.
+
+mountSubAgentRoutes(app, {
+  registry: {
+    get: (id: string) => {
+      for (const agent of agentManager.listAgents()) {
+        const r = agent.coordinator.getSubAgentRegistry().get(id);
+        if (r) return r;
+      }
+      return null;
+    },
+    listForParent: (key: string) => {
+      const out = [];
+      for (const agent of agentManager.listAgents()) {
+        out.push(...agent.coordinator.getSubAgentRegistry().listForParent(key));
+      }
+      return out;
+    },
+    kill: (id: string) => {
+      for (const agent of agentManager.listAgents()) {
+        const reg = agent.coordinator.getSubAgentRegistry();
+        const r = reg.get(id);
+        if (r) return reg.kill(id);
+      }
+      return false;
+    },
+  } as any,
+  abortRun: (runId: string) => {
+    for (const agent of agentManager.listAgents()) {
+      agent.coordinator.abort(runId);
+    }
+  },
+});
 
 // --- Storage engine instances ---
 

@@ -223,6 +223,11 @@ export class AgentManager {
     return this.agents.has(agentId);
   }
 
+  /** Returns all currently managed agents. Used by aggregate sub-agent routes. */
+  listAgents(): ManagedAgent[] {
+    return [...this.agents.values()];
+  }
+
   /**
    * Find managed agents that own the given storage destination
    * (storagePath + agent name). Used by the storage delete endpoint to
