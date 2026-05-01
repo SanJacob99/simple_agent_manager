@@ -378,7 +378,13 @@ function createSessionsSpawnTool(ctx: SessionToolContext): AgentTool<TSchema> {
 
         const record = ctx.subAgentRegistry.spawn(
           { sessionKey: ctx.callerSessionKey, runId: ctx.callerRunId },
-          { agentId: targetAgentId, sessionKey: subSessionKey, runId: dispatchResult.runId },
+          {
+            agentId: targetAgentId,
+            sessionKey: subSessionKey,
+            runId: dispatchResult.runId,
+            subAgentName: targetAgentId,  // placeholder; Task 14 sets the real value
+            appliedOverrides: {},
+          },
         );
 
         if (!shouldWait) {
