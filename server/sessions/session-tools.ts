@@ -59,6 +59,12 @@ export interface SessionToolContext {
   persistSubAgentSpawn?: (data: SubAgentSpawnData) => Promise<void>;
   /** Persist mutable sub-agent metadata on the sub-session entry. */
   persistSubAgentMeta?: (sessionKey: string, meta: SubAgentSessionMeta) => Promise<void>;
+  /**
+   * Aborts a run by id. Wired by RunCoordinator as `(rid) => this.abort(rid)`.
+   * Used by the agent-facing `subagents({action: 'kill'})` tool so the kill
+   * path matches the REST surface (`registry.kill` + `coordinator.abort`).
+   */
+  abortRun?: (runId: string) => void;
 }
 
 function textResult(text: string): AgentToolResult<undefined> {
@@ -698,10 +704,16 @@ function createSubagentsTool(ctx: SessionToolContext): AgentTool<TSchema> {
         }
 
         if (action === 'kill') {
-          const killed = ctx.subAgentRegistry.kill(subAgentId);
-          return textResult(killed
-            ? `Sub-agent ${subAgentId} killed.`
-            : `Could not kill sub-agent ${subAgentId} (not found or already stopped).`);
+          const record = ctx.subAgentRegistry.get(subAgentId);
+          if (!record) return textResult(`Sub-agent not found: ${subAgentId}`);
+          if (record.status !== 'running') {
+            return textResult(`Sub-agent ${subAgentId} is already ${record.status}.`);
+          }
+          // Order matches REST: mark killed first, then abort. The killed
+          // status guard prevents onError from clobbering it during abort.
+          ctx.subAgentRegistry.kill(subAgentId);
+          ctx.abortRun?.(record.runId);
+          return textResult(`Killed sub-agent ${subAgentId}.`);
         }
 
         return textResult(`Unknown action: ${action}`);

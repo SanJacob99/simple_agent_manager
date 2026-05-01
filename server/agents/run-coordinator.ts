@@ -881,6 +881,7 @@ export class RunCoordinator {
             if (!this.storage) return;
             await this.storage.updateSession(sessionKey, { subAgentMeta: meta });
           },
+          abortRun: (runId) => this.abort(runId),
         };
         const sessionTools = createSessionTools(sessionToolCtx);
         if (sessionTools.length > 0) {
