@@ -82,3 +82,98 @@ export function buildSyntheticAgentConfig(
     verbose: parent.verbose,
   };
 }
+
+export interface ChildRunResult {
+  status: 'completed' | 'error' | 'aborted';
+  text?: string;
+  error?: string;
+}
+
+export interface ChildRunOptions {
+  runId: string;
+  sessionKey: string;
+  syntheticConfig: AgentConfig;
+  message: string;
+  /**
+   * The runtime layer SETS this on the options bag to register an abort hook.
+   * The executor's outer abort path calls whatever value is currently on
+   * `onAbort` at abort time — so the runtime can reassign it as needed.
+   */
+  onAbort: () => void;
+  /** Forwarded to the executor's event bus, tagged with the child runId. */
+  emit: (event: unknown) => void;
+}
+
+export type ChildRunFn = (opts: ChildRunOptions) => Promise<ChildRunResult>;
+
+export interface SubAgentExecutorOpts {
+  /**
+   * Bridge to the actual runtime layer that constructs a runtime from
+   * `syntheticConfig` and runs it to completion. The executor doesn't know
+   * about pi-coding-agent or AgentRuntime directly; the bridge does.
+   */
+  runChild: ChildRunFn;
+  /**
+   * Event bus to forward run events onto so the WebSocket subscription path
+   * (and future inline cards) can read them keyed by child runId.
+   */
+  eventBus: { emit: (event: unknown) => void };
+}
+
+export interface DispatchOpts {
+  childRunId: string;
+  childSessionKey: string;
+  syntheticConfig: AgentConfig;
+  message: string;
+  /** Caller registers an abort handler so REST/tool kill paths can fire it. */
+  onAbortRegister: (abortFn: () => void) => void;
+}
+
+/**
+ * Runs a sub-agent invocation alongside the parent run. Bypasses the
+ * RunConcurrencyController's queue/slot accounting — sub-agents are owned
+ * by the parent's run lifecycle, not by the global queue.
+ */
+export class SubAgentExecutor {
+  constructor(private readonly opts: SubAgentExecutorOpts) {}
+
+  async dispatch(d: DispatchOpts): Promise<ChildRunResult> {
+    let abortRequested = false;
+
+    // Build a stable options bag so the runtime can reassign onAbort and the
+    // executor's outer abort path will call whatever's currently on it.
+    const childOpts: ChildRunOptions = {
+      runId: d.childRunId,
+      sessionKey: d.childSessionKey,
+      syntheticConfig: d.syntheticConfig,
+      message: d.message,
+      onAbort: () => {},   // placeholder; the runtime layer typically reassigns this
+      emit: (event) => {
+        // Tag every emitted event with the child runId so subscribers can
+        // filter (the inline card, the parent's WS stream).
+        const tagged = typeof event === 'object' && event !== null
+          ? { ...event, runId: d.childRunId }
+          : { event, runId: d.childRunId };
+        this.opts.eventBus.emit(tagged);
+      },
+    };
+
+    d.onAbortRegister(() => {
+      abortRequested = true;
+      try { childOpts.onAbort(); } catch { /* defensive */ }
+    });
+
+    const result = await this.opts.runChild(childOpts);
+
+    const finalResult: ChildRunResult =
+      abortRequested && result.status !== 'aborted'
+        ? { status: 'aborted' }
+        : result;
+
+    // Emit a lifecycle completion event tagged with the child runId so that
+    // WebSocket subscribers and inline cards can observe the run finishing.
+    this.opts.eventBus.emit({ type: 'run:completed', runId: d.childRunId, status: finalResult.status });
+
+    return finalResult;
+  }
+}

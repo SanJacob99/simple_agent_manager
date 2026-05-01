@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type { AgentConfig, ResolvedSubAgentConfig } from '../../shared/agent-config';
-import { buildSyntheticAgentConfig } from './sub-agent-executor';
+import { buildSyntheticAgentConfig, SubAgentExecutor } from './sub-agent-executor';
 
 describe('buildSyntheticAgentConfig', () => {
   const parent: AgentConfig = {
@@ -118,5 +118,65 @@ describe('buildSyntheticAgentConfig', () => {
       enabledToolsOverride: undefined,
     });
     expect(synthetic.subAgents).toEqual([]);
+  });
+});
+
+describe('SubAgentExecutor', () => {
+  it('runs a child without occupying the parent run-concurrency slot', async () => {
+    // Fake runtime + concurrency controller stubs
+    const concurrency = {
+      activeRunId: 'parent-run-1',  // parent slot is held
+      enqueue: vi.fn(),
+      drain: vi.fn(),
+      start: vi.fn(),
+    };
+    const runChild = vi.fn(async () => ({ status: 'completed', text: 'done' }));
+    const events: any[] = [];
+    const eventBus = { emit: (e: any) => events.push(e) };
+
+    const executor = new SubAgentExecutor({
+      runChild: runChild as any,
+      eventBus: eventBus as any,
+    });
+
+    const result = await executor.dispatch({
+      childRunId: 'child-1',
+      childSessionKey: 'sub:agent:a:main:r:abc',
+      syntheticConfig: {} as any,
+      message: 'hi',
+      onAbortRegister: () => {},
+    });
+
+    expect(concurrency.enqueue).not.toHaveBeenCalled();
+    expect(runChild).toHaveBeenCalledOnce();
+    expect(result.status).toBe('completed');
+    expect(events.some((e) => e.runId === 'child-1')).toBe(true);
+  });
+
+  it('honors abort via the registered callback', async () => {
+    let abortFn: (() => void) | null = null;
+    const runChild = vi.fn((opts: any) =>
+      new Promise<{ status: string }>((resolve) => {
+        opts.onAbort = () => resolve({ status: 'aborted' });
+      }),
+    );
+    const eventBus = { emit: vi.fn() };
+
+    const executor = new SubAgentExecutor({
+      runChild: runChild as any,
+      eventBus: eventBus as any,
+    });
+
+    const dispatchP = executor.dispatch({
+      childRunId: 'child-2',
+      childSessionKey: 'sub:agent:a:main:r:def',
+      syntheticConfig: {} as any,
+      message: 'hi',
+      onAbortRegister: (fn) => { abortFn = fn; },
+    });
+
+    abortFn?.();
+    const result = await dispatchP;
+    expect(result.status).toBe('aborted');
   });
 });
