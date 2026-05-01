@@ -7,7 +7,11 @@ import type { SessionTranscriptStore } from './session-transcript-store';
 import type { SubAgentRegistry, SetYieldOpts, SetYieldResult } from '../agents/sub-agent-registry';
 import type { RunCoordinator } from '../agents/run-coordinator';
 import type { SubAgentExecutor } from '../agents/sub-agent-executor';
-import { SESSION_TOOL_NAMES } from '../../shared/resolve-tool-names';
+import { SESSION_TOOL_NAMES, resolveToolNames } from '../../shared/resolve-tool-names';
+import type { AgentConfig, ResolvedSubAgentConfig } from '../../shared/agent-config';
+import type { SubAgentSpawnData } from '../../shared/session-diagnostics';
+import type { SubAgentSessionMeta } from '../../shared/sub-agent-types';
+import { buildSyntheticAgentConfig } from '../agents/sub-agent-executor';
 
 export interface SessionToolContext {
   callerSessionKey: string;
@@ -46,6 +50,14 @@ export interface SessionToolContext {
   registerSubAgentAbort?: (childRunId: string, fn: () => void) => void;
   /** Mirror of registerSubAgentAbort for cleanup after the child run finishes. */
   unregisterSubAgentAbort?: (childRunId: string) => void;
+  /** Parent AgentConfig; required for spawn. Optional so tests without spawn can omit it. */
+  parentAgentConfig?: AgentConfig;
+  /** Declared sub-agents resolved from parent config; populated by RunCoordinator. */
+  parentSubAgents?: ResolvedSubAgentConfig[];
+  /** Persist immutable spawn audit entry on the parent's transcript. */
+  persistSubAgentSpawn?: (data: SubAgentSpawnData) => Promise<void>;
+  /** Persist mutable sub-agent metadata on the sub-session entry. */
+  persistSubAgentMeta?: (sessionKey: string, meta: SubAgentSessionMeta) => Promise<void>;
 }
 
 function textResult(text: string): AgentToolResult<undefined> {
@@ -353,72 +365,222 @@ function createSessionsSendTool(ctx: SessionToolContext): AgentTool<TSchema> {
   };
 }
 
-function createSessionsSpawnTool(ctx: SessionToolContext): AgentTool<TSchema> {
+interface OverrideValues {
+  modelId?: string;
+  thinkingLevel?: string;
+  systemPromptAppend?: string;
+  enabledTools?: string[];
+}
+
+function validateOverrides(
+  raw: Record<string, unknown>,
+  sub: ResolvedSubAgentConfig,
+): { error: string | null; values: OverrideValues } {
+  const allowed = new Set<string>(sub.overridableFields);
+  const out: OverrideValues = {};
+
+  for (const key of Object.keys(raw)) {
+    if (!allowed.has(key)) {
+      return {
+        error: `Override "${key}" is not in the sub-agent "${sub.name}" allowlist (allowed: ${[...allowed].join(', ') || 'none'}).`,
+        values: out,
+      };
+    }
+  }
+
+  if (typeof raw.modelId === 'string' && raw.modelId.trim()) {
+    out.modelId = raw.modelId.trim();
+  }
+  if (typeof raw.thinkingLevel === 'string') {
+    const ok = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
+    if (!ok.includes(raw.thinkingLevel)) {
+      return { error: `Invalid thinkingLevel: ${raw.thinkingLevel}. Allowed: ${ok.join(', ')}.`, values: out };
+    }
+    out.thinkingLevel = raw.thinkingLevel;
+  }
+  if (typeof raw.systemPromptAppend === 'string' && raw.systemPromptAppend.trim()) {
+    out.systemPromptAppend = raw.systemPromptAppend.trim();
+  }
+  if (Array.isArray(raw.enabledTools)) {
+    const effective = resolveToolNames(sub.tools);
+    const effectiveSet = new Set(effective);
+    for (const t of raw.enabledTools) {
+      if (typeof t !== 'string' || !effectiveSet.has(t)) {
+        return {
+          error: `Override enabledTools contains "${t}" which is not in the sub-agent's effective tools (${effective.join(', ') || 'none'}).`,
+          values: out,
+        };
+      }
+    }
+    out.enabledTools = raw.enabledTools as string[];
+  }
+  return { error: null, values: out };
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`Timed out after ${ms}ms`)), ms);
+    p.then(
+      (v) => { clearTimeout(t); resolve(v); },
+      (e) => { clearTimeout(t); reject(e); },
+    );
+  });
+}
+
+function createSessionsSpawnTool(ctx: SessionToolContext): AgentTool<TSchema> | null {
+  const subAgents = ctx.parentSubAgents ?? [];
+  if (subAgents.length === 0) {
+    // No declared sub-agents -> tool not available.
+    return null;
+  }
+  if (
+    !ctx.parentAgentConfig
+    || !ctx.subAgentExecutor
+    || !ctx.registerSubAgentAbort
+    || !ctx.unregisterSubAgentAbort
+    || !ctx.persistSubAgentSpawn
+    || !ctx.persistSubAgentMeta
+  ) {
+    // Required wiring from RunCoordinator missing — tool not registered.
+    return null;
+  }
+
+  const subAgentNames = subAgents.map((s) => s.name);
+  const parentAgentConfig = ctx.parentAgentConfig;
+  const subAgentExecutor = ctx.subAgentExecutor;
+  const registerAbort = ctx.registerSubAgentAbort;
+  const unregisterAbort = ctx.unregisterSubAgentAbort;
+  const persistSpawn = ctx.persistSubAgentSpawn;
+  const persistMeta = ctx.persistSubAgentMeta;
+
   return {
     name: 'sessions_spawn',
-    description: 'Spawn a sub-agent session. Creates a new sub-session and dispatches a message to it.',
+    description:
+      'Spawn one of the agent\'s declared sub-agents with a one-shot message. Returns the sub-agent\'s reply or a sub-agent id for async tracking.',
     label: 'Sessions Spawn',
     parameters: Type.Object({
-      targetAgentId: Type.Optional(
-        Type.String({ description: 'Agent ID to spawn (defaults to self)' }),
+      subAgent: Type.Union(
+        subAgentNames.map((n) => Type.Literal(n)) as any,
+        { description: 'Name of the sub-agent to dispatch' },
       ),
       message: Type.String({ description: 'Initial message for the sub-agent' }),
-      wait: Type.Optional(Type.Boolean({ description: 'Wait for the sub-agent reply (default: false)' })),
-      timeoutMs: Type.Optional(Type.Number({ description: 'Timeout in ms when waiting' })),
+      overrides: Type.Optional(
+        Type.Object({
+          modelId: Type.Optional(Type.String()),
+          thinkingLevel: Type.Optional(Type.String()),
+          systemPromptAppend: Type.Optional(Type.String()),
+          enabledTools: Type.Optional(Type.Array(Type.String())),
+        }),
+      ),
+      wait: Type.Optional(Type.Boolean({ description: 'Wait for the sub-agent reply (default true)' })),
+      timeoutMs: Type.Optional(Type.Number()),
     }),
     execute: async (_id, params: any) => {
       try {
-        const targetAgentId = (params.targetAgentId as string | undefined) ?? ctx.callerAgentId;
+        const subName = params.subAgent as string;
+        const sub = subAgents.find((s) => s.name === subName);
+        if (!sub) {
+          return textResult(`Unknown sub-agent: ${subName}. Declared: ${subAgentNames.join(', ')}.`);
+        }
+
+        const overrides = (params.overrides ?? {}) as Record<string, unknown>;
+        const validation = validateOverrides(overrides, sub);
+        if (validation.error) {
+          return textResult(validation.error);
+        }
+
         const message = params.message as string;
-        const shouldWait = params.wait === true;
+        const shouldWait = params.wait !== false;  // default true
         const timeoutMs = params.timeoutMs as number | undefined;
 
-        const subSessionKey = `sub:${ctx.callerSessionKey}:${randomUUID()}`;
+        const shortUuid = randomUUID().slice(0, 8);
+        const subSessionKey = `sub:${ctx.callerSessionKey}:${subName}:${shortUuid}`;
+        const childRunId = randomUUID();
 
-        // Resolve the coordinator for the target agent
-        let targetCoordinator: RunCoordinator | null;
-        if (targetAgentId === ctx.callerAgentId) {
-          targetCoordinator = ctx.coordinator;
-        } else {
-          targetCoordinator = ctx.coordinatorLookup(targetAgentId);
-        }
-
-        if (!targetCoordinator) {
-          return textResult(`Error: no coordinator found for agent "${targetAgentId}"`);
-        }
-
-        const dispatchResult = await targetCoordinator.dispatch({
-          sessionKey: subSessionKey,
-          text: message,
+        const syntheticConfig = buildSyntheticAgentConfig(parentAgentConfig, sub, {
+          systemPromptAppend: validation.values.systemPromptAppend ?? '',
+          modelIdOverride: validation.values.modelId,
+          thinkingLevelOverride: validation.values.thinkingLevel,
+          enabledToolsOverride: validation.values.enabledTools,
         });
 
         const record = ctx.subAgentRegistry.spawn(
           { sessionKey: ctx.callerSessionKey, runId: ctx.callerRunId },
           {
-            agentId: targetAgentId,
+            agentId: ctx.callerAgentId,
             sessionKey: subSessionKey,
-            runId: dispatchResult.runId,
-            subAgentName: targetAgentId,  // placeholder; Task 14 sets the real value
-            appliedOverrides: {},
+            runId: childRunId,
+            subAgentName: subName,
+            appliedOverrides: validation.values as Record<string, unknown>,
           },
         );
 
+        // Persist immutable audit entry on parent transcript
+        await persistSpawn({
+          subAgentId: record.subAgentId,
+          subAgentName: subName,
+          subSessionKey,
+          parentRunId: ctx.callerRunId,
+          message,
+          appliedOverrides: validation.values as Record<string, unknown>,
+          modelId: syntheticConfig.modelId,
+          providerPluginId: syntheticConfig.provider.pluginId,
+          spawnedAt: Date.now(),
+        });
+
+        // Persist mutable metadata on the sub-session entry
+        await persistMeta(subSessionKey, {
+          subAgentId: record.subAgentId,
+          subAgentName: subName,
+          parentSessionKey: ctx.callerSessionKey,
+          parentRunId: ctx.callerRunId,
+          status: 'running',
+          sealed: false,
+          appliedOverrides: validation.values as Record<string, unknown>,
+          modelId: syntheticConfig.modelId,
+          providerPluginId: syntheticConfig.provider.pluginId,
+          startedAt: record.startedAt,
+        });
+
+        const dispatchPromise = subAgentExecutor.dispatch({
+          childRunId,
+          childSessionKey: subSessionKey,
+          syntheticConfig,
+          message,
+          onAbortRegister: (fn) => registerAbort(childRunId, fn),
+        });
+
         if (!shouldWait) {
+          dispatchPromise.then(
+            (r) => {
+              if (r.status === 'completed') ctx.subAgentRegistry.onComplete(childRunId, r.text ?? '');
+              else if (r.status === 'aborted') {/* registry already updated by kill path */}
+              else ctx.subAgentRegistry.onError(childRunId, r.error ?? 'unknown');
+              unregisterAbort(childRunId);
+            },
+          );
           return textResult(JSON.stringify({
             spawned: true,
             subAgentId: record.subAgentId,
             sessionKey: subSessionKey,
-            runId: dispatchResult.runId,
+            runId: childRunId,
           }));
         }
 
-        const waitResult = await targetCoordinator.wait(dispatchResult.runId, timeoutMs);
-        const replyText = waitResult.payloads
-          .filter((p) => p.type === 'text')
-          .map((p) => p.content)
-          .join('\n');
+        const timed = timeoutMs ? withTimeout(dispatchPromise, timeoutMs) : dispatchPromise;
+        const result = await timed;
 
-        return textResult(replyText || `(no text reply, status: ${waitResult.status})`);
+        if (result.status === 'completed') {
+          ctx.subAgentRegistry.onComplete(childRunId, result.text ?? '');
+        } else if (result.status === 'error') {
+          ctx.subAgentRegistry.onError(childRunId, result.error ?? 'unknown');
+        }
+        unregisterAbort(childRunId);
+
+        if (result.status === 'error' && result.error) {
+          return textResult(result.error);
+        }
+        return textResult(result.text || `(no text reply, status: ${result.status})`);
       } catch (e) {
         return textResult(`Error spawning sub-agent: ${e instanceof Error ? e.message : 'Unknown error'}`);
       }
@@ -600,10 +762,14 @@ export function createSessionTools(ctx: SessionToolContext): AgentTool<TSchema>[
     tools.push(createSessionStatusTool(ctx));
   }
 
-  if (ctx.subAgentSpawning) {
+  if ((ctx.parentSubAgents?.length ?? 0) > 0) {
     if (isEnabled('sessions_spawn')) {
-      tools.push(createSessionsSpawnTool(ctx));
+      const t = createSessionsSpawnTool(ctx);
+      if (t) tools.push(t);
     }
+  }
+
+  if (ctx.subAgentSpawning) {
     if (isEnabled('sessions_yield')) {
       tools.push(createSessionsYieldTool(ctx));
     }

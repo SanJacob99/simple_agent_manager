@@ -79,6 +79,8 @@ function createMockContext(overrides: Partial<SessionToolContext> = {}): Session
       listForParent: vi.fn().mockReturnValue([]),
       get: vi.fn().mockReturnValue(null),
       kill: vi.fn().mockReturnValue(false),
+      onComplete: vi.fn(),
+      onError: vi.fn(),
     } as any,
     coordinatorLookup: vi.fn().mockReturnValue(null),
     subAgentSpawning: true,
@@ -91,13 +93,97 @@ function createMockContext(overrides: Partial<SessionToolContext> = {}): Session
       'subagents',
       'session_status',
     ],
+    parentSubAgents: [],
     ...overrides,
   };
 }
 
+/**
+ * Build a context that has full spawn wiring (parentSubAgents, parentAgentConfig,
+ * subAgentExecutor, persist callbacks, abort helpers). Use for sessions_spawn tests.
+ */
+function createSpawnContext(overrides: Partial<SessionToolContext> = {}): SessionToolContext {
+  const mockSubAgent = {
+    name: 'worker',
+    description: 'A worker sub-agent',
+    systemPrompt: 'You are a worker.',
+    modelId: 'test-model',
+    thinkingLevel: 'off',
+    modelCapabilities: {},
+    overridableFields: ['modelId', 'thinkingLevel', 'systemPromptAppend', 'enabledTools'],
+    workingDirectory: '',
+    recursiveSubAgentsEnabled: false,
+    provider: { pluginId: 'test-provider', authMethodId: 'apiKey', envVar: 'TEST_KEY', baseUrl: '' },
+    tools: {
+      profile: 'minimal' as const,
+      resolvedTools: ['exec'],
+      enabledGroups: [],
+      skills: [],
+      plugins: [],
+      subAgentSpawning: false,
+      maxSubAgents: 0,
+    },
+    skills: [],
+    mcps: [],
+  };
+
+  const mockParentConfig = {
+    id: 'agent-1',
+    version: 1,
+    name: 'TestAgent',
+    description: '',
+    tags: [],
+    provider: { pluginId: 'test-provider', authMethodId: 'apiKey', envVar: 'TEST_KEY', baseUrl: '' },
+    modelId: 'test-model',
+    thinkingLevel: 'off',
+    systemPrompt: { mode: 'manual' as const, sections: [], assembled: '', userInstructions: '' },
+    modelCapabilities: {},
+    memory: null,
+    tools: {
+      profile: 'minimal' as const,
+      resolvedTools: ['exec'],
+      enabledGroups: [],
+      skills: [],
+      plugins: [],
+      subAgentSpawning: true,
+      maxSubAgents: 5,
+    },
+    contextEngine: null,
+    connectors: [],
+    agentComm: [],
+    storage: null,
+    vectorDatabases: [],
+    crons: [],
+    mcps: [],
+    subAgents: [mockSubAgent],
+    workspacePath: null,
+    exportedAt: Date.now(),
+    sourceGraphId: 'graph-1',
+    runTimeoutMs: 60000,
+  };
+
+  const mockDispatchResult = {
+    status: 'completed' as const,
+    text: 'Sub-agent reply',
+  };
+
+  return createMockContext({
+    parentAgentConfig: mockParentConfig as any,
+    parentSubAgents: [mockSubAgent] as any,
+    subAgentExecutor: {
+      dispatch: vi.fn().mockResolvedValue(mockDispatchResult),
+    } as any,
+    registerSubAgentAbort: vi.fn(),
+    unregisterSubAgentAbort: vi.fn(),
+    persistSubAgentSpawn: vi.fn().mockResolvedValue(undefined),
+    persistSubAgentMeta: vi.fn().mockResolvedValue(undefined),
+    ...overrides,
+  });
+}
+
 describe('createSessionTools', () => {
-  it('returns 7 tools when subAgentSpawning is true', () => {
-    const ctx = createMockContext({ subAgentSpawning: true });
+  it('returns 7 tools when subAgentSpawning is true and spawn wiring is complete', () => {
+    const ctx = createSpawnContext({ subAgentSpawning: true });
     const tools = createSessionTools(ctx);
     expect(tools).toHaveLength(7);
 
@@ -111,8 +197,8 @@ describe('createSessionTools', () => {
     expect(names).toContain('session_status');
   });
 
-  it('returns 4 tools when subAgentSpawning is false', () => {
-    const ctx = createMockContext({ subAgentSpawning: false });
+  it('returns 4 tools when subAgentSpawning is false and no parentSubAgents', () => {
+    const ctx = createMockContext({ subAgentSpawning: false, parentSubAgents: [] });
     const tools = createSessionTools(ctx);
     expect(tools).toHaveLength(4);
 
@@ -124,6 +210,20 @@ describe('createSessionTools', () => {
     expect(names).not.toContain('sessions_spawn');
     expect(names).not.toContain('sessions_yield');
     expect(names).not.toContain('subagents');
+  });
+
+  it('does not include sessions_spawn when parentSubAgents is empty', () => {
+    const ctx = createMockContext({ subAgentSpawning: true, parentSubAgents: [] });
+    const tools = createSessionTools(ctx);
+    const names = tools.map((t) => t.name);
+    expect(names).not.toContain('sessions_spawn');
+  });
+
+  it('does not include sessions_spawn when wiring is incomplete (no executor)', () => {
+    const ctx = createSpawnContext({ subAgentExecutor: undefined });
+    const tools = createSessionTools(ctx);
+    const names = tools.map((t) => t.name);
+    expect(names).not.toContain('sessions_spawn');
   });
 
   it('returns only the explicitly enabled session tools', () => {
@@ -231,34 +331,133 @@ describe('sessions_send', () => {
 });
 
 describe('sessions_spawn', () => {
-  it('creates sub-agent and registers it', async () => {
-    const targetCoordinator = {
-      dispatch: vi.fn().mockResolvedValue({ runId: 'run-3', sessionId: 'sid-2', acceptedAt: Date.now() }),
-      wait: vi.fn().mockResolvedValue({
-        runId: 'run-3',
-        status: 'ok',
-        phase: 'completed',
-        acceptedAt: Date.now(),
-        payloads: [{ type: 'text', content: 'Sub-agent result' }],
-      }),
-    };
+  it('returns null (tool not registered) when parentSubAgents is empty', () => {
+    const ctx = createMockContext({ parentSubAgents: [] });
+    const tools = createSessionTools(ctx);
+    expect(tools.find((t) => t.name === 'sessions_spawn')).toBeUndefined();
+  });
 
-    const ctx = createMockContext({
-      coordinatorLookup: vi.fn().mockReturnValue(targetCoordinator),
+  it('returns null when required wiring is missing', () => {
+    const ctx = createSpawnContext({ persistSubAgentSpawn: undefined });
+    const tools = createSessionTools(ctx);
+    expect(tools.find((t) => t.name === 'sessions_spawn')).toBeUndefined();
+  });
+
+  it('returns error for unknown sub-agent name', async () => {
+    const ctx = createSpawnContext();
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_spawn')!;
+    expect(tool).toBeDefined();
+
+    const result = await tool.execute('call-1', {
+      subAgent: 'nonexistent',
+      message: 'Do the task',
+    });
+    expect((result.content[0] as any).text).toContain('Unknown sub-agent');
+  });
+
+  it('registers spawn in registry and persists spawn data (wait: true)', async () => {
+    const ctx = createSpawnContext();
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_spawn')!;
+    expect(tool).toBeDefined();
+
+    const result = await tool.execute('call-1', {
+      subAgent: 'worker',
+      message: 'Do the task',
+      wait: true,
+    });
+
+    expect(ctx.subAgentRegistry.spawn).toHaveBeenCalled();
+    expect(ctx.persistSubAgentSpawn).toHaveBeenCalled();
+    expect(ctx.persistSubAgentMeta).toHaveBeenCalled();
+    expect(ctx.subAgentExecutor!.dispatch).toHaveBeenCalled();
+    expect((result.content[0] as any).text).toContain('Sub-agent reply');
+  });
+
+  it('dispatches without waiting and returns spawned info (wait: false)', async () => {
+    const ctx = createSpawnContext();
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_spawn')!;
+    expect(tool).toBeDefined();
+
+    const result = await tool.execute('call-1', {
+      subAgent: 'worker',
+      message: 'Do the task',
+      wait: false,
+    });
+
+    expect(ctx.subAgentRegistry.spawn).toHaveBeenCalled();
+    const parsed = JSON.parse((result.content[0] as any).text);
+    expect(parsed.spawned).toBe(true);
+    expect(parsed.subAgentId).toBe('sub-1');
+    expect(typeof parsed.sessionKey).toBe('string');
+    expect(parsed.sessionKey).toContain('sub:');
+  });
+
+  it('rejects override that is not in the allowlist', async () => {
+    const ctx = createSpawnContext();
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_spawn')!;
+
+    const result = await tool.execute('call-1', {
+      subAgent: 'worker',
+      message: 'Do the task',
+      overrides: { notAllowed: 'value' } as any,
+    });
+
+    expect((result.content[0] as any).text).toContain('not in the sub-agent');
+    expect((result.content[0] as any).text).toContain('allowlist');
+  });
+
+  it('rejects invalid thinkingLevel override', async () => {
+    const ctx = createSpawnContext();
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_spawn')!;
+
+    const result = await tool.execute('call-1', {
+      subAgent: 'worker',
+      message: 'Do the task',
+      overrides: { thinkingLevel: 'ultramax' },
+    });
+
+    expect((result.content[0] as any).text).toContain('Invalid thinkingLevel');
+  });
+
+  it('rejects enabledTools override containing tool not in sub-agent effective tools', async () => {
+    const ctx = createSpawnContext();
+    const tools = createSessionTools(ctx);
+    const tool = tools.find((t) => t.name === 'sessions_spawn')!;
+
+    // 'read_file' is not in the mock sub-agent's effective tools
+    // (minimal profile = web group + resolvedTools: ['exec'])
+    const result = await tool.execute('call-1', {
+      subAgent: 'worker',
+      message: 'Do the task',
+      overrides: { enabledTools: ['read_file'] },
+    });
+
+    expect((result.content[0] as any).text).toContain('not in the sub-agent');
+  });
+
+  it('surfaces sub-agent executor error as text when wait: true', async () => {
+    const ctx = createSpawnContext({
+      subAgentExecutor: {
+        dispatch: vi.fn().mockResolvedValue({ status: 'error', error: 'runtime not integrated' }),
+      } as any,
     });
     const tools = createSessionTools(ctx);
     const tool = tools.find((t) => t.name === 'sessions_spawn')!;
 
     const result = await tool.execute('call-1', {
-      targetAgentId: 'a2',
+      subAgent: 'worker',
       message: 'Do the task',
-      wait: false,
+      wait: true,
     });
 
-    expect(ctx.coordinatorLookup).toHaveBeenCalledWith('a2');
-    expect(targetCoordinator.dispatch).toHaveBeenCalled();
-    expect(ctx.subAgentRegistry.spawn).toHaveBeenCalled();
-    expect(result.content[0].text).toContain('sub:');
+    expect((result.content[0] as any).text).toContain('runtime not integrated');
+    expect(ctx.subAgentRegistry.onError).toHaveBeenCalled();
+    expect(ctx.unregisterSubAgentAbort).toHaveBeenCalled();
   });
 });
 

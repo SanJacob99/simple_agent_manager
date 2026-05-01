@@ -37,6 +37,7 @@ import type {
 import {
   RUN_DIAGNOSTIC_CUSTOM_TYPE,
   SUB_AGENT_RESUME_CUSTOM_TYPE,
+  SUB_AGENT_SPAWN_CUSTOM_TYPE,
   type RunDiagnosticData,
   type RunErrorDiagnosticData,
   type SubAgentResumeData,
@@ -869,6 +870,17 @@ export class RunCoordinator {
           subAgentExecutor: this.subAgentExecutor,
           registerSubAgentAbort: (id, fn) => this.registerSubAgentAbort(id, fn),
           unregisterSubAgentAbort: (id) => this.unregisterSubAgentAbort(id),
+          parentAgentConfig: this.config,
+          parentSubAgents: this.config.subAgents,
+          persistSubAgentSpawn: async (data) => {
+            if (!this.transcriptStore) return;
+            transcriptManager.appendCustomEntry(SUB_AGENT_SPAWN_CUSTOM_TYPE, data);
+            await this.transcriptStore.snapshot(transcriptManager);
+          },
+          persistSubAgentMeta: async (sessionKey, meta) => {
+            if (!this.storage) return;
+            await this.storage.updateSession(sessionKey, { subAgentMeta: meta });
+          },
         };
         const sessionTools = createSessionTools(sessionToolCtx);
         if (sessionTools.length > 0) {
