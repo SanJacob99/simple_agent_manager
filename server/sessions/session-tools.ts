@@ -759,7 +759,9 @@ function createSessionStatusTool(ctx: SessionToolContext): AgentTool<TSchema> {
 
 /**
  * Create all session tools for the given context.
- * When subAgentSpawning is false, spawn/yield/subagents tools are excluded.
+ * Sub-agent control tools are available when the parent has declared
+ * sub-agents; the legacy subAgentSpawning flag only remains as a compatibility
+ * shim for older graphs.
  */
 export function createSessionTools(ctx: SessionToolContext): AgentTool<TSchema>[] {
   const enabledToolNames = new Set<string>(ctx.enabledToolNames);
