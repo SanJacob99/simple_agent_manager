@@ -782,14 +782,22 @@ export function createSessionTools(ctx: SessionToolContext): AgentTool<TSchema>[
     tools.push(createSessionStatusTool(ctx));
   }
 
-  if ((ctx.parentSubAgents?.length ?? 0) > 0) {
-    if (isEnabled('sessions_spawn')) {
+  // Sub-agent tool surface is gated on the parent having declared sub-agents.
+  // The legacy `subAgentSpawning` flag on the Tools node is honored as a
+  // back-compat shim for graphs that still set it (no SubAgentNodes attached
+  // but the old toggle still on); newly authored graphs use the SubAgentNode
+  // count as the source of truth per spec guardrail 4.
+  const hasDeclaredSubAgents = (ctx.parentSubAgents?.length ?? 0) > 0;
+  const subAgentToolsEnabled = hasDeclaredSubAgents || ctx.subAgentSpawning;
+
+  if (subAgentToolsEnabled) {
+    if (isEnabled('sessions_spawn') && hasDeclaredSubAgents) {
+      // sessions_spawn requires actual SubAgentNode declarations to know
+      // which names to expose in its parameter schema; the legacy flag alone
+      // is not enough.
       const t = createSessionsSpawnTool(ctx);
       if (t) tools.push(t);
     }
-  }
-
-  if (ctx.subAgentSpawning) {
     if (isEnabled('sessions_yield')) {
       tools.push(createSessionsYieldTool(ctx));
     }

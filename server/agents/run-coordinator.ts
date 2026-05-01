@@ -617,6 +617,16 @@ export class RunCoordinator {
     // per-run loop would miss yields whose parent runs were already cleaned up.
     this.subAgentRegistry.cancelAllYields();
 
+    // Fire any registered child-abort handlers so in-flight sub-agent runs
+    // terminate cleanly on coordinator shutdown. Sub-agent runs don't have
+    // RunRecords on this coordinator, so the records loop below misses them.
+    for (const [, abortFn] of this.childAborts) {
+      try { abortFn(); } catch (err) {
+        console.error('[RunCoordinator] child abort handler threw on destroy:', err);
+      }
+    }
+    this.childAborts.clear();
+
     const pendingRunIds = new Set(this.concurrency.destroy());
 
     for (const record of this.runs.values()) {
