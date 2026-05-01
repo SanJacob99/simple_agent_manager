@@ -4,24 +4,28 @@
  * Exercises the wiring paths end-to-end with in-memory stubs:
  *   - SubAgentRegistry: spawn / onComplete / kill / sealing
  *   - SubAgentExecutor: dispatch with abort plumbing
+ *   - RunCoordinator: runtime-factory child dispatch with mock runtime
  *   - sessions_send: one-shot rejection for sub-session keys (via parser)
  *   - REST: POST /api/subagents/:id/kill flow
  *
- * Does NOT exercise actual sub-agent runtime construction — that path is
- * stubbed in RunCoordinator.runChild pending an AgentManager-level runtime
- * factory. The harness verifies the wiring/contracts that DO ship in the
- * backend foundation slice.
  *
  * Run: `npx tsx scripts/verify-subagents.ts`
  */
 
 import express from 'express';
 import http from 'http';
+import fs from 'fs/promises';
+import os from 'os';
+import path from 'path';
 
 import { SubAgentRegistry } from '../server/agents/sub-agent-registry.js';
 import { SubAgentExecutor } from '../server/agents/sub-agent-executor.js';
+import { RunCoordinator } from '../server/agents/run-coordinator.js';
 import { mountSubAgentRoutes } from '../server/routes/subagents.js';
 import { parseSubSessionKey, buildSubSessionKey } from '../server/agents/sub-session-key.js';
+import { StorageEngine } from '../server/storage/storage-engine.js';
+import { SessionTranscriptStore } from '../server/sessions/session-transcript-store.js';
+import type { AgentConfig } from '../shared/agent-config.js';
 
 let total = 0;
 let passed = 0;
@@ -32,19 +36,128 @@ function check(label: string, ok: boolean, detail?: string) {
   total += 1;
   if (ok) {
     passed += 1;
-    console.log(`  ✓ ${label}`);
+    console.log(`  ok ${label}`);
   } else {
     failed += 1;
     failures.push(label + (detail ? ` (${detail})` : ''));
-    console.log(`  ✗ ${label}${detail ? ` — ${detail}` : ''}`);
+    console.log(`  fail ${label}${detail ? ` - ${detail}` : ''}`);
   }
+}
+
+function makeAgentConfig(storagePath: string): AgentConfig {
+  return {
+    id: 'agent-runtime-verify',
+    version: 3,
+    name: 'RuntimeVerify',
+    description: '',
+    tags: [],
+    provider: { pluginId: 'openai', authMethodId: '', envVar: '', baseUrl: '' },
+    modelId: 'gpt-4',
+    thinkingLevel: 'off',
+    systemPrompt: { mode: 'manual', sections: [], assembled: 'Parent prompt', userInstructions: 'Parent prompt' },
+    modelCapabilities: {},
+    memory: null,
+    tools: {
+      profile: 'custom',
+      resolvedTools: [],
+      enabledGroups: [],
+      skills: [],
+      plugins: [],
+      subAgentSpawning: false,
+      maxSubAgents: 0,
+    },
+    contextEngine: null,
+    connectors: [],
+    agentComm: [],
+    storage: {
+      label: 'Storage',
+      backendType: 'filesystem',
+      storagePath,
+      sessionRetention: 50,
+      memoryEnabled: false,
+      dailyMemoryEnabled: false,
+      dailyResetEnabled: false,
+      dailyResetHour: 4,
+      idleResetEnabled: false,
+      idleResetMinutes: 60,
+      parentForkMaxTokens: 100000,
+      maintenanceMode: 'warn',
+      pruneAfterDays: 30,
+      maxEntries: 100,
+      rotateBytes: 1048576,
+      resetArchiveRetentionDays: 7,
+      maxDiskBytes: 104857600,
+      highWaterPercent: 80,
+      maintenanceIntervalMinutes: 60,
+    },
+    vectorDatabases: [],
+    crons: [],
+    mcps: [],
+    subAgents: [],
+    workspacePath: null,
+    exportedAt: Date.now(),
+    sourceGraphId: 'runtime-verify',
+    runTimeoutMs: 60000,
+  };
+}
+
+function makeMockRuntime(reply: string) {
+  const listeners = new Set<(event: any) => void>();
+  const runtime: any = {
+    state: { messages: [], model: { api: 'openai-completions' } },
+    lastApiError: null,
+    subscribe: (listener: (event: any) => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    prompt: async () => {
+      const message = {
+        role: 'assistant',
+        content: [{ type: 'text', text: reply }],
+        api: 'openai-completions',
+        provider: 'openai',
+        model: 'gpt-4',
+        usage: { input: 1, output: 1, totalTokens: 2, cacheRead: 0, cacheWrite: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+        stopReason: 'stop',
+        timestamp: Date.now(),
+      };
+      for (const listener of listeners) {
+        listener({ type: 'message_start', message: { role: 'assistant' } });
+        listener({
+          type: 'message_update',
+          assistantMessageEvent: { type: 'text_delta', contentIndex: 0, delta: reply },
+        });
+        listener({
+          type: 'message_update',
+          assistantMessageEvent: { type: 'text_end', contentIndex: 0, content: reply },
+        });
+        listener({ type: 'message_end', message });
+      }
+    },
+    abort: () => {},
+    destroy: () => {},
+    setSessionContext: (messages: any[]) => { runtime.state.messages = [...messages]; },
+    setActiveSession: () => {},
+    clearActiveSession: () => {},
+    setCurrentSessionKey: () => {},
+    setModel: () => {},
+    setSystemPrompt: (prompt: string) => { runtime.state.systemPrompt = prompt; },
+    getSystemPrompt: () => runtime.state.systemPrompt ?? 'Child prompt',
+    getResolvedSystemPrompt: () => ({
+      mode: 'manual',
+      sections: [],
+      assembled: 'Child prompt',
+      userInstructions: 'Child prompt',
+    }),
+  };
+  return runtime;
 }
 
 async function main() {
   console.log('Sub-agent backend verification harness');
   console.log('======================================\n');
 
-  // ── 1. Sub-session key parser ─────────────────────────────────────────────
+  // -- 1. Sub-session key parser ---------------------------------------------
   console.log('1. Sub-session key parser');
   const k = buildSubSessionKey('agent:a:main', 'researcher', 'abc123');
   check('builds raw sub:* key', k === 'sub:agent:a:main:researcher:abc123');
@@ -55,8 +168,8 @@ async function main() {
   check('rejects bad name regex', parseSubSessionKey('sub:agent:a:main:Researcher:abc') === null);
   console.log();
 
-  // ── 2. Registry: spawn → complete → seal ──────────────────────────────────
-  console.log('2. Registry: spawn → complete → seal');
+  // -- 2. Registry: spawn -> complete -> seal ----------------------------------
+  console.log('2. Registry: spawn -> complete -> seal');
   const reg1 = new SubAgentRegistry();
   const rec1 = reg1.spawn(
     { sessionKey: 'agent:a:main', runId: 'pr1' },
@@ -77,7 +190,7 @@ async function main() {
   check('result text recorded', after1?.result === 'researched X');
   console.log();
 
-  // ── 3. Registry: kill flow preserves "killed" terminal state ──────────────
+  // -- 3. Registry: kill flow preserves "killed" terminal state --------------
   console.log('3. Registry: kill preserves killed (does not get clobbered to error)');
   const reg2 = new SubAgentRegistry();
   const rec2 = reg2.spawn(
@@ -98,7 +211,7 @@ async function main() {
   check('killed records are sealed', after2?.sealed === true);
   console.log();
 
-  // ── 4. Executor: completes through a fake bridge ──────────────────────────
+  // -- 4. Executor: completes through a fake bridge --------------------------
   console.log('4. Executor: completes through a fake runChild bridge');
   const events: any[] = [];
   const exec1 = new SubAgentExecutor({
@@ -119,7 +232,7 @@ async function main() {
   check('events tagged with childRunId', events.some((e) => e.runId === 'child-1'));
   console.log();
 
-  // ── 5. Executor: abort propagates through reassigned onAbort ──────────────
+  // -- 5. Executor: abort propagates through reassigned onAbort --------------
   console.log('5. Executor: abort propagates via onAbort handover');
   let abortFn: () => void = () => {};
   const exec2 = new SubAgentExecutor({
@@ -140,7 +253,7 @@ async function main() {
   check('abort propagates to runChild', result2.status === 'aborted');
   console.log();
 
-  // ── 6. REST kill: aborts in-flight child and marks killed ─────────────────
+  // -- 6. REST kill: aborts in-flight child and marks killed -----------------
   console.log('6. REST kill: full server flow');
   const reg3 = new SubAgentRegistry();
   const rec3 = reg3.spawn(
@@ -193,7 +306,89 @@ async function main() {
   }
   console.log();
 
-  // ── Summary ────────────────────────────────────────────────────────────────
+  console.log('7. RunCoordinator: runtime factory bridge');
+  const tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'sam-verify-subagents-'));
+  try {
+    const config = makeAgentConfig(tmpRoot);
+    const storage = new StorageEngine(config.storage!, config.name);
+    await storage.init();
+    const transcriptStore = new SessionTranscriptStore(storage.getSessionsDir(), process.cwd());
+    const created = await transcriptStore.createSession();
+    const sessionKey = 'sub:agent:agent-runtime-verify:main:researcher:rt1';
+    await storage.createSession({
+      sessionKey,
+      sessionId: created.sessionId,
+      agentId: config.id,
+      sessionFile: path.relative(storage.getAgentDir(), created.sessionFile).replace(/\\/g, '/'),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      chatType: 'direct',
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      contextTokens: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalEstimatedCostUsd: 0,
+      compactionCount: 0,
+      subAgentMeta: {
+        subAgentId: 'verify-sub',
+        subAgentName: 'researcher',
+        parentSessionKey: 'agent:agent-runtime-verify:main',
+        parentRunId: 'parent-run',
+        status: 'running',
+        sealed: false,
+        appliedOverrides: {},
+        modelId: 'gpt-4',
+        providerPluginId: 'openai',
+        startedAt: Date.now(),
+      },
+    });
+
+    const parentRuntime = makeMockRuntime('parent') as any;
+    let factoryCalled = false;
+    const coordinator = new RunCoordinator(
+      config.id,
+      parentRuntime,
+      config,
+      storage,
+      null,
+      undefined,
+      undefined,
+      (childConfig) => {
+        factoryCalled = true;
+        check('child config strips recursive subAgents', childConfig.subAgents.length === 0);
+        return makeMockRuntime('real child reply') as any;
+      },
+    );
+
+    try {
+      const result = await coordinator.getSubAgentExecutor().dispatch({
+        childRunId: 'runtime-child-run',
+        childSessionKey: sessionKey,
+        syntheticConfig: {
+          ...config,
+          id: `${config.id}::sub::researcher`,
+          name: `${config.name}/researcher`,
+          subAgents: [{ name: 'would-recurse' } as any],
+        },
+        message: 'go',
+        onAbortRegister: () => {},
+      });
+      const stored = await storage.getSession(sessionKey);
+      check('runtime factory was called', factoryCalled);
+      check('runtime bridge returns child reply', result.status === 'completed' && result.text === 'real child reply');
+      check('runtime bridge seals durable metadata', stored?.subAgentMeta?.status === 'completed' && stored.subAgentMeta.sealed === true);
+      check('runtime bridge persists token counters', stored?.totalTokens === 2);
+    } finally {
+      coordinator.destroy();
+    }
+  } finally {
+    await fs.rm(tmpRoot, { recursive: true, force: true });
+  }
+  console.log();
+
+  // -- Summary ----------------------------------------------------------------
   console.log('======================================');
   console.log(`Total: ${total}, Passed: ${passed}, Failed: ${failed}`);
   if (failed > 0) {
