@@ -27,3 +27,8 @@
 **Vulnerability:** The path traversal prevention logic in file system tools (`write-file.ts`, `read-file.ts`, etc) used `!resolved.startsWith(ctx.cwd)`, which is vulnerable to partial directory name bypasses (e.g., escaping `/workspace` via `../workspace-secrets/passwd`).
 **Learning:** Checking directory boundaries with `startsWith` using the directory path string alone is insufficient and insecure because it allows prefix matches.
 **Prevention:** Always append a trailing directory separator (`path.sep`) to the base directory before using `startsWith`, or verify an exact match when testing for path boundaries.
+
+## 2026-04-26 - [CRITICAL] Fix prefix-matching path traversal bypass in file system tools
+**Vulnerability:** The path traversal prevention logic in file system tools (`write-file.ts`, `read-file.ts`, etc) used `!resolved.startsWith(ctx.cwd)`, which is vulnerable to partial directory name bypasses (e.g., escaping `/workspace` via `../workspace-secrets/passwd`).
+**Learning:** Checking directory boundaries with `startsWith` using the directory path string alone is insufficient and insecure because it allows prefix matches.
+**Prevention:** Always append a trailing directory separator (`path.sep`) to the base directory before using `startsWith`, or verify an exact match when testing for path boundaries.

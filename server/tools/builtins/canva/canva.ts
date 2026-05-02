@@ -63,7 +63,8 @@ function resolveCanvasFolder(name: string, ctx: CanvaToolContext): string {
   }
   const root = path.resolve(ctx.cwd, ctx.rootDir ?? DEFAULT_ROOT_DIR);
   const folder = path.resolve(root, name);
-  if (!folder.startsWith(root)) {
+  // SECURITY: Prevent prefix-matching path traversal bypass by appending path.sep
+  if (!folder.startsWith(root + path.sep) && folder !== root) {
     throw new Error(`Path escape detected for canvas "${name}".`);
   }
   return folder;
