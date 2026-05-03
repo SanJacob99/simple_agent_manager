@@ -259,7 +259,6 @@ export class StorageEngine {
     if (retentionDays <= 0) return [];
 
     const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
-    const removed: string[] = [];
 
     let files: string[];
     try {
@@ -268,20 +267,34 @@ export class StorageEngine {
       return [];
     }
 
-    for (const file of files) {
-      // Match *.reset.* pattern
-      if (!file.includes('.reset.')) continue;
-      const filePath = path.join(this.sessionsDir, file);
-      try {
-        const stat = await fs.stat(filePath);
-        if (stat.isFile() && stat.mtimeMs < cutoff) {
-          removed.push(filePath);
-          if (!dryRun) {
-            await fs.unlink(filePath);
+    // ⚡ Bolt Optimization: Chunked execution with Promise.all to fetch file stats and remove
+    // files concurrently instead of a sequential for...of loop. This eliminates N+1 I/O overhead
+    // without hitting the OS EMFILE limit.
+    const targetFiles = files.filter((file) => file.includes('.reset.'));
+    const removed: string[] = [];
+    const CHUNK_SIZE = 50;
+
+    for (let i = 0; i < targetFiles.length; i += CHUNK_SIZE) {
+      const chunk = targetFiles.slice(i, i + CHUNK_SIZE);
+      const results = await Promise.all(
+        chunk.map(async (file) => {
+          const filePath = path.join(this.sessionsDir, file);
+          try {
+            const stat = await fs.stat(filePath);
+            if (stat.isFile() && stat.mtimeMs < cutoff) {
+              if (!dryRun) {
+                await fs.unlink(filePath);
+              }
+              return filePath;
+            }
+          } catch {
+            // Ignore
           }
-        }
-      } catch {
-        // Ignore
+          return null;
+        })
+      );
+      for (const res of results) {
+        if (res !== null) removed.push(res);
       }
     }
 
