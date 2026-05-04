@@ -149,17 +149,27 @@ export default function SAMAgent() {
   useEffect(() => {
     if (!open) return;
     // Subscribe to raw WebSocket events to handle both transcript and agent event envelopes
-    const off = agentClient.onEvent((serverEvent) => {
+    const offEvent = agentClient.onEvent((serverEvent) => {
       if (serverEvent.type === 'samAgent:transcript') {
         loadTranscript(serverEvent.messages);
       } else if (serverEvent.type === 'samAgent:event') {
         handleEvent(serverEvent.event);
       }
     });
-    if (!transcriptLoaded) {
+    // Issue start() now if already connected, and on every (re)connect so we
+    // survive hard-reload boot races where WS wasn't open when the panel mounted.
+    if (agentClient.status === 'connected' && !transcriptLoaded) {
       samAgentClient.start();
     }
-    return off;
+    const offStatus = agentClient.onStatusChange((status) => {
+      if (status === 'connected' && !useSamAgentStore.getState().transcriptLoaded) {
+        samAgentClient.start();
+      }
+    });
+    return () => {
+      offEvent();
+      offStatus();
+    };
   }, [open, transcriptLoaded, loadTranscript, handleEvent]);
 
   // apiKeys are keyed by pluginId (consistent with ModelCatalogSection pattern)
@@ -167,6 +177,7 @@ export default function SAMAgent() {
     ? (apiKeys[modelSelection.provider.pluginId] ?? apiKeys[modelSelection.provider.envVar] ?? '')
     : '';
   const hasProvider = !!modelSelection && !!apiKeyForProvider;
+  const isStreaming = streaming !== null;
 
   const handleSend = () => {
     if (!hasProvider || !modelSelection || draft.trim().length === 0) return;
@@ -262,16 +273,16 @@ export default function SAMAgent() {
             >
               <input
                 type="text"
-                disabled={!hasProvider}
+                disabled={!hasProvider || isStreaming}
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleSend(); }}
-                placeholder={hasProvider ? (hitlPending ? 'Type your answer…' : 'Ask SAMAgent…') : 'Configure provider in Settings'}
+                placeholder={hasProvider ? (isStreaming ? 'SAMAgent is responding…' : hitlPending ? 'Type your answer…' : 'Ask SAMAgent…') : 'Configure provider in Settings'}
                 className="flex-1 bg-transparent text-sm text-stone-800 placeholder:text-stone-400 focus:outline-none disabled:opacity-50"
               />
               <button
                 onClick={handleSend}
-                disabled={!hasProvider || draft.trim().length === 0}
+                disabled={!hasProvider || isStreaming || draft.trim().length === 0}
                 title="Send"
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-stone-800 text-white transition hover:bg-stone-700 disabled:opacity-40"
               >
