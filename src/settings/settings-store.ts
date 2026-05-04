@@ -8,6 +8,7 @@ import {
   DEFAULT_CRON_DEFAULTS,
   DEFAULT_CHAT_UI_DEFAULTS,
   DEFAULT_SAFETY_SETTINGS,
+  DEFAULT_SAM_AGENT_DEFAULTS,
   type AgentDefaults,
   type ProviderDefaults,
   type StorageDefaults,
@@ -16,6 +17,7 @@ import {
   type CronDefaults,
   type ChatUIDefaults,
   type SafetySettings,
+  type SamAgentDefaults,
 } from './types';
 
 interface PersistedSettings {
@@ -28,6 +30,7 @@ interface PersistedSettings {
   cronDefaults: CronDefaults;
   chatUIDefaults: ChatUIDefaults;
   safety: SafetySettings;
+  samAgentDefaults: SamAgentDefaults;
 }
 
 interface SettingsStore extends PersistedSettings {
@@ -43,6 +46,7 @@ interface SettingsStore extends PersistedSettings {
   setCronDefaults: (updates: Partial<CronDefaults>) => void;
   setChatUIDefaults: (updates: Partial<ChatUIDefaults>) => void;
   setSafetySettings: (updates: Partial<SafetySettings>) => void;
+  setSamAgentDefaults: (updates: Partial<SamAgentDefaults>) => void;
   resetSettings: () => void;
   loadFromServer: () => Promise<void>;
 }
@@ -56,6 +60,7 @@ const INITIAL_DEFAULTS: Omit<PersistedSettings, 'apiKeys'> = {
   cronDefaults: DEFAULT_CRON_DEFAULTS,
   chatUIDefaults: DEFAULT_CHAT_UI_DEFAULTS,
   safety: DEFAULT_SAFETY_SETTINGS,
+  samAgentDefaults: DEFAULT_SAM_AGENT_DEFAULTS,
 };
 
 async function fetchSettings(): Promise<PersistedSettings> {
@@ -72,6 +77,7 @@ async function fetchSettings(): Promise<PersistedSettings> {
     cronDefaults: { ...DEFAULT_CRON_DEFAULTS, ...(data.cronDefaults ?? {}) },
     chatUIDefaults: { ...DEFAULT_CHAT_UI_DEFAULTS, ...(data.chatUIDefaults ?? {}) },
     safety: { ...DEFAULT_SAFETY_SETTINGS, ...(data.safety ?? {}) },
+    samAgentDefaults: { ...DEFAULT_SAM_AGENT_DEFAULTS, ...(data.samAgentDefaults ?? {}) },
   };
 }
 
@@ -98,6 +104,7 @@ function getSnapshot(state: SettingsStore): PersistedSettings {
     cronDefaults: state.cronDefaults,
     chatUIDefaults: state.chatUIDefaults,
     safety: state.safety,
+    samAgentDefaults: state.samAgentDefaults,
   };
 }
 
@@ -178,6 +185,12 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     const next = { ...get().safety, ...updates };
     set({ safety: next });
     saveSettings({ ...getSnapshot(get()), safety: next });
+  },
+
+  setSamAgentDefaults: (updates) => {
+    const next = { ...get().samAgentDefaults, ...updates };
+    set({ samAgentDefaults: next });
+    saveSettings({ ...getSnapshot(get()), samAgentDefaults: next });
   },
 
   resetSettings: () => {

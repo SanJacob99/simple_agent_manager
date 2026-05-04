@@ -150,6 +150,24 @@ export const DEFAULT_CHAT_UI_DEFAULTS: ChatUIDefaults = {
   textRevealStructure: 'blocks',
 };
 
+// --- SAMAgent defaults ---
+
+export interface SamAgentDefaults {
+  modelSelection: {
+    provider: {
+      pluginId: string;
+      authMethodId: string;
+      envVar: string;
+      baseUrl: string;
+    };
+    modelId: string;
+  } | null;
+}
+
+export const DEFAULT_SAM_AGENT_DEFAULTS: SamAgentDefaults = {
+  modelSelection: null,
+};
+
 // --- Safety (HITL) ---
 
 export interface SafetySettings {
