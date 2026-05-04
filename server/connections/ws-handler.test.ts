@@ -58,6 +58,31 @@ describe('ws-handler', () => {
     expect(sent.agentId).toBe('agent-1');
   });
 
+  it('responds to samAgent:start with samAgent:transcript', async () => {
+    const socket = makeMockSocket();
+    socket.readyState = 1; // WebSocket.OPEN
+    const manager = {
+      removeSocketFromAll: vi.fn(),
+    } as any;
+
+    const messages = [
+      { id: 'msg-1', role: 'user', text: 'Hello SAM', timestamp: 1000 },
+    ];
+    const samAgent = {
+      readTranscript: vi.fn(async () => messages),
+    } as any;
+    const samAgentBroadcasters = new Set<(envelope: any) => void>();
+
+    handleConnection(socket, manager, { setAll: vi.fn() } as any, samAgent, samAgentBroadcasters);
+
+    await socket.emitMessage({ type: 'samAgent:start' });
+
+    expect(samAgent.readTranscript).toHaveBeenCalledOnce();
+    const sent = JSON.parse(socket.send.mock.calls[0][0]);
+    expect(sent.type).toBe('samAgent:transcript');
+    expect(sent.messages).toEqual(messages);
+  });
+
   it('waits for an in-flight agent:start before dispatching a prompt', async () => {
     const socket = makeMockSocket();
     let resolveStart!: () => void;
