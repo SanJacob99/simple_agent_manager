@@ -3,6 +3,8 @@ import { useGraphStore } from './graph-store';
 import { useSettingsStore } from '../settings/settings-store';
 import { useAgentConnectionStore } from './agent-connection-store';
 import type { WorkflowPatch } from '../../shared/sam-agent/workflow-patch';
+import { HEX_HEIGHT, HEX_WIDTH } from '../nodes/HexNode';
+import { snapToHexCenter } from '../utils/hex-snap';
 
 const storageClientMocks = vi.hoisted(() => ({
   construct: vi.fn(),
@@ -12,6 +14,17 @@ const storageClientMocks = vi.hoisted(() => ({
 }));
 
 const resolveAgentConfigMock = vi.hoisted(() => vi.fn());
+const EPSILON = 1e-6;
+
+function expectAlignedToHoneycomb(position: { x: number; y: number }) {
+  const center = {
+    x: position.x + HEX_WIDTH / 2,
+    y: position.y + HEX_HEIGHT / 2,
+  };
+  const snappedCenter = snapToHexCenter(center.x, center.y);
+  expect(Math.abs(snappedCenter.x - center.x)).toBeLessThan(EPSILON);
+  expect(Math.abs(snappedCenter.y - center.y)).toBeLessThan(EPSILON);
+}
 
 vi.mock('../runtime/storage-client', () => ({
   StorageClient: class MockStorageClient {
@@ -304,13 +317,15 @@ describe('graphStore.applyPatch', () => {
       update_nodes: [], remove_nodes: [], add_edges: [], remove_edges: [], rationale: 'override-coords',
     });
     const newNode = useGraphStore.getState().nodes.find((n) => n.id !== 'existing')!;
-    // Far-off model coords should be replaced with a position near (300, 300+150) per the layout helper.
-    expect(newNode.position.x).toBeGreaterThanOrEqual(300);
+    // Far-off model coords should be replaced with a nearby snapped hex cell below the existing graph.
+    expect(newNode.position.x).toBeGreaterThan(100);
+    expect(newNode.position.x).toBeLessThan(700);
     expect(newNode.position.y).toBeGreaterThan(300);
     expect(newNode.position.y).toBeLessThan(800);
+    expectAlignedToHoneycomb(newNode.position);
   });
 
-  it('keeps reasonable positions emitted by the model', () => {
+  it('snaps reasonable positions emitted by the model to the honeycomb', () => {
     useGraphStore.setState({
       nodes: [{ id: 'existing', type: 'agent', position: { x: 300, y: 300 }, data: { type: 'agent' } as any }],
       edges: [],
@@ -322,7 +337,26 @@ describe('graphStore.applyPatch', () => {
       update_nodes: [], remove_nodes: [], add_edges: [], remove_edges: [], rationale: 'good-coords',
     });
     const newNode = useGraphStore.getState().nodes.find((n) => n.id !== 'existing')!;
-    expect(newNode.position).toEqual({ x: 400, y: 350 });
+    expect(newNode.position).not.toEqual({ x: 400, y: 350 });
+    expectAlignedToHoneycomb(newNode.position);
+  });
+
+  it('places multiple SAMAgent nodes on distinct honeycomb cells', () => {
+    useGraphStore.getState().applyPatch({
+      add_nodes: [
+        { tempId: 'a', type: 'agent', data: { type: 'agent' } as any },
+        { tempId: 'p', type: 'provider', data: { type: 'provider' } as any },
+        { tempId: 't', type: 'tools', data: { type: 'tools' } as any },
+      ],
+      update_nodes: [], remove_nodes: [], add_edges: [], remove_edges: [], rationale: 'cluster',
+    });
+    const nodes = useGraphStore.getState().nodes;
+    expect(nodes).toHaveLength(3);
+    for (const node of nodes) {
+      expectAlignedToHoneycomb(node.position);
+    }
+    const cells = new Set(nodes.map((node) => `${node.position.x},${node.position.y}`));
+    expect(cells.size).toBe(3);
   });
 });
 

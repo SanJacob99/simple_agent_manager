@@ -24,6 +24,11 @@ import {
 import { useSessionStore } from './session-store';
 import { useAgentConnectionStore } from './agent-connection-store';
 import { useSettingsStore } from '../settings/settings-store';
+import {
+  axialKey,
+  buildOccupiedCellSet,
+  snapNodePositionToFreeCell,
+} from '../utils/hex-snap';
 import type { WorkflowPatch, GraphSnapshot } from '../../shared/sam-agent/workflow-patch';
 import { redactGraphSnapshot } from '../../shared/sam-agent/workflow-patch';
 
@@ -348,10 +353,24 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
       // Compute a layout origin near the existing graph so newly-added nodes
       // are visible regardless of what positions the model emitted. If the
       // model didn't supply positions (or supplied off-screen ones) we anchor
-      // the new cluster below the existing graph's bounding box and lay nodes
-      // out in a column.
+      // the new cluster below the existing graph's bounding box.
       const layoutOrigin = computeLayoutOrigin(snapshotNodes);
       let layoutCursor = 0;
+      const occupiedCells = buildOccupiedCellSet(snapshotNodes);
+
+      const reserveHoneycombPosition = (preferredPosition: XYPosition): XYPosition => {
+        const { position, cell } = snapNodePositionToFreeCell(preferredPosition, occupiedCells);
+        occupiedCells.add(axialKey(cell));
+        return position;
+      };
+
+      const nextFallbackPosition = (): XYPosition => {
+        const index = layoutCursor++;
+        return {
+          x: layoutOrigin.x + (index % 4) * 180,
+          y: layoutOrigin.y + Math.floor(index / 4) * 200,
+        };
+      };
 
       const newNodes: AppNode[] = patch.add_nodes.map((add) => {
         const id = createNodeId();
@@ -359,9 +378,10 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
         const defaults = getDefaultNodeData(add.type);
         // Trusts the validator (server/sam-agent/sam-agent-validators.ts) for shape.
         const data = { ...defaults, ...add.data, type: add.type } as FlowNodeData;
-        const position = add.position && isReasonablePosition(add.position, snapshotNodes)
+        const preferredPosition = add.position && isReasonablePosition(add.position, snapshotNodes)
           ? add.position
-          : { x: layoutOrigin.x + (layoutCursor++ % 4) * 180, y: layoutOrigin.y + Math.floor(layoutCursor / 4) * 200 };
+          : nextFallbackPosition();
+        const position = reserveHoneycombPosition(preferredPosition);
         return {
           id,
           type: add.type,
