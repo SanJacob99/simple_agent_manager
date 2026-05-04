@@ -10,22 +10,10 @@ import { SamAgentHitlRegistry, type SamAgentHitlAnswer } from './sam-agent-hitl'
 import { buildSamAgentTools } from './sam-agent-tools';
 import { buildSamAgentSystemPrompt } from './sam-agent-system-prompt';
 import { buildSamAgentConfig, type SamAgentModelSelection } from './sam-agent-config';
+import type { SamAgentEvent, SamAgentEventEnvelope } from '../../shared/sam-agent/protocol-types';
 
-export type SamAgentEvent =
-  | { type: 'message:start'; messageId: string }
-  | { type: 'message:delta'; messageId: string; textDelta: string }
-  | { type: 'message:end'; messageId: string; text: string }
-  | { type: 'tool:start'; toolCallId: string; toolName: string; argsJson: string }
-  | { type: 'tool:end'; toolCallId: string; resultJson: string }
-  | { type: 'lifecycle:start' }
-  | { type: 'lifecycle:end' }
-  | { type: 'lifecycle:error'; error: string }
-  | { type: 'hitl:input_required'; toolCallId: string; kind: 'text' | 'confirm'; question: string; timeoutMs: number }
-  | { type: 'hitl:resolved'; toolCallId: string; answer: SamAgentHitlAnswer };
-
-export type SamAgentEventEnvelope =
-  | { type: 'samAgent:event'; event: SamAgentEvent }
-  | { type: 'samAgent:transcript'; messages: SamAgentMessage[] };
+// Re-export so existing server-internal code that imports these from this module still compiles.
+export type { SamAgentEvent, SamAgentEventEnvelope } from '../../shared/sam-agent/protocol-types';
 
 export interface SamAgentDispatchParams {
   text: string;

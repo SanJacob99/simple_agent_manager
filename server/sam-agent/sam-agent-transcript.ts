@@ -1,20 +1,9 @@
 import { existsSync, readFileSync, writeFileSync, appendFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import type { SamAgentToolResult, SamAgentMessage } from '../../shared/sam-agent/protocol-types';
 
-export type SamAgentToolResult = {
-  toolName: string;
-  toolCallId: string;
-  resultJson: string;
-  patchState?: 'pending' | 'applied' | 'discarded' | 'failed';
-};
-
-export type SamAgentMessage = {
-  id: string;
-  role: 'user' | 'assistant' | 'system' | 'hitl';
-  text: string;
-  timestamp: number;
-  toolResults?: SamAgentToolResult[];
-};
+// Re-export so external code that imported from this module continues to work.
+export type { SamAgentToolResult, SamAgentMessage } from '../../shared/sam-agent/protocol-types';
 
 export class SamAgentTranscriptStore {
   constructor(private readonly path: string) {
