@@ -68,7 +68,7 @@ function resolvePatch(patch: WorkflowPatch, current: GraphSnapshot): {
       errors.push({ code: 'duplicate_id', message: `add_nodes tempId '${add.tempId}' collides with existing node id`, path: add.tempId });
       continue;
     }
-    nodes.set(add.tempId, { id: add.tempId, type: add.type, data: { type: add.type, ...add.data } as Record<string, unknown> });
+    nodes.set(add.tempId, { id: add.tempId, type: add.type, data: { ...add.data, type: add.type } });
   }
 
   const edges: ResolvedEdge[] = current.edges
@@ -106,6 +106,15 @@ function checkEdgeRules(
     const source = nodes.get(edge.source);
     if (!target || !source) continue;
 
+    if (edge.source === edge.target) {
+      errors.push({
+        code: 'self_edge',
+        message: `Self-edge on '${edge.source}' is not allowed`,
+        path: `${edge.source}->${edge.target}`,
+      });
+      continue;
+    }
+
     const isAgent = target.type === 'agent';
     const isSubAgent = target.type === 'subAgent';
     if (!isAgent && !isSubAgent) {
@@ -127,6 +136,65 @@ function checkEdgeRules(
   return errors;
 }
 
+function checkOrphanEdges(
+  nodes: Map<string, ResolvedNode>,
+  edges: ResolvedEdge[],
+): PatchValidationError[] {
+  const errors: PatchValidationError[] = [];
+  for (const e of edges) {
+    if (!nodes.has(e.source)) {
+      errors.push({ code: 'dangling_edge', message: `Edge source '${e.source}' refers to a non-existent node`, path: `${e.source}->${e.target}` });
+    }
+    if (!nodes.has(e.target)) {
+      errors.push({ code: 'dangling_edge', message: `Edge target '${e.target}' refers to a non-existent node`, path: `${e.source}->${e.target}` });
+    }
+  }
+  return errors;
+}
+
+function getReferencedSubAgentIds(agentNode: ResolvedNode): Set<string> {
+  const refs = (agentNode.data.subAgents ?? []) as Array<unknown>;
+  const ids = new Set<string>();
+  if (!Array.isArray(refs)) return ids;
+  for (const r of refs) {
+    if (typeof r === 'string') ids.add(r);
+    else if (r && typeof r === 'object' && typeof (r as any).id === 'string') ids.add((r as any).id);
+  }
+  return ids;
+}
+
+function checkSubAgentRules(
+  nodes: Map<string, ResolvedNode>,
+  edges: ResolvedEdge[],
+  touchedSubAgentIds: Set<string>,
+): PatchValidationError[] {
+  const errors: PatchValidationError[] = [];
+
+  // Build the set of all referenced sub-agent ids across all agent nodes.
+  const referenced = new Set<string>();
+  for (const node of nodes.values()) {
+    if (node.type !== 'agent') continue;
+    for (const id of getReferencedSubAgentIds(node)) referenced.add(id);
+  }
+
+  for (const subId of touchedSubAgentIds) {
+    const sub = nodes.get(subId);
+    if (!sub || sub.type !== 'subAgent') continue;
+    if (!referenced.has(subId)) {
+      errors.push({ code: 'subagent_not_referenced', message: `Sub-agent '${subId}' is not referenced by any parent agent's subAgents list`, path: subId });
+    }
+    // Required peripheral: tools.
+    const peripherals = edges
+      .filter((e) => e.target === subId)
+      .map((e) => nodes.get(e.source))
+      .filter((n): n is ResolvedNode => !!n);
+    if (!peripherals.some((p) => p.type === 'tools')) {
+      errors.push({ code: 'subagent_missing_tools', message: `Sub-agent '${subId}' has no connected tools node`, path: subId });
+    }
+  }
+  return errors;
+}
+
 function checkAgentRunnable(
   nodes: Map<string, ResolvedNode>,
   edges: ResolvedEdge[],
@@ -142,20 +210,30 @@ function checkAgentRunnable(
       .map((e) => nodes.get(e.source))
       .filter((n): n is ResolvedNode => !!n);
 
-    const provider = peripherals.find((p) => p.type === 'provider');
-    const storage = peripherals.find((p) => p.type === 'storage');
-    const contextEngine = peripherals.find((p) => p.type === 'contextEngine');
+    const providers = peripherals.filter((p) => p.type === 'provider');
+    const storages = peripherals.filter((p) => p.type === 'storage');
+    const contextEngines = peripherals.filter((p) => p.type === 'contextEngine');
 
-    if (!provider) {
+    if (providers.length === 0) {
       errors.push({ code: 'agent_missing_provider', message: `Agent '${agentId}' has no connected provider`, path: agentId });
-    } else if (!provider.data.pluginId || provider.data.pluginId === '') {
-      errors.push({ code: 'agent_provider_incomplete', message: `Agent '${agentId}' provider has empty pluginId`, path: agentId });
+    } else {
+      if (providers.length > 1) {
+        errors.push({ code: 'agent_multiple_providers', message: `Agent '${agentId}' has ${providers.length} providers connected (must be exactly one)`, path: agentId });
+      }
+      const pluginId = providers[0].data.pluginId;
+      if (typeof pluginId !== 'string' || pluginId.length === 0) {
+        errors.push({ code: 'agent_provider_incomplete', message: `Agent '${agentId}' provider has empty pluginId`, path: agentId });
+      }
     }
-    if (!storage) {
+    if (storages.length === 0) {
       errors.push({ code: 'agent_missing_storage', message: `Agent '${agentId}' has no connected storage`, path: agentId });
+    } else if (storages.length > 1) {
+      errors.push({ code: 'agent_multiple_storages', message: `Agent '${agentId}' has ${storages.length} storage nodes connected (must be exactly one)`, path: agentId });
     }
-    if (!contextEngine) {
+    if (contextEngines.length === 0) {
       errors.push({ code: 'agent_missing_context_engine', message: `Agent '${agentId}' has no connected contextEngine`, path: agentId });
+    } else if (contextEngines.length > 1) {
+      errors.push({ code: 'agent_multiple_context_engines', message: `Agent '${agentId}' has ${contextEngines.length} contextEngines connected (must be exactly one)`, path: agentId });
     }
   }
   return errors;
@@ -167,6 +245,7 @@ export function validateWorkflowPatch(
 ): WorkflowPatchResult {
   const { nodes, edges, errors: resolveErrors } = resolvePatch(patch, current);
   const edgeErrors = checkEdgeRules(nodes, edges);
+  const orphanErrors = checkOrphanEdges(nodes, edges);
 
   const touchedAgentIds = new Set<string>();
   for (const add of patch.add_nodes) if (add.type === 'agent') touchedAgentIds.add(add.tempId);
@@ -180,7 +259,19 @@ export function validateWorkflowPatch(
   }
   const runnableErrors = checkAgentRunnable(nodes, edges, touchedAgentIds);
 
-  const allErrors = [...resolveErrors, ...edgeErrors, ...runnableErrors];
+  const touchedSubAgentIds = new Set<string>();
+  for (const add of patch.add_nodes) if (add.type === 'subAgent') touchedSubAgentIds.add(add.tempId);
+  for (const upd of patch.update_nodes) {
+    const node = nodes.get(upd.id);
+    if (node?.type === 'subAgent') touchedSubAgentIds.add(upd.id);
+  }
+  for (const e of patch.add_edges) {
+    const target = nodes.get(e.target);
+    if (target?.type === 'subAgent') touchedSubAgentIds.add(e.target);
+  }
+  const subAgentErrors = checkSubAgentRules(nodes, edges, touchedSubAgentIds);
+
+  const allErrors = [...resolveErrors, ...orphanErrors, ...edgeErrors, ...runnableErrors, ...subAgentErrors];
   if (allErrors.length > 0) return { ok: false, errors: allErrors };
   return { ok: true, patch };
 }
