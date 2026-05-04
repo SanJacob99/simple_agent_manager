@@ -27,6 +27,46 @@ import { useSettingsStore } from '../settings/settings-store';
 import type { WorkflowPatch, GraphSnapshot } from '../../shared/sam-agent/workflow-patch';
 import { redactGraphSnapshot } from '../../shared/sam-agent/workflow-patch';
 
+/**
+ * Anchor SAMAgent-emitted nodes near the existing graph so they're visible
+ * in the current viewport. Returns a position to use when the model doesn't
+ * supply one or supplies coordinates that look like they'd be off-screen.
+ *
+ * If the canvas is empty we just start at the origin; otherwise we drop
+ * new nodes ~150px below the existing bounding box and let the caller
+ * cascade them in a 4-column grid.
+ */
+function computeLayoutOrigin(existingNodes: AppNode[]): { x: number; y: number } {
+  if (existingNodes.length === 0) return { x: 100, y: 100 };
+  let maxY = -Infinity;
+  let minX = Infinity;
+  for (const n of existingNodes) {
+    if (n.position.y > maxY) maxY = n.position.y;
+    if (n.position.x < minX) minX = n.position.x;
+  }
+  return { x: minX, y: maxY + 150 };
+}
+
+/**
+ * Coordinate sanity check. The model sometimes emits negative or very small
+ * positions that overlap or sit outside the user's current viewport. We
+ * accept positions only if they're within a reasonable margin of the
+ * existing graph's bounding box. Empty graph → accept anything.
+ */
+function isReasonablePosition(pos: { x: number; y: number }, existingNodes: AppNode[]): boolean {
+  if (existingNodes.length === 0) return true;
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const n of existingNodes) {
+    if (n.position.x < minX) minX = n.position.x;
+    if (n.position.x > maxX) maxX = n.position.x;
+    if (n.position.y < minY) minY = n.position.y;
+    if (n.position.y > maxY) maxY = n.position.y;
+  }
+  const margin = 800;
+  return pos.x >= minX - margin && pos.x <= maxX + margin
+      && pos.y >= minY - margin && pos.y <= maxY + margin;
+}
+
 function buildNodeData(nodeType: NodeType): FlowNodeData {
   const defaults = getDefaultNodeData(nodeType);
 
@@ -305,16 +345,27 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
     try {
       const tempIdToFinalId = new Map<string, string>();
 
+      // Compute a layout origin near the existing graph so newly-added nodes
+      // are visible regardless of what positions the model emitted. If the
+      // model didn't supply positions (or supplied off-screen ones) we anchor
+      // the new cluster below the existing graph's bounding box and lay nodes
+      // out in a column.
+      const layoutOrigin = computeLayoutOrigin(snapshotNodes);
+      let layoutCursor = 0;
+
       const newNodes: AppNode[] = patch.add_nodes.map((add) => {
         const id = createNodeId();
         tempIdToFinalId.set(add.tempId, id);
         const defaults = getDefaultNodeData(add.type);
         // Trusts the validator (server/sam-agent/sam-agent-validators.ts) for shape.
         const data = { ...defaults, ...add.data, type: add.type } as FlowNodeData;
+        const position = add.position && isReasonablePosition(add.position, snapshotNodes)
+          ? add.position
+          : { x: layoutOrigin.x + (layoutCursor++ % 4) * 180, y: layoutOrigin.y + Math.floor(layoutCursor / 4) * 200 };
         return {
           id,
           type: add.type,
-          position: add.position ?? { x: 0, y: 0 },
+          position,
           data,
         };
       });
@@ -348,9 +399,11 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
         .filter((e) => !removedEdgeSet.has(e.id))
         .filter((e) => !removedSet.has(e.source) && !removedSet.has(e.target));
 
+      const finalNodes = [...updatedNodes, ...newNodes];
+      const finalEdges = [...filteredEdges, ...newEdges];
       set({
-        nodes: [...updatedNodes, ...newNodes],
-        edges: [...filteredEdges, ...newEdges],
+        nodes: finalNodes,
+        edges: finalEdges,
       });
 
       // Cross-store cleanup runs AFTER set() so a subscriber throw during commit
@@ -360,6 +413,15 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
         useSessionStore.getState().clearActiveSession(removedId);
         useAgentConnectionStore.getState().destroyAgent(removedId);
       }
+
+      // Persist immediately. The debounced auto-save subscriber would
+      // eventually catch this, but a deliberate user action like Apply
+      // shouldn't depend on the debouncer firing — we want the patch to
+      // survive a tab close right after Apply.
+      const persisted = { nodes: finalNodes, edges: finalEdges };
+      saveGraph(persisted);
+      void saveGraphToServer(persisted);
+
       return { ok: true };
     } catch (err) {
       set({ nodes: snapshotNodes, edges: snapshotEdges });

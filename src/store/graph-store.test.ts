@@ -291,6 +291,39 @@ describe('graphStore.applyPatch', () => {
     expect(edges).toHaveLength(1);
     expect(edges[0].id).toBe('e2');
   });
+
+  it('overrides off-screen positions with a layout near the existing graph', () => {
+    useGraphStore.setState({
+      nodes: [{ id: 'existing', type: 'agent', position: { x: 300, y: 300 }, data: { type: 'agent' } as any }],
+      edges: [],
+    });
+    useGraphStore.getState().applyPatch({
+      add_nodes: [
+        { tempId: 'a', type: 'agent', position: { x: -50000, y: -50000 }, data: { type: 'agent' } as any },
+      ],
+      update_nodes: [], remove_nodes: [], add_edges: [], remove_edges: [], rationale: 'override-coords',
+    });
+    const newNode = useGraphStore.getState().nodes.find((n) => n.id !== 'existing')!;
+    // Far-off model coords should be replaced with a position near (300, 300+150) per the layout helper.
+    expect(newNode.position.x).toBeGreaterThanOrEqual(300);
+    expect(newNode.position.y).toBeGreaterThan(300);
+    expect(newNode.position.y).toBeLessThan(800);
+  });
+
+  it('keeps reasonable positions emitted by the model', () => {
+    useGraphStore.setState({
+      nodes: [{ id: 'existing', type: 'agent', position: { x: 300, y: 300 }, data: { type: 'agent' } as any }],
+      edges: [],
+    });
+    useGraphStore.getState().applyPatch({
+      add_nodes: [
+        { tempId: 'a', type: 'agent', position: { x: 400, y: 350 }, data: { type: 'agent' } as any },
+      ],
+      update_nodes: [], remove_nodes: [], add_edges: [], remove_edges: [], rationale: 'good-coords',
+    });
+    const newNode = useGraphStore.getState().nodes.find((n) => n.id !== 'existing')!;
+    expect(newNode.position).toEqual({ x: 400, y: 350 });
+  });
 });
 
 describe('graphStore.buildGraphSnapshot', () => {
