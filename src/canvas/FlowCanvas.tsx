@@ -152,7 +152,11 @@ export default function FlowCanvas() {
         center={snapPreview?.center ?? null}
         color={snapPreview?.color ?? null}
       />
-      <Controls className="!border-slate-700 !bg-slate-800" />
+      <Controls
+        position="bottom-right"
+        className="!border-slate-700 !bg-slate-800"
+        style={{ bottom: 168 }}
+      />
       <MiniMap
         className="!border-slate-700 !bg-slate-900"
         nodeColor={(node) =>

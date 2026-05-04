@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "mcp__claude_ai_Context7__query-docs",
-      "Bash(npx vitest:*)"
+      "Bash(npx vitest:*)",
+      "mcp__Claude_Preview__preview_start"
     ]
   }
 }
