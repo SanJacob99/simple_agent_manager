@@ -36,6 +36,7 @@ export class SamAgentCoordinator {
   private currentMessageId: string | null = null;
   private currentText = '';
   private toolResults: SamAgentToolResult[] = [];
+  private inFlight = false;
 
   constructor(private readonly opts: SamAgentCoordinatorOptions) {
     this.transcript = new SamAgentTranscriptStore(opts.transcriptPath);
@@ -88,59 +89,71 @@ export class SamAgentCoordinator {
   }
 
   async dispatch(params: SamAgentDispatchParams): Promise<void> {
-    const userMessage: SamAgentMessage = {
-      id: randomUUID(),
-      role: 'user',
-      text: params.text,
-      timestamp: Date.now(),
-    };
-    await this.transcript.append(userMessage);
-
-    this.snapshot = params.currentGraph;
-    const systemPromptText = buildSamAgentSystemPrompt(this.snapshot);
-    const config = buildSamAgentConfig({ modelSelection: params.modelSelection, systemPromptText });
-
-    const runtime = this.opts.buildRuntime(config);
-    this.currentRuntime = runtime;
-    runtime.addTools(
-      buildSamAgentTools({
-        repoRoot: this.opts.repoRoot,
-        patchCtx: { getSnapshot: () => this.snapshot },
-        hitlRegistry: this.hitl,
-      }),
-    );
-
-    this.currentMessageId = randomUUID();
-    this.currentText = '';
-    this.toolResults = [];
-
-    // AgentRuntime.subscribe(listener) returns an unsubscribe function.
-    // This is the actual API exposed by server/runtime/agent-runtime.ts.
-    const handler = (e: RuntimeEvent) => this.onRuntimeEvent(e);
-    const unsubscribe = runtime.subscribe(handler);
-
-    this.opts.emit({ type: 'samAgent:event', event: { type: 'lifecycle:start' } });
-
-    try {
-      await runtime.prompt(params.text);
-    } catch (err) {
+    if (this.inFlight) {
       this.opts.emit({
         type: 'samAgent:event',
-        event: { type: 'lifecycle:error', error: err instanceof Error ? err.message : String(err) },
+        event: { type: 'lifecycle:error', error: 'A prompt is already in flight. Wait for it to finish before sending another.' },
       });
-    } finally {
-      unsubscribe();
+      return;
     }
+    this.inFlight = true;
+    try {
+      const userMessage: SamAgentMessage = {
+        id: randomUUID(),
+        role: 'user',
+        text: params.text,
+        timestamp: Date.now(),
+      };
+      await this.transcript.append(userMessage);
 
-    const assistantMessage: SamAgentMessage = {
-      id: this.currentMessageId,
-      role: 'assistant',
-      text: this.currentText,
-      timestamp: Date.now(),
-      toolResults: this.toolResults.length > 0 ? this.toolResults : undefined,
-    };
-    await this.transcript.append(assistantMessage);
-    this.opts.emit({ type: 'samAgent:event', event: { type: 'lifecycle:end' } });
+      this.snapshot = params.currentGraph;
+      const systemPromptText = buildSamAgentSystemPrompt(this.snapshot);
+      const config = buildSamAgentConfig({ modelSelection: params.modelSelection, systemPromptText });
+
+      const runtime = this.opts.buildRuntime(config);
+      this.currentRuntime = runtime;
+      runtime.addTools(
+        buildSamAgentTools({
+          repoRoot: this.opts.repoRoot,
+          patchCtx: { getSnapshot: () => this.snapshot },
+          hitlRegistry: this.hitl,
+        }),
+      );
+
+      this.currentMessageId = randomUUID();
+      this.currentText = '';
+      this.toolResults = [];
+
+      // AgentRuntime.subscribe(listener) returns an unsubscribe function.
+      // This is the actual API exposed by server/runtime/agent-runtime.ts.
+      const handler = (e: RuntimeEvent) => this.onRuntimeEvent(e);
+      const unsubscribe = runtime.subscribe(handler);
+
+      this.opts.emit({ type: 'samAgent:event', event: { type: 'lifecycle:start' } });
+
+      try {
+        await runtime.prompt(params.text);
+      } catch (err) {
+        this.opts.emit({
+          type: 'samAgent:event',
+          event: { type: 'lifecycle:error', error: err instanceof Error ? err.message : String(err) },
+        });
+      } finally {
+        unsubscribe();
+      }
+
+      const assistantMessage: SamAgentMessage = {
+        id: this.currentMessageId,
+        role: 'assistant',
+        text: this.currentText,
+        timestamp: Date.now(),
+        toolResults: this.toolResults.length > 0 ? this.toolResults : undefined,
+      };
+      await this.transcript.append(assistantMessage);
+      this.opts.emit({ type: 'samAgent:event', event: { type: 'lifecycle:end' } });
+    } finally {
+      this.inFlight = false;
+    }
   }
 
   /**

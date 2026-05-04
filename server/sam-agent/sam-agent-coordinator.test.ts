@@ -104,4 +104,45 @@ describe('SamAgentCoordinator.dispatch', () => {
     await coord.clear();
     expect(await coord.readTranscript()).toEqual([]);
   });
+
+  it('rejects an overlapping dispatch with lifecycle:error', async () => {
+    const runtime = makeStubRuntime();
+    // Make the first prompt slow — it won't resolve until we call resolveFirst()
+    let resolveFirst: () => void = () => {};
+    runtime.prompt = vi.fn(async function (this: any) {
+      await new Promise<void>((r) => { resolveFirst = r; });
+      this.fireFromArray();
+    });
+    const events: any[] = [];
+    const coord = new SamAgentCoordinator({
+      transcriptPath: join(dir, 'tx.jsonl'),
+      repoRoot: dir,
+      buildRuntime: () => runtime as any,
+      emit: (e) => events.push(e),
+    });
+    // Start first dispatch (does not resolve yet)
+    const first = coord.dispatch({
+      text: 'a',
+      currentGraph: { nodes: [], edges: [] },
+      modelSelection: { provider: { pluginId: 'x', authMethodId: 'a', envVar: 'X', baseUrl: '' }, modelId: 'm' },
+    });
+    // Second dispatch arrives while first is in flight — should be rejected immediately
+    await coord.dispatch({
+      text: 'b',
+      currentGraph: { nodes: [], edges: [] },
+      modelSelection: { provider: { pluginId: 'x', authMethodId: 'a', envVar: 'X', baseUrl: '' }, modelId: 'm' },
+    });
+    expect(
+      events.some(
+        (e) =>
+          e.type === 'samAgent:event' &&
+          e.event.type === 'lifecycle:error' &&
+          /already in flight/i.test(e.event.error),
+      ),
+    ).toBe(true);
+    // Let the first finish so the test exits cleanly
+    runtime.eventsToFire = [{ type: 'agent_end' }];
+    resolveFirst();
+    await first;
+  });
 });
