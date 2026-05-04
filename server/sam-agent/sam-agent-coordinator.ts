@@ -231,8 +231,20 @@ export class SamAgentCoordinator {
       case 'tool_execution_end': {
         const toolName: string = (e as any).toolName ?? '';
         const toolCallId: string = (e as any).toolCallId ?? '';
+        // The runtime hands us the full AgentToolResult ({ content: [{ type: 'text', text: '...' }], details }).
+        // For SAMAgent the inner text is the actual JSON payload the UI expects ({ ok, patch } | { ok, errors }).
+        // Unwrap the inner text when present; fall back to stringifying the whole result.
         const resultJson: string = (() => {
-          try { return JSON.stringify((e as any).result ?? {}); } catch { return '{}'; }
+          const result = (e as any).result;
+          try {
+            if (result && Array.isArray(result.content)) {
+              const firstText = result.content.find((c: any) => c?.type === 'text' && typeof c.text === 'string');
+              if (firstText) return firstText.text;
+            }
+            return JSON.stringify(result ?? {});
+          } catch {
+            return '{}';
+          }
         })();
         if (toolName === 'propose_workflow_patch') {
           this.toolResults.push({ toolName, toolCallId, resultJson, patchState: 'pending' });

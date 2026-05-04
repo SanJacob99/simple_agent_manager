@@ -60,6 +60,13 @@ function resolvePatch(patch: WorkflowPatch, current: GraphSnapshot): {
   }
 
   for (const add of patch.add_nodes) {
+    if (typeof add.tempId !== 'string' || add.tempId.length === 0) {
+      errors.push({
+        code: 'missing_temp_id',
+        message: `add_nodes entry is missing required 'tempId' field. Use 'tempId' (not 'id') for new nodes.`,
+      });
+      continue;
+    }
     if (!ALL_NODE_TYPES.has(add.type)) {
       errors.push({ code: 'unknown_node_type', message: `add_nodes: type '${add.type}' is unknown`, path: add.tempId });
       continue;

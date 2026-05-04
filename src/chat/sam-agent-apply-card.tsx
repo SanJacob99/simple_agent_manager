@@ -23,15 +23,32 @@ export function SamAgentApplyCard({ messageId, toolCallId, resultJson, patchStat
     return <div className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs text-stone-500">malformed patch</div>;
   }
 
-  if (!parsed.ok) {
+  if (typeof (parsed as { ok?: unknown }).ok !== 'boolean') {
     return (
-      <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
-        Patch invalid: {parsed.errors.map((e) => e.message).join('; ')}
+      <div className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs text-stone-500">
+        unrecognized tool result shape
       </div>
     );
   }
 
-  const patch: WorkflowPatch = parsed.patch;
+  if (!parsed.ok) {
+    const errors = Array.isArray(parsed.errors) ? parsed.errors : [];
+    return (
+      <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+        Patch invalid: {errors.map((e) => e.message).join('; ') || 'unknown error'}
+      </div>
+    );
+  }
+
+  const rawPatch = (parsed as { patch?: Partial<WorkflowPatch> }).patch ?? {} as Partial<WorkflowPatch>;
+  const patch: WorkflowPatch = {
+    add_nodes: rawPatch.add_nodes ?? [],
+    update_nodes: rawPatch.update_nodes ?? [],
+    remove_nodes: rawPatch.remove_nodes ?? [],
+    add_edges: rawPatch.add_edges ?? [],
+    remove_edges: rawPatch.remove_edges ?? [],
+    rationale: rawPatch.rationale ?? '',
+  };
   const summary = patch.rationale || `${patch.add_nodes.length} adds, ${patch.update_nodes.length} edits, ${patch.remove_nodes.length} deletes`;
 
   const handleApply = () => {
