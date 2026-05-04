@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useGraphStore } from './graph-store';
 import { useSettingsStore } from '../settings/settings-store';
 import { useAgentConnectionStore } from './agent-connection-store';
+import type { WorkflowPatch } from '../../shared/sam-agent/workflow-patch';
 
 const storageClientMocks = vi.hoisted(() => ({
   construct: vi.fn(),
@@ -196,5 +197,113 @@ describe('graph store defaults integration', () => {
     );
     expect(storageClientMocks.init).toHaveBeenCalledOnce();
     expect(storageClientMocks.deleteAgentData).toHaveBeenCalledOnce();
+  });
+});
+
+describe('graphStore.applyPatch', () => {
+  beforeEach(() => {
+    useGraphStore.setState({ nodes: [], edges: [] });
+  });
+
+  it('adds nodes and resolves tempIds in edges', () => {
+    const patch: WorkflowPatch = {
+      add_nodes: [
+        { tempId: 'a', type: 'agent', data: { type: 'agent', name: 'A' } as any },
+        { tempId: 'p', type: 'provider', data: { type: 'provider', pluginId: 'openrouter', authMethodId: 'api-key', envVar: 'OPENROUTER_API_KEY', baseUrl: '' } as any },
+      ],
+      update_nodes: [], remove_nodes: [],
+      add_edges: [{ source: 'p', target: 'a' }],
+      remove_edges: [], rationale: 'build',
+    };
+    const result = useGraphStore.getState().applyPatch(patch);
+    expect(result.ok).toBe(true);
+    const { nodes, edges } = useGraphStore.getState();
+    expect(nodes).toHaveLength(2);
+    expect(edges).toHaveLength(1);
+    const agent = nodes.find((n) => n.data.type === 'agent')!;
+    const provider = nodes.find((n) => n.data.type === 'provider')!;
+    expect(edges[0].source).toBe(provider.id);
+    expect(edges[0].target).toBe(agent.id);
+  });
+
+  it('rolls back on error', () => {
+    const initial = [{ id: 'existing', type: 'agent', position: { x: 0, y: 0 }, data: { type: 'agent', name: 'X' } as any }];
+    useGraphStore.setState({
+      nodes: initial,
+      edges: [],
+    });
+    // Force a failure by passing add_nodes that will throw via a Proxy data field accessor.
+    const trapData = new Proxy({}, {
+      get() { throw new Error('boom'); },
+      ownKeys() { throw new Error('boom'); },
+    });
+    const result = useGraphStore.getState().applyPatch({
+      add_nodes: [{ tempId: 't', type: 'agent', data: trapData as any }],
+      update_nodes: [], remove_nodes: [], add_edges: [], remove_edges: [], rationale: 'rollback',
+    });
+    expect(result.ok).toBe(false);
+    expect(useGraphStore.getState().nodes).toEqual(initial);
+  });
+
+  it('shallow-merges update_nodes dataPatch', () => {
+    useGraphStore.setState({
+      nodes: [{ id: 'a1', type: 'agent', position: { x: 0, y: 0 }, data: { type: 'agent', name: 'Old', modelId: 'm1' } as any }],
+      edges: [],
+    });
+    useGraphStore.getState().applyPatch({
+      add_nodes: [], update_nodes: [{ id: 'a1', dataPatch: { modelId: 'm2' } as any }],
+      remove_nodes: [], add_edges: [], remove_edges: [], rationale: 'edit',
+    });
+    const node = useGraphStore.getState().nodes[0];
+    expect((node.data as any).name).toBe('Old');
+    expect((node.data as any).modelId).toBe('m2');
+  });
+
+  it('removes nodes and incident edges', () => {
+    useGraphStore.setState({
+      nodes: [
+        { id: 'a', type: 'agent', position: { x: 0, y: 0 }, data: { type: 'agent', name: 'A' } as any },
+        { id: 'p', type: 'provider', position: { x: 0, y: 0 }, data: { type: 'provider' } as any },
+      ],
+      edges: [{ id: 'e1', source: 'p', target: 'a', type: 'data' } as any],
+    });
+    useGraphStore.getState().applyPatch({
+      add_nodes: [], update_nodes: [], remove_nodes: ['a'],
+      add_edges: [], remove_edges: [], rationale: 'delete',
+    });
+    expect(useGraphStore.getState().nodes.find((n) => n.id === 'a')).toBeUndefined();
+    expect(useGraphStore.getState().edges.find((e) => e.source === 'a' || e.target === 'a')).toBeUndefined();
+  });
+
+  it('removes the listed edge ids', () => {
+    useGraphStore.setState({
+      nodes: [
+        { id: 'a', type: 'agent', position: { x: 0, y: 0 }, data: { type: 'agent' } as any },
+        { id: 'p', type: 'provider', position: { x: 0, y: 0 }, data: { type: 'provider' } as any },
+      ],
+      edges: [{ id: 'e1', source: 'p', target: 'a' } as any, { id: 'e2', source: 'p', target: 'a' } as any],
+    });
+    useGraphStore.getState().applyPatch({
+      add_nodes: [], update_nodes: [], remove_nodes: [],
+      add_edges: [], remove_edges: ['e1'], rationale: 'edge-cleanup',
+    });
+    const edges = useGraphStore.getState().edges;
+    expect(edges).toHaveLength(1);
+    expect(edges[0].id).toBe('e2');
+  });
+});
+
+describe('graphStore.buildGraphSnapshot', () => {
+  beforeEach(() => {
+    useGraphStore.setState({
+      nodes: [{ id: 'a', type: 'agent', position: { x: 1, y: 2 }, data: { type: 'agent', name: 'A' } as any }],
+      edges: [{ id: 'e1', source: 'p', target: 'a' } as any],
+    });
+  });
+  it('returns redacted snapshot without positions', () => {
+    const snap = useGraphStore.getState().buildGraphSnapshot();
+    expect(snap.nodes[0].id).toBe('a');
+    expect('position' in snap.nodes[0]).toBe(false);
+    expect(snap.edges[0]).toEqual({ id: 'e1', source: 'p', target: 'a' });
   });
 });

@@ -24,6 +24,8 @@ import {
 import { useSessionStore } from './session-store';
 import { useAgentConnectionStore } from './agent-connection-store';
 import { useSettingsStore } from '../settings/settings-store';
+import type { WorkflowPatch, GraphSnapshot } from '../../shared/sam-agent/workflow-patch';
+import { redactGraphSnapshot } from '../../shared/sam-agent/workflow-patch';
 
 function buildNodeData(nodeType: NodeType): FlowNodeData {
   const defaults = getDefaultNodeData(nodeType);
@@ -134,6 +136,9 @@ interface GraphStore {
   cancelDeleteAgent: () => void;
 
   loadGraph: (nodes: AppNode[], edges: Edge[]) => void;
+
+  applyPatch: (patch: WorkflowPatch) => { ok: true } | { ok: false; error: string };
+  buildGraphSnapshot: () => GraphSnapshot;
 }
 
 export const useGraphStore = create<GraphStore>((set, get) => ({
@@ -290,6 +295,78 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
           ? { ...node, data: { ...node.data, ...data } as FlowNodeData }
           : node,
       ),
+    });
+  },
+
+  applyPatch: (patch: WorkflowPatch): { ok: true } | { ok: false; error: string } => {
+    const snapshotNodes = get().nodes;
+    const snapshotEdges = get().edges;
+    try {
+      const tempIdToFinalId = new Map<string, string>();
+
+      const newNodes: AppNode[] = patch.add_nodes.map((add) => {
+        const id = createNodeId();
+        tempIdToFinalId.set(add.tempId, id);
+        const defaults = getDefaultNodeData(add.type);
+        const data = { ...defaults, ...add.data, type: add.type } as FlowNodeData;
+        return {
+          id,
+          type: add.type,
+          position: add.position ?? { x: 0, y: 0 },
+          data,
+        };
+      });
+
+      const removedSet = new Set(patch.remove_nodes);
+      const removedEdgeSet = new Set(patch.remove_edges);
+
+      const updatedNodes = snapshotNodes
+        .filter((n) => !removedSet.has(n.id))
+        .map((n) => {
+          const upd = patch.update_nodes.find((u) => u.id === n.id);
+          if (!upd) return n;
+          return { ...n, data: { ...n.data, ...upd.dataPatch } as FlowNodeData };
+        });
+
+      const resolveEndpoint = (raw: string): string => tempIdToFinalId.get(raw) ?? raw;
+
+      const newEdges: Edge[] = patch.add_edges.map((e) => {
+        const source = resolveEndpoint(e.source);
+        const target = resolveEndpoint(e.target);
+        return {
+          id: `edge_${source}_${target}`,
+          source,
+          target,
+          type: 'data',
+          animated: true,
+        };
+      });
+
+      const filteredEdges = snapshotEdges
+        .filter((e) => !removedEdgeSet.has(e.id))
+        .filter((e) => !removedSet.has(e.source) && !removedSet.has(e.target));
+
+      for (const removedId of patch.remove_nodes) {
+        useSessionStore.getState().clearActiveSession(removedId);
+        useAgentConnectionStore.getState().destroyAgent(removedId);
+      }
+
+      set({
+        nodes: [...updatedNodes, ...newNodes],
+        edges: [...filteredEdges, ...newEdges],
+      });
+      return { ok: true };
+    } catch (err) {
+      set({ nodes: snapshotNodes, edges: snapshotEdges });
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+
+  buildGraphSnapshot: (): GraphSnapshot => {
+    const { nodes, edges } = get();
+    return redactGraphSnapshot({
+      nodes: nodes.map((n) => ({ id: n.id, type: n.type, data: n.data as Record<string, unknown> })),
+      edges: edges.map((e) => ({ id: e.id, source: e.source, target: e.target })),
     });
   },
 
