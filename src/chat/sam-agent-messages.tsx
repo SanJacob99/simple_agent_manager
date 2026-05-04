@@ -41,7 +41,25 @@ export function SamAgentMessages({ messages, streaming }: Props) {
         </div>
       ))}
       {streaming && (
-        <div className="text-sm text-stone-800 whitespace-pre-wrap">{streaming.text}</div>
+        <div>
+          <div className="text-sm text-stone-800 whitespace-pre-wrap">{streaming.text}</div>
+          {streaming.toolResults?.map((tr) => {
+            if (tr.toolName === 'propose_workflow_patch') {
+              return (
+                <SamAgentApplyCard
+                  key={tr.toolCallId}
+                  messageId={streaming.messageId}
+                  toolCallId={tr.toolCallId}
+                  resultJson={tr.resultJson}
+                  patchState={tr.patchState ?? 'pending'}
+                />
+              );
+            }
+            return (
+              <div key={tr.toolCallId} className="my-1 text-[11px] text-stone-400">📖 {tr.toolName}</div>
+            );
+          })}
+        </div>
       )}
     </div>
   );
