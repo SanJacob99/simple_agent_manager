@@ -299,6 +299,7 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   },
 
   applyPatch: (patch: WorkflowPatch): { ok: true } | { ok: false; error: string } => {
+    // Zustand state is immutable; capturing the array references is enough for rollback.
     const snapshotNodes = get().nodes;
     const snapshotEdges = get().edges;
     try {
@@ -308,6 +309,7 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
         const id = createNodeId();
         tempIdToFinalId.set(add.tempId, id);
         const defaults = getDefaultNodeData(add.type);
+        // Trusts the validator (server/sam-agent/sam-agent-validators.ts) for shape.
         const data = { ...defaults, ...add.data, type: add.type } as FlowNodeData;
         return {
           id,
@@ -346,15 +348,18 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
         .filter((e) => !removedEdgeSet.has(e.id))
         .filter((e) => !removedSet.has(e.source) && !removedSet.has(e.target));
 
-      for (const removedId of patch.remove_nodes) {
-        useSessionStore.getState().clearActiveSession(removedId);
-        useAgentConnectionStore.getState().destroyAgent(removedId);
-      }
-
       set({
         nodes: [...updatedNodes, ...newNodes],
         edges: [...filteredEdges, ...newEdges],
       });
+
+      // Cross-store cleanup runs AFTER set() so a subscriber throw during commit
+      // doesn't strand half the cleanup. destroyAgent / clearActiveSession are
+      // teardowns and cannot be undone by the catch block.
+      for (const removedId of patch.remove_nodes) {
+        useSessionStore.getState().clearActiveSession(removedId);
+        useAgentConnectionStore.getState().destroyAgent(removedId);
+      }
       return { ok: true };
     } catch (err) {
       set({ nodes: snapshotNodes, edges: snapshotEdges });
