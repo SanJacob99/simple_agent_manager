@@ -154,4 +154,45 @@ describe('ChannelSessionStore', () => {
     expect(sealedEvent).toBeDefined();
     expect((sealedEvent as any).event.reason).toBe('token_budget_exceeded');
   });
+
+  it('appendAssistantMessages persists assistant turns to the channel JSONL', async () => {
+    const ch = await store.open({ pair: ['agent-a', 'agent-b'], pairNames: ['alpha', 'beta'] });
+    await store.appendAssistantMessages(ch.key, [
+      { role: 'assistant', content: 'reply one' } as any,
+      { role: 'assistant', content: 'reply two' } as any,
+    ]);
+    const events = await store.tail(ch.key, 10);
+    const assistantContents = events
+      .filter((e: any) => e?.type === 'message' && e?.message?.role === 'assistant')
+      .map((e: any) => e.message.content);
+    expect(assistantContents).toEqual(['reply one', 'reply two']);
+  });
+
+  it('appendAssistantMessages is a no-op for empty input', async () => {
+    const ch = await store.open({ pair: ['agent-a', 'agent-b'], pairNames: ['alpha', 'beta'] });
+    const before = (await store.tail(ch.key, 100)).length;
+    await store.appendAssistantMessages(ch.key, []);
+    const after = (await store.tail(ch.key, 100)).length;
+    expect(after).toBe(before);
+  });
+
+  it('appendAssistantMessages persists tool-result messages too', async () => {
+    const ch = await store.open({ pair: ['agent-a', 'agent-b'], pairNames: ['alpha', 'beta'] });
+    await store.appendAssistantMessages(ch.key, [
+      { role: 'toolResult', content: '...', toolCallId: 'call_1' } as any,
+    ]);
+    const events = await store.tail(ch.key, 10);
+    const toolEvents = events.filter((e: any) => e?.type === 'message' && e?.message?.role === 'toolResult');
+    expect(toolEvents.length).toBe(1);
+  });
+
+  it('appendAssistantMessages ignores user-role messages', async () => {
+    const ch = await store.open({ pair: ['agent-a', 'agent-b'], pairNames: ['alpha', 'beta'] });
+    const before = (await store.tail(ch.key, 100)).length;
+    await store.appendAssistantMessages(ch.key, [
+      { role: 'user', content: 'should not be appended' } as any,
+    ]);
+    const after = (await store.tail(ch.key, 100)).length;
+    expect(after).toBe(before);
+  });
 });

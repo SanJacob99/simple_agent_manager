@@ -98,6 +98,10 @@ const DEFAULT_WAIT_TIMEOUT_MS = 30_000;
 const STREAM_IDLE_TIMEOUT_MS = 30_000; // abort if no real token within 30s of message_start
 const NO_REPLY_PATTERN = /^no_reply$/i;
 const SESSION_TOOL_NAME_SET = new Set<string>(SESSION_TOOL_NAMES);
+/** Upper bound for reading the channel transcript on each wake.
+ *  Channel sessions are bounded by maxTurns (default 10, max practically <100),
+ *  so 1000 is a generous safety ceiling. */
+const CHANNEL_TRANSCRIPT_READ_LIMIT = 1000;
 
 interface TranscriptState {
   assistantText: string;
@@ -387,10 +391,12 @@ export class RunCoordinator {
     const pairBudget = receiverEdge.tokenBudget;
 
     // 2. Read the current channel state and transcript.
-    const handle = await this.commBus.readChannel(channelKey);
     // Generous limit — channel transcripts are bounded by maxTurns and
     // are short-lived. tail() reads the file fresh each call.
-    const rawRecords = await this.commBus.readChannelTranscript(channelKey, 1000);
+    const rawRecords = await this.commBus.readChannelTranscript(
+      channelKey,
+      CHANNEL_TRANSCRIPT_READ_LIMIT,
+    );
     const messages = extractChannelAgentMessages(rawRecords);
 
     // 3. Inject channel-mode tools per-run. The comm tools'
