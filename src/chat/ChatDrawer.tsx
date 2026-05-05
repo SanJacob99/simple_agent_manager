@@ -17,6 +17,7 @@ import { useRightAnchoredResize } from '../panels/useRightAnchoredResize';
 import PanelResizeHandle from '../panels/PanelResizeHandle';
 import { getChatConnectionIssue } from './chat-connection-state';
 import { shouldShowTranscriptLoading } from './transcript-loading';
+import PeerChannelsSection from './PeerChannelsSection';
 
 interface ChatDrawerProps {
   agentNodeId: string;
@@ -488,6 +489,14 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
             <Plus size={14} />
           </button>
         </div>
+
+        {/* Peer channels — read-only view of agent-to-agent channel sessions */}
+        <PeerChannelsSection
+          agentId={agentNodeId}
+          hasPeers={(config.agentComm ?? []).some(
+            (c) => c.protocol === 'direct' && c.targetAgentNodeId,
+          )}
+        />
       </div>
 
       {/* Missing Peripherals Overlay */}
