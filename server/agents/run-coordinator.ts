@@ -65,6 +65,11 @@ import {
   type ChildRunResult,
 } from './sub-agent-executor';
 import type { RuntimeFactory } from './runtime-factory';
+import type { AgentCommBus } from '../comms/agent-comm-bus';
+import { createAgentCommTools } from '../comms/agent-comm-tools';
+import { adaptAgentCommTools } from '../comms/agent-comm-tool-adapter';
+import { buildChannelContextBlock } from '../comms/channel-context-prompt';
+import { canonicalChannelKey } from '../comms/channel-key';
 
 export type RunStatus = 'pending' | 'running' | 'completed' | 'error';
 
@@ -198,6 +203,13 @@ export class RunCoordinator {
   private readonly subAgentRegistry: SubAgentRegistry;
   private readonly subAgentExecutor: SubAgentExecutor;
   /**
+   * Agent-to-agent communication bus. Set by AgentManager via
+   * `setCommBus()` after construction so the coordinator can dispatch
+   * channel-mode wakes (Task 11). Optional: legacy code paths and tests
+   * that don't exercise channel comms can leave it unset.
+   */
+  private commBus: AgentCommBus | null = null;
+  /**
    * Map of child runId -> abort handler. Populated by SessionToolContext's
    * registerSubAgentAbort wiring and consumed by `abort(runId)` so REST kill
    * and the `subagents` tool can terminate a running child.
@@ -320,6 +332,178 @@ export class RunCoordinator {
     this.tryStartNextRun();
 
     return { runId, sessionId: routed.sessionId, acceptedAt };
+  }
+
+  /**
+   * Inject the agent-comm bus. Called by AgentManager after the bus has
+   * been constructed and the coordinator is wired into the managed
+   * agent. Optional — tests that don't exercise channel comms can omit.
+   */
+  setCommBus(bus: AgentCommBus): void {
+    this.commBus = bus;
+  }
+
+  /**
+   * Dispatch a channel-mode wake. Called by AgentManager's
+   * `dispatchChannelWake` callback once per inbound `agent_send` that
+   * crossed the bus, after the bus has appended the user message to the
+   * channel transcript. Runs the receiver agent against the channel
+   * transcript WITHOUT re-appending an inbound user message, then
+   * reports aggregated provider usage back to the bus so the
+   * pair-token-budget seal logic can fire.
+   *
+   * Self-contained: this method does NOT use the regular `executeRun`
+   * pipeline (no SessionRouter, no per-session storage entries) because
+   * channel transcripts live under a separate StorageEngine entry owned
+   * by the lo-sorted agent in the pair.
+   */
+  async dispatchChannel(args: {
+    channelKey: string;
+    peerName: string;
+    depth: number;
+    isFinalTurn: boolean;
+  }): Promise<void> {
+    if (!this.commBus) {
+      throw new Error(
+        'RunCoordinator.dispatchChannel: no AgentCommBus is wired into this coordinator',
+      );
+    }
+
+    const { channelKey, peerName, depth, isFinalTurn } = args;
+
+    // 1. Resolve the receiver's reciprocal direct edge to the peer. v1
+    //    uses receiverEdge.tokenBudget as the pair budget — the bus's
+    //    send() side already enforced the pair-min on the inbound, and
+    //    only the receiver's run can ADD usage post-hoc. Capping at the
+    //    receiver's own budget gives correct sealing for that path.
+    const receiverEdge = (this.config.agentComm ?? []).find(
+      (c) => c.protocol === 'direct' && c.targetAgentName === peerName,
+    );
+    if (!receiverEdge) {
+      throw new Error(
+        `RunCoordinator.dispatchChannel: no direct comm edge to peer "${peerName}" on agent ${this.agentId}`,
+      );
+    }
+    const pairBudget = receiverEdge.tokenBudget;
+
+    // 2. Read the current channel state and transcript.
+    const handle = await this.commBus.readChannel(channelKey);
+    // Generous limit — channel transcripts are bounded by maxTurns and
+    // are short-lived. tail() reads the file fresh each call.
+    const rawRecords = await this.commBus.readChannelTranscript(channelKey, 1000);
+    const messages = extractChannelAgentMessages(rawRecords);
+
+    // 3. Inject channel-mode tools per-run. The comm tools'
+    //    `currentDepth` is the inbound message depth — the next
+    //    `agent_send` from this run will check against the pair maxDepth
+    //    using `currentDepth + 1` (matches the bus's send() arithmetic).
+    const directPeerNames = (this.config.agentComm ?? [])
+      .filter((c) => c.protocol === 'direct' && c.targetAgentName !== null)
+      .map((c) => c.targetAgentName as string);
+    const hasBroadcastNode = (this.config.agentComm ?? []).some(
+      (c) => c.protocol === 'broadcast',
+    );
+    const commTools = createAgentCommTools({
+      bus: this.commBus,
+      fromAgentId: this.agentId,
+      fromAgentName: this.config.name,
+      currentDepth: depth,
+      directPeerNames,
+      hasBroadcastNode,
+      readChannelHistory: ({ channelKey: k, limit }) =>
+        this.commBus!.readChannelTranscript(k, limit),
+      pairNamesToChannelKey: (peer: string) => {
+        const peerEdge = (this.config.agentComm ?? []).find(
+          (c) => c.protocol === 'direct' && c.targetAgentName === peer,
+        );
+        if (!peerEdge?.targetAgentNodeId) {
+          throw new Error(`pairNamesToChannelKey: no direct edge to "${peer}"`);
+        }
+        return canonicalChannelKey(this.agentId, peerEdge.targetAgentNodeId);
+      },
+    });
+    const adaptedCommTools = adaptAgentCommTools(commTools);
+
+    // 4. Set the receiver runtime's context to the channel transcript
+    //    (which already includes the inbound user message — bus appended
+    //    it before queuing this wake).
+    const messageCountBefore = messages.length;
+    this.runtime.setSessionContext(messages as AgentMessage[]);
+    this.runtime.setCurrentSessionKey(channelKey);
+    this.runtime.addTools(adaptedCommTools);
+
+    // 5. Append the channel-context system-prompt block for THIS run
+    //    only. Restored after the run completes.
+    const block = buildChannelContextBlock(peerName, isFinalTurn);
+    const restoreSystemPrompt = this.runtime.appendSystemPromptBlock(block);
+
+    // 6. Subscribe to runtime events to capture aggregate usage from
+    //    every assistant `message_end` produced during this run.
+    let totalInput = 0;
+    let totalOutput = 0;
+    const unsubscribe = this.runtime.subscribe((event: RuntimeEvent) => {
+      const raw = event as any;
+      if (raw?.type === 'message_end' && raw.message?.role === 'assistant') {
+        const usage = raw.message.usage;
+        if (usage && typeof usage === 'object') {
+          totalInput += Number(usage.input ?? 0) || 0;
+          totalOutput += Number(usage.output ?? 0) || 0;
+        }
+      }
+    });
+
+    try {
+      await this.runtime.runOnChannel();
+    } catch (err) {
+      log(
+        'RunCoordinator',
+        `dispatchChannel run failed for channel ${channelKey}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      // Swallow — the bus's audit logging covers the wake-side errors,
+      // and we still want addUsage below to run with whatever usage we
+      // captured before the failure so the pair-budget seal isn't lost.
+    } finally {
+      unsubscribe();
+      restoreSystemPrompt();
+      // Reset injected tools back to base. addTools resets to baseTools
+      // first, so calling with [] is the canonical "remove per-run tools"
+      // form used elsewhere in the coordinator.
+      this.runtime.addTools([]);
+
+      // 6b. Persist the assistant turn(s) produced by this run back to the
+      //     channel JSONL transcript so the conversation history survives
+      //     across dispatchChannel calls. pi-agent-core appends new messages
+      //     to agent.state.messages in memory during agent.continue(); we
+      //     slice off the newly-added messages and write them via the bus.
+      const newMessages = this.runtime.state.messages.slice(messageCountBefore);
+      if (newMessages.length > 0) {
+        try {
+          await this.commBus!.appendChannelAssistantMessages(channelKey, newMessages);
+        } catch (err) {
+          log(
+            'RunCoordinator',
+            `dispatchChannel assistant-persist failed for channel ${channelKey}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+    }
+
+    // 7. Report aggregated usage to the bus. The bus seals the channel
+    //    if cumulative tokensIn+tokensOut crosses pairBudget.
+    if (totalInput > 0 || totalOutput > 0) {
+      try {
+        await this.commBus.addUsage(
+          channelKey,
+          { tokensIn: totalInput, tokensOut: totalOutput },
+          pairBudget,
+        );
+      } catch (err) {
+        log(
+          'RunCoordinator',
+          `dispatchChannel addUsage failed for channel ${channelKey}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
   }
 
   async wait(runId: string, timeoutMs?: number): Promise<WaitResult> {
@@ -2347,6 +2531,29 @@ export class RunCoordinator {
 
     this.emit(event);
   }
+}
+
+/**
+ * Convert a channel JSONL tail (mix of `{type:'message',...}` and
+ * `{kind:'agent-comm-audit',...}` records) into an `AgentMessage[]`
+ * suitable for `agent.state.messages`. Drops audit events and any
+ * malformed/non-message records. Preserves wall-clock order (the bus
+ * appends in order; tail() preserves order).
+ */
+function extractChannelAgentMessages(records: unknown[]): AgentMessage[] {
+  const out: AgentMessage[] = [];
+  for (const rec of records) {
+    if (!rec || typeof rec !== 'object') continue;
+    const r = rec as { type?: unknown; message?: unknown; kind?: unknown };
+    if (r.kind === 'agent-comm-audit') continue;
+    if (r.type !== 'message') continue;
+    const msg = r.message;
+    if (!msg || typeof msg !== 'object') continue;
+    const candidate = msg as { role?: unknown };
+    if (typeof candidate.role !== 'string') continue;
+    out.push(msg as AgentMessage);
+  }
+  return out;
 }
 
 export function classifyError(error: unknown): StructuredError {

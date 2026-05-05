@@ -349,4 +349,8 @@ export class AgentCommBus {
   async readChannelTranscript(channelKey: string, limit: number): Promise<unknown[]> {
     return this.channelStore.tail(channelKey, limit);
   }
+
+  async appendChannelAssistantMessages(channelKey: string, messages: unknown[]): Promise<void> {
+    return this.channelStore.appendAssistantMessages(channelKey, messages);
+  }
 }

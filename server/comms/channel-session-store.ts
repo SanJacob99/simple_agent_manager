@@ -212,6 +212,32 @@ export class ChannelSessionStore {
   }
 
   /**
+   * Append one or more assistant/tool-result messages produced by a
+   * channel-mode run to the channel transcript. Does NOT bump turns (turns
+   * count user messages only). Silently skips messages whose role is not
+   * 'assistant' or 'toolResult' so callers can pass the full new-message
+   * slice without filtering first.
+   */
+  async appendAssistantMessages(key: string, messages: unknown[]): Promise<void> {
+    if (messages.length === 0) return;
+    const { entry } = await this.requireEntry(key);
+    const now = new Date().toISOString();
+    for (const msg of messages) {
+      if (!msg || typeof msg !== 'object') continue;
+      const m = msg as { role?: unknown };
+      if (m.role !== 'assistant' && m.role !== 'toolResult') continue;
+      const record = {
+        type: 'message',
+        id: `chan-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        parentId: null,
+        timestamp: now,
+        message: msg,
+      };
+      await this.appendTranscriptLine(entry, record);
+    }
+  }
+
+  /**
    * Append an audit event to the channel transcript (does NOT bump turns).
    */
   async appendAudit(key: string, event: AgentCommAuditEvent): Promise<void> {

@@ -78,15 +78,39 @@ export class AgentManager {
   ) {
     this.hitlRegistry = hitlRegistry ?? new HitlRegistry();
     this.getSafetySettings = getSafetySettings ?? (() => DEFAULT_SAFETY_SETTINGS);
+    const channelQueue = new ChannelRunQueue();
     this.commBus = new AgentCommBus({
       channelStore: new ChannelSessionStore({
         ownerStorage: (id) => this.agents.get(id)?.storage ?? undefined,
       }),
-      queue: new ChannelRunQueue(),
-      dispatchChannelWake: async (_args) => {
-        throw new Error(
-          'AgentCommBus.dispatchChannelWake: not yet wired to RunCoordinator (Task 11)',
-        );
+      queue: channelQueue,
+      // Wired in Task 11. The bus owns serialization-by-channelKey via
+      // ChannelRunQueue; we look up the receiver and ask its
+      // RunCoordinator to drive the channel-mode run. Errors are logged
+      // and swallowed so a single failed wake doesn't choke the bus —
+      // audit-side logging happens inside the bus already.
+      dispatchChannelWake: async ({ channelKey, receiverAgentId, senderAgentName, depth, isFinalTurn }) => {
+        const receiver = this.agents.get(receiverAgentId);
+        if (!receiver) {
+          console.error(
+            `[AgentManager] dispatchChannelWake: receiver ${receiverAgentId} not registered (channel ${channelKey})`,
+          );
+          return;
+        }
+        try {
+          await channelQueue.enqueue(channelKey, () =>
+            receiver.coordinator.dispatchChannel({
+              channelKey,
+              peerName: senderAgentName,
+              depth,
+              isFinalTurn,
+            }),
+          );
+        } catch (err) {
+          console.error(
+            `[AgentManager] dispatchChannelWake failed for ${receiverAgentId} on ${channelKey}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
       },
     });
   }
@@ -140,6 +164,10 @@ export class AgentManager {
       undefined,
       runtimeFactory,
     );
+
+    // Wire the agent-comm bus so this coordinator can drive
+    // channel-mode wakes when the bus calls back into it.
+    coordinator.setCommBus(this.commBus);
 
     const processor = new StreamProcessor(config.id, coordinator, config);
 
