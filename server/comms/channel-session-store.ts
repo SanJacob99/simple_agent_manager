@@ -47,9 +47,8 @@ export class ChannelSessionStore {
 
   /**
    * Derive the lo-sorted agent ID from a channel key.
-   * This is the default storage lookup key — the entry always lives in
-   * the storage returned for this agent ID (whether or not that matches
-   * meta.ownerAgentId, which preserves input order from args.pair[0]).
+   * The entry always lives in the storage returned for this agent ID;
+   * this must equal meta.ownerAgentId (enforced by open()).
    */
   private ownerOf(key: string): string {
     const [lo] = parseChannelKey(key);
@@ -96,17 +95,20 @@ export class ChannelSessionStore {
    * already exists in the owner's StorageEngine, return it. Otherwise
    * create a fresh one with zero-state meta.
    *
-   * `args.pair[0]` is treated as the ownerAgentId (whose StorageEngine
-   * holds this channel entry). The canonical channel key is sorted, but
-   * the meta.pair preserves the caller-provided order so that `pair[0]`
-   * always equals `ownerAgentId`.
+   * The pair is sorted internally so that `meta.ownerAgentId === entry.agentId
+   * === lo-sorted agent` regardless of caller-provided order (spec §6.4).
+   * `pairNames` are re-aligned to match the sorted pair order.
    */
   async open(args: OpenArgs): Promise<ChannelHandle> {
-    const ownerAgentId = args.pair[0];
-    const key = canonicalChannelKey(args.pair[0], args.pair[1]);
-    // Always use the lo-sorted agent for storage lookup (consistent with ownerOf())
-    const loAgentId = this.ownerOf(key);
-    const storage = this.storageFor(loAgentId);
+    const [a, b] = args.pair;
+    const [aName, bName] = args.pairNames;
+    const swap = a > b;
+    const lo = swap ? b : a;
+    const hi = swap ? a : b;
+    const loName = swap ? bName : aName;
+    const hiName = swap ? aName : bName;
+    const key = canonicalChannelKey(lo, hi);
+    const storage = this.storageFor(lo);
 
     const existing = await storage.getSession(key);
     if (existing?.channelMeta) {
@@ -115,9 +117,9 @@ export class ChannelSessionStore {
 
     const now = new Date().toISOString();
     const meta: ChannelSessionMeta = {
-      pair: args.pair,
-      pairNames: args.pairNames,
-      ownerAgentId: ownerAgentId,
+      pair: [lo, hi],
+      pairNames: [loName, hiName],
+      ownerAgentId: lo,
       turns: 0,
       tokensIn: 0,
       tokensOut: 0,
@@ -132,7 +134,7 @@ export class ChannelSessionStore {
     const entry: SessionStoreEntry = {
       sessionKey: key,
       sessionId,
-      agentId: loAgentId,
+      agentId: lo,
       // No sessionFile — resolveTranscriptPath will use `${sessionId}.jsonl`
       createdAt: now,
       updatedAt: now,
