@@ -3,7 +3,7 @@
 > Provides filesystem-based persistence for agent sessions, routed transcripts, and memory files.
 
 <!-- source: src/types/nodes.ts#StorageNodeData -->
-<!-- last-verified: 2026-04-27 -->
+<!-- last-verified: 2026-05-05 -->
 
 ## Overview
 
@@ -34,6 +34,14 @@ Only one Storage Node can be connected per agent. For embedding or semantic retr
 | `idleResetEnabled` | `boolean` | `false` | Whether inactive sessions should auto-reset |
 | `idleResetMinutes` | `number` | `60` | Idle timeout in minutes before an automatic reset |
 | `parentForkMaxTokens` | `number` | `100000` | Max token count for carrying the prior transcript forward as `parentSession` on reset |
+| `maintenanceMode` | `'warn' \| 'enforce'` | `"warn"` | How the storage engine reacts when limits are exceeded. `warn` logs; `enforce` refuses writes |
+| `pruneAfterDays` | `number` | `30` | Delete session transcript files older than this many days |
+| `maxEntries` | `number` | `500` | Maximum number of session entries to retain per agent |
+| `rotateBytes` | `number` | `10485760` | Rotate a transcript file when it exceeds this size in bytes (10 MB default) |
+| `resetArchiveRetentionDays` | `number` | `30` | Days to keep archived reset snapshots before pruning |
+| `maxDiskBytes` | `number` | `0` | Total disk quota in bytes for the agent's storage directory. `0` = unlimited |
+| `highWaterPercent` | `number` | `80` | Percentage of `maxDiskBytes` at which the maintenance cycle starts pruning |
+| `maintenanceIntervalMinutes` | `number` | `60` | How often (in minutes) the background maintenance sweep runs |
 
 ## Runtime Behavior
 
@@ -77,6 +85,14 @@ When a user deletes an agent from the canvas and confirms "delete agent and data
   "dailyResetHour": 4,
   "idleResetEnabled": false,
   "idleResetMinutes": 60,
-  "parentForkMaxTokens": 100000
+  "parentForkMaxTokens": 100000,
+  "maintenanceMode": "warn",
+  "pruneAfterDays": 30,
+  "maxEntries": 500,
+  "rotateBytes": 10485760,
+  "resetArchiveRetentionDays": 30,
+  "maxDiskBytes": 0,
+  "highWaterPercent": 80,
+  "maintenanceIntervalMinutes": 60
 }
 ```

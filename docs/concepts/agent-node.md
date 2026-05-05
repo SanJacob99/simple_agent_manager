@@ -3,7 +3,7 @@
 > The central hub node that stores model and prompt settings while connected peripheral nodes supply runtime services.
 
 <!-- source: src/types/nodes.ts#AgentNodeData -->
-<!-- last-verified: 2026-04-27 -->
+<!-- last-verified: 2026-05-05 -->
 
 ## Overview
 
@@ -25,9 +25,10 @@ The Agent Node still owns `modelId`, `thinkingLevel`, and `modelCapabilities`. T
 | `description` | `string` | `""` | Optional purpose/summary for the agent |
 | `tags` | `string[]` | `[]` | Freeform tags used by the UI |
 | `modelCapabilities` | `ModelCapabilityOverrides` | `{}` | Snapshotted model metadata plus any user overrides |
-| `systemPromptMode` | `SystemPromptMode` | `"auto"` | Prompt assembly mode. `auto` is resolved as app-managed append behavior |
+| `systemPromptMode` | `SystemPromptMode` | `"append"` | Prompt assembly mode. `manual` uses the system prompt as-is; anything else assembles a structured prompt with user instructions appended |
 | `showReasoning` | `boolean` | `false` | Whether to expose reasoning output in the UI when supported |
 | `verbose` | `boolean` | `false` | Whether to prefer more verbose runtime output |
+| `workingDirectory` | `string` | `""` | Working directory for the agent's exec tool. Empty means the server's `process.cwd()` |
 
 ### ModelCapabilityOverrides Fields
 

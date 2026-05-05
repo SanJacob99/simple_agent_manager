@@ -10,12 +10,12 @@
     "memory": {
       "doc": "memory-node.md",
       "type": "src/types/nodes.ts#MemoryNodeData",
-      "runtime": "src/runtime/memory-engine.ts"
+      "runtime": "server/runtime/memory-engine.ts"
     },
     "tools": {
       "doc": "tool-node.md",
       "type": "src/types/nodes.ts#ToolsNodeData",
-      "runtime": "src/runtime/tool-factory.ts"
+      "runtime": "server/tools/tool-factory.ts"
     },
     "skills": {
       "doc": "skill-node.md",
@@ -25,7 +25,7 @@
     "contextEngine": {
       "doc": "context-engine-node.md",
       "type": "src/types/nodes.ts#ContextEngineNodeData",
-      "runtime": "src/runtime/context-engine.ts"
+      "runtime": "server/runtime/context-engine.ts"
     },
     "agentComm": {
       "doc": "agent-comm-node.md",
@@ -40,7 +40,7 @@
     "storage": {
       "doc": "storage-node.md",
       "type": "src/types/nodes.ts#StorageNodeData",
-      "runtime": "src/runtime/storage-engine.ts"
+      "runtime": "server/storage/storage-engine.ts"
     },
     "vectorDatabase": {
       "doc": "vector-database-node.md",

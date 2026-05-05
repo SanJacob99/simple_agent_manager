@@ -3,7 +3,7 @@
 > Gives an agent persistent memory — long-term storage, session message management, compaction, and searchable recall via exposed tools.
 
 <!-- source: src/types/nodes.ts#MemoryNodeData -->
-<!-- last-verified: 2026-04-23 -->
+<!-- last-verified: 2026-05-05 -->
 
 ## Overview
 
@@ -33,7 +33,7 @@ Three backends are available: `builtin` (in-memory Map, suitable for development
 
 ## Runtime Behavior
 
-At runtime, the Memory Node configuration is resolved into a `ResolvedMemoryConfig` and used to instantiate a `MemoryEngine` (`src/runtime/memory-engine.ts`).
+At runtime, the Memory Node configuration is resolved into a `ResolvedMemoryConfig` and used to instantiate a `MemoryEngine` (`server/runtime/memory-engine.ts`).
 
 **Long-term storage**: The `MemoryEngine` maintains a `Map<string, MemoryEntry>` where each entry has a `key`, `content`, `metadata`, and `timestamp`. Entries are saved, retrieved, and searched through the exposed memory tools.
 

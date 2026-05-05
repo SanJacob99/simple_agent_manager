@@ -3,7 +3,7 @@
 > Manages token budgets, compaction, and transcript-aware context assembly so conversations stay inside the model's context window.
 
 <!-- source: src/types/nodes.ts#ContextEngineNodeData -->
-<!-- last-verified: 2026-04-27 -->
+<!-- last-verified: 2026-05-05 -->
 <!-- token-budget-inheritance, compaction-trigger-modes, tooltips -->
 
 ## Overview
@@ -17,7 +17,7 @@ In the current implementation, compaction is no longer only an in-memory concern
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
 | `label` | `string` | `"Context Engine"` | Display label on the canvas |
-| `tokenBudget` | `number` | Inherited from model | Max tokens for assembled context |
+| `tokenBudget` | `number` | `128000` | Max tokens for assembled context |
 | `reservedForResponse` | `number` | `4096` | Tokens reserved for the model response |
 | `compactionStrategy` | `CompactionStrategy` | `"summary"` | `summary`, `sliding-window`, or `trim-oldest` |
 | `summaryModelId` | `string` | `""` | Model id used to produce summaries (only for `summary`). Empty means inherit the agent's model |
