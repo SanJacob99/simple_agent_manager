@@ -696,3 +696,164 @@ describe('SubAgentNode resolution', () => {
     expect(config?.subAgents[0].workingDirectory).toBe('/work/subagent/researcher');
   });
 });
+
+describe('resolveAgentConfig — agentComm', () => {
+  const agentA1 = {
+    id: 'a1',
+    type: 'agent',
+    position: { x: 0, y: 0 },
+    data: {
+      type: 'agent' as const,
+      name: 'researcher',
+      nameConfirmed: true,
+      systemPrompt: '',
+      systemPromptMode: 'append' as const,
+      modelId: 'test/model',
+      thinkingLevel: 'off' as const,
+      description: '',
+      tags: [],
+      modelCapabilities: {},
+    },
+  };
+
+  const agentA2 = {
+    id: 'a2',
+    type: 'agent',
+    position: { x: 400, y: 0 },
+    data: {
+      type: 'agent' as const,
+      name: 'writer',
+      nameConfirmed: true,
+      systemPrompt: '',
+      systemPromptMode: 'append' as const,
+      modelId: 'test/model',
+      thinkingLevel: 'off' as const,
+      description: '',
+      tags: [],
+      modelCapabilities: {},
+    },
+  };
+
+  const providerNode = {
+    id: 'prov-1',
+    type: 'provider',
+    position: { x: 0, y: 0 },
+    data: {
+      type: 'provider' as const,
+      label: 'P',
+      pluginId: 'openrouter',
+      authMethodId: 'api-key',
+      envVar: 'KEY',
+      baseUrl: '',
+    },
+  };
+
+  it('passes new fields through resolution and resolves targetAgentName', () => {
+    const commNode = {
+      id: 'c1',
+      type: 'agentComm',
+      position: { x: 200, y: 0 },
+      data: {
+        type: 'agentComm' as const,
+        label: 'to-writer',
+        targetAgentNodeId: 'a2',
+        protocol: 'direct' as const,
+        maxTurns: 5,
+        maxDepth: 2,
+        tokenBudget: 50_000,
+        rateLimitPerMinute: 10,
+        messageSizeCap: 4_000,
+        direction: 'bidirectional' as const,
+      },
+    };
+
+    const config = resolveAgentConfig(
+      'a1',
+      [agentA1 as any, agentA2 as any, providerNode as any, commNode as any],
+      [
+        { id: 'e1', source: 'prov-1', target: 'a1', type: 'data' },
+        { id: 'e2', source: 'c1', target: 'a1', type: 'data' },
+      ] as any,
+    );
+
+    expect(config?.agentComm).toHaveLength(1);
+    expect(config?.agentComm[0]).toEqual({
+      commNodeId: 'c1',
+      label: 'to-writer',
+      targetAgentNodeId: 'a2',
+      targetAgentName: 'writer',
+      protocol: 'direct',
+      maxTurns: 5,
+      maxDepth: 2,
+      tokenBudget: 50_000,
+      rateLimitPerMinute: 10,
+      messageSizeCap: 4_000,
+      direction: 'bidirectional',
+    });
+  });
+
+  it('fills defaults for missing v1 fields on legacy nodes (graceful upgrade)', () => {
+    const legacyCommNode = {
+      id: 'c1',
+      type: 'agentComm',
+      position: { x: 200, y: 0 },
+      data: {
+        type: 'agentComm' as const,
+        label: 'to-writer',
+        targetAgentNodeId: 'a2',
+        protocol: 'direct' as const,
+        // no v1 fields: maxTurns, maxDepth, tokenBudget, rateLimitPerMinute, messageSizeCap, direction
+      },
+    };
+
+    const config = resolveAgentConfig(
+      'a1',
+      [agentA1 as any, agentA2 as any, providerNode as any, legacyCommNode as any],
+      [
+        { id: 'e1', source: 'prov-1', target: 'a1', type: 'data' },
+        { id: 'e2', source: 'c1', target: 'a1', type: 'data' },
+      ] as any,
+    );
+
+    expect(config?.agentComm).toHaveLength(1);
+    expect(config?.agentComm[0].maxTurns).toBe(10);
+    expect(config?.agentComm[0].maxDepth).toBe(3);
+    expect(config?.agentComm[0].tokenBudget).toBe(100_000);
+    expect(config?.agentComm[0].rateLimitPerMinute).toBe(30);
+    expect(config?.agentComm[0].messageSizeCap).toBe(16_000);
+    expect(config?.agentComm[0].direction).toBe('bidirectional');
+  });
+
+  it('resolves targetAgentName to null when targetAgentNodeId is null', () => {
+    const broadcastCommNode = {
+      id: 'c1',
+      type: 'agentComm',
+      position: { x: 200, y: 0 },
+      data: {
+        type: 'agentComm' as const,
+        label: 'broadcast',
+        targetAgentNodeId: null,
+        protocol: 'broadcast' as const,
+        maxTurns: 10,
+        maxDepth: 3,
+        tokenBudget: 100_000,
+        rateLimitPerMinute: 30,
+        messageSizeCap: 16_000,
+        direction: 'bidirectional' as const,
+      },
+    };
+
+    const config = resolveAgentConfig(
+      'a1',
+      [agentA1 as any, providerNode as any, broadcastCommNode as any],
+      [
+        { id: 'e1', source: 'prov-1', target: 'a1', type: 'data' },
+        { id: 'e2', source: 'c1', target: 'a1', type: 'data' },
+      ] as any,
+    );
+
+    expect(config?.agentComm).toHaveLength(1);
+    expect(config?.agentComm[0].targetAgentNodeId).toBeNull();
+    expect(config?.agentComm[0].targetAgentName).toBeNull();
+  });
+});

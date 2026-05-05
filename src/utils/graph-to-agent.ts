@@ -1,6 +1,6 @@
 import type { AppNode } from '../types/nodes';
 import type { Edge } from '@xyflow/react';
-import type { AgentConfig, ResolvedProviderConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides } from '../../shared/agent-config';
+import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides } from '../../shared/agent-config';
 import { resolveToolNames, IMPLEMENTED_TOOL_NAMES } from '../../shared/resolve-tool-names';
 import { buildSystemPrompt } from '../../shared/system-prompt-builder';
 import { eligibleBundledSkills } from '../../shared/default-tool-skills';
@@ -303,14 +303,32 @@ export function resolveAgentConfig(
     });
 
   // --- Agent Communication ---
-  const agentComm = connectedNodes
+  const agentComm: ResolvedAgentCommConfig[] = connectedNodes
     .filter((n) => n.data.type === 'agentComm')
     .map((n) => {
       if (n.data.type !== 'agentComm') throw new Error('unreachable');
+      const targetNode = n.data.targetAgentNodeId
+        ? nodes.find((x) => x.id === n.data.targetAgentNodeId)
+        : null;
+      const targetAgentName =
+        targetNode && targetNode.data.type === 'agent' ? targetNode.data.name : null;
       return {
+        commNodeId: n.id,
         label: n.data.label,
         targetAgentNodeId: n.data.targetAgentNodeId,
+        targetAgentName,
         protocol: n.data.protocol,
+        maxTurns: typeof n.data.maxTurns === 'number' ? n.data.maxTurns : 10,
+        maxDepth: typeof n.data.maxDepth === 'number' ? n.data.maxDepth : 3,
+        tokenBudget: typeof n.data.tokenBudget === 'number' ? n.data.tokenBudget : 100_000,
+        rateLimitPerMinute:
+          typeof n.data.rateLimitPerMinute === 'number' ? n.data.rateLimitPerMinute : 30,
+        messageSizeCap:
+          typeof n.data.messageSizeCap === 'number' ? n.data.messageSizeCap : 16_000,
+        direction:
+          n.data.direction === 'outbound' || n.data.direction === 'inbound'
+            ? n.data.direction
+            : 'bidirectional',
       };
     });
 

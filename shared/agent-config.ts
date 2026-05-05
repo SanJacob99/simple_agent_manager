@@ -307,9 +307,17 @@ export interface ResolvedConnectorConfig {
 }
 
 export interface ResolvedAgentCommConfig {
+  commNodeId: string;
   label: string;
   targetAgentNodeId: string | null;
+  targetAgentName: string | null;
   protocol: 'direct' | 'broadcast';
+  maxTurns: number;
+  maxDepth: number;
+  tokenBudget: number;
+  rateLimitPerMinute: number;
+  messageSizeCap: number;
+  direction: 'bidirectional' | 'outbound' | 'inbound';
 }
 
 export interface ResolvedStorageConfig {
