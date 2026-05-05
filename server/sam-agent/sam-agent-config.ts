@@ -3,6 +3,13 @@ import type { AgentConfig, ResolvedProviderConfig } from '../../shared/agent-con
 export interface SamAgentModelSelection {
   provider: ResolvedProviderConfig;
   modelId: string;
+  /**
+   * Reasoning effort. Optional for backwards compatibility with older clients;
+   * defaults to 'high' so reasoning-required models (e.g. Gemini 3.1 Pro) work
+   * out of the box. SAMAgent is intentionally an always-on assistant — running
+   * at max thought is the desirable default.
+   */
+  thinkingLevel?: string;
 }
 
 export interface BuildSamAgentConfigParams {
@@ -20,7 +27,7 @@ export function buildSamAgentConfig(params: BuildSamAgentConfigParams): AgentCon
     tags: [],
     provider: modelSelection.provider,
     modelId: modelSelection.modelId,
-    thinkingLevel: 'off',
+    thinkingLevel: modelSelection.thinkingLevel ?? 'high',
     systemPrompt: {
       mode: 'manual',
       sections: [],

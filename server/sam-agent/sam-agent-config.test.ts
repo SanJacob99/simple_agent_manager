@@ -29,4 +29,27 @@ describe('buildSamAgentConfig', () => {
     expect(config.systemPrompt.mode).toBe('manual');
     expect(config.systemPrompt.assembled).toBe('X');
   });
+
+  it('forwards thinkingLevel from modelSelection', () => {
+    const config = buildSamAgentConfig({
+      modelSelection: {
+        provider: { pluginId: 'openrouter', authMethodId: 'api-key', envVar: 'OPENROUTER_API_KEY', baseUrl: '' },
+        modelId: 'gemini-3-pro',
+        thinkingLevel: 'low',
+      },
+      systemPromptText: '',
+    });
+    expect(config.thinkingLevel).toBe('low');
+  });
+
+  it('defaults thinkingLevel to "high" when omitted (older client / Gemini fix)', () => {
+    const config = buildSamAgentConfig({
+      modelSelection: {
+        provider: { pluginId: 'openrouter', authMethodId: 'api-key', envVar: 'OPENROUTER_API_KEY', baseUrl: '' },
+        modelId: 'gemini-3-pro',
+      },
+      systemPromptText: '',
+    });
+    expect(config.thinkingLevel).toBe('high');
+  });
 });

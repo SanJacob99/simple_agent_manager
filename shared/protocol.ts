@@ -108,6 +108,8 @@ export interface SamAgentPromptCommand {
   modelSelection: {
     provider: { pluginId: string; authMethodId: string; envVar: string; baseUrl: string };
     modelId: string;
+    /** Reasoning effort. Optional for older clients; server defaults to 'high'. */
+    thinkingLevel?: string;
   };
 }
 

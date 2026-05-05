@@ -1,15 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Send, Trash2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Send, Trash2, Settings } from 'lucide-react';
 import { useUILayoutStore } from '../store/ui-layout-store';
 import { useSamAgentStore } from '../store/sam-agent-store';
 import { useSettingsStore } from '../settings/settings-store';
 import { useGraphStore } from '../store/graph-store';
-import { useModelCatalogStore } from '../store/model-catalog-store';
-import { useProviderRegistryStore } from '../store/provider-registry-store';
-import { STATIC_MODELS } from '../runtime/provider-model-options';
 import { agentClient } from '../client';
 import { samAgentClient } from '../client/sam-agent-client';
 import { SamAgentMessages } from './sam-agent-messages';
+import type { SettingsSectionId } from '../settings/types';
 
 const ISLAND_SHADOW =
   'inset 0 1px 0 rgba(255,255,255,0.9), 0 12px 28px -12px rgba(140,110,80,0.18), 0 2px 6px -2px rgba(140,110,80,0.08)';
@@ -17,80 +15,11 @@ const ISLAND_SHADOW =
 export const CHAT_PANEL_OPEN_WIDTH = 360;
 export const CHAT_PANEL_CLOSED_WIDTH = 56;
 
-interface ModelOption {
-  value: string; // "<pluginId>::<baseUrl>::<modelId>"
-  label: string;
-  pluginId: string;
-  baseUrl: string;
-  modelId: string;
+interface SAMAgentProps {
+  onOpenSettings: (section: SettingsSectionId) => void;
 }
 
-function buildModelOptions(
-  allCatalogModels: Record<string, Record<string, unknown>>,
-  apiKeys: Record<string, string>,
-  registryProviders: { id: string; auth: { methodId: string; envVar?: string }[] }[],
-): ModelOption[] {
-  const options: ModelOption[] = [];
-  const seen = new Set<string>();
-
-  // Collect all providerKeys that have a non-empty api key
-  // apiKeys is keyed by pluginId
-  const configuredPluginIds = new Set(
-    Object.entries(apiKeys)
-      .filter(([, key]) => key.trim().length > 0)
-      .map(([pluginId]) => pluginId),
-  );
-
-  // Also include ollama (no key required)
-  configuredPluginIds.add('ollama');
-
-  const addOption = (pluginId: string, baseUrl: string, modelId: string) => {
-    const dedupeKey = `${pluginId}::${baseUrl}::${modelId}`;
-    if (seen.has(dedupeKey)) return;
-    seen.add(dedupeKey);
-    options.push({
-      value: dedupeKey,
-      label: modelId,
-      pluginId,
-      baseUrl,
-      modelId,
-    });
-  };
-
-  // 1. Static models for configured providers
-  for (const pluginId of configuredPluginIds) {
-    const staticList = STATIC_MODELS[pluginId] ?? [];
-    for (const modelId of staticList) {
-      addOption(pluginId, '', modelId);
-    }
-  }
-
-  // 2. Discovered catalog models for configured providers
-  for (const [catalogKey, modelsMap] of Object.entries(allCatalogModels)) {
-    // catalogKey is "pluginId::baseUrl" or "pluginId::default"
-    const separatorIdx = catalogKey.indexOf('::');
-    if (separatorIdx === -1) continue;
-    const pluginId = catalogKey.slice(0, separatorIdx);
-    const baseUrlToken = catalogKey.slice(separatorIdx + 2);
-    const baseUrl = baseUrlToken === 'default' ? '' : baseUrlToken;
-
-    if (!configuredPluginIds.has(pluginId)) continue;
-
-    for (const modelId of Object.keys(modelsMap)) {
-      addOption(pluginId, baseUrl, modelId);
-    }
-  }
-
-  // Sort: group by pluginId then alphabetically by modelId
-  options.sort((a, b) => {
-    if (a.pluginId !== b.pluginId) return a.pluginId.localeCompare(b.pluginId);
-    return a.modelId.localeCompare(b.modelId);
-  });
-
-  return options;
-}
-
-export default function SAMAgent() {
+export default function SAMAgent({ onOpenSettings }: SAMAgentProps) {
   const open = useUILayoutStore((s) => s.chatPanelOpen);
   const toggle = useUILayoutStore((s) => s.toggleChatPanel);
 
@@ -104,45 +33,12 @@ export default function SAMAgent() {
   const clearLocal = useSamAgentStore((s) => s.clearLocal);
 
   const samAgentDefaults = useSettingsStore((s) => s.samAgentDefaults);
-  const setSamAgentDefaults = useSettingsStore((s) => s.setSamAgentDefaults);
   const apiKeys = useSettingsStore((s) => s.apiKeys);
-  const allCatalogModels = useModelCatalogStore((s) => s.models);
-  const registryProviders = useProviderRegistryStore((s) => s.providers);
 
   const buildGraphSnapshot = useGraphStore((s) => s.buildGraphSnapshot);
 
-  // --- Model picker options ---
-  // Build a flat list of { pluginId, baseUrl, modelId } from static + discovered
-  // catalogs, filtered to providers that have a configured api key.
-  const modelOptions = useMemo(
-    () => buildModelOptions(allCatalogModels, apiKeys, registryProviders),
-    [allCatalogModels, apiKeys, registryProviders],
-  );
-
-  // Derive the <select> value string from the current persisted selection.
   const modelSelection = samAgentDefaults?.modelSelection ?? null;
-  const selectValue = modelSelection
-    ? `${modelSelection.provider.pluginId}::${modelSelection.provider.baseUrl}::${modelSelection.modelId}`
-    : '';
-
-  const handleModelChange = (value: string) => {
-    const opt = modelOptions.find((o) => o.value === value);
-    if (!opt) return;
-    // Resolve authMethodId / envVar from the registry; fall back to empty strings.
-    const regProvider = registryProviders.find((p) => p.id === opt.pluginId);
-    const firstAuth = regProvider?.auth[0];
-    setSamAgentDefaults({
-      modelSelection: {
-        provider: {
-          pluginId: opt.pluginId,
-          authMethodId: firstAuth?.methodId ?? 'api-key',
-          envVar: firstAuth?.envVar ?? '',
-          baseUrl: opt.baseUrl,
-        },
-        modelId: opt.modelId,
-      },
-    });
-  };
+  const thinkingLevel = samAgentDefaults?.thinkingLevel ?? 'high';
 
   const [draft, setDraft] = useState('');
 
@@ -192,7 +88,10 @@ export default function SAMAgent() {
       return;
     }
     appendUserMessage(draft.trim());
-    samAgentClient.prompt(draft.trim(), buildGraphSnapshot(), modelSelection);
+    samAgentClient.prompt(draft.trim(), buildGraphSnapshot(), {
+      ...modelSelection,
+      thinkingLevel,
+    });
     setDraft('');
   };
 
@@ -214,26 +113,20 @@ export default function SAMAgent() {
           <header className="flex items-center justify-between gap-2 px-6 pt-5">
             <h2 className="shrink-0 text-sm font-semibold text-stone-700">SAMAgent</h2>
             <div className="flex min-w-0 items-center gap-1">
-              <select
-                aria-label="SAMAgent model"
-                value={selectValue}
-                onChange={(e) => handleModelChange(e.target.value)}
-                title={modelSelection ? `${modelSelection.provider.pluginId} / ${modelSelection.modelId}` : 'Select a model'}
-                className="min-w-0 max-w-[120px] truncate rounded-md border border-stone-200 bg-stone-50 px-1.5 py-1 text-[11px] text-stone-600 focus:outline-none focus:ring-1 focus:ring-stone-300"
+              <button
+                onClick={() => onOpenSettings('sam-agent')}
+                title={modelSelection
+                  ? `${modelSelection.provider.pluginId} / ${modelSelection.modelId} · thinking ${thinkingLevel} — click to configure`
+                  : 'Configure SAMAgent'}
+                className="flex min-w-0 max-w-[160px] items-center gap-1 truncate rounded-md border border-stone-200 bg-stone-50 px-2 py-1 text-[11px] text-stone-600 transition hover:bg-stone-100"
               >
-                {modelOptions.length === 0 ? (
-                  <option value="">No providers configured</option>
-                ) : (
-                  <>
-                    {!selectValue && <option value="">Select model…</option>}
-                    {modelOptions.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.pluginId}/{opt.modelId}
-                      </option>
-                    ))}
-                  </>
-                )}
-              </select>
+                <Settings size={11} className="shrink-0 text-stone-400" />
+                <span className="truncate">
+                  {modelSelection
+                    ? `${modelSelection.modelId} · ${thinkingLevel}`
+                    : 'Configure'}
+                </span>
+              </button>
               <button
                 onClick={handleClear}
                 title="Clear conversation"
@@ -253,8 +146,14 @@ export default function SAMAgent() {
 
           <div className="flex-1 overflow-y-auto px-6 py-4">
             {!hasProvider ? (
-              <div className="flex h-full flex-col items-center justify-center text-center">
-                <p className="text-xs text-stone-400">Configure a provider in Settings to enable SAMAgent.</p>
+              <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+                <p className="text-xs text-stone-400">SAMAgent needs a model and an API key.</p>
+                <button
+                  onClick={() => onOpenSettings('sam-agent')}
+                  className="rounded-md bg-stone-800 px-3 py-1.5 text-xs text-white transition hover:bg-stone-700"
+                >
+                  Configure SAMAgent
+                </button>
               </div>
             ) : (
               <SamAgentMessages messages={messages} streaming={streaming} />

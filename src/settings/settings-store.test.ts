@@ -121,8 +121,11 @@ describe('settings store', () => {
     expect(last.cronDefaults.retentionDays).toBe(14);
   });
 
-  it('samAgentDefaults defaults to { modelSelection: null }', () => {
-    expect(useSettingsStore.getState().samAgentDefaults).toEqual({ modelSelection: null });
+  it('samAgentDefaults defaults to { modelSelection: null, thinkingLevel: "high" }', () => {
+    expect(useSettingsStore.getState().samAgentDefaults).toEqual({
+      modelSelection: null,
+      thinkingLevel: 'high',
+    });
   });
 
   it('setSamAgentDefaults updates modelSelection', () => {
@@ -130,5 +133,32 @@ describe('settings store', () => {
       modelSelection: { provider: { pluginId: 'p', authMethodId: 'a', envVar: 'E', baseUrl: '' }, modelId: 'm' },
     });
     expect(useSettingsStore.getState().samAgentDefaults.modelSelection?.modelId).toBe('m');
+    // thinkingLevel preserved
+    expect(useSettingsStore.getState().samAgentDefaults.thinkingLevel).toBe('high');
+  });
+
+  it('setSamAgentDefaults updates thinkingLevel independently', () => {
+    useSettingsStore.getState().setSamAgentDefaults({ thinkingLevel: 'low' });
+    expect(useSettingsStore.getState().samAgentDefaults.thinkingLevel).toBe('low');
+    expect(useSettingsStore.getState().samAgentDefaults.modelSelection).toBeNull();
+  });
+
+  it('hydrates thinkingLevel="high" when server payload omits it', async () => {
+    global.fetch = vi.fn(async () => {
+      return new Response(JSON.stringify({
+        // Persisted state from before thinkingLevel existed: only modelSelection.
+        samAgentDefaults: {
+          modelSelection: {
+            provider: { pluginId: 'openrouter', authMethodId: 'api-key', envVar: 'OPENROUTER_API_KEY', baseUrl: '' },
+            modelId: 'gemini-3-pro',
+          },
+        },
+      }), { status: 200 });
+    }) as typeof fetch;
+
+    await useSettingsStore.getState().loadFromServer();
+
+    expect(useSettingsStore.getState().samAgentDefaults.thinkingLevel).toBe('high');
+    expect(useSettingsStore.getState().samAgentDefaults.modelSelection?.modelId).toBe('gemini-3-pro');
   });
 });

@@ -7,6 +7,7 @@ import AppearanceSection from './sections/AppearanceSection';
 import ColorsSection from './sections/ColorsSection';
 import DataMaintenanceSection from './sections/DataMaintenanceSection';
 import SafetySection from './sections/SafetySection';
+import SamAgentSection from './sections/SamAgentSection';
 
 interface SettingsWorkspaceProps {
   activeSection: SettingsSectionId;
@@ -47,6 +48,8 @@ export default function SettingsWorkspace({
           <ModelCatalogSection />
         ) : activeSection === 'defaults' ? (
           <DefaultsSection />
+        ) : activeSection === 'sam-agent' ? (
+          <SamAgentSection />
         ) : activeSection === 'safety' ? (
           <SafetySection />
         ) : activeSection === 'appearance' ? (

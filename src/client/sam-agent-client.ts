@@ -1,10 +1,12 @@
 import { agentClient } from './index';
 import type { SamAgentEvent } from '../../shared/sam-agent/protocol-types';
 import type { GraphSnapshot } from '../../shared/sam-agent/workflow-patch';
+import type { ThinkingLevel } from '../types/nodes';
 
 export interface SamAgentModelSelection {
   provider: { pluginId: string; authMethodId: string; envVar: string; baseUrl: string };
   modelId: string;
+  thinkingLevel: ThinkingLevel;
 }
 
 export const samAgentClient = {

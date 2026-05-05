@@ -83,7 +83,14 @@ export default function App() {
   return (
     <div className="flex h-full w-full bg-slate-950">
       {/* SAMAgent — leftmost chat island */}
-      {appView === 'canvas' && <SAMAgent />}
+      {appView === 'canvas' && (
+        <SAMAgent
+          onOpenSettings={(section) => {
+            setActiveSettingsSection(section);
+            setAppView('settings');
+          }}
+        />
+      )}
 
       {/* Left Sidebar */}
       <Sidebar

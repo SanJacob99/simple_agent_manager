@@ -7,6 +7,7 @@ export type SettingsSectionId =
   | 'api-keys'
   | 'model-catalog'
   | 'defaults'
+  | 'sam-agent'
   | 'safety'
   | 'appearance'
   | 'colors'
@@ -162,10 +163,12 @@ export interface SamAgentDefaults {
     };
     modelId: string;
   } | null;
+  thinkingLevel: ThinkingLevel;
 }
 
 export const DEFAULT_SAM_AGENT_DEFAULTS: SamAgentDefaults = {
   modelSelection: null,
+  thinkingLevel: 'high',
 };
 
 // --- Safety (HITL) ---
@@ -233,6 +236,11 @@ export const SETTINGS_SECTIONS: Array<{
     id: 'defaults',
     label: 'Defaults',
     description: 'Choose the defaults applied to newly created nodes.',
+  },
+  {
+    id: 'sam-agent',
+    label: 'SAMAgent',
+    description: 'Model and reasoning settings for the in-app assistant.',
   },
   {
     id: 'safety',
