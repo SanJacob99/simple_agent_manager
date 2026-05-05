@@ -197,6 +197,29 @@ describe('AgentCommBus.send', () => {
     await ctx.bus.send({ fromAgentId: 'a', toAgentName: 'beta', message: 'hi', end: false, currentDepth: 0 });
     expect(ctx.dispatch).toHaveBeenCalledWith(expect.objectContaining({ isFinalTurn: true }));
   });
+
+  it('rate-log entries older than 60s are pruned even on rejected sends', async () => {
+    registerPair(ctx.bus, {
+      senderEdge: { rateLimitPerMinute: 2 },
+      receiverEdge: { rateLimitPerMinute: 2 },
+    });
+    // Two accepted at t=0
+    await ctx.bus.send({ fromAgentId: 'a', toAgentName: 'beta', message: 'a', end: true, currentDepth: 0 });
+    await ctx.bus.send({ fromAgentId: 'a', toAgentName: 'beta', message: 'b', end: true, currentDepth: 0 });
+    // Several rejected attempts at t=10s, 20s, 30s — these should NOT remain in the log past 60s
+    for (const dt of [10_000, 20_000, 30_000]) {
+      ctx.advance(dt - (dt === 10_000 ? 0 : 10_000));
+      const r = await ctx.bus.send({ fromAgentId: 'a', toAgentName: 'beta', message: 'x', end: true, currentDepth: 0 });
+      expect(r.ok).toBe(false);
+    }
+    // Advance to t=70s — original entries (t=0) are >60s old and must be pruned
+    ctx.advance(40_000); // total 70s from start
+    // Now we should be able to send 2 more (rate window resets)
+    const r1 = await ctx.bus.send({ fromAgentId: 'a', toAgentName: 'beta', message: 'p', end: true, currentDepth: 0 });
+    const r2 = await ctx.bus.send({ fromAgentId: 'a', toAgentName: 'beta', message: 'q', end: true, currentDepth: 0 });
+    expect(r1.ok).toBe(true);
+    expect(r2.ok).toBe(true);
+  });
 });
 
 describe('AgentCommBus.broadcast', () => {

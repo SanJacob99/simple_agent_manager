@@ -161,6 +161,7 @@ export class AgentCommBus {
     const windowStart = nowMs - 60_000;
     const outboundTimestamps = this.outboundLog.get(fromAgentId) ?? [];
     const recentTimestamps = outboundTimestamps.filter((ts) => ts > windowStart);
+    this.outboundLog.set(fromAgentId, recentTimestamps); // prune at check time so dormant agents don't accumulate entries
     const pairRateLimit = pairMin(senderEdge.rateLimitPerMinute, receiverEdge.rateLimitPerMinute);
     if (recentTimestamps.length >= pairRateLimit) {
       return { ok: false, error: 'rate_limited' };
@@ -264,9 +265,9 @@ export class AgentCommBus {
       },
     });
 
-    // Record rate usage
-    const updatedTimestamps = [...recentTimestamps, nowMs];
-    this.outboundLog.set(fromAgentId, updatedTimestamps);
+    // Record rate usage (recentTimestamps is already pruned from the rate-limit check)
+    recentTimestamps.push(nowMs);
+    this.outboundLog.set(fromAgentId, recentTimestamps);
 
     // Determine if this send reached the maxTurns boundary
     const isFinalTurn = updatedMeta.turns >= pairMaxTurns;
