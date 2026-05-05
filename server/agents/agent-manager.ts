@@ -23,6 +23,9 @@ import type WebSocket from 'ws';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
+import { AgentCommBus } from '../comms/agent-comm-bus';
+import { ChannelSessionStore } from '../comms/channel-session-store';
+import { ChannelRunQueue } from '../comms/channel-run-queue';
 
 export interface ManagedAgent {
   runtime: AgentRuntime;
@@ -60,6 +63,12 @@ export class AgentManager {
    * agent runs without restarting the server.
    */
   readonly getSafetySettings: () => SafetySettings;
+  /**
+   * Agent-to-agent communication bus. Lives for the AgentManager's lifetime
+   * (singleton per process). Routes are registered on start() and
+   * unregistered on destroy().
+   */
+  readonly commBus: AgentCommBus;
 
   constructor(
     private readonly apiKeys: ApiKeyStore,
@@ -69,6 +78,17 @@ export class AgentManager {
   ) {
     this.hitlRegistry = hitlRegistry ?? new HitlRegistry();
     this.getSafetySettings = getSafetySettings ?? (() => DEFAULT_SAFETY_SETTINGS);
+    this.commBus = new AgentCommBus({
+      channelStore: new ChannelSessionStore({
+        ownerStorage: (id) => this.agents.get(id)?.storage ?? undefined,
+      }),
+      queue: new ChannelRunQueue(),
+      dispatchChannelWake: async (_args) => {
+        throw new Error(
+          'AgentCommBus.dispatchChannelWake: not yet wired to RunCoordinator (Task 11)',
+        );
+      },
+    });
   }
 
   async start(config: AgentConfig): Promise<void> {
@@ -148,6 +168,14 @@ export class AgentManager {
       unsubscribe,
     });
 
+    // Register with the agent-comm bus so inter-agent messaging can resolve
+    // this agent by ID and name.
+    this.commBus.register({
+      agentId: config.id,
+      agentName: config.name,
+      agentComm: config.agentComm ?? [],
+    });
+
     // Seed context-usage breakdown for every zero-turn session this
     // agent already has on disk. Ensures the UI can render the
     // per-section panel immediately when a user opens an existing
@@ -219,6 +247,9 @@ export class AgentManager {
   destroy(agentId: string): void {
     const managed = this.agents.get(agentId);
     if (!managed) return;
+    // Unregister from comm bus BEFORE tearing down runtime so in-flight
+    // dispatches cannot reach an already-destroyed agent.
+    this.commBus.unregister(agentId);
     managed.unsubscribe();
     managed.bridge.destroy();
     managed.processor.destroy();
