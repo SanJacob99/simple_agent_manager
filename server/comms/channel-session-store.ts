@@ -62,6 +62,18 @@ export class ChannelSessionStore {
   }
 
   /**
+   * Load a channel entry, verify it exists with channelMeta, and return both.
+   * Throws if the channel does not exist.
+   */
+  private async requireEntry(key: string): Promise<{ entry: SessionStoreEntry; channelMeta: ChannelSessionMeta }> {
+    const entry = await this.loadEntry(key);
+    if (!entry?.channelMeta) {
+      throw new Error(`channel-session-store: channel not found: ${key}`);
+    }
+    return { entry, channelMeta: entry.channelMeta };
+  }
+
+  /**
    * Append a raw JSONL line to the channel transcript.
    * StorageEngine does not expose appendTranscriptEvent directly, so we
    * write to the JSONL file ourselves using the same path the engine
@@ -159,11 +171,8 @@ export class ChannelSessionStore {
    * Throws if the channel does not exist.
    */
   async read(key: string): Promise<ChannelHandle> {
-    const entry = await this.loadEntry(key);
-    if (!entry?.channelMeta) {
-      throw new Error(`channel-session-store: channel not found: ${key}`);
-    }
-    return { key, meta: entry.channelMeta };
+    const { channelMeta } = await this.requireEntry(key);
+    return { key, meta: channelMeta };
   }
 
   /**
@@ -171,12 +180,7 @@ export class ChannelSessionStore {
    * turn counter. Throws if the channel is sealed.
    */
   async appendUserMessage(key: string, args: AppendUserArgs): Promise<ChannelSessionMeta> {
-    const entry = await this.loadEntry(key);
-    if (!entry?.channelMeta) {
-      throw new Error(`channel-session-store: channel not found: ${key}`);
-    }
-
-    const { channelMeta } = entry;
+    const { entry, channelMeta } = await this.requireEntry(key);
     if (channelMeta.sealed) {
       throw new Error(`channel-session-store: channel is sealed (${channelMeta.sealedReason}): ${key}`);
     }
@@ -211,10 +215,7 @@ export class ChannelSessionStore {
    * Append an audit event to the channel transcript (does NOT bump turns).
    */
   async appendAudit(key: string, event: AgentCommAuditEvent): Promise<void> {
-    const entry = await this.loadEntry(key);
-    if (!entry?.channelMeta) {
-      throw new Error(`channel-session-store: channel not found: ${key}`);
-    }
+    const { entry } = await this.requireEntry(key);
     await this.appendTranscriptLine(entry, event);
   }
 
@@ -225,12 +226,7 @@ export class ChannelSessionStore {
     key: string,
     usage: { tokensIn: number; tokensOut: number },
   ): Promise<ChannelSessionMeta> {
-    const entry = await this.loadEntry(key);
-    if (!entry?.channelMeta) {
-      throw new Error(`channel-session-store: channel not found: ${key}`);
-    }
-
-    const { channelMeta } = entry;
+    const { channelMeta } = await this.requireEntry(key);
     const now = new Date().toISOString();
     const updatedMeta: ChannelSessionMeta = {
       ...channelMeta,
@@ -247,14 +243,11 @@ export class ChannelSessionStore {
    * `sealed` audit event to the transcript (per spec §6.4/§6.5).
    */
   async seal(key: string, reason: AgentCommSealReason): Promise<ChannelSessionMeta> {
-    const entry = await this.loadEntry(key);
-    if (!entry?.channelMeta) {
-      throw new Error(`channel-session-store: channel not found: ${key}`);
-    }
+    const { entry, channelMeta } = await this.requireEntry(key);
 
     const now = new Date().toISOString();
     const updatedMeta: ChannelSessionMeta = {
-      ...entry.channelMeta,
+      ...channelMeta,
       sealed: true,
       sealedReason: reason,
       lastActivityAt: now,
@@ -278,10 +271,7 @@ export class ChannelSessionStore {
    * short-lived and bounded by turn limits).
    */
   async tail(key: string, limit: number): Promise<unknown[]> {
-    const entry = await this.loadEntry(key);
-    if (!entry?.channelMeta) {
-      throw new Error(`channel-session-store: channel not found: ${key}`);
-    }
+    const { entry } = await this.requireEntry(key);
 
     const storage = this.storageFor(this.ownerOf(key));
     const transcriptPath = storage.resolveTranscriptPath(entry);

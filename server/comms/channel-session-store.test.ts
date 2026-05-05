@@ -116,9 +116,9 @@ describe('ChannelSessionStore', () => {
     ).rejects.toThrow();
   });
 
-  it('tail returns recent transcript events', async () => {
+  it('tail respects the limit and returns most-recent events', async () => {
     const ch = await store.open({ pair: ['agent-a', 'agent-b'], pairNames: ['alpha', 'beta'] });
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 5; i++) {
       await store.appendUserMessage(ch.key, {
         content: `msg ${i}`,
         meta: {
@@ -128,8 +128,11 @@ describe('ChannelSessionStore', () => {
         },
       });
     }
-    const events = await store.tail(ch.key, 10);
-    expect(events.length).toBeGreaterThanOrEqual(3);
+    const top3 = await store.tail(ch.key, 3);
+    expect(top3.length).toBe(3);
+    // Last 3 events should be msgs 2,3,4
+    const contents = top3.map((r: any) => r?.message?.content);
+    expect(contents).toEqual(['msg 2', 'msg 3', 'msg 4']);
   });
 
   it('open() sorts pair internally regardless of caller order', async () => {
@@ -139,5 +142,16 @@ describe('ChannelSessionStore', () => {
     expect(ch.meta.pair).toEqual(['agent-a', 'agent-b']);
     expect(ch.meta.pairNames).toEqual(['alpha', 'beta']);  // names re-aligned
     expect(ch.meta.ownerAgentId).toBe('agent-a');
+  });
+
+  it('seal appends a sealed audit event to the transcript', async () => {
+    const ch = await store.open({ pair: ['agent-a', 'agent-b'], pairNames: ['alpha', 'beta'] });
+    await store.seal(ch.key, 'token_budget_exceeded');
+    const events = await store.tail(ch.key, 10);
+    const sealedEvent = events.find(
+      (r: any) => r?.kind === 'agent-comm-audit' && r?.event?.type === 'sealed',
+    );
+    expect(sealedEvent).toBeDefined();
+    expect((sealedEvent as any).event.reason).toBe('token_budget_exceeded');
   });
 });
