@@ -72,6 +72,9 @@ export function createShowImageTool(ctx: ShowImageContext): AgentTool<TSchema> {
 
       // Local file
       const resolved = path.resolve(ctx.cwd, imagePath);
+      if (!resolved.startsWith(ctx.cwd + path.sep) && resolved !== ctx.cwd) {
+        throw new Error(`Path escape detected. Access denied.`);
+      }
       const ext = path.extname(resolved).toLowerCase();
       const mime = SUPPORTED_MIME[ext];
       if (!mime) {

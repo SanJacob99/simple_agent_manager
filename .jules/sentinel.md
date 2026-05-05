@@ -27,3 +27,8 @@
 **Vulnerability:** The path traversal prevention logic in file system tools (`write-file.ts`, `read-file.ts`, etc) used `!resolved.startsWith(ctx.cwd)`, which is vulnerable to partial directory name bypasses (e.g., escaping `/workspace` via `../workspace-secrets/passwd`).
 **Learning:** Checking directory boundaries with `startsWith` using the directory path string alone is insufficient and insecure because it allows prefix matches.
 **Prevention:** Always append a trailing directory separator (`path.sep`) to the base directory before using `startsWith`, or verify an exact match when testing for path boundaries.
+
+## 2026-04-28 - [CRITICAL] Fix Path Traversal in Image Tools
+**Vulnerability:** The `show-image.ts` and `image-analyze.ts` tools resolved user-provided image paths using `path.resolve(ctx.cwd, imagePath)` without enforcing that the resolved path stayed within `ctx.cwd`. This allowed arbitrary local file reads.
+**Learning:** `path.resolve` alone is insufficient for sandbox enforcement. It will happily traverse up the directory tree if given `../`.
+**Prevention:** Always verify that the output of `path.resolve` falls within the intended base directory using `resolved.startsWith(ctx.cwd + path.sep) || resolved === ctx.cwd` before passing the path to file system operations.
