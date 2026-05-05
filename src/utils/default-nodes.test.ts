@@ -42,4 +42,20 @@ describe('getDefaultNodeData', () => {
     expect(data.envVar).toBe('OPENROUTER_API_KEY');
     expect(data.baseUrl).toBe('');
   });
+
+  it('returns v1 defaults including new loop/safety fields for agentComm', () => {
+    const data = getDefaultNodeData('agentComm');
+    expect(data).toMatchObject({
+      type: 'agentComm',
+      label: 'Agent Comm',
+      targetAgentNodeId: null,
+      protocol: 'direct',
+      maxTurns: 10,
+      maxDepth: 3,
+      tokenBudget: 100_000,
+      rateLimitPerMinute: 30,
+      messageSizeCap: 16_000,
+      direction: 'bidirectional',
+    });
+  });
 });
