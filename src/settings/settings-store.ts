@@ -6,6 +6,7 @@ import {
   DEFAULT_CONTEXT_ENGINE_DEFAULTS,
   DEFAULT_MEMORY_DEFAULTS,
   DEFAULT_CRON_DEFAULTS,
+  DEFAULT_AGENT_COMM_DEFAULTS,
   DEFAULT_CHAT_UI_DEFAULTS,
   DEFAULT_SAFETY_SETTINGS,
   DEFAULT_SAM_AGENT_DEFAULTS,
@@ -15,6 +16,7 @@ import {
   type ContextEngineDefaults,
   type MemoryDefaults,
   type CronDefaults,
+  type AgentCommDefaults,
   type ChatUIDefaults,
   type SafetySettings,
   type SamAgentDefaults,
@@ -28,6 +30,7 @@ interface PersistedSettings {
   contextEngineDefaults: ContextEngineDefaults;
   memoryDefaults: MemoryDefaults;
   cronDefaults: CronDefaults;
+  agentCommDefaults?: AgentCommDefaults;
   chatUIDefaults: ChatUIDefaults;
   safety: SafetySettings;
   samAgentDefaults: SamAgentDefaults;
@@ -44,6 +47,7 @@ interface SettingsStore extends PersistedSettings {
   setContextEngineDefaults: (updates: Partial<ContextEngineDefaults>) => void;
   setMemoryDefaults: (updates: Partial<MemoryDefaults>) => void;
   setCronDefaults: (updates: Partial<CronDefaults>) => void;
+  setAgentCommDefaults: (updates: Partial<AgentCommDefaults>) => void;
   setChatUIDefaults: (updates: Partial<ChatUIDefaults>) => void;
   setSafetySettings: (updates: Partial<SafetySettings>) => void;
   setSamAgentDefaults: (updates: Partial<SamAgentDefaults>) => void;
@@ -58,6 +62,7 @@ const INITIAL_DEFAULTS: Omit<PersistedSettings, 'apiKeys'> = {
   contextEngineDefaults: DEFAULT_CONTEXT_ENGINE_DEFAULTS,
   memoryDefaults: DEFAULT_MEMORY_DEFAULTS,
   cronDefaults: DEFAULT_CRON_DEFAULTS,
+  agentCommDefaults: DEFAULT_AGENT_COMM_DEFAULTS,
   chatUIDefaults: DEFAULT_CHAT_UI_DEFAULTS,
   safety: DEFAULT_SAFETY_SETTINGS,
   samAgentDefaults: DEFAULT_SAM_AGENT_DEFAULTS,
@@ -75,6 +80,7 @@ async function fetchSettings(): Promise<PersistedSettings> {
     contextEngineDefaults: { ...DEFAULT_CONTEXT_ENGINE_DEFAULTS, ...(data.contextEngineDefaults ?? {}) },
     memoryDefaults: { ...DEFAULT_MEMORY_DEFAULTS, ...(data.memoryDefaults ?? {}) },
     cronDefaults: { ...DEFAULT_CRON_DEFAULTS, ...(data.cronDefaults ?? {}) },
+    agentCommDefaults: { ...DEFAULT_AGENT_COMM_DEFAULTS, ...(data.agentCommDefaults ?? {}) },
     chatUIDefaults: { ...DEFAULT_CHAT_UI_DEFAULTS, ...(data.chatUIDefaults ?? {}) },
     safety: { ...DEFAULT_SAFETY_SETTINGS, ...(data.safety ?? {}) },
     samAgentDefaults: { ...DEFAULT_SAM_AGENT_DEFAULTS, ...(data.samAgentDefaults ?? {}) },
@@ -102,6 +108,7 @@ function getSnapshot(state: SettingsStore): PersistedSettings {
     contextEngineDefaults: state.contextEngineDefaults,
     memoryDefaults: state.memoryDefaults,
     cronDefaults: state.cronDefaults,
+    agentCommDefaults: state.agentCommDefaults,
     chatUIDefaults: state.chatUIDefaults,
     safety: state.safety,
     samAgentDefaults: state.samAgentDefaults,
@@ -173,6 +180,12 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     const next = { ...get().cronDefaults, ...updates };
     set({ cronDefaults: next });
     saveSettings({ ...getSnapshot(get()), cronDefaults: next });
+  },
+
+  setAgentCommDefaults: (updates) => {
+    const next = { ...( get().agentCommDefaults ?? DEFAULT_AGENT_COMM_DEFAULTS), ...updates };
+    set({ agentCommDefaults: next });
+    saveSettings({ ...getSnapshot(get()), agentCommDefaults: next });
   },
 
   setChatUIDefaults: (updates) => {

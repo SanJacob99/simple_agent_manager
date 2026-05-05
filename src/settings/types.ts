@@ -63,6 +63,15 @@ export interface CronDefaults {
   retentionDays: number;
 }
 
+export interface AgentCommDefaults {
+  defaultMaxTurns: number;
+  defaultMaxDepth: number;
+  defaultTokenBudget: number;
+  defaultRateLimitPerMinute: number;
+  defaultMessageSizeCap: number;
+  defaultDirection: 'bidirectional' | 'outbound' | 'inbound';
+}
+
 export interface ChatUIDefaults {
   /** Characters per second revealed while an assistant message is streaming. */
   textRevealCharsPerSec: number;
@@ -142,6 +151,15 @@ export const DEFAULT_CRON_DEFAULTS: CronDefaults = {
   timezone: 'local',
   maxRunDurationMs: 300000,
   retentionDays: 7,
+};
+
+export const DEFAULT_AGENT_COMM_DEFAULTS: AgentCommDefaults = {
+  defaultMaxTurns: 10,
+  defaultMaxDepth: 3,
+  defaultTokenBudget: 100_000,
+  defaultRateLimitPerMinute: 30,
+  defaultMessageSizeCap: 16_000,
+  defaultDirection: 'bidirectional',
 };
 
 export const DEFAULT_CHAT_UI_DEFAULTS: ChatUIDefaults = {
