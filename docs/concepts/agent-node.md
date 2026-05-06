@@ -3,7 +3,7 @@
 > The central hub node that stores model and prompt settings while connected peripheral nodes supply runtime services.
 
 <!-- source: src/types/nodes.ts#AgentNodeData -->
-<!-- last-verified: 2026-05-04 -->
+<!-- last-verified: 2026-05-06 -->
 
 ## Overview
 

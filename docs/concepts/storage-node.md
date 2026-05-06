@@ -3,7 +3,7 @@
 > Provides filesystem-based persistence for agent sessions, routed transcripts, and memory files.
 
 <!-- source: src/types/nodes.ts#StorageNodeData -->
-<!-- last-verified: 2026-05-04 -->
+<!-- last-verified: 2026-05-06 -->
 
 ## Overview
 
@@ -34,14 +34,14 @@ Only one Storage Node can be connected per agent. For embedding or semantic retr
 | `idleResetEnabled` | `boolean` | `false` | Whether inactive sessions should auto-reset |
 | `idleResetMinutes` | `number` | `60` | Idle timeout in minutes before an automatic reset |
 | `parentForkMaxTokens` | `number` | `100000` | Max token count for carrying the prior transcript forward as `parentSession` on reset |
-| `maintenanceMode` | `'warn' \| 'enforce'` | `"warn"` | Whether maintenance violations log a warning or actively block writes |
-| `pruneAfterDays` | `number` | `30` | Sessions older than this (days) are pruned during maintenance |
-| `maxEntries` | `number` | `500` | Maximum session entries before the oldest are pruned |
-| `rotateBytes` | `number` | `10485760` | Rotate transcript files when they exceed this size in bytes (10 MB) |
-| `resetArchiveRetentionDays` | `number` | `30` | How many days to keep archived reset transcripts |
-| `maxDiskBytes` | `number` | `0` | Total disk budget for this agent's storage directory. `0` = unlimited |
-| `highWaterPercent` | `number` | `80` | Percentage of `maxDiskBytes` at which a high-water warning fires |
-| `maintenanceIntervalMinutes` | `number` | `60` | How often the maintenance sweep runs (minutes) |
+| `maintenanceMode` | `'warn' \| 'enforce'` | `"warn"` | How quota violations are handled: `warn` logs them, `enforce` also evicts to bring usage back in bounds |
+| `pruneAfterDays` | `number` | `30` | Sessions last updated more than this many days ago are pruned during maintenance |
+| `maxEntries` | `number` | `500` | Max session entries to retain; oldest are removed when exceeded. `0` = unlimited |
+| `rotateBytes` | `number` | `10485760` | `sessions.json` is rotated (archived and replaced) when it exceeds this size in bytes |
+| `resetArchiveRetentionDays` | `number` | `30` | How long archived `sessions.json` snapshots are kept before deletion |
+| `maxDiskBytes` | `number` | `0` | Total disk budget for the agent's storage directory in bytes. `0` = unlimited |
+| `highWaterPercent` | `number` | `80` | When `maxDiskBytes` is set, maintenance evicts sessions until usage drops below this percentage of the budget |
+| `maintenanceIntervalMinutes` | `number` | `60` | How often the background maintenance task runs, in minutes |
 
 ## Runtime Behavior
 

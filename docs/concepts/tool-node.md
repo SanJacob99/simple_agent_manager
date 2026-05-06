@@ -3,7 +3,7 @@
 > Configures which tools an agent can use through profiles, groups, direct enables, skills, and plugins.
 
 <!-- source: src/types/nodes.ts#ToolsNodeData -->
-<!-- last-verified: 2026-05-04 -->
+<!-- last-verified: 2026-05-06 -->
 
 ## Overview
 
@@ -22,7 +22,7 @@ Skills stored on the Tool Node are merged into system prompt content during grap
 |----------|------|---------|-------------|
 | `label` | `string` | `"Tools"` | Display label on the canvas |
 | `profile` | `ToolProfile` | `"full"` | Preset tool collection: `full`, `coding`, `messaging`, `minimal`, `custom` |
-| `enabledTools` | `string[]` | `['ask_user', 'confirm_action']` | Individual tool names to enable beyond the profile. HITL tools are pre-checked by default and locked unless "Dangerous Fully Auto" mode is enabled |
+| `enabledTools` | `string[]` | `["ask_user", "confirm_action"]` | Individual tool names to enable beyond the profile. HITL tools are on by default and locked unless "Dangerous Fully Auto" mode is enabled in Settings |
 | `enabledGroups` | `ToolGroup[]` | `[]` | Additional tool groups to enable beyond the profile |
 | `skills` | `SkillDefinition[]` | `[]` | Skill definitions that are folded into prompt assembly |
 | `plugins` | `PluginDefinition[]` | `[]` | Plugin bundles that contribute tools, skills, and optional hooks |
