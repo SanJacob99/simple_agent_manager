@@ -237,18 +237,30 @@ export class StorageEngine {
       return [];
     }
 
+    // ⚡ Bolt Optimization: Process and unlink orphaned session files in chunks concurrently
+    // to avoid sequential N+1 file deletion I/O operations while preventing EMFILE limits.
     const orphans: string[] = [];
-    for (const file of files) {
-      if (!file.endsWith('.jsonl')) continue;
-      if (!referenced.has(file)) {
-        orphans.push(file);
-        if (!dryRun) {
-          try {
-            await fs.unlink(path.join(this.sessionsDir, file));
-          } catch {
-            // Ignore
+    const CHUNK_SIZE = 50;
+
+    for (let i = 0; i < files.length; i += CHUNK_SIZE) {
+      const chunk = files.slice(i, i + CHUNK_SIZE);
+      const results = await Promise.all(
+        chunk.map(async (file) => {
+          if (!file.endsWith('.jsonl')) return null;
+          if (referenced.has(file)) return null;
+
+          if (!dryRun) {
+            try {
+              await fs.unlink(path.join(this.sessionsDir, file));
+            } catch {
+              // Ignore
+            }
           }
-        }
+          return file;
+        })
+      );
+      for (const res of results) {
+        if (res !== null) orphans.push(res);
       }
     }
 
@@ -268,20 +280,33 @@ export class StorageEngine {
       return [];
     }
 
-    for (const file of files) {
-      // Match *.reset.* pattern
-      if (!file.includes('.reset.')) continue;
-      const filePath = path.join(this.sessionsDir, file);
-      try {
-        const stat = await fs.stat(filePath);
-        if (stat.isFile() && stat.mtimeMs < cutoff) {
-          removed.push(filePath);
-          if (!dryRun) {
-            await fs.unlink(filePath);
+    // ⚡ Bolt Optimization: Fetch file stats and delete reset archives in chunks concurrently
+    // to eliminate N+1 I/O overhead while preventing EMFILE limits.
+    const CHUNK_SIZE = 50;
+
+    for (let i = 0; i < files.length; i += CHUNK_SIZE) {
+      const chunk = files.slice(i, i + CHUNK_SIZE);
+      const results = await Promise.all(
+        chunk.map(async (file) => {
+          if (!file.includes('.reset.')) return null;
+
+          const filePath = path.join(this.sessionsDir, file);
+          try {
+            const stat = await fs.stat(filePath);
+            if (stat.isFile() && stat.mtimeMs < cutoff) {
+              if (!dryRun) {
+                await fs.unlink(filePath);
+              }
+              return filePath;
+            }
+          } catch {
+            // Ignore
           }
-        }
-      } catch {
-        // Ignore
+          return null;
+        })
+      );
+      for (const res of results) {
+        if (res !== null) removed.push(res);
       }
     }
 
