@@ -292,6 +292,14 @@ export interface AgentCommNodeData {
   label: string;
   targetAgentNodeId: string | null;
   protocol: 'direct' | 'broadcast';
+  // Loop controls
+  maxTurns: number;
+  maxDepth: number;
+  tokenBudget: number;
+  rateLimitPerMinute: number;
+  // Safety controls
+  messageSizeCap: number;
+  direction: 'bidirectional' | 'outbound' | 'inbound';
 }
 
 // --- Connectors Node ---

@@ -30,7 +30,7 @@
     "agentComm": {
       "doc": "agent-comm-node.md",
       "type": "src/types/nodes.ts#AgentCommNodeData",
-      "runtime": null
+      "runtime": "server/comms/agent-comm-bus.ts"
     },
     "connectors": {
       "doc": "connector-node.md",

@@ -23,6 +23,9 @@ import type WebSocket from 'ws';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
+import { AgentCommBus } from '../comms/agent-comm-bus';
+import { ChannelSessionStore } from '../comms/channel-session-store';
+import { ChannelRunQueue } from '../comms/channel-run-queue';
 
 export interface ManagedAgent {
   runtime: AgentRuntime;
@@ -60,6 +63,12 @@ export class AgentManager {
    * agent runs without restarting the server.
    */
   readonly getSafetySettings: () => SafetySettings;
+  /**
+   * Agent-to-agent communication bus. Lives for the AgentManager's lifetime
+   * (singleton per process). Routes are registered on start() and
+   * unregistered on destroy().
+   */
+  readonly commBus: AgentCommBus;
 
   constructor(
     private readonly apiKeys: ApiKeyStore,
@@ -69,6 +78,41 @@ export class AgentManager {
   ) {
     this.hitlRegistry = hitlRegistry ?? new HitlRegistry();
     this.getSafetySettings = getSafetySettings ?? (() => DEFAULT_SAFETY_SETTINGS);
+    const channelQueue = new ChannelRunQueue();
+    this.commBus = new AgentCommBus({
+      channelStore: new ChannelSessionStore({
+        ownerStorage: (id) => this.agents.get(id)?.storage ?? undefined,
+      }),
+      queue: channelQueue,
+      // Wired in Task 11. The bus owns serialization-by-channelKey via
+      // ChannelRunQueue; we look up the receiver and ask its
+      // RunCoordinator to drive the channel-mode run. Errors are logged
+      // and swallowed so a single failed wake doesn't choke the bus —
+      // audit-side logging happens inside the bus already.
+      dispatchChannelWake: async ({ channelKey, receiverAgentId, senderAgentName, depth, isFinalTurn }) => {
+        const receiver = this.agents.get(receiverAgentId);
+        if (!receiver) {
+          console.error(
+            `[AgentManager] dispatchChannelWake: receiver ${receiverAgentId} not registered (channel ${channelKey})`,
+          );
+          return;
+        }
+        try {
+          await channelQueue.enqueue(channelKey, () =>
+            receiver.coordinator.dispatchChannel({
+              channelKey,
+              peerName: senderAgentName,
+              depth,
+              isFinalTurn,
+            }),
+          );
+        } catch (err) {
+          console.error(
+            `[AgentManager] dispatchChannelWake failed for ${receiverAgentId} on ${channelKey}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      },
+    });
   }
 
   async start(config: AgentConfig): Promise<void> {
@@ -121,6 +165,10 @@ export class AgentManager {
       runtimeFactory,
     );
 
+    // Wire the agent-comm bus so this coordinator can drive
+    // channel-mode wakes when the bus calls back into it.
+    coordinator.setCommBus(this.commBus);
+
     const processor = new StreamProcessor(config.id, coordinator, config);
 
     bridge = new EventBridge(config.id, processor);
@@ -146,6 +194,14 @@ export class AgentManager {
       hooks,
       lastActivity: Date.now(),
       unsubscribe,
+    });
+
+    // Register with the agent-comm bus so inter-agent messaging can resolve
+    // this agent by ID and name.
+    this.commBus.register({
+      agentId: config.id,
+      agentName: config.name,
+      agentComm: config.agentComm ?? [],
     });
 
     // Seed context-usage breakdown for every zero-turn session this
@@ -219,6 +275,9 @@ export class AgentManager {
   destroy(agentId: string): void {
     const managed = this.agents.get(agentId);
     if (!managed) return;
+    // Unregister from comm bus BEFORE tearing down runtime so in-flight
+    // dispatches cannot reach an already-destroyed agent.
+    this.commBus.unregister(agentId);
     managed.unsubscribe();
     managed.bridge.destroy();
     managed.processor.destroy();

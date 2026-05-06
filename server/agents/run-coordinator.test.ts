@@ -320,9 +320,12 @@ describe('RunCoordinator', () => {
       const result = await coordinator.dispatch({ sessionKey: 'selected-session-tools', text: 'Hello' });
       await coordinator.wait(result.runId, 5000);
 
-      expect(runtime.addTools).toHaveBeenCalledTimes(1);
+      // 2 calls: injection + finally-block cleanup (addTools([]))
+      expect(runtime.addTools).toHaveBeenCalledTimes(2);
       const [tools] = (runtime.addTools as any).mock.calls[0];
       expect(tools.map((tool: any) => tool.name)).toEqual(['sessions_list']);
+      // Second call is the cleanup reset
+      expect((runtime.addTools as any).mock.calls[1][0]).toEqual([]);
     });
 
     it('auto-injects sub-agent control tools when sub-agents are declared', async () => {
@@ -345,13 +348,16 @@ describe('RunCoordinator', () => {
       const result = await coordinator.dispatch({ sessionKey: 'auto-sub-tools', text: 'Hello' });
       await coordinator.wait(result.runId, 5000);
 
-      expect(runtime.addTools).toHaveBeenCalledTimes(1);
+      // 2 calls: injection + finally-block cleanup (addTools([]))
+      expect(runtime.addTools).toHaveBeenCalledTimes(2);
       const [tools] = (runtime.addTools as any).mock.calls[0];
       expect(tools.map((tool: any) => tool.name).sort()).toEqual([
         'sessions_spawn',
         'sessions_yield',
         'subagents',
       ].sort());
+      // Second call is the cleanup reset
+      expect((runtime.addTools as any).mock.calls[1][0]).toEqual([]);
     });
 
     it('upserts a durable sub-session entry when sessions_spawn persists metadata', async () => {
@@ -742,6 +748,76 @@ describe('RunCoordinator', () => {
       deferred.resolve();
       await coordinator.wait(first.runId, 5000);
     });
+
+    it('injects comm tools into the runtime when commBus is set and agentComm is configured', async () => {
+      coordinator.destroy();
+      config = makeConfig(storagePath, {
+        agentComm: [
+          {
+            commNodeId: 'comm-1',
+            label: 'to-beta',
+            targetAgentNodeId: 'agent-2',
+            targetAgentName: 'beta',
+            protocol: 'direct',
+            maxTurns: 10,
+            maxDepth: 3,
+            tokenBudget: 100_000,
+            rateLimitPerMinute: 30,
+            messageSizeCap: 16_000,
+            direction: 'bidirectional',
+          },
+        ],
+      });
+      runtime = mockRuntime();
+      coordinator = new RunCoordinator('agent-1', runtime, config, storage);
+
+      // Build a minimal comm-bus stub that exposes bus.send so we can verify
+      // the tool wiring, matching the shape of makeCommBusStub in dispatchChannel tests.
+      const commBusStub = {
+        send: vi.fn(async () => ({ ok: true, depth: 1, turns: 1, queuedWake: false })),
+        broadcast: vi.fn(async () => ({ results: [] })),
+        readChannelTranscript: vi.fn(async () => []),
+        appendChannelAssistantMessages: vi.fn(async () => {}),
+        addUsage: vi.fn(async () => {}),
+        readChannel: vi.fn(async () => ({})),
+      } as any;
+      coordinator.setCommBus(commBusStub);
+
+      // Capture all tool arrays passed to addTools during the run.
+      const addToolsCalls: any[][] = [];
+      (runtime.addTools as any).mockImplementation((tools: any[]) => {
+        addToolsCalls.push(tools);
+      });
+
+      const result = await coordinator.dispatch({ sessionKey: 'comm-tools-inject', text: 'Hello' });
+      await coordinator.wait(result.runId, 5000);
+
+      // At least one addTools call should have included agent_send with depth=0.
+      const commInjection = addToolsCalls.find((tools) =>
+        tools.some((t: any) => t.name === 'agent_send'),
+      );
+      expect(commInjection).toBeDefined();
+
+      const sendTool = commInjection!.find((t: any) => t.name === 'agent_send');
+      expect(sendTool).toBeDefined();
+
+      // Execute the tool and confirm the bus is called with currentDepth: 0
+      // (user-driven turn is at the top of any potential comm chain).
+      await sendTool.execute('call-1', { to: 'beta', message: 'hello peer' });
+      expect(commBusStub.send).toHaveBeenCalledTimes(1);
+      expect(commBusStub.send.mock.calls[0][0]).toEqual(
+        expect.objectContaining({
+          fromAgentId: 'agent-1',
+          toAgentName: 'beta',
+          message: 'hello peer',
+          currentDepth: 0,
+        }),
+      );
+
+      // The final addTools([]) call resets per-run tools in the finally block.
+      const lastCall = addToolsCalls[addToolsCalls.length - 1];
+      expect(lastCall).toEqual([]);
+    });
   });
 
   describe('lifecycle events', () => {
@@ -1035,6 +1111,231 @@ describe('RunCoordinator', () => {
         hookedCoordinator.destroy();
         hooks.destroy();
       }
+    });
+  });
+
+  describe('dispatchChannel', () => {
+    function makeCommBusStub(opts?: {
+      transcript?: unknown[];
+      channelMeta?: any;
+    }) {
+      const transcript = opts?.transcript ?? [
+        { type: 'message', message: { role: 'user', content: 'Hi from peer' } },
+      ];
+      const channelMeta = opts?.channelMeta ?? {
+        pair: ['agent-1', 'agent-2'],
+        pairNames: ['Test Agent', 'beta'],
+        ownerAgentId: 'agent-1',
+        turns: 1,
+        tokensIn: 0,
+        tokensOut: 0,
+        sealed: false,
+        sealedReason: null,
+        lastActivityAt: new Date().toISOString(),
+      };
+      const addUsage = vi.fn(async () => {});
+      const readChannel = vi.fn(async () => ({ key: 'channel:agent-1:agent-2', meta: channelMeta }));
+      const readChannelTranscript = vi.fn(async () => transcript);
+      const appendChannelAssistantMessages = vi.fn(async () => {});
+      const send = vi.fn(async () => ({ ok: true, depth: 1, turns: 1, queuedWake: false }));
+      const broadcast = vi.fn(async () => ({ results: [] }));
+      return { addUsage, readChannel, readChannelTranscript, appendChannelAssistantMessages, send, broadcast } as any;
+    }
+
+    function makeCommConfig(): AgentConfig {
+      return makeConfig(storagePath, {
+        agentComm: [
+          {
+            commNodeId: 'comm-1',
+            label: 'to-beta',
+            targetAgentNodeId: 'agent-2',
+            targetAgentName: 'beta',
+            protocol: 'direct',
+            maxTurns: 10,
+            maxDepth: 3,
+            tokenBudget: 100_000,
+            rateLimitPerMinute: 30,
+            messageSizeCap: 16_000,
+            direction: 'bidirectional',
+          },
+        ],
+      });
+    }
+
+    it('runs the receiver against the channel transcript without re-appending the inbound user message', async () => {
+      coordinator.destroy();
+      config = makeCommConfig();
+      runtime = mockRuntime();
+      // Stand up a minimal runOnChannel + appendSystemPromptBlock surface
+      // so the channel-mode path can run end-to-end against the mock.
+      (runtime as any).runOnChannel = vi.fn(async () => {});
+      (runtime as any).appendSystemPromptBlock = vi.fn(() => () => {});
+      coordinator = new RunCoordinator('agent-1', runtime, config, storage);
+      const bus = makeCommBusStub();
+      coordinator.setCommBus(bus);
+
+      await coordinator.dispatchChannel({
+        channelKey: 'channel:agent-1:agent-2',
+        peerName: 'beta',
+        depth: 1,
+        isFinalTurn: false,
+      });
+
+      // Channel-mode path was driven, not the regular prompt path.
+      expect((runtime as any).runOnChannel).toHaveBeenCalledTimes(1);
+      expect(runtime.prompt).not.toHaveBeenCalled();
+
+      // The runtime's session context was set from the channel transcript;
+      // the bus's transcript already contains the inbound user message,
+      // so the run sees it without anyone calling prompt(text) to append it.
+      expect(runtime.setSessionContext).toHaveBeenCalledTimes(1);
+      const messagesPushed = (runtime.setSessionContext as any).mock.calls[0][0];
+      expect(messagesPushed).toHaveLength(1);
+      expect(messagesPushed[0]).toEqual({ role: 'user', content: 'Hi from peer' });
+    });
+
+    it('passes a sealed-channel notice in the system-prompt block when isFinalTurn is true', async () => {
+      coordinator.destroy();
+      config = makeCommConfig();
+      runtime = mockRuntime();
+      let receivedBlock = '';
+      (runtime as any).runOnChannel = vi.fn(async () => {});
+      (runtime as any).appendSystemPromptBlock = vi.fn((block: string) => {
+        receivedBlock = block;
+        return () => {};
+      });
+      coordinator = new RunCoordinator('agent-1', runtime, config, storage);
+      coordinator.setCommBus(makeCommBusStub());
+
+      await coordinator.dispatchChannel({
+        channelKey: 'channel:agent-1:agent-2',
+        peerName: 'beta',
+        depth: 2,
+        isFinalTurn: true,
+      });
+
+      expect(receivedBlock).toContain('peer channel-session with agent beta');
+      expect(receivedBlock).toContain('this channel is sealed');
+      expect(receivedBlock).toContain('channel_sealed');
+    });
+
+    it('reports aggregated provider usage to the bus with the receiver-edge token budget after the run', async () => {
+      coordinator.destroy();
+      config = makeCommConfig();
+      runtime = mockRuntime();
+      // Drive a synthetic message_end that carries usage so the
+      // dispatchChannel subscriber accumulates totals and forwards to addUsage.
+      (runtime as any).runOnChannel = vi.fn(async () => {
+        (runtime as any).emitEvent({
+          type: 'message_end',
+          message: {
+            role: 'assistant',
+            content: [{ type: 'text', text: 'reply' }],
+            usage: {
+              input: 25,
+              output: 17,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 42,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+            },
+          },
+        });
+      });
+      (runtime as any).appendSystemPromptBlock = vi.fn(() => () => {});
+      coordinator = new RunCoordinator('agent-1', runtime, config, storage);
+      const bus = makeCommBusStub();
+      coordinator.setCommBus(bus);
+
+      await coordinator.dispatchChannel({
+        channelKey: 'channel:agent-1:agent-2',
+        peerName: 'beta',
+        depth: 1,
+        isFinalTurn: false,
+      });
+
+      expect(bus.addUsage).toHaveBeenCalledTimes(1);
+      const [channelKey, usage, pairBudget] = bus.addUsage.mock.calls[0];
+      expect(channelKey).toBe('channel:agent-1:agent-2');
+      expect(usage).toEqual({ tokensIn: 25, tokensOut: 17 });
+      // pairBudget for v1 is the receiver edge's tokenBudget (100k from
+      // makeCommConfig), since the bus already pair-min'd at send-time.
+      expect(pairBudget).toBe(100_000);
+    });
+
+    it('injects the comm tools with the inbound depth so an outbound agent_send carries depth+1 worth of headroom', async () => {
+      coordinator.destroy();
+      config = makeCommConfig();
+      runtime = mockRuntime();
+      let injectedTools: any[] = [];
+      (runtime as any).runOnChannel = vi.fn(async () => {});
+      (runtime as any).appendSystemPromptBlock = vi.fn(() => () => {});
+      // First addTools call is the channel-mode injection; second is the
+      // post-run reset to []. Capture only the first.
+      (runtime.addTools as any).mockImplementation((tools: any[]) => {
+        if (injectedTools.length === 0 && tools.length > 0) {
+          injectedTools = tools;
+        }
+      });
+      coordinator = new RunCoordinator('agent-1', runtime, config, storage);
+      const bus = makeCommBusStub();
+      coordinator.setCommBus(bus);
+
+      await coordinator.dispatchChannel({
+        channelKey: 'channel:agent-1:agent-2',
+        peerName: 'beta',
+        depth: 2,
+        isFinalTurn: false,
+      });
+
+      const sendTool = injectedTools.find((t: any) => t.name === 'agent_send');
+      expect(sendTool).toBeDefined();
+      // Drive the tool's execute path and confirm the bus was called
+      // with currentDepth=2 (the inbound depth). The bus's send() is
+      // responsible for incrementing to 3 before checking maxDepth.
+      await sendTool.execute('call-1', { to: 'beta', message: 'next' });
+      expect(bus.send).toHaveBeenCalledTimes(1);
+      expect(bus.send.mock.calls[0][0]).toEqual(
+        expect.objectContaining({
+          fromAgentId: 'agent-1',
+          toAgentName: 'beta',
+          message: 'next',
+          currentDepth: 2,
+        }),
+      );
+    });
+
+    it('persists the assistant turn produced during runOnChannel back to the channel transcript', async () => {
+      coordinator.destroy();
+      config = makeCommConfig();
+      runtime = mockRuntime();
+      // Simulate pi-agent-core appending an assistant message to state.messages
+      // during agent.continue() — this is what happens in the real runtime.
+      (runtime as any).runOnChannel = vi.fn(async () => {
+        runtime.state.messages.push({
+          role: 'assistant',
+          content: [{ type: 'text', text: 'Hello from receiver' }],
+        });
+      });
+      (runtime as any).appendSystemPromptBlock = vi.fn(() => () => {});
+      coordinator = new RunCoordinator('agent-1', runtime, config, storage);
+      const bus = makeCommBusStub();
+      coordinator.setCommBus(bus);
+
+      await coordinator.dispatchChannel({
+        channelKey: 'channel:agent-1:agent-2',
+        peerName: 'beta',
+        depth: 1,
+        isFinalTurn: false,
+      });
+
+      // The new assistant message must be flushed to the channel transcript
+      // so the next dispatchChannel call sees the full conversation history.
+      expect(bus.appendChannelAssistantMessages).toHaveBeenCalledTimes(1);
+      const [channelKey, appended] = bus.appendChannelAssistantMessages.mock.calls[0];
+      expect(channelKey).toBe('channel:agent-1:agent-2');
+      expect(appended).toHaveLength(1);
+      expect((appended[0] as any).role).toBe('assistant');
     });
   });
 });

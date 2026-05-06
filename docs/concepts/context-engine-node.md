@@ -64,6 +64,7 @@ The context engine no longer owns system prompt additions. Prompt construction i
   "tokenBudget": 128000,
   "reservedForResponse": 4096,
   "compactionStrategy": "summary",
+  "summaryModelId": "",
   "compactionTrigger": "auto",
   "compactionThreshold": 0.8,
   "postCompactionTokenTarget": 50000,

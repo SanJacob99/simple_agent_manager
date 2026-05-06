@@ -23,8 +23,12 @@ import { GraphFileStore, type PersistedGraph } from './storage/graph-file-store'
 import { resolveOutboundSystemPrompt } from './runtime/resolve-system-prompt';
 import { launchChromeForCdp } from './tools/builtins/browser/chrome-launcher';
 import { mountSubAgentRoutes } from './routes/subagents';
+import { buildAgentChannelsRouter } from './routes/agent-channels';
+import { SamAgentCoordinator } from './sam-agent/sam-agent-coordinator';
+import { AgentRuntime } from './runtime/agent-runtime';
 import path from 'path';
 import type { AgentConfig, ResolvedStorageConfig } from '../shared/agent-config';
+import type { SamAgentEventEnvelope } from './sam-agent/sam-agent-coordinator';
 import type { SessionRouteRequest, SessionTranscriptResponse } from '../shared/session-routes';
 
 const app = express();
@@ -49,6 +53,30 @@ const agentManager = new AgentManager(
   hitlRegistry,
   () => currentSafetySettings,
 );
+
+// --- SAMAgent coordinator ---
+//
+// A single long-lived coordinator for the in-app assistant. It streams events
+// to every connected browser socket via the samAgentBroadcasters fan-out set.
+// The set is populated / depopulated by handleConnection per-socket lifecycle.
+
+const samAgentBroadcasters = new Set<(envelope: SamAgentEventEnvelope) => void>();
+const samAgent = new SamAgentCoordinator({
+  transcriptPath: path.join(process.cwd(), 'server', 'sam-agent', 'transcripts', 'default.jsonl'),
+  repoRoot: process.cwd(),
+  buildRuntime: (config) => new AgentRuntime(
+    config,
+    (provider) => Promise.resolve(apiKeys.get(provider)),
+    undefined,
+    undefined,
+    pluginRegistry,
+    undefined,
+    currentSafetySettings,
+  ),
+  emit: (envelope) => {
+    for (const fn of samAgentBroadcasters) fn(envelope);
+  },
+});
 
 // --- Sub-agent REST routes ---
 //
@@ -86,6 +114,10 @@ mountSubAgentRoutes(app, {
     }
   },
 });
+
+// --- Agent channels (peer-to-peer comms) REST routes ---
+
+app.use(buildAgentChannelsRouter(agentManager));
 
 // --- Storage engine instances ---
 
@@ -750,7 +782,7 @@ httpServer.once('error', handleStartupError);
 wss.once('error', handleStartupError);
 
 wss.on('connection', (socket) => {
-  handleConnection(socket, agentManager, apiKeys);
+  handleConnection(socket, agentManager, apiKeys, samAgent, samAgentBroadcasters);
 });
 
 // Seed in-memory API key store + safety settings from persisted settings

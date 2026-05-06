@@ -205,6 +205,37 @@ describe('AgentManager', () => {
     expect(manager.has('agent-2')).toBe(false);
   });
 
+  describe('AgentManager + AgentCommBus', () => {
+    it('registers managed agents on start and unregisters on destroy', async () => {
+      const config = makeConfig({
+        id: 'a',
+        name: 'alpha',
+        agentComm: [
+          {
+            commNodeId: 'c1',
+            label: 'to-b',
+            targetAgentNodeId: 'b',
+            targetAgentName: 'beta',
+            protocol: 'direct',
+            maxTurns: 10,
+            maxDepth: 3,
+            tokenBudget: 100_000,
+            rateLimitPerMinute: 30,
+            messageSizeCap: 16_000,
+            direction: 'bidirectional',
+          },
+        ],
+      });
+      storagePaths.add(config.storage!.storagePath);
+
+      await manager.start(config);
+      expect(manager.commBus.listManaged().map((r) => r.agentId)).toContain('a');
+
+      manager.destroy('a');
+      expect(manager.commBus.listManaged().map((r) => r.agentId)).not.toContain('a');
+    });
+  });
+
   describe('dispatch facade', () => {
     it('dispatches a run and returns runId and sessionId', async () => {
       const config = makeConfig();

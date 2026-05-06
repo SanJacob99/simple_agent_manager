@@ -7,6 +7,7 @@ export type SettingsSectionId =
   | 'api-keys'
   | 'model-catalog'
   | 'defaults'
+  | 'sam-agent'
   | 'safety'
   | 'appearance'
   | 'colors'
@@ -62,6 +63,15 @@ export interface CronDefaults {
   retentionDays: number;
 }
 
+export interface AgentCommDefaults {
+  defaultMaxTurns: number;
+  defaultMaxDepth: number;
+  defaultTokenBudget: number;
+  defaultRateLimitPerMinute: number;
+  defaultMessageSizeCap: number;
+  defaultDirection: 'bidirectional' | 'outbound' | 'inbound';
+}
+
 export interface ChatUIDefaults {
   /** Characters per second revealed while an assistant message is streaming. */
   textRevealCharsPerSec: number;
@@ -79,7 +89,8 @@ export type DefaultsSubTab =
   | 'storage'
   | 'contextEngine'
   | 'memory'
-  | 'cron';
+  | 'cron'
+  | 'agentComm';
 
 // --- Default values ---
 
@@ -143,11 +154,40 @@ export const DEFAULT_CRON_DEFAULTS: CronDefaults = {
   retentionDays: 7,
 };
 
+export const DEFAULT_AGENT_COMM_DEFAULTS: AgentCommDefaults = {
+  defaultMaxTurns: 10,
+  defaultMaxDepth: 3,
+  defaultTokenBudget: 100_000,
+  defaultRateLimitPerMinute: 30,
+  defaultMessageSizeCap: 16_000,
+  defaultDirection: 'bidirectional',
+};
+
 export const DEFAULT_CHAT_UI_DEFAULTS: ChatUIDefaults = {
   textRevealCharsPerSec: 90,
   textRevealFadeMs: 320,
   textRevealEnabled: true,
   textRevealStructure: 'blocks',
+};
+
+// --- SAMAgent defaults ---
+
+export interface SamAgentDefaults {
+  modelSelection: {
+    provider: {
+      pluginId: string;
+      authMethodId: string;
+      envVar: string;
+      baseUrl: string;
+    };
+    modelId: string;
+  } | null;
+  thinkingLevel: ThinkingLevel;
+}
+
+export const DEFAULT_SAM_AGENT_DEFAULTS: SamAgentDefaults = {
+  modelSelection: null,
+  thinkingLevel: 'high',
 };
 
 // --- Safety (HITL) ---
@@ -215,6 +255,11 @@ export const SETTINGS_SECTIONS: Array<{
     id: 'defaults',
     label: 'Defaults',
     description: 'Choose the defaults applied to newly created nodes.',
+  },
+  {
+    id: 'sam-agent',
+    label: 'SAMAgent',
+    description: 'Model and reasoning settings for the in-app assistant.',
   },
   {
     id: 'safety',

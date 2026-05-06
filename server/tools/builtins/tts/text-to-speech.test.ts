@@ -144,7 +144,7 @@ describe('text_to_speech.speak', () => {
     expect(body.response_format).toBe('mp3');
     expect(body.voice).toBe('alloy');
 
-    expect(out).toContain('Saved to: audio/greeting.mp3');
+    expect(out).toContain(`Saved to: ${path.join('audio', 'greeting.mp3')}`);
     const written = await fs.readFile(path.join(tmpDir, 'audio', 'greeting.mp3'));
     expect(written.equals(Buffer.from([1, 2, 3, 4]))).toBe(true);
 
@@ -152,7 +152,7 @@ describe('text_to_speech.speak', () => {
     const details = (result as any).details;
     expect(details?.audio?.mimeType).toBe('audio/mpeg');
     expect(details?.audio?.data).toBe(Buffer.from([1, 2, 3, 4]).toString('base64'));
-    expect(details?.audio?.path).toBe('audio/greeting.mp3');
+    expect(details?.audio?.path).toBe(path.join('audio', 'greeting.mp3'));
     expect(details?.audio?.filename).toBe('greeting.mp3');
     expect(details?.audio?.provider).toBe('openai');
     expect(details?.audio?.transcript).toBe('hello world');
@@ -203,7 +203,7 @@ describe('text_to_speech.speak', () => {
     // Sample-rate field at offset 24 should be 24000 for OpenAI PCM.
     expect(wav.readUInt32LE(24)).toBe(24000);
     // Path on disk still references the .pcm extension.
-    expect(details?.audio?.path).toBe('audio/raw.pcm');
+    expect(details?.audio?.path).toBe(path.join('audio', 'raw.pcm'));
   });
 
   it('routes to ElevenLabs when requested and uses xi-api-key header', async () => {

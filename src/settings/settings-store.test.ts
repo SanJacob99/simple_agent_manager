@@ -7,6 +7,7 @@ import {
   DEFAULT_CONTEXT_ENGINE_DEFAULTS,
   DEFAULT_MEMORY_DEFAULTS,
   DEFAULT_CRON_DEFAULTS,
+  DEFAULT_SAM_AGENT_DEFAULTS,
 } from './types';
 
 const savedPayloads: unknown[] = [];
@@ -45,6 +46,7 @@ beforeEach(() => {
     contextEngineDefaults: DEFAULT_CONTEXT_ENGINE_DEFAULTS,
     memoryDefaults: DEFAULT_MEMORY_DEFAULTS,
     cronDefaults: DEFAULT_CRON_DEFAULTS,
+    samAgentDefaults: DEFAULT_SAM_AGENT_DEFAULTS,
     loaded: false,
   });
 });
@@ -117,5 +119,46 @@ describe('settings store', () => {
     expect(last.contextEngineDefaults.tokenBudget).toBe(64000);
     expect(last.memoryDefaults.maxSessionMessages).toBe(50);
     expect(last.cronDefaults.retentionDays).toBe(14);
+  });
+
+  it('samAgentDefaults defaults to { modelSelection: null, thinkingLevel: "high" }', () => {
+    expect(useSettingsStore.getState().samAgentDefaults).toEqual({
+      modelSelection: null,
+      thinkingLevel: 'high',
+    });
+  });
+
+  it('setSamAgentDefaults updates modelSelection', () => {
+    useSettingsStore.getState().setSamAgentDefaults({
+      modelSelection: { provider: { pluginId: 'p', authMethodId: 'a', envVar: 'E', baseUrl: '' }, modelId: 'm' },
+    });
+    expect(useSettingsStore.getState().samAgentDefaults.modelSelection?.modelId).toBe('m');
+    // thinkingLevel preserved
+    expect(useSettingsStore.getState().samAgentDefaults.thinkingLevel).toBe('high');
+  });
+
+  it('setSamAgentDefaults updates thinkingLevel independently', () => {
+    useSettingsStore.getState().setSamAgentDefaults({ thinkingLevel: 'low' });
+    expect(useSettingsStore.getState().samAgentDefaults.thinkingLevel).toBe('low');
+    expect(useSettingsStore.getState().samAgentDefaults.modelSelection).toBeNull();
+  });
+
+  it('hydrates thinkingLevel="high" when server payload omits it', async () => {
+    global.fetch = vi.fn(async () => {
+      return new Response(JSON.stringify({
+        // Persisted state from before thinkingLevel existed: only modelSelection.
+        samAgentDefaults: {
+          modelSelection: {
+            provider: { pluginId: 'openrouter', authMethodId: 'api-key', envVar: 'OPENROUTER_API_KEY', baseUrl: '' },
+            modelId: 'gemini-3-pro',
+          },
+        },
+      }), { status: 200 });
+    }) as typeof fetch;
+
+    await useSettingsStore.getState().loadFromServer();
+
+    expect(useSettingsStore.getState().samAgentDefaults.thinkingLevel).toBe('high');
+    expect(useSettingsStore.getState().samAgentDefaults.modelSelection?.modelId).toBe('gemini-3-pro');
   });
 });
