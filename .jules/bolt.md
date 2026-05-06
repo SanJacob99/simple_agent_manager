@@ -13,3 +13,6 @@
 ## 2026-04-23 - Concurrent File I/O Optimization
 **Learning:** Using sequential `for...of` loops with `await fs.stat` (or similar file system reads) in hot paths like calculating directory sizes introduces significant N+1 I/O overhead. Node.js can handle these concurrently.
 **Action:** When performing independent file system operations on a list of files (like fetching stats or reading contents), use `Promise.all()` mapped over the array to execute them concurrently.
+## 2024-05-18 - Safe Concurrent Bulk File Cleanup
+**Learning:** Running unbounded `Promise.all` loops for concurrent file system I/O over arrays of paths (e.g., in `removeOrphanTranscripts`) accelerates disk operations but causes application-crashing `EMFILE` (too many open files) limits when the directory grows.
+**Action:** Batch concurrent file operations using a chunked execution pattern (e.g., `CHUNK_SIZE = 50`) to gain the speed of concurrency without triggering OS-level file descriptor limits.
