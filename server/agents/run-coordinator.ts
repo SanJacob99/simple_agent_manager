@@ -1434,6 +1434,10 @@ export class RunCoordinator {
       record.transcriptPath = transcriptManager.getSessionFile() ?? record.transcriptPath;
     };
 
+    // Track whether we injected any per-run tools so the finally block
+    // knows whether it needs to reset the runtime back to its base tool list.
+    let perRunToolsInjected = false;
+
     try {
       this.runtime.setSessionContext(
         transcriptManager.buildSessionContext().messages as AgentMessage[],
@@ -1489,6 +1493,47 @@ export class RunCoordinator {
         const sessionTools = createSessionTools(sessionToolCtx);
         if (sessionTools.length > 0) {
           this.runtime.addTools(sessionTools);
+          perRunToolsInjected = true;
+        }
+      }
+
+      // Inject comm tools when this agent has at least one comm node configured.
+      // currentDepth is 0 because this is a user-driven turn (top of any potential
+      // comm chain). Mirrors the injection in dispatchChannel but without
+      // channel-mode specifics (system-prompt block, runOnChannel, etc.).
+      if (this.commBus && (this.config.agentComm ?? []).length > 0) {
+        const directPeerNames = (this.config.agentComm ?? [])
+          .filter((c) => c.protocol === 'direct' && c.targetAgentName !== null)
+          .map((c) => c.targetAgentName as string)
+          .filter(Boolean);
+        const hasBroadcastNode = (this.config.agentComm ?? []).some(
+          (c) => c.protocol === 'broadcast',
+        );
+        if (directPeerNames.length > 0 || hasBroadcastNode) {
+          const commTools = createAgentCommTools({
+            bus: this.commBus,
+            fromAgentId: this.agentId,
+            fromAgentName: this.config.name,
+            currentDepth: 0,
+            directPeerNames,
+            hasBroadcastNode,
+            readChannelHistory: ({ channelKey, limit }) =>
+              this.commBus!.readChannelTranscript(channelKey, limit),
+            pairNamesToChannelKey: (peer) => {
+              const peerEntry = (this.config.agentComm ?? []).find(
+                (c) => c.protocol === 'direct' && c.targetAgentName === peer,
+              );
+              if (!peerEntry?.targetAgentNodeId) {
+                throw new Error(`pairNamesToChannelKey: no direct edge to "${peer}"`);
+              }
+              return canonicalChannelKey(this.agentId, peerEntry.targetAgentNodeId);
+            },
+          });
+          const adaptedCommTools = adaptAgentCommTools(commTools);
+          if (adaptedCommTools.length > 0) {
+            this.runtime.addTools(adaptedCommTools);
+            perRunToolsInjected = true;
+          }
         }
       }
 
@@ -1803,6 +1848,14 @@ export class RunCoordinator {
       clearStreamIdleTimer();
       unsubscribe();
       await finalizeTranscript();
+      // Reset any per-run tools (session tools + comm tools) back to the
+      // runtime's base tool list. addTools([]) is the canonical "remove all
+      // per-run tools" form — matches the cleanup in dispatchChannel.
+      // Only reset if we actually injected per-run tools to avoid a spurious
+      // addTools([]) call on runs that have no per-run tools at all.
+      if (perRunToolsInjected) {
+        this.runtime.addTools([]);
+      }
       this.runtime.clearActiveSession();
     }
   }

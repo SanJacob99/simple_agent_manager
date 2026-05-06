@@ -168,127 +168,137 @@ export class AgentCommBus {
     }
 
     // ------------------------------------------------------------------
-    // 5. Channel state
+    // 5. Channel state and write path — wrapped in try/catch so that
+    //    unexpected storage throws (e.g. owner storage missing) surface
+    //    as a shaped AgentCommErrorCode rather than an unhandled exception.
+    //    Pre-flight checks above (topology, direction, size, rate) already
+    //    return shaped errors and are intentionally left outside this block.
     // ------------------------------------------------------------------
-    const senderName = senderReg.agentName;
-    const receiverName = receiverReg.agentName;
-    const receiverAgentId = receiverReg.agentId;
+    try {
+      const senderName = senderReg.agentName;
+      const receiverName = receiverReg.agentName;
+      const receiverAgentId = receiverReg.agentId;
 
-    // Sort agent IDs and names to produce the canonical pair
-    const swap = fromAgentId > receiverAgentId;
-    const pairIds: [string, string] = swap
-      ? [receiverAgentId, fromAgentId]
-      : [fromAgentId, receiverAgentId];
-    const pairNames: [string, string] = swap
-      ? [receiverName, senderName]
-      : [senderName, receiverName];
+      // Sort agent IDs and names to produce the canonical pair
+      const swap = fromAgentId > receiverAgentId;
+      const pairIds: [string, string] = swap
+        ? [receiverAgentId, fromAgentId]
+        : [fromAgentId, receiverAgentId];
+      const pairNames: [string, string] = swap
+        ? [receiverName, senderName]
+        : [senderName, receiverName];
 
-    const handle: ChannelHandle = await this.channelStore.open({
-      pair: pairIds,
-      pairNames,
-    });
-    const channelKey = handle.key;
-    const channelMeta = handle.meta;
-
-    if (channelMeta.sealed) {
-      return { ok: false, error: 'channel_sealed' };
-    }
-
-    // ------------------------------------------------------------------
-    // 6. Token budget
-    // ------------------------------------------------------------------
-    const pairTokenBudget = pairMin(senderEdge.tokenBudget, receiverEdge.tokenBudget);
-    if (channelMeta.tokensIn + channelMeta.tokensOut >= pairTokenBudget) {
-      await this.channelStore.appendAudit(channelKey, {
-        kind: 'agent-comm-audit',
-        ts: this.now(),
-        event: { type: 'limit-tripped', code: 'token_budget_exceeded', from: senderName, to: receiverName },
+      const handle: ChannelHandle = await this.channelStore.open({
+        pair: pairIds,
+        pairNames,
       });
-      await this.channelStore.seal(channelKey, 'token_budget_exceeded');
-      return { ok: false, error: 'token_budget_exceeded' };
-    }
+      const channelKey = handle.key;
+      const channelMeta = handle.meta;
 
-    // ------------------------------------------------------------------
-    // 7. Depth
-    // ------------------------------------------------------------------
-    const depth = currentDepth + 1;
-    const pairMaxDepth = pairMin(senderEdge.maxDepth, receiverEdge.maxDepth);
-    if (depth > pairMaxDepth) {
-      return { ok: false, error: 'depth_exceeded' };
-    }
+      if (channelMeta.sealed) {
+        return { ok: false, error: 'channel_sealed' };
+      }
 
-    // ------------------------------------------------------------------
-    // 8. Turn count (pre-check — actual bump happens after appendUserMessage)
-    // ------------------------------------------------------------------
-    const pairMaxTurns = pairMin(senderEdge.maxTurns, receiverEdge.maxTurns);
-    if (channelMeta.turns + 1 > pairMaxTurns) {
-      await this.channelStore.appendAudit(channelKey, {
-        kind: 'agent-comm-audit',
-        ts: this.now(),
-        event: { type: 'limit-tripped', code: 'max_turns_reached', from: senderName, to: receiverName },
-      });
-      await this.channelStore.seal(channelKey, 'max_turns_reached');
-      return { ok: false, error: 'max_turns_reached' };
-    }
+      // ------------------------------------------------------------------
+      // 6. Token budget
+      // ------------------------------------------------------------------
+      const pairTokenBudget = pairMin(senderEdge.tokenBudget, receiverEdge.tokenBudget);
+      if (channelMeta.tokensIn + channelMeta.tokensOut >= pairTokenBudget) {
+        await this.channelStore.appendAudit(channelKey, {
+          kind: 'agent-comm-audit',
+          ts: this.now(),
+          event: { type: 'limit-tripped', code: 'token_budget_exceeded', from: senderName, to: receiverName },
+        });
+        await this.channelStore.seal(channelKey, 'token_budget_exceeded');
+        return { ok: false, error: 'token_budget_exceeded' };
+      }
 
-    // ------------------------------------------------------------------
-    // Success path
-    // ------------------------------------------------------------------
+      // ------------------------------------------------------------------
+      // 7. Depth
+      // ------------------------------------------------------------------
+      const depth = currentDepth + 1;
+      const pairMaxDepth = pairMin(senderEdge.maxDepth, receiverEdge.maxDepth);
+      if (depth > pairMaxDepth) {
+        return { ok: false, error: 'depth_exceeded' };
+      }
 
-    // Build message meta
-    const msgMeta = {
-      from: `agent:${senderName}`,
-      fromAgentId,
-      to: `agent:${receiverName}`,
-      toAgentId: receiverAgentId,
-      depth,
-      channelKey,
-    };
+      // ------------------------------------------------------------------
+      // 8. Turn count (pre-check — actual bump happens after appendUserMessage)
+      // ------------------------------------------------------------------
+      const pairMaxTurns = pairMin(senderEdge.maxTurns, receiverEdge.maxTurns);
+      if (channelMeta.turns + 1 > pairMaxTurns) {
+        await this.channelStore.appendAudit(channelKey, {
+          kind: 'agent-comm-audit',
+          ts: this.now(),
+          event: { type: 'limit-tripped', code: 'max_turns_reached', from: senderName, to: receiverName },
+        });
+        await this.channelStore.seal(channelKey, 'max_turns_reached');
+        return { ok: false, error: 'max_turns_reached' };
+      }
 
-    // Append user message (bumps turns)
-    const updatedMeta = await this.channelStore.appendUserMessage(channelKey, {
-      content: message,
-      meta: msgMeta,
-    });
+      // ------------------------------------------------------------------
+      // Success path
+      // ------------------------------------------------------------------
 
-    // Append audit event
-    await this.channelStore.appendAudit(channelKey, {
-      kind: 'agent-comm-audit',
-      ts: this.now(),
-      event: {
-        type: 'send',
-        from: senderName,
-        to: receiverName,
+      // Build message meta
+      const msgMeta = {
+        from: `agent:${senderName}`,
+        fromAgentId,
+        to: `agent:${receiverName}`,
+        toAgentId: receiverAgentId,
         depth,
-        chars: message.length,
-        end,
-      },
-    });
-
-    // Record rate usage (recentTimestamps is already pruned from the rate-limit check)
-    recentTimestamps.push(nowMs);
-    this.outboundLog.set(fromAgentId, recentTimestamps);
-
-    // Determine if this send reached the maxTurns boundary
-    const isFinalTurn = updatedMeta.turns >= pairMaxTurns;
-
-    // Pre-emptive seal when we've hit the turn cap
-    if (isFinalTurn) {
-      await this.channelStore.seal(channelKey, 'max_turns_reached');
-    }
-
-    // Wake the receiver unless the sender signalled end
-    if (!end) {
-      await this.dispatchChannelWake({
         channelKey,
-        receiverAgentId,
-        senderAgentName: senderName,
-        depth,
-        isFinalTurn,
-      });
-    }
+      };
 
-    return { ok: true, depth, turns: updatedMeta.turns, queuedWake: !end };
+      // Append user message (bumps turns)
+      const updatedMeta = await this.channelStore.appendUserMessage(channelKey, {
+        content: message,
+        meta: msgMeta,
+      });
+
+      // Append audit event
+      await this.channelStore.appendAudit(channelKey, {
+        kind: 'agent-comm-audit',
+        ts: this.now(),
+        event: {
+          type: 'send',
+          from: senderName,
+          to: receiverName,
+          depth,
+          chars: message.length,
+          end,
+        },
+      });
+
+      // Record rate usage (recentTimestamps is already pruned from the rate-limit check)
+      recentTimestamps.push(nowMs);
+      this.outboundLog.set(fromAgentId, recentTimestamps);
+
+      // Determine if this send reached the maxTurns boundary
+      const isFinalTurn = updatedMeta.turns >= pairMaxTurns;
+
+      // Pre-emptive seal when we've hit the turn cap
+      if (isFinalTurn) {
+        await this.channelStore.seal(channelKey, 'max_turns_reached');
+      }
+
+      // Wake the receiver unless the sender signalled end
+      if (!end) {
+        await this.dispatchChannelWake({
+          channelKey,
+          receiverAgentId,
+          senderAgentName: senderName,
+          depth,
+          isFinalTurn,
+        });
+      }
+
+      return { ok: true, depth, turns: updatedMeta.turns, queuedWake: !end };
+    } catch {
+      // Spec §11: storage write fails → bus returns internal_error; turn
+      // counter NOT incremented (appendUserMessage threw before bumping).
+      return { ok: false, error: 'internal_error' };
+    }
   }
 
   // -------------------------------------------------------------------------

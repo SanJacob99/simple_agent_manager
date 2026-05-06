@@ -320,9 +320,12 @@ describe('RunCoordinator', () => {
       const result = await coordinator.dispatch({ sessionKey: 'selected-session-tools', text: 'Hello' });
       await coordinator.wait(result.runId, 5000);
 
-      expect(runtime.addTools).toHaveBeenCalledTimes(1);
+      // 2 calls: injection + finally-block cleanup (addTools([]))
+      expect(runtime.addTools).toHaveBeenCalledTimes(2);
       const [tools] = (runtime.addTools as any).mock.calls[0];
       expect(tools.map((tool: any) => tool.name)).toEqual(['sessions_list']);
+      // Second call is the cleanup reset
+      expect((runtime.addTools as any).mock.calls[1][0]).toEqual([]);
     });
 
     it('auto-injects sub-agent control tools when sub-agents are declared', async () => {
@@ -345,13 +348,16 @@ describe('RunCoordinator', () => {
       const result = await coordinator.dispatch({ sessionKey: 'auto-sub-tools', text: 'Hello' });
       await coordinator.wait(result.runId, 5000);
 
-      expect(runtime.addTools).toHaveBeenCalledTimes(1);
+      // 2 calls: injection + finally-block cleanup (addTools([]))
+      expect(runtime.addTools).toHaveBeenCalledTimes(2);
       const [tools] = (runtime.addTools as any).mock.calls[0];
       expect(tools.map((tool: any) => tool.name).sort()).toEqual([
         'sessions_spawn',
         'sessions_yield',
         'subagents',
       ].sort());
+      // Second call is the cleanup reset
+      expect((runtime.addTools as any).mock.calls[1][0]).toEqual([]);
     });
 
     it('upserts a durable sub-session entry when sessions_spawn persists metadata', async () => {
@@ -741,6 +747,76 @@ describe('RunCoordinator', () => {
 
       deferred.resolve();
       await coordinator.wait(first.runId, 5000);
+    });
+
+    it('injects comm tools into the runtime when commBus is set and agentComm is configured', async () => {
+      coordinator.destroy();
+      config = makeConfig(storagePath, {
+        agentComm: [
+          {
+            commNodeId: 'comm-1',
+            label: 'to-beta',
+            targetAgentNodeId: 'agent-2',
+            targetAgentName: 'beta',
+            protocol: 'direct',
+            maxTurns: 10,
+            maxDepth: 3,
+            tokenBudget: 100_000,
+            rateLimitPerMinute: 30,
+            messageSizeCap: 16_000,
+            direction: 'bidirectional',
+          },
+        ],
+      });
+      runtime = mockRuntime();
+      coordinator = new RunCoordinator('agent-1', runtime, config, storage);
+
+      // Build a minimal comm-bus stub that exposes bus.send so we can verify
+      // the tool wiring, matching the shape of makeCommBusStub in dispatchChannel tests.
+      const commBusStub = {
+        send: vi.fn(async () => ({ ok: true, depth: 1, turns: 1, queuedWake: false })),
+        broadcast: vi.fn(async () => ({ results: [] })),
+        readChannelTranscript: vi.fn(async () => []),
+        appendChannelAssistantMessages: vi.fn(async () => {}),
+        addUsage: vi.fn(async () => {}),
+        readChannel: vi.fn(async () => ({})),
+      } as any;
+      coordinator.setCommBus(commBusStub);
+
+      // Capture all tool arrays passed to addTools during the run.
+      const addToolsCalls: any[][] = [];
+      (runtime.addTools as any).mockImplementation((tools: any[]) => {
+        addToolsCalls.push(tools);
+      });
+
+      const result = await coordinator.dispatch({ sessionKey: 'comm-tools-inject', text: 'Hello' });
+      await coordinator.wait(result.runId, 5000);
+
+      // At least one addTools call should have included agent_send with depth=0.
+      const commInjection = addToolsCalls.find((tools) =>
+        tools.some((t: any) => t.name === 'agent_send'),
+      );
+      expect(commInjection).toBeDefined();
+
+      const sendTool = commInjection!.find((t: any) => t.name === 'agent_send');
+      expect(sendTool).toBeDefined();
+
+      // Execute the tool and confirm the bus is called with currentDepth: 0
+      // (user-driven turn is at the top of any potential comm chain).
+      await sendTool.execute('call-1', { to: 'beta', message: 'hello peer' });
+      expect(commBusStub.send).toHaveBeenCalledTimes(1);
+      expect(commBusStub.send.mock.calls[0][0]).toEqual(
+        expect.objectContaining({
+          fromAgentId: 'agent-1',
+          toAgentName: 'beta',
+          message: 'hello peer',
+          currentDepth: 0,
+        }),
+      );
+
+      // The final addTools([]) call resets per-run tools in the finally block.
+      const lastCall = addToolsCalls[addToolsCalls.length - 1];
+      expect(lastCall).toEqual([]);
     });
   });
 

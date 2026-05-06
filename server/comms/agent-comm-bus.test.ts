@@ -265,6 +265,24 @@ describe('AgentCommBus.broadcast', () => {
   });
 });
 
+describe('AgentCommBus.send storage error handling', () => {
+  it('returns internal_error when channelStore.open throws unexpectedly', async () => {
+    const ctx = makeBus();
+    registerPair(ctx.bus);
+    ctx.channelStore.open.mockRejectedValueOnce(new Error('disk full'));
+    const r = await ctx.bus.send({ fromAgentId: 'a', toAgentName: 'beta', message: 'hi', end: false, currentDepth: 0 });
+    expect(r).toEqual({ ok: false, error: 'internal_error' });
+  });
+
+  it('returns internal_error when channelStore.appendUserMessage throws', async () => {
+    const ctx = makeBus();
+    registerPair(ctx.bus);
+    ctx.channelStore.appendUserMessage.mockRejectedValueOnce(new Error('write failed'));
+    const r = await ctx.bus.send({ fromAgentId: 'a', toAgentName: 'beta', message: 'hi', end: false, currentDepth: 0 });
+    expect(r).toEqual({ ok: false, error: 'internal_error' });
+  });
+});
+
 describe('AgentCommBus.addUsage', () => {
   it('seals channel when totals reach pair budget', async () => {
     const ctx = makeBus();
