@@ -30,7 +30,7 @@ interface PersistedSettings {
   contextEngineDefaults: ContextEngineDefaults;
   memoryDefaults: MemoryDefaults;
   cronDefaults: CronDefaults;
-  agentCommDefaults?: AgentCommDefaults;
+  agentCommDefaults: AgentCommDefaults;
   chatUIDefaults: ChatUIDefaults;
   safety: SafetySettings;
   samAgentDefaults: SamAgentDefaults;

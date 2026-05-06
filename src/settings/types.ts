@@ -89,7 +89,8 @@ export type DefaultsSubTab =
   | 'storage'
   | 'contextEngine'
   | 'memory'
-  | 'cron';
+  | 'cron'
+  | 'agentComm';
 
 // --- Default values ---
 

@@ -24,6 +24,7 @@ const TABS: { id: DefaultsSubTab; label: string }[] = [
   { id: 'contextEngine', label: 'Context Engine' },
   { id: 'memory', label: 'Memory' },
   { id: 'cron', label: 'Cron' },
+  { id: 'agentComm', label: 'Agent Comm' },
 ];
 
 // --- Shared field components ---
@@ -591,6 +592,108 @@ function CronSubSection() {
   );
 }
 
+// --- Agent Comm sub-section ---
+
+function AgentCommSubSection() {
+  const defaults = useSettingsStore((s) => s.agentCommDefaults);
+  const setDefaults = useSettingsStore((s) => s.setAgentCommDefaults);
+
+  return (
+    <div className="space-y-4">
+      <Field label="Direction" hint="Default direction lock for new comm nodes.">
+        <select
+          aria-label="Direction"
+          value={defaults.defaultDirection}
+          onChange={(e) =>
+            setDefaults({
+              defaultDirection: e.target.value as 'bidirectional' | 'outbound' | 'inbound',
+            })
+          }
+          className={inputCls}
+        >
+          <option value="bidirectional">Bidirectional</option>
+          <option value="outbound">Outbound only</option>
+          <option value="inbound">Inbound only</option>
+        </select>
+      </Field>
+
+      <Field
+        label="Max Turns (per channel)"
+        hint="Hard ceiling on accepted sends in a channel before auto-seal."
+      >
+        <input
+          type="number"
+          aria-label="Max Turns"
+          value={defaults.defaultMaxTurns}
+          onChange={(e) => setDefaults({ defaultMaxTurns: parseInt(e.target.value) || 10 })}
+          min={1}
+          className={inputCls}
+        />
+      </Field>
+
+      <Field
+        label="Max Depth (cascade)"
+        hint="Limit on chained sends across a comm cascade."
+      >
+        <input
+          type="number"
+          aria-label="Max Depth"
+          value={defaults.defaultMaxDepth}
+          onChange={(e) => setDefaults({ defaultMaxDepth: parseInt(e.target.value) || 3 })}
+          min={1}
+          className={inputCls}
+        />
+      </Field>
+
+      <Field
+        label="Token Budget (per channel)"
+        hint="Cumulative model tokens for a channel before auto-seal."
+      >
+        <input
+          type="number"
+          aria-label="Token Budget"
+          value={defaults.defaultTokenBudget}
+          onChange={(e) => setDefaults({ defaultTokenBudget: parseInt(e.target.value) || 100000 })}
+          min={1000}
+          step={1000}
+          className={inputCls}
+        />
+      </Field>
+
+      <Field
+        label="Rate Limit (msgs/min)"
+        hint="Sender-side outbound count across all peers (rolling 60s)."
+      >
+        <input
+          type="number"
+          aria-label="Rate Limit"
+          value={defaults.defaultRateLimitPerMinute}
+          onChange={(e) =>
+            setDefaults({ defaultRateLimitPerMinute: parseInt(e.target.value) || 30 })
+          }
+          min={1}
+          className={inputCls}
+        />
+      </Field>
+
+      <Field
+        label="Message Size Cap (chars)"
+        hint="Reject outbound messages above this length."
+      >
+        <input
+          type="number"
+          aria-label="Message Size Cap"
+          value={defaults.defaultMessageSizeCap}
+          onChange={(e) => setDefaults({ defaultMessageSizeCap: parseInt(e.target.value) || 16000 })}
+          min={100}
+          step={100}
+          className={inputCls}
+        />
+      </Field>
+    </div>
+  );
+}
+
 // --- Main component with tabs ---
 
 export default function DefaultsSection() {
@@ -623,6 +726,7 @@ export default function DefaultsSection() {
       {activeTab === 'contextEngine' && <ContextEngineSubSection />}
       {activeTab === 'memory' && <MemorySubSection />}
       {activeTab === 'cron' && <CronSubSection />}
+      {activeTab === 'agentComm' && <AgentCommSubSection />}
     </div>
   );
 }
