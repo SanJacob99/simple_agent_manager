@@ -406,6 +406,12 @@ export function createImageGenerateTool(ctx: ImageGenerateContext): AgentTool<TS
             : `${filenameHint}_${i + 1}${ext}`;
 
           const outputPath = path.resolve(baseDir, filename);
+
+          // SECURITY: Prevent Path Traversal
+          if (!outputPath.startsWith(ctx.cwd + path.sep) && outputPath !== ctx.cwd) {
+            throw new Error(`Path escape detected. Cannot write to ${outputPath}`);
+          }
+
           await fs.mkdir(path.dirname(outputPath), { recursive: true });
           await fs.writeFile(outputPath, Buffer.from(img.data, 'base64'));
           savedPaths.push(path.relative(ctx.cwd, outputPath));

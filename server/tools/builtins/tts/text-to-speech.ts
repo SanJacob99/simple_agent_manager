@@ -800,6 +800,12 @@ export function createTextToSpeechTool(ctx: TextToSpeechContext): AgentTool<TSch
       const hintHasDir = hint.includes('/') || hint.includes('\\');
       const baseDir = hintHasDir ? ctx.cwd : path.resolve(ctx.cwd, AUDIO_SUBDIR);
       const outputPath = path.resolve(baseDir, `${hint}.${result.extension}`);
+
+      // SECURITY: Prevent Path Traversal
+      if (!outputPath.startsWith(ctx.cwd + path.sep) && outputPath !== ctx.cwd) {
+        throw new Error(`Path escape detected. Cannot write to ${outputPath}`);
+      }
+
       await fs.mkdir(path.dirname(outputPath), { recursive: true });
       await fs.writeFile(outputPath, result.audio);
 
