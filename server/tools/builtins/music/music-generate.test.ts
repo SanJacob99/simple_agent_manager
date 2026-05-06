@@ -149,7 +149,7 @@ describe('music_generate.generate', () => {
     expect(body.instances[0].prompt).toBe('cinematic orchestral score');
     expect(body.parameters.durationSeconds).toBe(20);
 
-    expect(out).toContain('Saved to: music/scene1.wav');
+    expect(out).toContain(`Saved to: ${path.join('music', 'scene1.wav')}`);
     const saved = await fs.readFile(path.join(tmpDir, 'music', 'scene1.wav'));
     expect(saved.equals(audio)).toBe(true);
   });

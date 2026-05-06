@@ -57,6 +57,74 @@ export default function AgentCommProperties({ nodeId, data }: Props) {
           <option value="broadcast">Broadcast</option>
         </select>
       </Field>
+
+      <Field label="Direction">
+        <select
+          className={selectClass}
+          value={data.direction}
+          onChange={(e) =>
+            update(nodeId, {
+              direction: e.target.value as 'bidirectional' | 'outbound' | 'inbound',
+            })
+          }
+        >
+          <option value="bidirectional">Bidirectional</option>
+          <option value="outbound">Outbound only</option>
+          <option value="inbound">Inbound only</option>
+        </select>
+      </Field>
+
+      <Field label="Max turns (per channel)">
+        <input
+          type="number"
+          min={1}
+          className={inputClass}
+          value={data.maxTurns}
+          onChange={(e) => update(nodeId, { maxTurns: Number(e.target.value) })}
+        />
+      </Field>
+
+      <Field label="Max depth (cascade)">
+        <input
+          type="number"
+          min={1}
+          className={inputClass}
+          value={data.maxDepth}
+          onChange={(e) => update(nodeId, { maxDepth: Number(e.target.value) })}
+        />
+      </Field>
+
+      <Field label="Token budget (per channel)">
+        <input
+          type="number"
+          min={1000}
+          step={1000}
+          className={inputClass}
+          value={data.tokenBudget}
+          onChange={(e) => update(nodeId, { tokenBudget: Number(e.target.value) })}
+        />
+      </Field>
+
+      <Field label="Rate limit (msgs/min)">
+        <input
+          type="number"
+          min={1}
+          className={inputClass}
+          value={data.rateLimitPerMinute}
+          onChange={(e) => update(nodeId, { rateLimitPerMinute: Number(e.target.value) })}
+        />
+      </Field>
+
+      <Field label="Message size cap (chars)">
+        <input
+          type="number"
+          min={100}
+          step={100}
+          className={inputClass}
+          value={data.messageSizeCap}
+          onChange={(e) => update(nodeId, { messageSizeCap: Number(e.target.value) })}
+        />
+      </Field>
     </div>
   );
 }

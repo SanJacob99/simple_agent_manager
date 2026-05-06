@@ -7,6 +7,7 @@ import { StorageEngine } from '../storage/storage-engine';
 import { SessionTranscriptStore } from './session-transcript-store';
 import { SessionRouter } from './session-router';
 import type { ResolvedStorageConfig } from '../../shared/agent-config';
+import type { ChannelSessionMeta } from '../../shared/agent-comm-types';
 
 function makeTempConfig(overrides?: Partial<ResolvedStorageConfig>): ResolvedStorageConfig {
   return {
@@ -181,6 +182,92 @@ describe('SessionRouter', () => {
       expect(status?.inputTokens).toBe(100);
       expect(status?.outputTokens).toBe(50);
       expect(status?.totalTokens).toBe(150);
+    });
+  });
+
+  describe('channel session filtering', () => {
+    it('excludes channel-session entries from listSessions()', async () => {
+      // Seed a normal session via the router.
+      await router.route({ agentId: 'agent-node-123' });
+
+      // Seed a channel session directly into the storage engine (bypassing the
+      // router, since channel entries are created by the comm bus, not the router).
+      const channelMeta: ChannelSessionMeta = {
+        pair: ['agent-node-123', 'agent-node-456'],
+        pairNames: ['AgentA', 'AgentB'],
+        ownerAgentId: 'agent-node-123',
+        turns: 0,
+        tokensIn: 0,
+        tokensOut: 0,
+        sealed: false,
+        sealedReason: null,
+        lastActivityAt: new Date().toISOString(),
+      };
+      const timestamp = new Date().toISOString();
+      await engine.createSession({
+        sessionKey: 'channel:agent-node-123:agent-node-456',
+        sessionId: 'chan-session-id',
+        agentId: 'agent-node-123',
+        sessionFile: 'sessions/chan-session-id.jsonl',
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        chatType: 'direct',
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        contextTokens: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalEstimatedCostUsd: 0,
+        compactionCount: 0,
+        channelMeta,
+      });
+
+      const sessions = await router.listSessions();
+
+      // Only the normal session should appear; the channel entry must be hidden.
+      expect(sessions).toHaveLength(1);
+      expect(sessions[0].sessionKey).toBe('agent:agent-node-123:main');
+      expect(sessions.every((s) => !s.channelMeta)).toBe(true);
+    });
+
+    it('returns channel entries directly from the storage engine (not filtered at that layer)', async () => {
+      const channelMeta: ChannelSessionMeta = {
+        pair: ['agent-node-123', 'agent-node-456'],
+        pairNames: ['AgentA', 'AgentB'],
+        ownerAgentId: 'agent-node-123',
+        turns: 0,
+        tokensIn: 0,
+        tokensOut: 0,
+        sealed: false,
+        sealedReason: null,
+        lastActivityAt: new Date().toISOString(),
+      };
+      const timestamp = new Date().toISOString();
+      const channelKey = 'channel:agent-node-123:agent-node-456';
+      await engine.createSession({
+        sessionKey: channelKey,
+        sessionId: 'chan-session-id-2',
+        agentId: 'agent-node-123',
+        sessionFile: 'sessions/chan-session-id-2.jsonl',
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        chatType: 'direct',
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        contextTokens: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalEstimatedCostUsd: 0,
+        compactionCount: 0,
+        channelMeta,
+      });
+
+      // getStatus() uses a specific key lookup — should still resolve channel entries.
+      const status = await router.getStatus(channelKey);
+      expect(status).not.toBeNull();
+      expect(status?.channelMeta).toBeDefined();
     });
   });
 });

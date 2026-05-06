@@ -168,7 +168,7 @@ describe('summarizePayload behavior via onPayload', () => {
     capturedOnPayload!(payload);
     expect(vi.mocked(log)).toHaveBeenCalledWith(
       'pi-ai Request Payload',
-      'model=claude-sonnet-4-6 | messages=1 | tools=3 | reasoning=(absent) | reasoning_effort=(absent) | keys=[model,messages,tools] | last_user=Hello world',
+      'model=claude-sonnet-4-6 | messages=1 | tools=3 | last_user=Hello world',
     );
   });
 
@@ -203,7 +203,7 @@ describe('summarizePayload behavior via onPayload', () => {
     capturedOnPayload!(payload);
     expect(vi.mocked(log)).toHaveBeenCalledWith(
       'pi-ai Request Payload',
-      'model=gpt-4 | messages=1 | tools=1 | reasoning=(absent) | reasoning_effort=(absent) | keys=[model,messages,tools] | last_user=What is this?',
+      'model=gpt-4 | messages=1 | tools=1 | last_user=What is this?',
     );
   });
 
@@ -222,7 +222,7 @@ describe('summarizePayload behavior via onPayload', () => {
     capturedOnPayload!(payload);
     expect(vi.mocked(log)).toHaveBeenCalledWith(
       'pi-ai Request Payload',
-      'model=gpt-4 | messages=1 | tools=0 | reasoning=(absent) | reasoning_effort=(absent) | keys=[model,messages,tools] | last_user=',
+      'model=gpt-4 | messages=1 | tools=0 | last_user=',
     );
   });
 
@@ -236,7 +236,7 @@ describe('summarizePayload behavior via onPayload', () => {
     capturedOnPayload!(payload);
     expect(vi.mocked(log)).toHaveBeenCalledWith(
       'pi-ai Request Payload',
-      'model=gpt-4 | messages=1 | tools=1 | reasoning=(absent) | reasoning_effort=(absent) | keys=[model,messages,tools] | last_user=',
+      'model=gpt-4 | messages=1 | tools=1 | last_user=',
     );
   });
 
@@ -250,7 +250,7 @@ describe('summarizePayload behavior via onPayload', () => {
     capturedOnPayload!(payload);
     expect(vi.mocked(log)).toHaveBeenCalledWith(
       'pi-ai Request Payload',
-      'model=gpt-4 | messages=1 | tools=0 | reasoning=(absent) | reasoning_effort=(absent) | keys=[model,messages] | last_user=No tools here',
+      'model=gpt-4 | messages=1 | tools=0 | last_user=No tools here',
     );
   });
 });

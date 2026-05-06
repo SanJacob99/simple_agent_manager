@@ -23,6 +23,7 @@ import { GraphFileStore, type PersistedGraph } from './storage/graph-file-store'
 import { resolveOutboundSystemPrompt } from './runtime/resolve-system-prompt';
 import { launchChromeForCdp } from './tools/builtins/browser/chrome-launcher';
 import { mountSubAgentRoutes } from './routes/subagents';
+import { buildAgentChannelsRouter } from './routes/agent-channels';
 import { SamAgentCoordinator } from './sam-agent/sam-agent-coordinator';
 import { AgentRuntime } from './runtime/agent-runtime';
 import path from 'path';
@@ -113,6 +114,10 @@ mountSubAgentRoutes(app, {
     }
   },
 });
+
+// --- Agent channels (peer-to-peer comms) REST routes ---
+
+app.use(buildAgentChannelsRouter(agentManager));
 
 // --- Storage engine instances ---
 

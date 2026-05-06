@@ -154,7 +154,9 @@ export class SessionRouter {
 
   async listSessions(): Promise<SessionStoreEntry[]> {
     const sessions = await this.storageEngine.listSessions();
-    return sessions.filter((session) => session.agentId === this.agentId);
+    return sessions.filter(
+      (session) => session.agentId === this.agentId && !session.channelMeta,
+    );
   }
 
   async updateAfterTurn(

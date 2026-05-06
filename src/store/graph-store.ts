@@ -146,6 +146,22 @@ function buildNodeData(nodeType: NodeType): FlowNodeData {
     };
   }
 
+  if (nodeType === 'agentComm' && defaults.type === 'agentComm') {
+    const ws = useSettingsStore.getState().agentCommDefaults;
+    if (ws) {
+      return {
+        ...defaults,
+        maxTurns: ws.defaultMaxTurns,
+        maxDepth: ws.defaultMaxDepth,
+        tokenBudget: ws.defaultTokenBudget,
+        rateLimitPerMinute: ws.defaultRateLimitPerMinute,
+        messageSizeCap: ws.defaultMessageSizeCap,
+        direction: ws.defaultDirection,
+      };
+    }
+    return defaults;
+  }
+
   return defaults;
 }
 

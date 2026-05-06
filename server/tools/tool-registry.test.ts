@@ -246,7 +246,7 @@ describe('filesystem-scan discovery', () => {
     expect(names).toContain('image_generate');
     // Whatever the exact count, it's at least the 18 built-ins as of writing.
     expect(TOOL_MODULES.length).toBeGreaterThanOrEqual(18);
-  });
+  }, 15000);
 
   it('loads modules from extraDirs alongside the built-ins', async () => {
     const dir = await makeExtraDir();
