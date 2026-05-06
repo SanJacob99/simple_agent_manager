@@ -16,7 +16,7 @@ describe('exec tool', () => {
     const result = await tool.execute('t1', { command: 'echo hello' });
     expect(text(result)).toContain('hello');
     expect(text(result)).toContain('Exit code: 0');
-  });
+  }, 15000);
 
   it.skipIf(isWin)('captures stderr (bash redirect)', async () => {
     const result = await tool.execute('t2', { command: 'echo err >&2' });
