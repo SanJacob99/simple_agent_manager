@@ -667,7 +667,7 @@ export class AgentRuntime {
             responseHeaders,
             responseBody: bodyText,
           });
-          log('pi-ai Fetch', `[RAW] Full exchange written to ${file}`);
+          if (file) log('pi-ai Fetch', `[RAW] Full exchange written to ${file}`);
         } else {
           const clone = response.clone();
           // Never await the cloned body here: doing so buffers the full stream
@@ -683,7 +683,7 @@ export class AgentRuntime {
                 responseHeaders,
                 responseBody: bodyText,
               });
-              log('pi-ai Fetch', `[RAW] Full exchange written to ${file}`);
+              if (file) log('pi-ai Fetch', `[RAW] Full exchange written to ${file}`);
             })
             .catch((err) => {
               log('pi-ai Fetch', `[BODY_ERROR] ${err instanceof Error ? err.message : String(err)}`);
