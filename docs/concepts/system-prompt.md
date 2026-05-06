@@ -3,7 +3,7 @@
 > How SAM assembles the system prompt that every agent run receives.
 
 <!-- source: shared/system-prompt-builder.ts, server/runtime/resolve-system-prompt.ts -->
-<!-- last-verified: 2026-04-23 -->
+<!-- last-verified: 2026-05-04 -->
 
 ## Overview
 
@@ -38,16 +38,17 @@ In `auto` and `append` modes, the builder emits these sections in order. Optiona
 | 2 | `tooling` | `toolsSummary` is non-null | Structured-tool guidance + the comma-separated list of enabled tool names |
 | 3 | `executionBias` | Always | Act-in-turn, continue-until-done, recover, verify |
 | 4 | `safety` | Always | Default safety block, with `safetyGuardrails` user text appended when provided |
-| 5 | `skills` | `skillsSummary` is non-null | Pre-built Skills section body (bundled/tags/inline mix) |
-| 6 | `selfUpdate` | `selfUpdate.enabled` | Names the config-inspection/patch tools and the protected-paths list |
-| 7 | `workspace` | `workspacePath` is non-null | Working directory and optional injected bootstrap files (per-file + total char caps) |
-| 8 | `documentation` | `docsPath` is set | Local path to SAM docs |
-| 9 | `sandbox` | `sandbox` is set | Sandbox mode, whether sandboxed, elevated exec availability, sandbox paths |
-| 10 | `time` | `timezone` is non-null | ISO-8601 current time and IANA timezone |
-| 11 | `replyTags` | `replyTags` is set | Whether the provider supports reply tags, with example |
-| 12 | `heartbeats` | `heartbeats` is set | Heartbeat prompt/ack tokens, or an "heartbeats disabled" note |
-| 13 | `runtime` | Always | One-line `Runtime: host=… \| os=… \| node=… \| model=… \| repo=…` |
-| 14 | `reasoning` | Always | Reasoning visibility level and thinking-effort note |
+| 5 | `trustBoundaries` | Always | Prompt-injection defense: frames tool output, fetched pages, and pasted content as untrusted DATA with concrete rules for handling injection attempts |
+| 6 | `skills` | `skillsSummary` is non-null | Pre-built Skills section body (bundled/tags/inline mix) |
+| 7 | `selfUpdate` | `selfUpdate.enabled` | Names the config-inspection/patch tools and the protected-paths list |
+| 8 | `workspace` | `workspacePath` is non-null | Working directory and optional injected bootstrap files (per-file + total char caps) |
+| 9 | `documentation` | `docsPath` is set | Local path to SAM docs |
+| 10 | `sandbox` | `sandbox` is set | Sandbox mode, whether sandboxed, elevated exec availability, sandbox paths |
+| 11 | `time` | `timezone` is non-null | ISO-8601 current time and IANA timezone |
+| 12 | `replyTags` | `replyTags` is set | Whether the provider supports reply tags, with example |
+| 13 | `heartbeats` | `heartbeats` is set | Heartbeat prompt/ack tokens, or an "heartbeats disabled" note |
+| 14 | `runtime` | Always | One-line `Runtime: host=… \| os=… \| node=… \| model=… \| repo=…` |
+| 15 | `reasoning` | Always | Reasoning visibility level and thinking-effort note |
 
 ### Why the Runtime line omits `thinking=<level>`
 

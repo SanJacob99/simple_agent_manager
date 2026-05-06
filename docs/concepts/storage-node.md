@@ -3,7 +3,7 @@
 > Provides filesystem-based persistence for agent sessions, routed transcripts, and memory files.
 
 <!-- source: src/types/nodes.ts#StorageNodeData -->
-<!-- last-verified: 2026-04-27 -->
+<!-- last-verified: 2026-05-04 -->
 
 ## Overview
 
@@ -34,6 +34,14 @@ Only one Storage Node can be connected per agent. For embedding or semantic retr
 | `idleResetEnabled` | `boolean` | `false` | Whether inactive sessions should auto-reset |
 | `idleResetMinutes` | `number` | `60` | Idle timeout in minutes before an automatic reset |
 | `parentForkMaxTokens` | `number` | `100000` | Max token count for carrying the prior transcript forward as `parentSession` on reset |
+| `maintenanceMode` | `'warn' \| 'enforce'` | `"warn"` | Whether maintenance violations log a warning or actively block writes |
+| `pruneAfterDays` | `number` | `30` | Sessions older than this (days) are pruned during maintenance |
+| `maxEntries` | `number` | `500` | Maximum session entries before the oldest are pruned |
+| `rotateBytes` | `number` | `10485760` | Rotate transcript files when they exceed this size in bytes (10 MB) |
+| `resetArchiveRetentionDays` | `number` | `30` | How many days to keep archived reset transcripts |
+| `maxDiskBytes` | `number` | `0` | Total disk budget for this agent's storage directory. `0` = unlimited |
+| `highWaterPercent` | `number` | `80` | Percentage of `maxDiskBytes` at which a high-water warning fires |
+| `maintenanceIntervalMinutes` | `number` | `60` | How often the maintenance sweep runs (minutes) |
 
 ## Runtime Behavior
 
@@ -77,6 +85,14 @@ When a user deletes an agent from the canvas and confirms "delete agent and data
   "dailyResetHour": 4,
   "idleResetEnabled": false,
   "idleResetMinutes": 60,
-  "parentForkMaxTokens": 100000
+  "parentForkMaxTokens": 100000,
+  "maintenanceMode": "warn",
+  "pruneAfterDays": 30,
+  "maxEntries": 500,
+  "rotateBytes": 10485760,
+  "resetArchiveRetentionDays": 30,
+  "maxDiskBytes": 0,
+  "highWaterPercent": 80,
+  "maintenanceIntervalMinutes": 60
 }
 ```
