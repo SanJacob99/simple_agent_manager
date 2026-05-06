@@ -21,7 +21,7 @@ The project is built with React 19, TypeScript, `@xyflow/react`, and `@mariozech
 
 - Interactive chat is blocked unless an agent has both a connected `Context Engine` node and a connected `Storage` node.
 - OpenRouter model discovery is live; the other providers currently use curated static model lists in the UI.
-- Several node types and tool names are still extension surfaces rather than fully wired product features. In particular, `connectors`, `agentComm`, `vectorDatabase`, and `cron` need runtime inspection before you treat them as end-to-end features.
+- Several node types and tool names are still extension surfaces rather than fully wired product features. In particular, `connectors`, `vectorDatabase`, and `cron` need runtime inspection before you treat them as end-to-end features. Peer-to-peer agent comms (`agentComm`) is wired in v1 with safety and loop controls (turn/depth/token limits, rate limiting, channel-session isolation).
 - The current built-in tool surface includes real implementations for `calculator`, `web_fetch`, memory tools, and session tools. Many other named tools are placeholders/stubs.
 
 ## Node palette
