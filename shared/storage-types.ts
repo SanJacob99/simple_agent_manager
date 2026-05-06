@@ -1,4 +1,5 @@
 import type { SubAgentSessionMeta } from './sub-agent-types';
+import type { ChannelSessionMeta } from './agent-comm-types';
 
 export interface SessionSkillsSnapshot {
   version: number;
@@ -93,6 +94,14 @@ export interface SessionStoreEntry {
    * on the parent's transcript as a `sam.sub_agent_spawn` custom entry.
    */
   subAgentMeta?: SubAgentSessionMeta;
+
+  /**
+   * Channel metadata for agent-comm channel sessions (sessionKey shape
+   * `channel:<lo>:<hi>`). Tracks turn counts, token usage, seal state, and
+   * the last-activity timestamp. Mutable: updated by the channel bus on
+   * each accepted send and on seal.
+   */
+  channelMeta?: ChannelSessionMeta;
 }
 
 export interface SessionEntry {

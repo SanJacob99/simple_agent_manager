@@ -62,6 +62,16 @@ export interface ChatSession {
 
 export type TranscriptStatus = 'idle' | 'loading' | 'ready';
 
+export interface PeerChannelSummary {
+  channelKey: string;
+  peerAgentId: string;
+  peerAgentName: string;
+  turns: number;
+  sealed: boolean;
+  sealedReason: 'max_turns_reached' | 'token_budget_exceeded' | 'manual' | null;
+  lastActivityAt: string;
+}
+
 function extractMessageContent(content: unknown): string {
   if (typeof content === 'string') {
     return content;
@@ -278,6 +288,9 @@ interface SessionStore {
   fetchBranchTree: (sessionKey: string) => Promise<BranchTree | null>;
   selectBranch: (sessionKey: string, branchPath: string[]) => void;
   fetchLineage: (sessionKey: string) => Promise<SessionLineage | null>;
+
+  listPeerChannels: (agentId: string) => Promise<PeerChannelSummary[]>;
+  fetchPeerChannelTranscript: (agentId: string, channelKey: string, limit?: number) => Promise<unknown[]>;
 }
 
 export const useSessionStore = create<SessionStore>()((set, get) => ({
@@ -705,5 +718,18 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     const storageEngine = get().storageEngines[session.agentId] ?? get().storageEngine;
     if (!storageEngine) return null;
     return storageEngine.fetchLineage(sessionKey);
+  },
+
+  listPeerChannels: async (agentId) => {
+    const res = await fetch(`/api/agents/${encodeURIComponent(agentId)}/channels`);
+    if (!res.ok) return [];
+    return (await res.json()) as PeerChannelSummary[];
+  },
+
+  fetchPeerChannelTranscript: async (agentId, channelKey, limit = 50) => {
+    const url = `/api/agents/${encodeURIComponent(agentId)}/channels/${encodeURIComponent(channelKey)}/transcript?limit=${limit}`;
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    return (await res.json()) as unknown[];
   },
 }));

@@ -24,6 +24,53 @@ import {
 import { useSessionStore } from './session-store';
 import { useAgentConnectionStore } from './agent-connection-store';
 import { useSettingsStore } from '../settings/settings-store';
+import {
+  axialKey,
+  buildOccupiedCellSet,
+  snapNodePositionToFreeCell,
+} from '../utils/hex-snap';
+import type { WorkflowPatch, GraphSnapshot } from '../../shared/sam-agent/workflow-patch';
+import { redactGraphSnapshot } from '../../shared/sam-agent/workflow-patch';
+
+/**
+ * Anchor SAMAgent-emitted nodes near the existing graph so they're visible
+ * in the current viewport. Returns a position to use when the model doesn't
+ * supply one or supplies coordinates that look like they'd be off-screen.
+ *
+ * If the canvas is empty we just start at the origin; otherwise we drop
+ * new nodes ~150px below the existing bounding box and let the caller
+ * cascade them in a 4-column grid.
+ */
+function computeLayoutOrigin(existingNodes: AppNode[]): { x: number; y: number } {
+  if (existingNodes.length === 0) return { x: 100, y: 100 };
+  let maxY = -Infinity;
+  let minX = Infinity;
+  for (const n of existingNodes) {
+    if (n.position.y > maxY) maxY = n.position.y;
+    if (n.position.x < minX) minX = n.position.x;
+  }
+  return { x: minX, y: maxY + 150 };
+}
+
+/**
+ * Coordinate sanity check. The model sometimes emits negative or very small
+ * positions that overlap or sit outside the user's current viewport. We
+ * accept positions only if they're within a reasonable margin of the
+ * existing graph's bounding box. Empty graph → accept anything.
+ */
+function isReasonablePosition(pos: { x: number; y: number }, existingNodes: AppNode[]): boolean {
+  if (existingNodes.length === 0) return true;
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const n of existingNodes) {
+    if (n.position.x < minX) minX = n.position.x;
+    if (n.position.x > maxX) maxX = n.position.x;
+    if (n.position.y < minY) minY = n.position.y;
+    if (n.position.y > maxY) maxY = n.position.y;
+  }
+  const margin = 800;
+  return pos.x >= minX - margin && pos.x <= maxX + margin
+      && pos.y >= minY - margin && pos.y <= maxY + margin;
+}
 
 function buildNodeData(nodeType: NodeType): FlowNodeData {
   const defaults = getDefaultNodeData(nodeType);
@@ -99,6 +146,22 @@ function buildNodeData(nodeType: NodeType): FlowNodeData {
     };
   }
 
+  if (nodeType === 'agentComm' && defaults.type === 'agentComm') {
+    const ws = useSettingsStore.getState().agentCommDefaults;
+    if (ws) {
+      return {
+        ...defaults,
+        maxTurns: ws.defaultMaxTurns,
+        maxDepth: ws.defaultMaxDepth,
+        tokenBudget: ws.defaultTokenBudget,
+        rateLimitPerMinute: ws.defaultRateLimitPerMinute,
+        messageSizeCap: ws.defaultMessageSizeCap,
+        direction: ws.defaultDirection,
+      };
+    }
+    return defaults;
+  }
+
   return defaults;
 }
 
@@ -134,6 +197,9 @@ interface GraphStore {
   cancelDeleteAgent: () => void;
 
   loadGraph: (nodes: AppNode[], edges: Edge[]) => void;
+
+  applyPatch: (patch: WorkflowPatch) => { ok: true } | { ok: false; error: string };
+  buildGraphSnapshot: () => GraphSnapshot;
 }
 
 export const useGraphStore = create<GraphStore>((set, get) => ({
@@ -290,6 +356,120 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
           ? { ...node, data: { ...node.data, ...data } as FlowNodeData }
           : node,
       ),
+    });
+  },
+
+  applyPatch: (patch: WorkflowPatch): { ok: true } | { ok: false; error: string } => {
+    // Zustand state is immutable; capturing the array references is enough for rollback.
+    const snapshotNodes = get().nodes;
+    const snapshotEdges = get().edges;
+    try {
+      const tempIdToFinalId = new Map<string, string>();
+
+      // Compute a layout origin near the existing graph so newly-added nodes
+      // are visible regardless of what positions the model emitted. If the
+      // model didn't supply positions (or supplied off-screen ones) we anchor
+      // the new cluster below the existing graph's bounding box.
+      const layoutOrigin = computeLayoutOrigin(snapshotNodes);
+      let layoutCursor = 0;
+      const occupiedCells = buildOccupiedCellSet(snapshotNodes);
+
+      const reserveHoneycombPosition = (preferredPosition: XYPosition): XYPosition => {
+        const { position, cell } = snapNodePositionToFreeCell(preferredPosition, occupiedCells);
+        occupiedCells.add(axialKey(cell));
+        return position;
+      };
+
+      const nextFallbackPosition = (): XYPosition => {
+        const index = layoutCursor++;
+        return {
+          x: layoutOrigin.x + (index % 4) * 180,
+          y: layoutOrigin.y + Math.floor(index / 4) * 200,
+        };
+      };
+
+      const newNodes: AppNode[] = patch.add_nodes.map((add) => {
+        const id = createNodeId();
+        tempIdToFinalId.set(add.tempId, id);
+        const defaults = getDefaultNodeData(add.type);
+        // Trusts the validator (server/sam-agent/sam-agent-validators.ts) for shape.
+        const data = { ...defaults, ...add.data, type: add.type } as FlowNodeData;
+        const preferredPosition = add.position && isReasonablePosition(add.position, snapshotNodes)
+          ? add.position
+          : nextFallbackPosition();
+        const position = reserveHoneycombPosition(preferredPosition);
+        return {
+          id,
+          type: add.type,
+          position,
+          data,
+        };
+      });
+
+      const removedSet = new Set(patch.remove_nodes);
+      const removedEdgeSet = new Set(patch.remove_edges);
+
+      const updatedNodes = snapshotNodes
+        .filter((n) => !removedSet.has(n.id))
+        .map((n) => {
+          const upd = patch.update_nodes.find((u) => u.id === n.id);
+          if (!upd) return n;
+          return { ...n, data: { ...n.data, ...upd.dataPatch } as FlowNodeData };
+        });
+
+      const resolveEndpoint = (raw: string): string => tempIdToFinalId.get(raw) ?? raw;
+
+      const newEdges: Edge[] = patch.add_edges.map((e) => {
+        const source = resolveEndpoint(e.source);
+        const target = resolveEndpoint(e.target);
+        return {
+          id: `edge_${source}_${target}`,
+          source,
+          target,
+          type: 'data',
+          animated: true,
+        };
+      });
+
+      const filteredEdges = snapshotEdges
+        .filter((e) => !removedEdgeSet.has(e.id))
+        .filter((e) => !removedSet.has(e.source) && !removedSet.has(e.target));
+
+      const finalNodes = [...updatedNodes, ...newNodes];
+      const finalEdges = [...filteredEdges, ...newEdges];
+      set({
+        nodes: finalNodes,
+        edges: finalEdges,
+      });
+
+      // Cross-store cleanup runs AFTER set() so a subscriber throw during commit
+      // doesn't strand half the cleanup. destroyAgent / clearActiveSession are
+      // teardowns and cannot be undone by the catch block.
+      for (const removedId of patch.remove_nodes) {
+        useSessionStore.getState().clearActiveSession(removedId);
+        useAgentConnectionStore.getState().destroyAgent(removedId);
+      }
+
+      // Persist immediately. The debounced auto-save subscriber would
+      // eventually catch this, but a deliberate user action like Apply
+      // shouldn't depend on the debouncer firing — we want the patch to
+      // survive a tab close right after Apply.
+      const persisted = { nodes: finalNodes, edges: finalEdges };
+      saveGraph(persisted);
+      void saveGraphToServer(persisted);
+
+      return { ok: true };
+    } catch (err) {
+      set({ nodes: snapshotNodes, edges: snapshotEdges });
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+
+  buildGraphSnapshot: (): GraphSnapshot => {
+    const { nodes, edges } = get();
+    return redactGraphSnapshot({
+      nodes: nodes.map((n) => ({ id: n.id, type: n.type, data: n.data as Record<string, unknown> })),
+      edges: edges.map((e) => ({ id: e.id, source: e.source, target: e.target })),
     });
   },
 

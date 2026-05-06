@@ -32,6 +32,7 @@ describe('ui layout store', () => {
     ).toEqual({
       propertiesPanelWidth: 340,
       chatDrawerWidth: 610,
+      chatPanelOpen: true,
     });
   });
 });

@@ -2,6 +2,7 @@ import type WebSocket from 'ws';
 import type { AgentManager } from '../agents/agent-manager';
 import type { ApiKeyStore } from '../auth/api-keys';
 import type { Command, AgentStateEvent, HitlListResultEvent } from '../../shared/protocol';
+import type { SamAgentCoordinator, SamAgentEventEnvelope } from '../sam-agent/sam-agent-coordinator';
 import { log, logError, logConsoleAndFile } from '../logger';
 
 /**
@@ -12,9 +13,26 @@ export function handleConnection(
   socket: WebSocket,
   manager: AgentManager,
   apiKeys: ApiKeyStore,
+  samAgent?: SamAgentCoordinator,
+  samAgentBroadcasters?: Set<(envelope: SamAgentEventEnvelope) => void>,
 ): void {
   logConsoleAndFile('ws', 'Client connected');
   const pendingStarts = new Map<string, Promise<void>>();
+
+  // Register a per-socket broadcaster for samAgent:event envelopes.
+  // It is added immediately on connection so that events emitted during
+  // the very first dispatch turn are not lost.
+  if (samAgent && samAgentBroadcasters) {
+    const broadcastFn = (envelope: SamAgentEventEnvelope) => {
+      if (socket.readyState === socket.OPEN) {
+        socket.send(JSON.stringify(envelope));
+      }
+    };
+    samAgentBroadcasters.add(broadcastFn);
+    socket.on('close', () => {
+      samAgentBroadcasters.delete(broadcastFn);
+    });
+  }
 
   socket.on('message', async (data) => {
     let command: Command;
@@ -242,6 +260,61 @@ export function handleConnection(
 
         case 'config:setApiKeys': {
           apiKeys.setAll(command.keys);
+          break;
+        }
+
+        // --- SAMAgent commands ---
+
+        case 'samAgent:start': {
+          if (samAgent) {
+            const messages = await samAgent.readTranscript();
+            socket.send(JSON.stringify({ type: 'samAgent:transcript', messages }));
+          }
+          break;
+        }
+
+        case 'samAgent:prompt': {
+          if (samAgent && samAgentBroadcasters) {
+            // Run dispatch in the background; events stream to the client via broadcaster.
+            samAgent.dispatch({
+              text: command.text,
+              currentGraph: command.currentGraph,
+              modelSelection: command.modelSelection,
+            }).catch((err) => {
+              samAgentBroadcasters.forEach((fn) => fn({
+                type: 'samAgent:event',
+                event: {
+                  type: 'lifecycle:error',
+                  error: err instanceof Error ? err.message : String(err),
+                },
+              }));
+            });
+          }
+          break;
+        }
+
+        case 'samAgent:abort': {
+          samAgent?.abort();
+          break;
+        }
+
+        case 'samAgent:clear': {
+          if (samAgent) {
+            await samAgent.clear();
+            socket.send(JSON.stringify({ type: 'samAgent:transcript', messages: [] }));
+          }
+          break;
+        }
+
+        case 'samAgent:hitlRespond': {
+          samAgent?.resolveHitl(command.toolCallId, command.answer);
+          break;
+        }
+
+        case 'samAgent:patchState': {
+          if (samAgent) {
+            await samAgent.updatePatchState(command.messageId, command.toolCallId, command.state);
+          }
           break;
         }
       }

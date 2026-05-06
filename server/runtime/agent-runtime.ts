@@ -440,6 +440,27 @@ export class AgentRuntime {
   }
 
   /**
+   * Append a transient system-prompt block for the *next* run only.
+   * Returns a restore function that puts the prior system prompt back.
+   * Used by channel-mode dispatch to inject the channel-context block
+   * (peer name, sealed notice) without permanently mutating
+   * `agent.state.systemPrompt`.
+   */
+  appendSystemPromptBlock(block: string): () => void {
+    const previous = this.agent.state.systemPrompt;
+    const trimmed = block.trim();
+    if (trimmed.length === 0) {
+      return () => {};
+    }
+    this.agent.state.systemPrompt = previous
+      ? `${previous}\n\n${trimmed}`
+      : trimmed;
+    return () => {
+      this.agent.state.systemPrompt = previous;
+    };
+  }
+
+  /**
    * Replace per-run tools on the agent (e.g. session tools). Resets to
    * base tools first so repeated calls don't accumulate duplicates.
    */
@@ -569,10 +590,43 @@ export class AgentRuntime {
   }
 
   async prompt(text: string, attachments?: ImageAttachment[]): Promise<void> {
+    return this.runWithFetchLogging(async () => {
+      const images = attachments?.map((a) => ({ type: 'image' as const, data: a.data, mimeType: a.mimeType }));
+      await this.agent.prompt(text, images?.length ? images : undefined);
+    });
+  }
+
+  /**
+   * Channel-mode run path. The bus has already appended the inbound user
+   * message to the channel transcript and pushed the resulting message
+   * list into `agent.state.messages` (via `setSessionContext`). Calling
+   * `agent.continue()` here drives the next assistant turn against the
+   * existing transcript WITHOUT appending a fresh user message — which
+   * is the critical difference from the regular `prompt()` path.
+   *
+   * The `channelContextBlock` and channel-mode tools must be set on the
+   * runtime BEFORE this is called (the coordinator does that). Restoring
+   * the system prompt and base tools after the run is also the
+   * coordinator's job (it owns the lifetime of the per-run injection).
+   */
+  async runOnChannel(): Promise<void> {
+    return this.runWithFetchLogging(async () => {
+      await this.agent.continue();
+    });
+  }
+
+  /**
+   * Wrap a model invocation with the project's fetch-logging shim.
+   * Captures non-2xx error messages on `lastApiError` and writes raw
+   * request/response bodies to the apiExchange log for debugging.
+   * Shared by `prompt()` (interactive turn) and `runOnChannel()`
+   * (channel-mode turn).
+   */
+  private async runWithFetchLogging(invoke: () => Promise<void>): Promise<void> {
     this.lastApiError = null;
     const originalFetch = globalThis.fetch;
     // The wrapper is swapped into globalThis.fetch for the duration of the
-    // whole prompt(). Restoring it inside the wrapper's own `finally` (as a
+    // whole run. Restoring it inside the wrapper's own `finally` (as a
     // previous revision did) would unwrap after the very first fetch, so
     // subsequent turns in the same agent loop would bypass logging.
     globalThis.fetch = async (...args) => {
@@ -650,8 +704,7 @@ export class AgentRuntime {
     };
 
     try {
-      const images = attachments?.map((a) => ({ type: 'image' as const, data: a.data, mimeType: a.mimeType }));
-      await this.agent.prompt(text, images?.length ? images : undefined);
+      await invoke();
 
       this.warnIfReasoningSilentlyDropped();
 

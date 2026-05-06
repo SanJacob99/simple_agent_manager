@@ -1,5 +1,7 @@
 import type { AgentConfig } from './agent-config';
 import type { RunPayload, RunUsage, StructuredError, WaitResult } from './run-types';
+import type { GraphSnapshot } from './sam-agent/workflow-patch';
+import type { SamAgentEventEnvelope } from './sam-agent/protocol-types';
 
 // --- Commands (frontend → backend) ---
 
@@ -93,6 +95,53 @@ export interface SetApiKeysCommand {
   keys: Record<string, string>;
 }
 
+// --- SAMAgent commands (frontend → backend) ---
+
+export interface SamAgentStartCommand {
+  type: 'samAgent:start';
+}
+
+export interface SamAgentPromptCommand {
+  type: 'samAgent:prompt';
+  text: string;
+  currentGraph: GraphSnapshot;
+  modelSelection: {
+    provider: { pluginId: string; authMethodId: string; envVar: string; baseUrl: string };
+    modelId: string;
+    /** Reasoning effort. Optional for older clients; server defaults to 'high'. */
+    thinkingLevel?: string;
+  };
+}
+
+export interface SamAgentAbortCommand {
+  type: 'samAgent:abort';
+}
+
+export interface SamAgentClearCommand {
+  type: 'samAgent:clear';
+}
+
+export interface SamAgentHitlRespondCommand {
+  type: 'samAgent:hitlRespond';
+  toolCallId: string;
+  answer: { kind: 'text'; answer: string } | { kind: 'confirm'; answer: 'yes' | 'no' };
+}
+
+export interface SamAgentPatchStateCommand {
+  type: 'samAgent:patchState';
+  messageId: string;
+  toolCallId: string;
+  state: 'applied' | 'discarded' | 'failed';
+}
+
+export type SamAgentCommand =
+  | SamAgentStartCommand
+  | SamAgentPromptCommand
+  | SamAgentAbortCommand
+  | SamAgentClearCommand
+  | SamAgentHitlRespondCommand
+  | SamAgentPatchStateCommand;
+
 export type Command =
   | AgentStartCommand
   | AgentPromptCommand
@@ -104,7 +153,8 @@ export type Command =
   | SetApiKeysCommand
   | HitlRespondCommand
   | HitlListCommand
-  | SessionSetConfigCommand;
+  | SessionSetConfigCommand
+  | SamAgentCommand;
 
 // --- Events (backend → frontend) ---
 
@@ -434,4 +484,5 @@ export type ServerEvent =
   | HitlResolvedEvent
   | HitlListResultEvent
   | ContextUsageEvent
-  | McpStatusEvent;
+  | McpStatusEvent
+  | SamAgentEventEnvelope;

@@ -10,18 +10,16 @@ import {
   Cloud,
   Plug,
   Bot,
-  Search,
 } from 'lucide-react';
 import type { NodeType } from '../types/nodes';
-import { NODE_COLORS, NODE_LABELS } from '../utils/theme';
-import {
-  useMemo,
-  useRef,
-  useState,
-  type DragEvent,
-  type ReactNode,
-} from 'react';
+import { NODE_COLORS, NODE_LABELS, NODE_PASTEL } from '../utils/theme';
+import { useRef, type DragEvent, type ReactNode } from 'react';
 import { useReactFlow } from '@xyflow/react';
+import { useUILayoutStore } from '../store/ui-layout-store';
+import {
+  CHAT_PANEL_CLOSED_WIDTH,
+  CHAT_PANEL_OPEN_WIDTH,
+} from '../chat/SAMAgent';
 import {
   HEX_HEIGHT,
   HEX_WIDTH,
@@ -47,29 +45,36 @@ interface PaletteItem {
   icon: ReactNode;
 }
 
+const ICON_SIZE = 26;
+const ICON_STROKE = 2.2;
+
 const CORE_ITEMS: PaletteItem[] = [
   {
     type: 'agent',
-    icon: <img src="/svg/favicon.svg" alt="" width={20} height={20} />,
+    icon: <img src="/svg/favicon.svg" alt="" width={ICON_SIZE} height={ICON_SIZE} />,
   },
 ];
 
 const PERIPHERAL_ITEMS: PaletteItem[] = [
-  { type: 'memory', icon: <BrainCircuit size={18} /> },
-  { type: 'tools', icon: <PocketKnife size={18} /> },
-  { type: 'skills', icon: <GraduationCap size={18} /> },
-  { type: 'contextEngine', icon: <ScrollText size={18} /> },
-  { type: 'agentComm', icon: <Radio size={18} /> },
-  { type: 'connectors', icon: <Cable size={18} /> },
-  { type: 'storage', icon: <HardDrive size={18} /> },
-  { type: 'vectorDatabase', icon: <Blocks size={18} /> },
-  { type: 'mcp', icon: <Plug size={18} /> },
-  { type: 'provider' as NodeType, icon: <Cloud size={18} /> },
-  { type: 'subAgent', icon: <Bot size={18} /> },
+  { type: 'memory', icon: <BrainCircuit size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
+  { type: 'tools', icon: <PocketKnife size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
+  { type: 'skills', icon: <GraduationCap size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
+  { type: 'contextEngine', icon: <ScrollText size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
+  { type: 'agentComm', icon: <Radio size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
+  { type: 'connectors', icon: <Cable size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
+  { type: 'storage', icon: <HardDrive size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
+  { type: 'vectorDatabase', icon: <Blocks size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
+  { type: 'mcp', icon: <Plug size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
+  { type: 'provider' as NodeType, icon: <Cloud size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
+  { type: 'subAgent', icon: <Bot size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
 ];
+
+const TILE_SHADOW =
+  '0 4px 10px -4px rgba(120,90,60,0.18), 0 1px 2px rgba(120,90,60,0.06), inset 0 0 0 1px rgba(255,255,255,0.6)';
 
 function DraggableItem({ item }: { item: PaletteItem }) {
   const color = NODE_COLORS[item.type];
+  const pastel = NODE_PASTEL[item.type];
   const label = NODE_LABELS[item.type];
   const previewRef = useRef<HTMLDivElement | null>(null);
   const { getViewport } = useReactFlow();
@@ -94,18 +99,19 @@ function DraggableItem({ item }: { item: PaletteItem }) {
       <div
         draggable
         onDragStart={onDragStart}
-        className="group flex cursor-grab items-center gap-3 rounded-lg px-2.5 py-2.5 transition-colors hover:bg-slate-800/60 active:cursor-grabbing"
+        className="group/item flex cursor-grab items-center gap-3 active:cursor-grabbing"
       >
         <span
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
+          className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[18px] transition-transform duration-200 ease-out group-hover/item:scale-[1.04]"
           style={{
-            backgroundColor: `color-mix(in srgb, ${color} 18%, transparent)`,
-            color,
+            backgroundColor: pastel.bg,
+            color: pastel.fg,
+            boxShadow: TILE_SHADOW,
           }}
         >
           {item.icon}
         </span>
-        <span className="text-sm font-medium text-slate-300 group-hover:text-slate-100">
+        <span className="whitespace-nowrap text-sm font-medium text-stone-700 opacity-0 transition-opacity duration-200 ease-out group-hover/item:text-stone-900 group-hover:opacity-100">
           {label}
         </span>
       </div>
@@ -162,115 +168,64 @@ export default function Sidebar({
   activeSettingsSection,
   onSettingsSectionChange,
 }: SidebarProps) {
-  const [query, setQuery] = useState('');
-
-  const normalizedQuery = query.trim().toLowerCase();
-
-  const filteredCore = useMemo(
-    () =>
-      normalizedQuery
-        ? CORE_ITEMS.filter((item) =>
-          NODE_LABELS[item.type].toLowerCase().includes(normalizedQuery),
-        )
-        : CORE_ITEMS,
-    [normalizedQuery],
-  );
-
-  const filteredPeripherals = useMemo(
-    () =>
-      normalizedQuery
-        ? PERIPHERAL_ITEMS.filter((item) =>
-          NODE_LABELS[item.type].toLowerCase().includes(normalizedQuery),
-        )
-        : PERIPHERAL_ITEMS,
-    [normalizedQuery],
-  );
+  const chatPanelOpen = useUILayoutStore((s) => s.chatPanelOpen);
+  const chatPanelWidth = chatPanelOpen
+    ? CHAT_PANEL_OPEN_WIDTH
+    : CHAT_PANEL_CLOSED_WIDTH;
+  // Chat panel sits at left-3 (12px). Add panel width + 12px gap.
+  const sidebarLeft = 12 + chatPanelWidth + 12;
 
   return (
-    <aside className="flex w-56 shrink-0 flex-col border-r border-slate-700 bg-canvas-bg">
-      {/* Header */}
-      <div className="px-4 pb-3 pt-4">
-        <h1 className="text-sm font-bold text-slate-100">Agent Manager</h1>
-      </div>
+    <div className="relative w-0 shrink-0">
+      <aside
+        className="group absolute top-1/2 z-30 flex max-h-[calc(100vh-24px)] w-[84px] -translate-y-1/2 flex-col overflow-hidden rounded-[44px] bg-[#FFFDF8] transition-[left,width] duration-200 ease-out hover:w-64"
+        style={{
+          left: sidebarLeft,
+          boxShadow:
+            'inset 0 1px 0 rgba(255,255,255,0.9), 0 12px 28px -12px rgba(140,110,80,0.18), 0 2px 6px -2px rgba(140,110,80,0.08)',
+        }}
+      >
+        <div className="flex h-full w-64 flex-col">
+          {appView === 'canvas' ? (
+            <div className="flex-1 overflow-y-auto overflow-x-hidden px-[14px] pb-3 pt-3">
+              <div className="mb-2.5 space-y-2.5">
+                {CORE_ITEMS.map((item) => (
+                  <DraggableItem key={item.type} item={item} />
+                ))}
+              </div>
 
-      {appView === 'canvas' ? (
-        <>
-          {/* Search */}
-          <div className="px-3 pb-3">
-            <div className="relative">
-              <Search
-                size={13}
-                className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500"
-              />
-              <input
-                type="text"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search components…"
-                className="w-full rounded-md border border-slate-800 bg-slate-900/60 py-1.5 pl-7 pr-2 text-xs text-slate-200 placeholder:text-slate-500 focus:border-slate-600 focus:outline-none"
-              />
+              <div className="space-y-2.5">
+                {PERIPHERAL_ITEMS.map((item) => (
+                  <DraggableItem key={item.type} item={item} />
+                ))}
+              </div>
             </div>
-          </div>
-
-          {/* Node Palette */}
-          <div className="flex-1 overflow-y-auto px-2 pb-3">
-            {filteredCore.length > 0 && (
-              <div className="mb-4">
-                <h2 className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                  Core
-                </h2>
-                <div className="space-y-1">
-                  {filteredCore.map((item) => (
-                    <DraggableItem key={item.type} item={item} />
-                  ))}
-                </div>
+          ) : (
+            <div className="pointer-events-none flex-1 overflow-y-auto p-4 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100">
+              <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-stone-500">
+                Sections
+              </h2>
+              <div className="space-y-1.5">
+                {SETTINGS_SECTIONS.map((section) => (
+                  <button
+                    key={section.id}
+                    onClick={() => onSettingsSectionChange(section.id)}
+                    className={`w-full rounded-xl border px-3 py-2 text-left text-xs transition ${activeSettingsSection === section.id
+                      ? 'border-blue-400/60 bg-blue-100 text-blue-800'
+                      : 'border-stone-300 bg-white/60 text-stone-700 hover:border-stone-400 hover:bg-white'
+                      }`}
+                  >
+                    <div className="font-medium">{section.label}</div>
+                    <div className="mt-0.5 text-[10px] text-stone-500">
+                      {section.description}
+                    </div>
+                  </button>
+                ))}
               </div>
-            )}
-
-            {filteredPeripherals.length > 0 && (
-              <div className="mb-4">
-                <h2 className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                  Peripherals
-                </h2>
-                <div className="space-y-1">
-                  {filteredPeripherals.map((item) => (
-                    <DraggableItem key={item.type} item={item} />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {filteredCore.length === 0 && filteredPeripherals.length === 0 && (
-              <p className="px-2 py-6 text-center text-[11px] text-slate-500">
-                No components match “{query}”.
-              </p>
-            )}
-          </div>
-        </>
-      ) : (
-        <div className="flex-1 overflow-y-auto p-3">
-          <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-            Sections
-          </h2>
-          <div className="space-y-1.5">
-            {SETTINGS_SECTIONS.map((section) => (
-              <button
-                key={section.id}
-                onClick={() => onSettingsSectionChange(section.id)}
-                className={`w-full rounded-lg border px-3 py-2 text-left text-xs transition ${activeSettingsSection === section.id
-                  ? 'border-blue-500/60 bg-blue-500/10 text-blue-200'
-                  : 'border-slate-800 bg-slate-900 text-slate-300 hover:border-slate-600 hover:bg-slate-800'
-                  }`}
-              >
-                <div className="font-medium">{section.label}</div>
-                <div className="mt-0.5 text-[10px] text-slate-500">
-                  {section.description}
-                </div>
-              </button>
-            ))}
-          </div>
+            </div>
+          )}
         </div>
-      )}
-    </aside>
+      </aside>
+    </div>
   );
 }

@@ -1,0 +1,284 @@
+import type {
+  WorkflowPatch,
+  WorkflowPatchResult,
+  GraphSnapshot,
+  PatchValidationError,
+} from '../../shared/sam-agent/workflow-patch';
+
+const ALL_NODE_TYPES = new Set([
+  'agent', 'memory', 'tools', 'skills', 'contextEngine', 'agentComm',
+  'connectors', 'storage', 'vectorDatabase', 'cron', 'provider', 'mcp',
+  'subAgent',
+]);
+
+const SUB_AGENT_ALLOWED_PERIPHERALS = new Set(['tools', 'provider', 'skills', 'mcp']);
+
+interface ResolvedNode {
+  id: string;
+  type: string;
+  data: Record<string, unknown>;
+}
+
+interface ResolvedEdge {
+  source: string;
+  target: string;
+}
+
+function resolvePatch(patch: WorkflowPatch, current: GraphSnapshot): {
+  nodes: Map<string, ResolvedNode>;
+  edges: ResolvedEdge[];
+  errors: PatchValidationError[];
+} {
+  const errors: PatchValidationError[] = [];
+  const nodes = new Map<string, ResolvedNode>();
+
+  for (const n of current.nodes) {
+    nodes.set(n.id, { id: n.id, type: n.type, data: n.data });
+  }
+
+  for (const id of patch.remove_nodes) {
+    if (!nodes.has(id)) {
+      errors.push({ code: 'unknown_node_id', message: `remove_nodes: '${id}' not found`, path: id });
+    }
+  }
+
+  for (const upd of patch.update_nodes) {
+    if (patch.remove_nodes.includes(upd.id)) {
+      errors.push({ code: 'update_then_remove', message: `update_nodes references '${upd.id}' which is also in remove_nodes`, path: upd.id });
+      continue;
+    }
+    const existing = nodes.get(upd.id);
+    if (!existing) {
+      errors.push({ code: 'unknown_node_id', message: `update_nodes: '${upd.id}' not found`, path: upd.id });
+      continue;
+    }
+    nodes.set(upd.id, { id: upd.id, type: existing.type, data: { ...existing.data, ...upd.dataPatch } });
+  }
+
+  for (const id of patch.remove_nodes) {
+    nodes.delete(id);
+  }
+
+  for (const add of patch.add_nodes) {
+    if (typeof add.tempId !== 'string' || add.tempId.length === 0) {
+      errors.push({
+        code: 'missing_temp_id',
+        message: `add_nodes entry is missing required 'tempId' field. Use 'tempId' (not 'id') for new nodes.`,
+      });
+      continue;
+    }
+    if (!ALL_NODE_TYPES.has(add.type)) {
+      errors.push({ code: 'unknown_node_type', message: `add_nodes: type '${add.type}' is unknown`, path: add.tempId });
+      continue;
+    }
+    if (nodes.has(add.tempId)) {
+      errors.push({ code: 'duplicate_id', message: `add_nodes tempId '${add.tempId}' collides with existing node id`, path: add.tempId });
+      continue;
+    }
+    nodes.set(add.tempId, { id: add.tempId, type: add.type, data: { ...add.data, type: add.type } });
+  }
+
+  const edges: ResolvedEdge[] = current.edges
+    .filter((e) => !patch.remove_edges.includes(e.id))
+    .map((e) => ({ source: e.source, target: e.target }));
+
+  for (const eid of patch.remove_edges) {
+    if (!current.edges.some((e) => e.id === eid)) {
+      errors.push({ code: 'unknown_edge_id', message: `remove_edges: '${eid}' not found`, path: eid });
+    }
+  }
+
+  for (const add of patch.add_edges) {
+    if (!nodes.has(add.source)) {
+      errors.push({ code: 'unknown_edge_endpoint', message: `add_edges source '${add.source}' is not a node id or tempId`, path: add.source });
+      continue;
+    }
+    if (!nodes.has(add.target)) {
+      errors.push({ code: 'unknown_edge_endpoint', message: `add_edges target '${add.target}' is not a node id or tempId`, path: add.target });
+      continue;
+    }
+    edges.push({ source: add.source, target: add.target });
+  }
+
+  return { nodes, edges, errors };
+}
+
+function checkEdgeRules(
+  nodes: Map<string, ResolvedNode>,
+  edges: ResolvedEdge[],
+): PatchValidationError[] {
+  const errors: PatchValidationError[] = [];
+  for (const edge of edges) {
+    const target = nodes.get(edge.target);
+    const source = nodes.get(edge.source);
+    if (!target || !source) continue;
+
+    if (edge.source === edge.target) {
+      errors.push({
+        code: 'self_edge',
+        message: `Self-edge on '${edge.source}' is not allowed`,
+        path: `${edge.source}->${edge.target}`,
+      });
+      continue;
+    }
+
+    const isAgent = target.type === 'agent';
+    const isSubAgent = target.type === 'subAgent';
+    if (!isAgent && !isSubAgent) {
+      errors.push({
+        code: 'invalid_edge',
+        message: `Edge target must be 'agent' or 'subAgent' (got '${target.type}')`,
+        path: `${edge.source}->${edge.target}`,
+      });
+      continue;
+    }
+    if (isSubAgent && !SUB_AGENT_ALLOWED_PERIPHERALS.has(source.type)) {
+      errors.push({
+        code: 'invalid_edge',
+        message: `Sub-agent '${target.id}' cannot have a peripheral of type '${source.type}'. Allowed: tools, provider, skills, mcp.`,
+        path: `${edge.source}->${edge.target}`,
+      });
+    }
+  }
+  return errors;
+}
+
+function checkOrphanEdges(
+  nodes: Map<string, ResolvedNode>,
+  edges: ResolvedEdge[],
+): PatchValidationError[] {
+  const errors: PatchValidationError[] = [];
+  for (const e of edges) {
+    if (!nodes.has(e.source)) {
+      errors.push({ code: 'dangling_edge', message: `Edge source '${e.source}' refers to a non-existent node`, path: `${e.source}->${e.target}` });
+    }
+    if (!nodes.has(e.target)) {
+      errors.push({ code: 'dangling_edge', message: `Edge target '${e.target}' refers to a non-existent node`, path: `${e.source}->${e.target}` });
+    }
+  }
+  return errors;
+}
+
+function getReferencedSubAgentIds(agentNode: ResolvedNode): Set<string> {
+  const refs = (agentNode.data.subAgents ?? []) as Array<unknown>;
+  const ids = new Set<string>();
+  if (!Array.isArray(refs)) return ids;
+  for (const r of refs) {
+    if (typeof r === 'string') ids.add(r);
+    else if (r && typeof r === 'object' && typeof (r as any).id === 'string') ids.add((r as any).id);
+  }
+  return ids;
+}
+
+function checkSubAgentRules(
+  nodes: Map<string, ResolvedNode>,
+  edges: ResolvedEdge[],
+  touchedSubAgentIds: Set<string>,
+): PatchValidationError[] {
+  const errors: PatchValidationError[] = [];
+
+  // Build the set of all referenced sub-agent ids across all agent nodes.
+  const referenced = new Set<string>();
+  for (const node of nodes.values()) {
+    if (node.type !== 'agent') continue;
+    for (const id of getReferencedSubAgentIds(node)) referenced.add(id);
+  }
+
+  for (const subId of touchedSubAgentIds) {
+    const sub = nodes.get(subId);
+    if (!sub || sub.type !== 'subAgent') continue;
+    if (!referenced.has(subId)) {
+      errors.push({ code: 'subagent_not_referenced', message: `Sub-agent '${subId}' is not referenced by any parent agent's subAgents list`, path: subId });
+    }
+    // Required peripheral: tools.
+    const peripherals = edges
+      .filter((e) => e.target === subId)
+      .map((e) => nodes.get(e.source))
+      .filter((n): n is ResolvedNode => !!n);
+    if (!peripherals.some((p) => p.type === 'tools')) {
+      errors.push({ code: 'subagent_missing_tools', message: `Sub-agent '${subId}' has no connected tools node`, path: subId });
+    }
+  }
+  return errors;
+}
+
+function checkAgentRunnable(
+  nodes: Map<string, ResolvedNode>,
+  edges: ResolvedEdge[],
+  touchedAgentIds: Set<string>,
+): PatchValidationError[] {
+  const errors: PatchValidationError[] = [];
+  for (const agentId of touchedAgentIds) {
+    const agent = nodes.get(agentId);
+    if (!agent || agent.type !== 'agent') continue;
+
+    const peripherals = edges
+      .filter((e) => e.target === agentId)
+      .map((e) => nodes.get(e.source))
+      .filter((n): n is ResolvedNode => !!n);
+
+    const providers = peripherals.filter((p) => p.type === 'provider');
+    const storages = peripherals.filter((p) => p.type === 'storage');
+    const contextEngines = peripherals.filter((p) => p.type === 'contextEngine');
+
+    if (providers.length === 0) {
+      errors.push({ code: 'agent_missing_provider', message: `Agent '${agentId}' has no connected provider`, path: agentId });
+    } else {
+      if (providers.length > 1) {
+        errors.push({ code: 'agent_multiple_providers', message: `Agent '${agentId}' has ${providers.length} providers connected (must be exactly one)`, path: agentId });
+      }
+      const pluginId = providers[0].data.pluginId;
+      if (typeof pluginId !== 'string' || pluginId.length === 0) {
+        errors.push({ code: 'agent_provider_incomplete', message: `Agent '${agentId}' provider has empty pluginId`, path: agentId });
+      }
+    }
+    if (storages.length === 0) {
+      errors.push({ code: 'agent_missing_storage', message: `Agent '${agentId}' has no connected storage`, path: agentId });
+    } else if (storages.length > 1) {
+      errors.push({ code: 'agent_multiple_storages', message: `Agent '${agentId}' has ${storages.length} storage nodes connected (must be exactly one)`, path: agentId });
+    }
+    if (contextEngines.length === 0) {
+      errors.push({ code: 'agent_missing_context_engine', message: `Agent '${agentId}' has no connected contextEngine`, path: agentId });
+    } else if (contextEngines.length > 1) {
+      errors.push({ code: 'agent_multiple_context_engines', message: `Agent '${agentId}' has ${contextEngines.length} contextEngines connected (must be exactly one)`, path: agentId });
+    }
+  }
+  return errors;
+}
+
+export function validateWorkflowPatch(
+  patch: WorkflowPatch,
+  current: GraphSnapshot,
+): WorkflowPatchResult {
+  const { nodes, edges, errors: resolveErrors } = resolvePatch(patch, current);
+  const edgeErrors = checkEdgeRules(nodes, edges);
+  const orphanErrors = checkOrphanEdges(nodes, edges);
+
+  const touchedAgentIds = new Set<string>();
+  for (const add of patch.add_nodes) if (add.type === 'agent') touchedAgentIds.add(add.tempId);
+  for (const upd of patch.update_nodes) {
+    const node = nodes.get(upd.id);
+    if (node?.type === 'agent') touchedAgentIds.add(upd.id);
+  }
+  for (const e of patch.add_edges) {
+    const target = nodes.get(e.target);
+    if (target?.type === 'agent') touchedAgentIds.add(e.target);
+  }
+  const runnableErrors = checkAgentRunnable(nodes, edges, touchedAgentIds);
+
+  const touchedSubAgentIds = new Set<string>();
+  for (const add of patch.add_nodes) if (add.type === 'subAgent') touchedSubAgentIds.add(add.tempId);
+  for (const upd of patch.update_nodes) {
+    const node = nodes.get(upd.id);
+    if (node?.type === 'subAgent') touchedSubAgentIds.add(upd.id);
+  }
+  for (const e of patch.add_edges) {
+    const target = nodes.get(e.target);
+    if (target?.type === 'subAgent') touchedSubAgentIds.add(e.target);
+  }
+  const subAgentErrors = checkSubAgentRules(nodes, edges, touchedSubAgentIds);
+
+  const allErrors = [...resolveErrors, ...orphanErrors, ...edgeErrors, ...runnableErrors, ...subAgentErrors];
+  if (allErrors.length > 0) return { ok: false, errors: allErrors };
+  return { ok: true, patch };
+}
