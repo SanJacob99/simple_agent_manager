@@ -3,7 +3,7 @@
 > Configures a vector storage backend for an agent — used for embedding-based retrieval, semantic search, and RAG pipelines.
 
 <!-- source: src/types/nodes.ts#VectorDatabaseNodeData -->
-<!-- last-verified: 2026-04-03 -->
+<!-- last-verified: 2026-05-07 -->
 
 ## Overview
 

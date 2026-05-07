@@ -25,7 +25,7 @@ The Agent Node still owns `modelId`, `thinkingLevel`, and `modelCapabilities`. T
 | `description` | `string` | `""` | Optional purpose/summary for the agent |
 | `tags` | `string[]` | `[]` | Freeform tags used by the UI |
 | `modelCapabilities` | `ModelCapabilityOverrides` | `{}` | Snapshotted model metadata plus any user overrides |
-| `systemPromptMode` | `SystemPromptMode` | `"append"` | Prompt assembly mode. `auto` and `append` both resolve to SAM-sections + user instructions; `manual` uses only the user's text |
+| `systemPromptMode` | `SystemPromptMode` | `"append"` | Prompt assembly mode. `auto` emits only SAM sections (the user's `systemPrompt` field is ignored); `append` emits SAM sections then adds the user's `systemPrompt` as a final `## User Instructions` section; `manual` discards SAM sections and uses only the user's text |
 | `showReasoning` | `boolean` | `false` | Whether to expose reasoning output in the UI when supported |
 | `verbose` | `boolean` | `false` | Whether to prefer more verbose runtime output |
 | `workingDirectory` | `string` | `""` | Working directory for the agent's exec tool. Empty = server `process.cwd()` |
