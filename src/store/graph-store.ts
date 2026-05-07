@@ -31,6 +31,8 @@ import {
 } from '../utils/hex-snap';
 import type { WorkflowPatch, GraphSnapshot } from '../../shared/sam-agent/workflow-patch';
 import { redactGraphSnapshot } from '../../shared/sam-agent/workflow-patch';
+import type { NodeTemplate, TemplateEdge, TemplateNode } from '../types/templates';
+import { cloneTemplateContents } from '../utils/clone-nodes';
 
 /**
  * Anchor SAMAgent-emitted nodes near the existing graph so they're visible
@@ -200,6 +202,27 @@ interface GraphStore {
 
   applyPatch: (patch: WorkflowPatch) => { ok: true } | { ok: false; error: string };
   buildGraphSnapshot: () => GraphSnapshot;
+
+  /** Currently multi-selected nodes (xyflow tracks `selected` per node). */
+  getSelectedNodes: () => AppNode[];
+  /**
+   * Capture the currently selected nodes (and the edges wired between
+   * them) into a serialisable template payload. Returns null when there
+   * is nothing selected.
+   */
+  buildTemplateFromSelection: () => {
+    nodes: TemplateNode[];
+    edges: TemplateEdge[];
+  } | null;
+  /**
+   * Insert a saved template into the graph at `position` (or anchored
+   * below the existing graph if not provided). Generates fresh node IDs
+   * and rewrites collision-prone fields (storage path, cwd, agent name).
+   */
+  insertTemplate: (
+    template: NodeTemplate,
+    position?: { x: number; y: number },
+  ) => { nodeIds: string[] };
 }
 
 export const useGraphStore = create<GraphStore>((set, get) => ({
@@ -554,6 +577,58 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
           (n.data as { name: string }).name,
       )
       .map((n) => (n.data as { name: string }).name);
+  },
+
+  getSelectedNodes: () => {
+    return get().nodes.filter((n) => (n as { selected?: boolean }).selected);
+  },
+
+  buildTemplateFromSelection: () => {
+    const selected = get().getSelectedNodes();
+    if (selected.length === 0) return null;
+    const selectedIds = new Set(selected.map((n) => n.id));
+    const nodes: TemplateNode[] = selected.map((n) => ({
+      id: n.id,
+      type: n.type as TemplateNode['type'],
+      position: { x: n.position.x, y: n.position.y },
+      // Clone data so future mutations to the live graph don't leak into
+      // the saved template snapshot.
+      data: JSON.parse(JSON.stringify(n.data)),
+    }));
+    const edges: TemplateEdge[] = get()
+      .edges.filter((e) => selectedIds.has(e.source) && selectedIds.has(e.target))
+      .map((e) => ({ id: e.id, source: e.source, target: e.target }));
+    return { nodes, edges };
+  },
+
+  insertTemplate: (template, position) => {
+    const { nodes: existingNodes, edges: existingEdges } = get();
+    const origin = position ?? computeLayoutOrigin(existingNodes);
+    const cloned = cloneTemplateContents(
+      template.nodes,
+      template.edges,
+      existingNodes,
+      origin,
+    );
+
+    // Snap each new node into a free honeycomb cell so they don't land
+    // on top of existing nodes. We update in place to preserve relative
+    // offsets between newly inserted siblings.
+    const occupied = buildOccupiedCellSet(existingNodes);
+    const placedNodes: AppNode[] = cloned.nodes.map((n) => {
+      const { position: snapped, cell } = snapNodePositionToFreeCell(
+        n.position,
+        occupied,
+      );
+      occupied.add(axialKey(cell));
+      return { ...n, position: snapped };
+    });
+
+    const finalNodes = [...existingNodes, ...placedNodes];
+    const finalEdges = [...existingEdges, ...cloned.edges];
+    set({ nodes: finalNodes, edges: finalEdges });
+
+    return { nodeIds: placedNodes.map((n) => n.id) };
   },
 
   loadGraph: (nodes, edges) => {
