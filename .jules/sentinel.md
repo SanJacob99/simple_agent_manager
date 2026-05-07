@@ -31,3 +31,8 @@
 **Vulnerability:** Found multiple path traversal vulnerabilities in `image-generate.ts`, `show-image.ts`, `image-analyze.ts`, and `text-to-speech.ts` where `path.resolve(ctx.cwd, ...)` was used to resolve user-supplied file paths without a subsequent sandbox validation check, allowing an agent to read or write files anywhere on the system (constrained by extension).
 **Learning:** Whenever resolving paths using `ctx.cwd`, simply using `path.resolve` is not enough to confine operations to the workspace if user input contains directory traversal sequences (e.g., `../../`).
 **Prevention:** Always validate that the final resolved path starts with the base directory and separator (e.g., `!resolved.startsWith(ctx.cwd + path.sep) && resolved !== ctx.cwd`) before performing any file operations.
+
+## 2026-04-26 - [CRITICAL] Fix prefix-matching path traversal bypass in browser.ts
+**Vulnerability:** The browser screenshot tool checked directory boundaries using `absPath.startsWith(base)`, which is vulnerable to partial directory name bypasses (e.g., escaping `/workspace` via `/workspace-secrets`).
+**Learning:** Using `startsWith` without appending the trailing path separator leaves it open to prefix matches, allowing malicious path escapes in sandbox directory verification.
+**Prevention:** Always verify exact match or ensure the boundary check uses the directory path suffixed with `path.sep` (e.g., `base + path.sep`).
