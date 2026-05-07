@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { resolveAgentConfig, validateAgentRuntimeGraph } from './graph-to-agent';
+import { CONNECTOR_CATALOG } from '../../shared/connectors/catalog';
 
 describe('resolveAgentConfig', () => {
   it('carries per-agent capability overrides into runtime config', () => {
@@ -855,5 +856,147 @@ describe('resolveAgentConfig — agentComm', () => {
     expect(config?.agentComm).toHaveLength(1);
     expect(config?.agentComm[0].targetAgentNodeId).toBeNull();
     expect(config?.agentComm[0].targetAgentName).toBeNull();
+  });
+});
+
+describe('resolveAgentConfig — connectors fold into mcps[]', () => {
+  const ORIGINAL_ENV = process.env;
+  afterEach(() => { process.env = { ...ORIGINAL_ENV }; });
+
+  function agentNode() {
+    return {
+      id: 'agent-1',
+      type: 'agent',
+      position: { x: 0, y: 0 },
+      data: {
+        type: 'agent',
+        name: 'Agent',
+        nameConfirmed: true,
+        systemPrompt: 'Test',
+        systemPromptMode: 'manual' as const,
+        modelId: 'claude-sonnet-4-20250514',
+        thinkingLevel: 'off',
+        description: '',
+        tags: [],
+        modelCapabilities: {},
+      },
+    };
+  }
+
+  it('resolves a connector node with connectorId=github into mcps[]', () => {
+    process.env = { ...ORIGINAL_ENV, GITHUB_PERSONAL_ACCESS_TOKEN: 'ghp_test' };
+    const config = resolveAgentConfig(
+      'agent-1',
+      [
+        agentNode(),
+        {
+          id: 'conn-1',
+          type: 'connectors',
+          position: { x: -200, y: 0 },
+          data: {
+            type: 'connectors',
+            label: 'My GitHub',
+            connectorId: 'github',
+            config: { tokenEnvVar: 'GITHUB_PERSONAL_ACCESS_TOKEN' },
+          },
+        },
+      ] as any,
+      [{ id: 'e1', source: 'conn-1', target: 'agent-1', type: 'data' }] as any,
+    );
+
+    expect(config?.mcps).toHaveLength(1);
+    const mcp = config!.mcps[0];
+    expect(mcp.mcpNodeId).toBe('conn-1');
+    expect(mcp.label).toBe('My GitHub');
+    expect(mcp.transport).toBe('stdio');
+    expect(mcp.command).toBe(CONNECTOR_CATALOG.github.mcp.command);
+    expect(mcp.args).toEqual(CONNECTOR_CATALOG.github.mcp.args);
+    expect(mcp.env).toEqual({ GITHUB_PERSONAL_ACCESS_TOKEN: 'ghp_test' });
+    expect(mcp.toolPrefix).toBe('github_');
+    expect(mcp.autoConnect).toBe(true);
+    expect(mcp.allowedTools).toEqual([]);
+    expect(mcp.cwd).toBe('');
+    expect(mcp.headers).toEqual({});
+    expect(mcp.url).toBe('');
+  });
+
+  it('skips a connector node when connectorId is empty', () => {
+    const config = resolveAgentConfig(
+      'agent-1',
+      [
+        agentNode(),
+        {
+          id: 'conn-1',
+          type: 'connectors',
+          position: { x: -200, y: 0 },
+          data: { type: 'connectors', label: 'Empty', connectorId: '', config: {} },
+        },
+      ] as any,
+      [{ id: 'e1', source: 'conn-1', target: 'agent-1', type: 'data' }] as any,
+    );
+    expect(config?.mcps).toHaveLength(0);
+  });
+
+  it('skips a connector node when connectorId is unknown', () => {
+    const config = resolveAgentConfig(
+      'agent-1',
+      [
+        agentNode(),
+        {
+          id: 'conn-1',
+          type: 'connectors',
+          position: { x: -200, y: 0 },
+          data: { type: 'connectors', label: 'Bogus', connectorId: 'does-not-exist', config: {} },
+        },
+      ] as any,
+      [{ id: 'e1', source: 'conn-1', target: 'agent-1', type: 'data' }] as any,
+    );
+    expect(config?.mcps).toHaveLength(0);
+  });
+
+  it('coexists with an MCP node — both end up in mcps[]', () => {
+    process.env = { ...ORIGINAL_ENV, GITHUB_PERSONAL_ACCESS_TOKEN: 'ghp_test' };
+    const config = resolveAgentConfig(
+      'agent-1',
+      [
+        agentNode(),
+        {
+          id: 'conn-1',
+          type: 'connectors',
+          position: { x: -200, y: 0 },
+          data: {
+            type: 'connectors',
+            label: 'GH',
+            connectorId: 'github',
+            config: { tokenEnvVar: 'GITHUB_PERSONAL_ACCESS_TOKEN' },
+          },
+        },
+        {
+          id: 'mcp-1',
+          type: 'mcp',
+          position: { x: -200, y: 200 },
+          data: {
+            type: 'mcp',
+            label: 'Custom',
+            transport: 'stdio',
+            command: 'node',
+            args: ['custom.js'],
+            env: {},
+            cwd: '',
+            url: '',
+            headers: {},
+            toolPrefix: 'custom_',
+            allowedTools: [],
+            autoConnect: true,
+          },
+        },
+      ] as any,
+      [
+        { id: 'e1', source: 'conn-1', target: 'agent-1', type: 'data' },
+        { id: 'e2', source: 'mcp-1', target: 'agent-1', type: 'data' },
+      ] as any,
+    );
+    const ids = (config?.mcps ?? []).map((m) => m.mcpNodeId).sort();
+    expect(ids).toEqual(['conn-1', 'mcp-1']);
   });
 });

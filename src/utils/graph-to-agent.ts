@@ -7,6 +7,7 @@ import { eligibleBundledSkills } from '../../shared/default-tool-skills';
 import { useToolCatalogStore } from '../store/tool-catalog-store';
 import type { SubAgentNodeData } from '../types/nodes';
 import { SUB_AGENT_NAME_REGEX } from '../../shared/sub-agent-types';
+import { CONNECTOR_CATALOG } from '../../shared/connectors/catalog';
 import * as posixPath from 'path';
 
 function resolveSubAgent(
@@ -381,7 +382,7 @@ export function resolveAgentConfig(
   // Each MCP node resolves to a ResolvedMcpConfig. The node id is kept as
   // `mcpNodeId` so the server can push `mcp:status` events back to the UI
   // and the MCPNode component can light up a live connection hint.
-  const mcps = connectedNodes
+  const mcpsFromMcpNodes: ResolvedMcpConfig[] = connectedNodes
     .filter((n) => n.data.type === 'mcp')
     .map((n) => {
       if (n.data.type !== 'mcp') throw new Error('unreachable');
@@ -400,6 +401,38 @@ export function resolveAgentConfig(
         autoConnect: n.data.autoConnect,
       };
     });
+
+  // --- Connectors (fold into MCP) ---
+  // Each connector node is a curated MCP preset. The catalog entry supplies
+  // the server template and a buildEnv() that materializes secrets from
+  // process.env at resolve time. Unknown / unselected connectorIds are
+  // skipped here; they are surfaced separately by validateAgentRuntimeGraph.
+  const mcpsFromConnectors: ResolvedMcpConfig[] = [];
+  for (const n of connectedNodes) {
+    if (n.data.type !== 'connectors') continue;
+    const def = CONNECTOR_CATALOG[n.data.connectorId];
+    if (!def) continue;
+    const values: Record<string, string> = {};
+    for (const v of def.variables) {
+      values[v.key] = (n.data.config?.[v.key] ?? v.default);
+    }
+    mcpsFromConnectors.push({
+      mcpNodeId: n.id,
+      label: n.data.label,
+      transport: def.mcp.transport,
+      command: def.mcp.command ?? '',
+      args: def.mcp.args ?? [],
+      env: def.buildEnv(values),
+      cwd: '',
+      url: def.mcp.url ?? '',
+      headers: {},
+      toolPrefix: def.toolPrefix,
+      allowedTools: [],
+      autoConnect: true,
+    });
+  }
+
+  const mcps = [...mcpsFromMcpNodes, ...mcpsFromConnectors];
 
   // --- Build structured system prompt ---
   const agentMode = (data as any).systemPromptMode as SystemPromptMode | undefined;
