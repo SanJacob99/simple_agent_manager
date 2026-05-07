@@ -3,7 +3,7 @@
 > Attaches an external service connector to an agent — a generic integration point for REST APIs and other services.
 
 <!-- source: src/types/nodes.ts#ConnectorsNodeData -->
-<!-- last-verified: 2026-04-03 -->
+<!-- last-verified: 2026-05-07 -->
 
 ## Overview
 

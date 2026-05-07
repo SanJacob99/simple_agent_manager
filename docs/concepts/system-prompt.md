@@ -47,7 +47,7 @@ In `auto` and `append` modes, the builder emits these sections in order. Optiona
 | 11 | `time` | `timezone` is non-null | ISO-8601 current time and IANA timezone |
 | 12 | `replyTags` | `replyTags` is set | Whether the provider supports reply tags, with example |
 | 13 | `heartbeats` | `heartbeats` is set | Heartbeat prompt/ack tokens, or an "heartbeats disabled" note |
-| 14 | `runtime` | Always | One-line `Runtime: host=… \| os=… \| node=… \| model=… \| repo=…` |
+| 14 | `runtime` | Always | One-line `Runtime: host=… \| os=… \| model=…`; `node=…` is appended when the server's Node version is available; `repo=…` is appended when a repo root is detected |
 | 15 | `reasoning` | Always | Reasoning visibility level and thinking-effort note |
 
 ### Why the Runtime line omits `thinking=<level>`
