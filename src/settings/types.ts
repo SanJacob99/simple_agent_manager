@@ -95,7 +95,7 @@ export type DefaultsSubTab =
 // --- Default values ---
 
 export const DEFAULT_AGENT_DEFAULTS: AgentDefaults = {
-  modelId: 'anthropic/claude-sonnet-4-20250514',
+  modelId: 'anthropic/claude-sonnet-4-6',
   thinkingLevel: 'off',
   systemPromptMode: 'append',
   systemPrompt: 'You are a helpful assistant.',

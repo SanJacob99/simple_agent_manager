@@ -66,11 +66,15 @@ High-level flow:
 
 ## Settings workspace
 
-The settings view currently includes four sections:
+The settings view currently includes eight sections:
 
 - `Providers & API Keys`: browser-local provider credentials, plus direct links to provider key pages
 - `Model Catalog`: OpenRouter sync and model inspection
-- `Defaults`: default provider/model/thinking level, prompt mode, safety guardrails, and storage path
+- `Defaults`: defaults applied to newly created nodes (agent, provider, storage, context engine, memory, cron)
+- `SAMAgent`: model and reasoning settings for the in-app assistant
+- `Safety`: human-in-the-loop confirmation policy and tool-lock controls
+- `Appearance`: chat UI preferences like text reveal animation speed
+- `Colors`: overrides for routed CSS color variables
 - `Data & Maintenance`: graph import/export, fixture loading, resets, and storage maintenance runs
 
 ## Getting started

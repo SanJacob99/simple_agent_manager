@@ -9,7 +9,7 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         name: '',
         nameConfirmed: false,
         systemPrompt: 'You are a helpful assistant.',
-        modelId: 'anthropic/claude-sonnet-4-20250514',
+        modelId: 'anthropic/claude-sonnet-4-6',
         thinkingLevel: 'off',
         description: '',
         tags: [],
