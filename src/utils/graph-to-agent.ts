@@ -735,7 +735,12 @@ export function resolveAgentConfig(
 }
 
 export interface AgentGraphValidationError {
-  code: 'missing_provider' | 'duplicate_provider' | 'empty_plugin_id';
+  code:
+    | 'missing_provider'
+    | 'duplicate_provider'
+    | 'empty_plugin_id'
+    | 'unselected_connector'
+    | 'unknown_connector';
   message: string;
 }
 
@@ -771,6 +776,21 @@ export function validateAgentRuntimeGraph(
       code: 'empty_plugin_id',
       message: 'Provider node has no plugin selected.',
     });
+  }
+
+  for (const n of connectedNodes) {
+    if (n.data.type !== 'connectors') continue;
+    if (!n.data.connectorId) {
+      errors.push({
+        code: 'unselected_connector',
+        message: `Connector node "${n.data.label}" has no connector selected.`,
+      });
+    } else if (!CONNECTOR_CATALOG[n.data.connectorId]) {
+      errors.push({
+        code: 'unknown_connector',
+        message: `Connector node "${n.data.label}" references unknown connector "${n.data.connectorId}".`,
+      });
+    }
   }
 
   return errors;

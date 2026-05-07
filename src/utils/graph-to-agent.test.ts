@@ -1000,3 +1000,88 @@ describe('resolveAgentConfig — connectors fold into mcps[]', () => {
     expect(ids).toEqual(['conn-1', 'mcp-1']);
   });
 });
+
+describe('validateAgentRuntimeGraph — connector validation', () => {
+  function providerNodeFor(agentId: string) {
+    // Provider is required by validateAgentRuntimeGraph; without it every
+    // call returns a missing_provider error and shadows our connector errors.
+    return {
+      id: 'prov-1',
+      type: 'provider',
+      position: { x: 0, y: 200 },
+      data: { type: 'provider', label: 'Provider', pluginId: 'anthropic' },
+    };
+  }
+
+  function agentNode() {
+    return {
+      id: 'agent-1',
+      type: 'agent',
+      position: { x: 0, y: 0 },
+      data: {
+        type: 'agent', name: 'A', nameConfirmed: true,
+        systemPrompt: '', systemPromptMode: 'manual' as const,
+        modelId: 'm', thinkingLevel: 'off',
+        description: '', tags: [], modelCapabilities: {},
+      },
+    };
+  }
+
+  it('returns unselected_connector when connectorId is empty', () => {
+    const errors = validateAgentRuntimeGraph(
+      'agent-1',
+      [
+        agentNode(),
+        providerNodeFor('agent-1'),
+        {
+          id: 'conn-1', type: 'connectors', position: { x: 0, y: 0 },
+          data: { type: 'connectors', label: 'X', connectorId: '', config: {} },
+        },
+      ] as any,
+      [
+        { id: 'e1', source: 'prov-1', target: 'agent-1', type: 'data' },
+        { id: 'e2', source: 'conn-1', target: 'agent-1', type: 'data' },
+      ] as any,
+    );
+    expect(errors.find((e) => e.code === 'unselected_connector')).toBeDefined();
+  });
+
+  it('returns unknown_connector when connectorId is not in the catalog', () => {
+    const errors = validateAgentRuntimeGraph(
+      'agent-1',
+      [
+        agentNode(),
+        providerNodeFor('agent-1'),
+        {
+          id: 'conn-1', type: 'connectors', position: { x: 0, y: 0 },
+          data: { type: 'connectors', label: 'X', connectorId: 'nope', config: {} },
+        },
+      ] as any,
+      [
+        { id: 'e1', source: 'prov-1', target: 'agent-1', type: 'data' },
+        { id: 'e2', source: 'conn-1', target: 'agent-1', type: 'data' },
+      ] as any,
+    );
+    expect(errors.find((e) => e.code === 'unknown_connector')).toBeDefined();
+  });
+
+  it('returns no connector errors when connectorId is in the catalog', () => {
+    const errors = validateAgentRuntimeGraph(
+      'agent-1',
+      [
+        agentNode(),
+        providerNodeFor('agent-1'),
+        {
+          id: 'conn-1', type: 'connectors', position: { x: 0, y: 0 },
+          data: { type: 'connectors', label: 'GH', connectorId: 'github', config: {} },
+        },
+      ] as any,
+      [
+        { id: 'e1', source: 'prov-1', target: 'agent-1', type: 'data' },
+        { id: 'e2', source: 'conn-1', target: 'agent-1', type: 'data' },
+      ] as any,
+    );
+    expect(errors.find((e) => e.code === 'unknown_connector')).toBeUndefined();
+    expect(errors.find((e) => e.code === 'unselected_connector')).toBeUndefined();
+  });
+});
