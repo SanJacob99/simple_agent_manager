@@ -469,7 +469,7 @@ async function captureInlineScreenshot(
     await fs.writeFile(absPath, buffer);
 
     const base = ctx.cwd ? path.resolve(ctx.cwd) : '';
-    const savedPath = base && absPath.startsWith(base)
+    const savedPath = base && (absPath.startsWith(base + path.sep) || absPath === base)
       ? path.relative(base, absPath).replace(/\\/g, '/')
       : absPath;
 
