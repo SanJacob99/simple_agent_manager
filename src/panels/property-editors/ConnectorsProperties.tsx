@@ -53,8 +53,8 @@ export default function ConnectorsProperties({ nodeId, data }: Props) {
       <Field label="Connector Type">
         <select
           className={selectClass}
-          value={data.connectorType}
-          onChange={(e) => update(nodeId, { connectorType: e.target.value })}
+          value={data.connectorId}
+          onChange={(e) => update(nodeId, { connectorId: e.target.value })}
         >
           {CONNECTOR_TYPES.map((t) => (
             <option key={t} value={t}>

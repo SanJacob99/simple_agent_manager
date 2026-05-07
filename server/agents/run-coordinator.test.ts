@@ -90,7 +90,6 @@ function makeConfig(storagePath: string, overrides: Partial<AgentConfig> = {}): 
     memory: null,
     tools: null,
     contextEngine: null,
-    connectors: [],
     agentComm: [],
     storage: {
       label: 'Storage',

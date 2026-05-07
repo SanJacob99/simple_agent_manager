@@ -290,18 +290,6 @@ export function resolveAgentConfig(
       }
     : null;
 
-  // --- Connectors ---
-  const connectors = connectedNodes
-    .filter((n) => n.data.type === 'connectors')
-    .map((n) => {
-      if (n.data.type !== 'connectors') throw new Error('unreachable');
-      return {
-        label: n.data.label,
-        connectorType: n.data.connectorType,
-        config: n.data.config,
-      };
-    });
-
   // --- Agent Communication ---
   const agentComm: ResolvedAgentCommConfig[] = connectedNodes
     .filter((n) => n.data.type === 'agentComm')
@@ -562,7 +550,6 @@ export function resolveAgentConfig(
     memory,
     tools: toolsConfig,
     contextEngine,
-    connectors,
     agentComm,
     storage,
     vectorDatabases,

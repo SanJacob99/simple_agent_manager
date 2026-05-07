@@ -49,7 +49,6 @@ function makeConfig(storagePath: string, modelId: string): AgentConfig {
       ragTopK: 5,
       ragMinScore: 0,
     },
-    connectors: [],
     agentComm: [],
     storage: {
       label: 'Integration Storage',

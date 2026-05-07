@@ -96,7 +96,6 @@ function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
     memory: null,
     tools: null,
     contextEngine: null,
-    connectors: [],
     agentComm: [],
     storage: {
       label: 'Storage',

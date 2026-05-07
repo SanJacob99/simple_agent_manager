@@ -308,7 +308,10 @@ export interface ConnectorsNodeData {
   [key: string]: unknown;
   type: 'connectors';
   label: string;
-  connectorType: string;
+  /** Catalog ID, e.g. 'github'. Empty string means "not yet selected". */
+  connectorId: string;
+  /** Per-instance overrides for variables declared by the catalog entry.
+   *  Keys are catalog-defined; values are strings (env var names, etc.). */
   config: Record<string, string>;
 }
 

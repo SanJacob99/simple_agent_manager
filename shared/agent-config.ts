@@ -148,7 +148,6 @@ export interface AgentConfig {
   memory: ResolvedMemoryConfig | null;
   tools: ResolvedToolsConfig | null;
   contextEngine: ResolvedContextEngineConfig | null;
-  connectors: ResolvedConnectorConfig[];
   agentComm: ResolvedAgentCommConfig[];
   storage: ResolvedStorageConfig | null;
   vectorDatabases: ResolvedVectorDatabaseConfig[];
@@ -298,12 +297,6 @@ export interface ResolvedContextEngineConfig {
   ragEnabled: boolean;
   ragTopK: number;
   ragMinScore: number;
-}
-
-export interface ResolvedConnectorConfig {
-  label: string;
-  connectorType: string;
-  config: Record<string, string>;
 }
 
 export interface ResolvedAgentCommConfig {

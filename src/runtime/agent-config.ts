@@ -19,7 +19,6 @@ export type {
   ResolvedMemoryConfig,
   ResolvedToolsConfig,
   ResolvedContextEngineConfig,
-  ResolvedConnectorConfig,
   ResolvedAgentCommConfig,
   ResolvedStorageConfig,
   ResolvedVectorDatabaseConfig,

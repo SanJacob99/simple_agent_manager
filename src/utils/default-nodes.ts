@@ -159,7 +159,7 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
       return {
         type: 'connectors',
         label: 'Connector',
-        connectorType: 'rest-api',
+        connectorId: '',
         config: {},
       };
     case 'storage':
