@@ -37,6 +37,11 @@
       "type": "src/types/nodes.ts#ConnectorsNodeData",
       "runtime": null
     },
+    "cron": {
+      "doc": "cron-node.md",
+      "type": "src/types/nodes.ts#CronNodeData",
+      "runtime": null
+    },
     "storage": {
       "doc": "storage-node.md",
       "type": "src/types/nodes.ts#StorageNodeData",
