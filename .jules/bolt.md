@@ -16,3 +16,7 @@
 ## 2024-05-18 - Safe Concurrent Bulk File Cleanup
 **Learning:** Running unbounded `Promise.all` loops for concurrent file system I/O over arrays of paths (e.g., in `removeOrphanTranscripts`) accelerates disk operations but causes application-crashing `EMFILE` (too many open files) limits when the directory grows.
 **Action:** Batch concurrent file operations using a chunked execution pattern (e.g., `CHUNK_SIZE = 50`) to gain the speed of concurrency without triggering OS-level file descriptor limits.
+
+## 2024-05-18 - JSONL Parsing Optimization
+**Learning:** Using `.split('\n').filter().map()` to parse large JSONL strings creates massive intermediate arrays (one for the split, one for the filtered subset) which causes significant memory pressure and GC overhead in hot paths like transcript loading.
+**Action:** When parsing large text blobs (like JSONL files) line-by-line in memory, use a single-pass `while` loop with `indexOf('\n')` and `substring()`.
