@@ -94,6 +94,31 @@ export interface DiscoveredModelMetadata {
   raw?: unknown;
 }
 
+// --- Guardrails ---
+
+export type GuardrailAction = 'block' | 'warn';
+export type GuardrailPiiCategory = 'email' | 'ssn' | 'credit_card';
+
+/**
+ * Resolved guardrail rule set. Multiple guardrail nodes can be attached to a
+ * single agent; the runtime evaluates them in order and the first match wins
+ * for the `block` action. Storing each node as its own resolved entry keeps
+ * the per-node `label` available for the violation event payload, which is
+ * what the UI renders to explain *why* a turn was blocked.
+ */
+export interface ResolvedGuardrailConfig {
+  guardrailNodeId: string;
+  label: string;
+  enabled: boolean;
+  checkInput: boolean;
+  checkOutput: boolean;
+  maxInputChars: number;
+  blockedTerms: string[];
+  piiCategories: GuardrailPiiCategory[];
+  action: GuardrailAction;
+  blockMessage: string;
+}
+
 // --- Agent Config interfaces ---
 
 export interface ResolvedCronConfig {
@@ -155,6 +180,13 @@ export interface AgentConfig {
   crons: ResolvedCronConfig[];
   mcps: ResolvedMcpConfig[];
   subAgents: ResolvedSubAgentConfig[];
+  /**
+   * Optional input/output guardrail rule sets. When omitted or empty, the
+   * runtime skips all guardrail checks. Optional — not required —
+   * so existing AgentConfig fixtures and serialized graphs remain
+   * compatible without a backfill.
+   */
+  guardrails?: ResolvedGuardrailConfig[];
 
   /** Working directory for shell commands (exec tool). Independent of storage path. */
   workspacePath: string | null;

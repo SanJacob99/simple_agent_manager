@@ -61,6 +61,11 @@
       "doc": "sub-agent-node.md",
       "type": "src/types/nodes.ts#SubAgentNodeData",
       "runtime": "server/runtime/sub-agent-executor.ts"
+    },
+    "guardrails": {
+      "doc": "guardrails-node.md",
+      "type": "src/types/nodes.ts#GuardrailsNodeData",
+      "runtime": "server/runtime/guardrails-engine.ts"
     }
   }
 }

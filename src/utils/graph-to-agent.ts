@@ -1,6 +1,6 @@
 import type { AppNode } from '../types/nodes';
 import type { Edge } from '@xyflow/react';
-import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides } from '../../shared/agent-config';
+import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides, ResolvedGuardrailConfig } from '../../shared/agent-config';
 import { resolveToolNames, IMPLEMENTED_TOOL_NAMES } from '../../shared/resolve-tool-names';
 import { buildSystemPrompt } from '../../shared/system-prompt-builder';
 import { eligibleBundledSkills } from '../../shared/default-tool-skills';
@@ -389,6 +389,27 @@ export function resolveAgentConfig(
       };
     });
 
+  // --- Guardrails ---
+  // Each connected guardrails node becomes its own resolved entry; the
+  // runtime evaluates them in order and the first match wins for `block`.
+  const guardrails: ResolvedGuardrailConfig[] = connectedNodes
+    .filter((n) => n.data.type === 'guardrails')
+    .map((n) => {
+      if (n.data.type !== 'guardrails') throw new Error('unreachable');
+      return {
+        guardrailNodeId: n.id,
+        label: n.data.label,
+        enabled: n.data.enabled,
+        checkInput: n.data.checkInput,
+        checkOutput: n.data.checkOutput,
+        maxInputChars: n.data.maxInputChars,
+        blockedTerms: [...n.data.blockedTerms],
+        piiCategories: [...n.data.piiCategories],
+        action: n.data.action,
+        blockMessage: n.data.blockMessage,
+      };
+    });
+
   // --- MCP Servers ---
   // Each MCP node resolves to a ResolvedMcpConfig. The node id is kept as
   // `mcpNodeId` so the server can push `mcp:status` events back to the UI
@@ -569,6 +590,7 @@ export function resolveAgentConfig(
     crons,
     mcps,
     subAgents,
+    guardrails,
     // Exec tool cwd overrides agent-level workingDirectory when set
     workspacePath:
       (toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.exec?.cwd)

@@ -70,6 +70,11 @@ import { createAgentCommTools } from '../comms/agent-comm-tools';
 import { adaptAgentCommTools } from '../comms/agent-comm-tool-adapter';
 import { buildChannelContextBlock } from '../comms/channel-context-prompt';
 import { canonicalChannelKey } from '../comms/channel-key';
+import {
+  evaluateGuardrails,
+  firstBlocking,
+  type GuardrailViolation,
+} from '../runtime/guardrails-engine';
 
 export type RunStatus = 'pending' | 'running' | 'completed' | 'error';
 
@@ -1439,6 +1444,41 @@ export class RunCoordinator {
     let perRunToolsInjected = false;
 
     try {
+      // Input guardrails — evaluated before any session/runtime mutation so
+      // a blocked turn never lands in the transcript or hits the model.
+      // Warn-only violations are logged via the stream as informational
+      // payloads and the run continues normally.
+      const inputViolations = evaluateGuardrails(
+        this.config.guardrails,
+        promptText,
+        'input',
+      );
+      this.emitGuardrailViolations(record, inputViolations);
+      const blockingInput = firstBlocking(inputViolations);
+      if (blockingInput) {
+        const error = {
+          code: 'guardrail_blocked' as const,
+          message: blockingInput.blockMessage,
+          retriable: false,
+        };
+        record.pendingDiagnostic ??= this.buildRunDiagnostic(record, error);
+        record.payloads.push({
+          type: 'error',
+          content: blockingInput.blockMessage,
+        });
+        log(
+          'guardrails',
+          `[BLOCK input] agentId=${this.agentId} runId=${record.runId} `
+            + `guardrail="${blockingInput.label}" rule=${blockingInput.rule} `
+            + `detail="${blockingInput.detail}"`,
+        );
+        await finalizeTranscript();
+        this.concurrency.release(record.runId, record.sessionId);
+        this.finalizeRunError(record, error);
+        this.tryStartNextRun();
+        return;
+      }
+
       this.runtime.setSessionContext(
         transcriptManager.buildSessionContext().messages as AgentMessage[],
       );
@@ -1831,6 +1871,22 @@ export class RunCoordinator {
           createdAt: Date.now(),
         };
       }
+
+      // Output guardrails — the assistant text has already streamed to the
+      // client by the time we get here, so a `block` action cannot
+      // retroactively suppress the reply. We surface the violations as
+      // payload entries (visible in the run record) and log them, so an
+      // operator can audit and tune the rule set. A future iteration could
+      // hold the assistant text in a buffer and re-emit a redacted version.
+      if (transcriptState.assistantText) {
+        const outputViolations = evaluateGuardrails(
+          this.config.guardrails,
+          transcriptState.assistantText,
+          'output',
+        );
+        this.emitGuardrailViolations(record, outputViolations);
+      }
+
       await finalizeTranscript();
       this.concurrency.release(record.runId, record.sessionId);
       this.finalizeRunSuccess(record);
@@ -2309,6 +2365,40 @@ export class RunCoordinator {
       retriable: error.retriable,
       createdAt: Date.now(),
     };
+  }
+
+  /**
+   * Forward each guardrail violation to the run's stream as a custom
+   * `guardrail:violation` event. The UI listens on the run stream, so
+   * downstream surfaces can show inline warnings even when the action is
+   * `warn` (i.e. the run wasn't aborted). No-op when the list is empty.
+   */
+  private emitGuardrailViolations(
+    record: RunRecord,
+    violations: GuardrailViolation[],
+  ): void {
+    if (violations.length === 0) return;
+    for (const v of violations) {
+      this.emitForRun(record.runId, {
+        type: 'stream',
+        runId: record.runId,
+        event: {
+          type: 'guardrail:violation',
+          guardrailNodeId: v.guardrailNodeId,
+          label: v.label,
+          direction: v.direction,
+          rule: v.rule,
+          detail: v.detail,
+          action: v.action,
+        },
+      });
+      log(
+        'guardrails',
+        `[${v.action.toUpperCase()} ${v.direction}] agentId=${this.agentId} `
+          + `runId=${record.runId} guardrail="${v.label}" rule=${v.rule} `
+          + `detail="${v.detail}"`,
+      );
+    }
   }
 
   private appendPendingDiagnostic(record: RunRecord, transcriptManager: SessionManager): void {
