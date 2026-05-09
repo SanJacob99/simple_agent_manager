@@ -15,7 +15,7 @@ The Sub-Agent Node attaches to an Agent Node as a peripheral. Each declared sub-
 |----------|------|---------|-------------|
 | `name` | `string` | `""` | Identity used by the parent (e.g. `researcher`). Must match `/^[a-z][a-z0-9_-]{0,31}$/` |
 | `description` | `string` | `""` | Shown to the parent in the `sessions_spawn` schema |
-| `systemPrompt` | `string` | `"You are a focused assistant. ..."` | The sub's system prompt |
+| `systemPrompt` | `string` | `"You are a focused assistant. Complete the parent agent's task and report back concisely."` | The sub's system prompt |
 | `modelIdMode` | `'inherit' \| 'custom'` | `'inherit'` | When `inherit`, the parent's `modelId` is used at runtime |
 | `modelId` | `string` | `""` | Honored only when `modelIdMode === 'custom'` |
 | `thinkingLevelMode` | `'inherit' \| 'custom'` | `'inherit'` | Same convention as modelId |
