@@ -47,6 +47,11 @@
       "type": "src/types/nodes.ts#VectorDatabaseNodeData",
       "runtime": null
     },
+    "cron": {
+      "doc": "cron-node.md",
+      "type": "src/types/nodes.ts#CronNodeData",
+      "runtime": "server/scheduling/cron-scheduler.ts"
+    },
     "provider": {
       "doc": "provider-node.md",
       "type": "src/types/nodes.ts#ProviderNodeData",
