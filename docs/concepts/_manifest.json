@@ -61,6 +61,11 @@
       "doc": "sub-agent-node.md",
       "type": "src/types/nodes.ts#SubAgentNodeData",
       "runtime": "server/runtime/sub-agent-executor.ts"
+    },
+    "cron": {
+      "doc": "cron-node.md",
+      "type": "src/types/nodes.ts#CronNodeData",
+      "runtime": "server/scheduling/cron-scheduler.ts"
     }
   }
 }
