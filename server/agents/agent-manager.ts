@@ -6,7 +6,7 @@ import { StorageEngine } from '../storage/storage-engine';
 import { HookRegistry } from '../hooks/hook-registry';
 import { PluginLoader } from '../hooks/plugin-loader';
 import { registerInternalHooks } from '../hooks/internal-hooks';
-import { HOOK_NAMES, type BackendLifecycleContext } from '../hooks/hook-types';
+import { HOOK_NAMES, type BackendLifecycleContext, type SessionLifecycleContext } from '../hooks/hook-types';
 import { ProviderPluginRegistry } from '../providers/plugin-registry';
 import type { ApiKeyStore } from '../auth/api-keys';
 import { HitlRegistry } from '../hitl/hitl-registry';
@@ -337,6 +337,29 @@ export class AgentManager {
     const managed = this.agents.get(agentId);
     if (!managed) return;
     await managed.coordinator.seedInitialContextBreakdown(sessionKey);
+  }
+
+  /**
+   * Fire the SESSION_END hook for a session about to be deleted. No-op
+   * when the agent is not currently managed (the session can be deleted
+   * by HTTP without ever starting the agent runtime). Errors from
+   * hook handlers are logged inside HookRegistry.invoke and do not
+   * propagate, so the caller's deletion path is unaffected.
+   */
+  async fireSessionEndHook(
+    agentId: string,
+    sessionKey: string,
+    sessionId: string,
+  ): Promise<void> {
+    const managed = this.agents.get(agentId);
+    if (!managed) return;
+    const ctx: SessionLifecycleContext = {
+      agentId,
+      sessionId,
+      sessionKey,
+      phase: 'end',
+    };
+    await managed.hooks.invoke(HOOK_NAMES.SESSION_END, ctx);
   }
 
   /**
