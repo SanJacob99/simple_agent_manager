@@ -229,6 +229,19 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         allowedTools: [],
         autoConnect: true,
       };
+    case 'guardrails':
+      return {
+        type: 'guardrails',
+        label: 'Guardrails',
+        enabled: true,
+        checkInput: true,
+        checkOutput: true,
+        maxInputChars: 8000,
+        blockedTerms: [],
+        piiCategories: [],
+        action: 'block',
+        blockMessage: '',
+      };
     case 'subAgent':
       return {
         type: 'subAgent',

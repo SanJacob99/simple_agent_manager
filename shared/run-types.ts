@@ -33,7 +33,13 @@ export interface WaitResult {
 }
 
 export interface StructuredError {
-  code: 'model_refused' | 'rate_limited' | 'timeout' | 'aborted' | 'internal';
+  code:
+    | 'model_refused'
+    | 'rate_limited'
+    | 'timeout'
+    | 'aborted'
+    | 'internal'
+    | 'guardrail_blocked';
   message: string;
   retriable: boolean;
 }

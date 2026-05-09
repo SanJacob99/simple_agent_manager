@@ -16,7 +16,8 @@ export type NodeType =
   | 'cron'
   | 'provider'
   | 'mcp'
-  | 'subAgent';
+  | 'subAgent'
+  | 'guardrails';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -421,6 +422,52 @@ export interface MCPNodeData {
   autoConnect: boolean;
 }
 
+// --- Guardrails Node ---
+
+/**
+ * Action taken when an input or output trips a guardrail rule.
+ * - `block`: refuse the message; the runtime aborts the run with a structured
+ *   `guardrail_blocked` error. Mirrors OpenAI AgentKit / n8n "stop on violation".
+ * - `warn`: emit a `guardrail:violation` event but allow the message through.
+ *   Useful for telemetry-only mode while tuning patterns.
+ */
+export type GuardrailAction = 'block' | 'warn';
+
+export interface GuardrailsNodeData {
+  [key: string]: unknown;
+  type: 'guardrails';
+  label: string;
+  /** Master toggle. When false, the guardrail is wired but not enforced. */
+  enabled: boolean;
+  /** Apply rules to user messages before they reach the model. */
+  checkInput: boolean;
+  /** Apply rules to the assistant's reply after each turn. */
+  checkOutput: boolean;
+  /** Maximum length of a user message in characters. 0 disables this rule. */
+  maxInputChars: number;
+  /**
+   * Case-insensitive substrings that, if present in the input or output,
+   * trigger the configured action. Stored as strings because the graph must
+   * remain JSON-serializable.
+   */
+  blockedTerms: string[];
+  /**
+   * Built-in PII categories enforced via well-tested regexes (email,
+   * US Social Security Number, generic credit-card-shaped numbers).
+   * Listed by id so the UI can render checkboxes without re-parsing.
+   */
+  piiCategories: GuardrailPiiCategory[];
+  /** Behavior when a rule matches. */
+  action: GuardrailAction;
+  /**
+   * Optional message shown to the user when the guardrail blocks an
+   * interaction. Empty falls back to a generic notice.
+   */
+  blockMessage: string;
+}
+
+export type GuardrailPiiCategory = 'email' | 'ssn' | 'credit_card';
+
 // --- Sub-Agent Node ---
 
 export interface SubAgentNodeData {
@@ -455,6 +502,7 @@ export type FlowNodeData =
   | CronNodeData
   | ProviderNodeData
   | MCPNodeData
-  | SubAgentNodeData;
+  | SubAgentNodeData
+  | GuardrailsNodeData;
 
 export type AppNode = Node<FlowNodeData>;
