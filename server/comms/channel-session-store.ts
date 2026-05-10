@@ -309,12 +309,36 @@ export class ChannelSessionStore {
       return [];
     }
 
-    const lines = raw
-      .split('\n')
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0);
-
-    const tail = limit > 0 ? lines.slice(-limit) : lines;
+    // Performance optimization: Avoid split() and full string parsing
+    // for small limits. Backward search for limit > 0, otherwise forward loop.
+    let tail: string[] = [];
+    if (limit <= 0) {
+      let pos = 0;
+      while (pos < raw.length) {
+        const nextNewline = raw.indexOf('\n', pos);
+        if (nextNewline === -1) {
+          const line = raw.substring(pos).trim();
+          if (line.length > 0) tail.push(line);
+          break;
+        }
+        const line = raw.substring(pos, nextNewline).trim();
+        if (line.length > 0) tail.push(line);
+        pos = nextNewline + 1;
+      }
+    } else {
+      let pos = raw.length - 1;
+      while (pos >= 0 && tail.length < limit) {
+        let nextNewline = raw.lastIndexOf('\n', pos);
+        if (nextNewline === -1) {
+          const line = raw.substring(0, pos + 1).trim();
+          if (line.length > 0) tail.unshift(line);
+          break;
+        }
+        const line = raw.substring(nextNewline + 1, pos + 1).trim();
+        if (line.length > 0) tail.unshift(line);
+        pos = nextNewline - 1;
+      }
+    }
 
     return tail.map((l) => {
       try {

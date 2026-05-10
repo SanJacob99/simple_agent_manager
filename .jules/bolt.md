@@ -16,3 +16,7 @@
 ## 2024-05-18 - Safe Concurrent Bulk File Cleanup
 **Learning:** Running unbounded `Promise.all` loops for concurrent file system I/O over arrays of paths (e.g., in `removeOrphanTranscripts`) accelerates disk operations but causes application-crashing `EMFILE` (too many open files) limits when the directory grows.
 **Action:** Batch concurrent file operations using a chunked execution pattern (e.g., `CHUNK_SIZE = 50`) to gain the speed of concurrency without triggering OS-level file descriptor limits.
+
+## 2024-05-17 - JSONL Reading Split Array Allocation Avoidance
+**Learning:** For performance-critical code involving massive JSONL file reading (e.g. `SamAgentTranscriptStore.read`, `ChannelSessionStore.tail`), using standard string `split('\n')` methods creates very large intermediate array allocations which causes memory churn and slows down execution.
+**Action:** Replace `split('\n')` entirely with single-pass extraction loops leveraging `indexOf('\n')` and `substring()`. For retrieving from the end of the file (like in `tail`), use a backward loop with `lastIndexOf('\n')` when dealing with smaller limits to completely bypass parsing the entire payload.
