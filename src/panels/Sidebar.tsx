@@ -10,6 +10,7 @@ import {
   Cloud,
   Plug,
   Bot,
+  Clock,
 } from 'lucide-react';
 import type { NodeType } from '../types/nodes';
 import { NODE_COLORS, NODE_LABELS, NODE_PASTEL } from '../utils/theme';
@@ -67,6 +68,10 @@ const PERIPHERAL_ITEMS: PaletteItem[] = [
   { type: 'mcp', icon: <Plug size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
   { type: 'provider' as NodeType, icon: <Cloud size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
   { type: 'subAgent', icon: <Bot size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
+  // R-25 fix: cron node added to default palette so users can wire scheduled
+  // runs without REST/import. The runtime path (server/scheduling/cron-scheduler.ts)
+  // and the resolver were already wired; only the palette entry was missing.
+  { type: 'cron', icon: <Clock size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
 ];
 
 const TILE_SHADOW =

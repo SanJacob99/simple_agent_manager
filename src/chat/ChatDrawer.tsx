@@ -449,7 +449,21 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
                         session.sessionKey.endsWith(':main'),
                       )}
                       <span className="ml-1 text-[8px] text-slate-600">
-                        ({session.messages.length} msgs)
+                        {(() => {
+                          // F-11 fix: messages.length is 0 until the session's
+                          // transcript is hydrated by `flushSession`. Showing
+                          // "(0 msgs)" for sessions that actually have content
+                          // is misleading. Use transcriptStatus to differentiate
+                          // hydrated rows from not-yet-loaded rows.
+                          const status = transcriptStatus[session.sessionKey] ?? 'idle';
+                          if (status === 'ready') {
+                            return `(${session.messages.length} msgs)`;
+                          }
+                          if (status === 'loading') {
+                            return '(loading…)';
+                          }
+                          return '(saved)';
+                        })()}
                       </span>
                     </button>
                     <button

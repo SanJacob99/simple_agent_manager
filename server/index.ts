@@ -518,7 +518,11 @@ app.post('/api/storage/maintenance', async (req, res) => {
   };
   try {
     const engine = getOrCreateEngine(config, agentName);
-    const report = await engine.runMaintenance();
+    // Pass the explicit mode from the live request body so a warm engine
+    // cache (carrying an older `maintenanceMode`) can't silently downgrade
+    // an enforce request to warn. The dry-run route hardcodes 'warn'; this
+    // route honors the user's request.
+    const report = await engine.runMaintenance(config.maintenanceMode ?? 'warn');
     res.json(report);
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
@@ -714,6 +718,10 @@ app.post('/api/providers/catalog/load', async (req, res) => {
         plugin,
         apiKeys,
       );
+      if (!auth.baseUrl) {
+        res.json({ models: {}, userModels: {}, syncedAt: null, userModelsRequireRefresh: false });
+        return;
+      }
       res.json(await catalogCache.refresh(request, plugin, {
         apiKey: auth.apiKey!,
         baseUrl: auth.baseUrl,
@@ -739,6 +747,10 @@ app.post('/api/providers/catalog/refresh', async (req, res) => {
     );
     if (!auth.apiKey) {
       res.status(400).json({ error: `No API key available for "${request.pluginId}".` });
+      return;
+    }
+    if (!auth.baseUrl) {
+      res.status(400).json({ error: `No baseUrl resolved for "${request.pluginId}". Provide request.baseUrl or define plugin.defaultBaseUrl.` });
       return;
     }
     res.json(await catalogCache.refresh(request, plugin, {
@@ -847,6 +859,31 @@ initializeToolRegistry({ extraDirs: userToolsDir.dirs })
 
       // Register this PID so `sam restart` can find us next time.
       writeServerPid(process.pid);
+
+      // --- Auto-restore persisted agents from disk ---
+      // F-12 fix: walk every <storagePath>/<agentName>/agent-config.json and
+      // re-`start()` each agent so crons/sub-agent registries/hook bindings
+      // are live BEFORE the first WS client connects. Lazy-on-chat-open used
+      // to be the only restore path, which broke any boot-time hook (e.g.,
+      // the backend_start hook below depended on at least one client
+      // attaching first). Scoped to the user's persisted storage default
+      // (loaded from settings.json) with a sane fallback.
+      settingsFile.load().then(async (s) => {
+        const sd = (s.storageDefaults ?? {}) as { storagePath?: string };
+        const storagePath = sd.storagePath || '~/.simple-agent-manager/storage';
+        try {
+          const restored = await agentManager.restoreFromDisk(storagePath);
+          if (restored > 0) {
+            console.log(`[Agents] Auto-restored ${restored} agent(s) from ${storagePath}`);
+          } else {
+            console.log(`[Agents] No persisted agents to restore at ${storagePath}`);
+          }
+        } catch (err) {
+          console.error('[Agents] restoreFromDisk failed:', err);
+        }
+      }).catch(() => {
+        // settings already logged the load failure separately
+      });
 
       // --- backend_start hook (global) ---
       const globalRegistry = getGlobalHookRegistry();

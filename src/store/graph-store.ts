@@ -587,7 +587,28 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
         }
       }
     }
-    set({ nodes, edges });
+    // F-08 fix: enforce sub-agent peripheral allow-list at hydration time.
+    // The live `onConnect` rule (lines 297-301) only fires for user-driven
+    // drag-drop. Edges arriving via REST PUT, fixture import, programmatic
+    // patch, or forwards-compat migration bypassed it. We re-run the same
+    // rule here so the rendered canvas can never carry a violation that
+    // the resolver would silently ignore downstream.
+    const allowedSubAgentSources = new Set(['tools', 'provider', 'skills', 'mcp']);
+    const filteredEdges = edges.filter((e) => {
+      const target = nodes.find((n) => n.id === e.target);
+      if (!target || target.data.type !== 'subAgent') return true;
+      const source = nodes.find((n) => n.id === e.source);
+      if (!source) return false;
+      return allowedSubAgentSources.has(source.data.type);
+    });
+    if (filteredEdges.length !== edges.length) {
+      const dropped = edges.length - filteredEdges.length;
+      console.warn(
+        `[graph-store] Dropped ${dropped} hydrated edge(s) violating the sub-agent peripheral allow-list (tools | provider | skills | mcp). ` +
+        `These would have rendered without effect.`,
+      );
+    }
+    set({ nodes, edges: filteredEdges });
   },
 }));
 
