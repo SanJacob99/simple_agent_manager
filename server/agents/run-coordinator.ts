@@ -24,6 +24,7 @@ import {
   type AgentEndContext,
   type SessionLifecycleContext,
   type MessageReceivedContext,
+  type CompactionHookContext,
 } from '../hooks/hook-types';
 import type {
   DispatchParams,
@@ -803,6 +804,20 @@ export class RunCoordinator {
       messagesBefore as Array<{ content?: string | unknown }>,
     );
 
+    const compactionStrategy = this.config.contextEngine?.compactionStrategy ?? 'unknown';
+
+    if (this.hooks) {
+      const beforeCtx: CompactionHookContext = {
+        agentId: this.agentId,
+        runId: '',
+        sessionId: status.sessionId,
+        messageCount: messagesBefore.length,
+        strategy: compactionStrategy,
+        phase: 'before',
+      };
+      await this.hooks.invoke(HOOK_NAMES.BEFORE_COMPACTION, beforeCtx);
+    }
+
     this.runtime.setActiveSession(transcriptManager);
     let messagesAfter: AgentMessage[];
     try {
@@ -821,6 +836,18 @@ export class RunCoordinator {
       await this.sessionRouter.updateAfterTurn(sessionKey, {
         compactionCount: (status.compactionCount ?? 0) + 1,
       });
+    }
+
+    if (this.hooks) {
+      const afterCtx: CompactionHookContext = {
+        agentId: this.agentId,
+        runId: '',
+        sessionId: status.sessionId,
+        messageCount: messagesAfter.length,
+        strategy: compactionStrategy,
+        phase: 'after',
+      };
+      await this.hooks.invoke(HOOK_NAMES.AFTER_COMPACTION, afterCtx);
     }
 
     return {
@@ -2028,6 +2055,18 @@ export class RunCoordinator {
 
     if (raw.type === 'memory_compaction') {
       transcriptState.compactionCount += 1;
+      if (this.hooks) {
+        const afterCtx: CompactionHookContext = {
+          agentId: record.agentId,
+          runId: record.runId,
+          sessionId: record.sessionId,
+          messageCount: transcriptManager.buildSessionContext().messages.length,
+          strategy: config.contextEngine?.compactionStrategy ?? 'unknown',
+          phase: 'after',
+          summary: typeof raw.summary === 'string' ? raw.summary : undefined,
+        };
+        await this.hooks.invoke(HOOK_NAMES.AFTER_COMPACTION, afterCtx);
+      }
       return;
     }
   }
