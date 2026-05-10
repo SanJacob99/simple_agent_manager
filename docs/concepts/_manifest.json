@@ -42,6 +42,11 @@
       "type": "src/types/nodes.ts#StorageNodeData",
       "runtime": "server/storage/storage-engine.ts"
     },
+    "cron": {
+      "doc": "cron-node.md",
+      "type": "src/types/nodes.ts#CronNodeData",
+      "runtime": "server/scheduling/cron-scheduler.ts"
+    },
     "vectorDatabase": {
       "doc": "vector-database-node.md",
       "type": "src/types/nodes.ts#VectorDatabaseNodeData",
