@@ -110,14 +110,14 @@ describe('settings store', () => {
   it('persists per-node-type defaults', () => {
     useSettingsStore.getState().setProviderDefaults({ baseUrl: 'https://proxy.example/v1' });
     useSettingsStore.getState().setContextEngineDefaults({ tokenBudget: 64000 });
-    useSettingsStore.getState().setMemoryDefaults({ maxSessionMessages: 50 });
+    useSettingsStore.getState().setMemoryDefaults({ autoLoadShortTermDays: 5 });
     useSettingsStore.getState().setCronDefaults({ retentionDays: 14 });
 
     expect(savedPayloads.length).toBe(4);
     const last = savedPayloads[3] as Record<string, any>;
     expect(last.providerDefaults.baseUrl).toBe('https://proxy.example/v1');
     expect(last.contextEngineDefaults.tokenBudget).toBe(64000);
-    expect(last.memoryDefaults.maxSessionMessages).toBe(50);
+    expect(last.memoryDefaults.autoLoadShortTermDays).toBe(5);
     expect(last.cronDefaults.retentionDays).toBe(14);
   });
 

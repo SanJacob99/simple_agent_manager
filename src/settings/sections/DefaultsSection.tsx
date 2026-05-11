@@ -10,12 +10,18 @@ import {
 } from '../../store/model-catalog-store';
 import { useProviderRegistryStore } from '../../store/provider-registry-store';
 import { useSettingsStore } from '../settings-store';
-import type { ThinkingLevel, CompactionStrategy, MemoryBackend } from '../../types/nodes';
+import type {
+  ThinkingLevel,
+  CompactionStrategy,
+  MemoryCompactionStrategy,
+  MemorySearchMode,
+} from '../../types/nodes';
 import type { DefaultsSubTab } from '../types';
 
 const THINKING_LEVELS: ThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
 const COMPACTION_STRATEGIES: CompactionStrategy[] = ['summary', 'sliding-window', 'trim-oldest'];
-const MEMORY_BACKENDS: MemoryBackend[] = ['builtin', 'external', 'cloud'];
+const MEMORY_COMPACTION_STRATEGIES: MemoryCompactionStrategy[] = ['summary', 'sliding-window'];
+const MEMORY_SEARCH_MODES: MemorySearchMode[] = ['keyword', 'hybrid'];
 
 const TABS: { id: DefaultsSubTab; label: string }[] = [
   { id: 'agent', label: 'Agent' },
@@ -475,38 +481,58 @@ function MemorySubSection() {
 
   return (
     <div className="space-y-4">
-      <Field label="Backend">
-        <select
-          aria-label="Backend"
-          value={defaults.backend}
-          onChange={(e) => setDefaults({ backend: e.target.value as MemoryBackend })}
-          className={inputCls}
-        >
-          {MEMORY_BACKENDS.map((b) => <option key={b} value={b}>{b}</option>)}
-        </select>
+      <Field
+        label="Auto-load Long-term"
+        hint="Inject MEMORY.md (durable facts) into the system prompt at session start."
+      >
+        <label className="flex items-center gap-2 text-sm text-slate-300">
+          <input
+            type="checkbox"
+            checked={defaults.autoLoadLongTerm}
+            onChange={(e) => setDefaults({ autoLoadLongTerm: e.target.checked })}
+            className="rounded border-slate-600"
+          />
+          Load MEMORY.md at session start
+        </label>
       </Field>
 
-      <Field label="Max Session Messages" hint="Maximum messages retained in session context.">
+      <Field
+        label="Long-term Max Bytes"
+        hint="Cap on injected MEMORY.md size. 0 = no cap."
+      >
         <input
           type="number"
-          aria-label="Max Session Messages"
-          value={defaults.maxSessionMessages}
-          onChange={(e) => setDefaults({ maxSessionMessages: parseInt(e.target.value) || 100 })}
-          min={1}
+          aria-label="Long-term Max Bytes"
+          value={defaults.longTermMaxBytes}
+          onChange={(e) => setDefaults({ longTermMaxBytes: parseInt(e.target.value) || 0 })}
+          min={0}
           className={inputCls}
         />
       </Field>
 
-      <Field label="Persist Across Sessions">
-        <label className="flex items-center gap-2 text-sm text-slate-300">
-          <input
-            type="checkbox"
-            checked={defaults.persistAcrossSessions}
-            onChange={(e) => setDefaults({ persistAcrossSessions: e.target.checked })}
-            className="rounded border-slate-600"
-          />
-          Keep memory data between sessions
-        </label>
+      <Field
+        label="Auto-load Short-term Days"
+        hint="How many recent daily logs to inject (today counts as 1)."
+      >
+        <input
+          type="number"
+          aria-label="Auto-load Short-term Days"
+          value={defaults.autoLoadShortTermDays}
+          onChange={(e) => setDefaults({ autoLoadShortTermDays: parseInt(e.target.value) || 0 })}
+          min={0}
+          className={inputCls}
+        />
+      </Field>
+
+      <Field label="Search Mode" hint="`hybrid` requires an embedding-capable vector node.">
+        <select
+          aria-label="Search Mode"
+          value={defaults.searchMode}
+          onChange={(e) => setDefaults({ searchMode: e.target.value as MemorySearchMode })}
+          className={inputCls}
+        >
+          {MEMORY_SEARCH_MODES.map((m) => <option key={m} value={m}>{m}</option>)}
+        </select>
       </Field>
 
       <Field label="Compaction">
@@ -517,9 +543,38 @@ function MemorySubSection() {
             onChange={(e) => setDefaults({ compactionEnabled: e.target.checked })}
             className="rounded border-slate-600"
           />
-          Enable memory compaction
+          Compact old daily logs
         </label>
       </Field>
+
+      {defaults.compactionEnabled && (
+        <>
+          <Field
+            label="Compaction After Days"
+            hint="Daily logs older than this become compaction candidates."
+          >
+            <input
+              type="number"
+              aria-label="Compaction After Days"
+              value={defaults.compactionAfterDays}
+              onChange={(e) => setDefaults({ compactionAfterDays: parseInt(e.target.value) || 7 })}
+              min={1}
+              className={inputCls}
+            />
+          </Field>
+
+          <Field label="Compaction Strategy">
+            <select
+              aria-label="Compaction Strategy"
+              value={defaults.compactionStrategy}
+              onChange={(e) => setDefaults({ compactionStrategy: e.target.value as MemoryCompactionStrategy })}
+              className={inputCls}
+            >
+              {MEMORY_COMPACTION_STRATEGIES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </Field>
+        </>
+      )}
     </div>
   );
 }

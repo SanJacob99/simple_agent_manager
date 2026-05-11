@@ -42,25 +42,42 @@ export interface AgentNodeData {
 }
 
 // --- Memory Node (OpenClaw-inspired) ---
+//
+// Two-tier model that mirrors OpenClaw:
+//   - Long-term: a single `MEMORY.md` of durable facts (preferences, decisions,
+//     standing instructions). Never auto-compacted.
+//   - Short-term: `memory/YYYY-MM-DD.md` daily logs. Auto-loaded for recent
+//     days; older days can be compacted into a summary or rolled forward.
+// Persistence is delegated to the connected Storage node's memory directory;
+// the engine is a no-op when no Storage node is wired.
 
-export type MemoryBackend = 'builtin' | 'external' | 'cloud';
+export type MemorySearchMode = 'keyword' | 'hybrid';
+export type MemoryCompactionStrategy = 'summary' | 'sliding-window';
 
 export interface MemoryNodeData {
   [key: string]: unknown;
   type: 'memory';
   label: string;
-  backend: MemoryBackend;
-  maxSessionMessages: number;
-  persistAcrossSessions: boolean;
+  /** Inject `MEMORY.md` into the system prompt at session start. */
+  autoLoadLongTerm: boolean;
+  /** Max bytes of `MEMORY.md` to inject. 0 = no cap (whole file). */
+  longTermMaxBytes: number;
+  /** How many recent daily-log files to inject at session start (today counts as 1). */
+  autoLoadShortTermDays: number;
+  /** Periodically compact daily logs older than `compactionAfterDays`. */
   compactionEnabled: boolean;
-  compactionStrategy: 'summary' | 'sliding-window';
-  compactionThreshold: number;
+  /** Daily logs older than this many days become candidates for compaction. */
+  compactionAfterDays: number;
+  /** Strategy used when compacting an old daily log. */
+  compactionStrategy: MemoryCompactionStrategy;
+  /** `keyword` = case-insensitive substring across all files. `hybrid` = keyword + vector (when wired). */
+  searchMode: MemorySearchMode;
+  /** Expose `memory_search` to the agent. */
   exposeMemorySearch: boolean;
+  /** Expose `memory_get` (read whole file or line range) to the agent. */
   exposeMemoryGet: boolean;
+  /** Expose `memory_save` to the agent. Takes a `scope` of long_term | short_term. */
   exposeMemorySave: boolean;
-  searchMode: 'keyword' | 'semantic' | 'hybrid';
-  externalEndpoint: string;
-  externalApiKey: string;
 }
 
 // --- Tools Node (OpenClaw-inspired) ---

@@ -1,155 +1,286 @@
 import type { ResolvedMemoryConfig } from '../../shared/agent-config';
+import type { StorageEngine } from '../storage/storage-engine';
 import type { AgentTool, AgentToolResult } from '@mariozechner/pi-agent-core';
 import { Type, type TSchema } from '@sinclair/typebox';
-
-export interface MemoryEntry {
-  key: string;
-  content: string;
-  metadata: Record<string, unknown>;
-  timestamp: number;
-}
 
 function textResult(text: string): AgentToolResult<undefined> {
   return { content: [{ type: 'text', text }], details: undefined };
 }
 
+function isoDate(d: Date = new Date()): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function daysAgo(n: number): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - n);
+  return isoDate(d);
+}
+
+export type MemoryScope = 'long_term' | 'short_term';
+
+export interface MemorySearchHit {
+  file: string;
+  scope: MemoryScope;
+  line: number;
+  excerpt: string;
+}
+
 /**
- * MemoryEngine manages agent memory with support for session messages,
- * long-term storage, and search (keyword/semantic/hybrid).
+ * Two-tier memory inspired by OpenClaw:
  *
- * Builtin backend uses an in-memory Map (with optional IndexedDB persistence).
- * External/cloud backends delegate to REST endpoints.
+ *   - Long-term: a single `MEMORY.md` of durable facts. Never auto-compacted.
+ *   - Short-term: `memory/YYYY-MM-DD.md` daily logs. Today + N recent days are
+ *     auto-loaded; older days can be compacted into a `summary.md` rollup.
+ *
+ * Persistence is delegated to the connected StorageEngine. When no storage
+ * is available (e.g. the agent has no Storage node) every operation
+ * becomes a no-op and tools report that memory is offline.
  */
 export class MemoryEngine {
-  private config: ResolvedMemoryConfig;
-  private longTermStore = new Map<string, MemoryEntry>();
-  private sessionMessages = new Map<string, Array<{ role: string; content: string; timestamp: number }>>();
+  constructor(
+    private readonly config: ResolvedMemoryConfig,
+    private readonly storage: StorageEngine | null,
+  ) {}
 
-  constructor(config: ResolvedMemoryConfig) {
-    this.config = config;
+  private requireStorage(): StorageEngine | null {
+    return this.storage;
   }
 
-  // --- Long-term memory ---
+  // --- Long-term (MEMORY.md) ---
 
-  async saveLongTerm(key: string, content: string, metadata: Record<string, unknown> = {}): Promise<void> {
-    this.longTermStore.set(key, { key, content, metadata, timestamp: Date.now() });
+  async readLongTerm(): Promise<string> {
+    const storage = this.requireStorage();
+    if (!storage) return '';
+    const content = await storage.readLongTermMemory();
+    return content ?? '';
   }
 
-  async getLongTerm(key: string): Promise<MemoryEntry | null> {
-    return this.longTermStore.get(key) || null;
+  async appendLongTerm(content: string): Promise<void> {
+    const storage = this.requireStorage();
+    if (!storage) return;
+    const existing = (await storage.readLongTermMemory()) ?? '';
+    const stamp = new Date().toISOString();
+    const block = existing.endsWith('\n') || existing.length === 0 ? '' : '\n';
+    const entry = `${block}\n- (${stamp}) ${content.trim()}\n`;
+    await storage.writeLongTermMemory(existing + entry);
   }
 
-  async searchLongTerm(query: string): Promise<MemoryEntry[]> {
-    const queryLower = query.toLowerCase();
-    const results: MemoryEntry[] = [];
+  async writeLongTerm(content: string): Promise<void> {
+    const storage = this.requireStorage();
+    if (!storage) return;
+    await storage.writeLongTermMemory(content);
+  }
 
-    for (const entry of this.longTermStore.values()) {
-      const contentLower = entry.content.toLowerCase();
-      if (contentLower.includes(queryLower)) {
-        results.push(entry);
+  // --- Short-term (daily logs) ---
+
+  async appendShortTerm(content: string, date?: string): Promise<string> {
+    const storage = this.requireStorage();
+    if (!storage) return '';
+    const target = date ?? isoDate();
+    const stamp = new Date().toISOString();
+    const entry = `\n- (${stamp}) ${content.trim()}\n`;
+    await storage.appendDailyMemory(entry, target);
+    return target;
+  }
+
+  async readShortTerm(date?: string): Promise<string> {
+    const storage = this.requireStorage();
+    if (!storage) return '';
+    const target = date ?? isoDate();
+    const content = await storage.readDailyMemory(target);
+    return content ?? '';
+  }
+
+  // --- Session bootstrap injection ---
+
+  /**
+   * Produce the markdown block that should be injected into the system prompt
+   * at session start. Mirrors OpenClaw: long-term first, then the N most
+   * recent daily logs. Returns an empty string if neither layer is auto-load.
+   */
+  async buildBootstrapContext(): Promise<string> {
+    const storage = this.requireStorage();
+    if (!storage) return '';
+
+    const parts: string[] = [];
+
+    if (this.config.autoLoadLongTerm) {
+      let longTerm = await this.readLongTerm();
+      if (longTerm) {
+        const cap = this.config.longTermMaxBytes;
+        if (cap > 0 && longTerm.length > cap) {
+          longTerm = longTerm.slice(0, cap) + '\n\n... [truncated; full file in MEMORY.md]';
+        }
+        parts.push(`## Long-term memory (MEMORY.md)\n\n${longTerm}`);
       }
     }
 
-    // Sort by relevance (simple: position of match, then recency)
-    results.sort((a, b) => b.timestamp - a.timestamp);
-    return results.slice(0, 10);
+    const days = Math.max(0, this.config.autoLoadShortTermDays);
+    if (days > 0) {
+      const blocks: string[] = [];
+      for (let i = 0; i < days; i++) {
+        const date = daysAgo(i);
+        const content = await storage.readDailyMemory(date);
+        if (content && content.trim().length > 0) {
+          blocks.push(`### ${date}\n${content.trim()}`);
+        }
+      }
+      if (blocks.length > 0) {
+        parts.push(`## Short-term memory (recent daily logs)\n\n${blocks.join('\n\n')}`);
+      }
+    }
+
+    return parts.join('\n\n');
   }
 
-  // --- Session memory ---
+  // --- Search ---
 
-  async saveSessionMessage(
-    sessionId: string,
-    message: { role: string; content: string; timestamp: number },
-  ): Promise<void> {
-    if (!this.sessionMessages.has(sessionId)) {
-      this.sessionMessages.set(sessionId, []);
-    }
-    const msgs = this.sessionMessages.get(sessionId)!;
-    msgs.push(message);
+  /**
+   * Keyword search across MEMORY.md and every daily log. Case-insensitive.
+   * Returns at most 20 hits, each carrying its source file, line number, and
+   * a one-line excerpt so the agent can decide whether to memory_get more.
+   *
+   * `hybrid` mode is reserved for when a vector node is wired; for now it
+   * falls through to keyword search so the schema can land first.
+   */
+  async search(query: string, limit = 20): Promise<MemorySearchHit[]> {
+    const storage = this.requireStorage();
+    if (!storage || !query.trim()) return [];
 
-    // Trim to max
-    if (msgs.length > this.config.maxSessionMessages) {
-      msgs.splice(0, msgs.length - this.config.maxSessionMessages);
+    const needle = query.toLowerCase();
+    const hits: MemorySearchHit[] = [];
+
+    const longTerm = await storage.readLongTermMemory();
+    if (longTerm) {
+      this.collectHits(longTerm, 'MEMORY.md', 'long_term', needle, hits, limit);
     }
+
+    if (hits.length >= limit) return hits.slice(0, limit);
+
+    const files = await storage.listMemoryFiles();
+    const dailyFiles = files
+      .filter((f) => !f.isEvergreen && f.date)
+      .sort((a, b) => (b.date! < a.date! ? -1 : 1));
+
+    for (const file of dailyFiles) {
+      if (hits.length >= limit) break;
+      const content = await storage.readDailyMemory(file.date!);
+      if (!content) continue;
+      this.collectHits(content, file.name, 'short_term', needle, hits, limit);
+    }
+
+    return hits.slice(0, limit);
   }
 
-  async getSessionMessages(
-    sessionId: string,
-    limit?: number,
-  ): Promise<Array<{ role: string; content: string; timestamp: number }>> {
-    const msgs = this.sessionMessages.get(sessionId) || [];
-    return limit ? msgs.slice(-limit) : msgs;
+  private collectHits(
+    content: string,
+    file: string,
+    scope: MemoryScope,
+    needle: string,
+    out: MemorySearchHit[],
+    limit: number,
+  ): void {
+    const lines = content.split(/\r?\n/);
+    for (let i = 0; i < lines.length; i++) {
+      if (out.length >= limit) return;
+      if (lines[i].toLowerCase().includes(needle)) {
+        out.push({
+          file,
+          scope,
+          line: i + 1,
+          excerpt: lines[i].trim().slice(0, 240),
+        });
+      }
+    }
   }
 
   // --- Compaction ---
 
-  async compact(
-    messages: Array<{ role: string; content: string }>,
-  ): Promise<{ compacted: Array<{ role: string; content: string }>; summary: string }> {
-    if (!this.config.compactionEnabled || messages.length < 4) {
-      return { compacted: messages, summary: '' };
-    }
+  /**
+   * Compact daily logs older than `compactionAfterDays`. Two strategies:
+   *   - `sliding-window`: simply prune the file (data removed).
+   *   - `summary`: collapse the file to a one-line summary header so the
+   *      content can still be discovered by search but no longer carries
+   *      its full bulk.
+   *
+   * Returns the list of dates that were touched. No-op when compaction is
+   * disabled or storage is offline.
+   */
+  async compactOldDailyLogs(): Promise<string[]> {
+    if (!this.config.compactionEnabled) return [];
+    const storage = this.requireStorage();
+    if (!storage) return [];
 
-    const strategy = this.config.compactionStrategy;
+    const cutoff = daysAgo(Math.max(1, this.config.compactionAfterDays));
+    const touched: string[] = [];
 
-    if (strategy === 'sliding-window') {
-      // Keep last N messages
-      const keepCount = Math.max(4, Math.floor(messages.length * 0.3));
-      const kept = messages.slice(-keepCount);
-      const dropped = messages.slice(0, -keepCount);
-      const summary = dropped.length > 0
-        ? `[${dropped.length} earlier messages compacted]`
-        : '';
-      return { compacted: kept, summary };
-    }
+    const files = await storage.listMemoryFiles();
+    for (const file of files) {
+      if (file.isEvergreen || !file.date) continue;
+      if (file.date >= cutoff) continue;
 
-    if (strategy === 'summary') {
-      // Summarize older messages, keep recent ones
-      const keepCount = Math.max(4, Math.floor(messages.length * 0.3));
-      const toSummarize = messages.slice(0, -keepCount);
-      const kept = messages.slice(-keepCount);
+      const content = await storage.readDailyMemory(file.date);
+      if (!content) continue;
 
-      if (toSummarize.length === 0) {
-        return { compacted: messages, summary: '' };
+      if (this.config.compactionStrategy === 'sliding-window') {
+        // Replace the daily file with a single marker so search still finds
+        // its absence without leaving stale bulk on disk.
+        await storage.appendDailyMemory(
+          `\n<!-- compacted ${new Date().toISOString()} -->\n`,
+          file.date,
+        );
+      } else {
+        const summary = this.summarizeDailyLog(content);
+        await storage.appendDailyMemory(
+          `\n<!-- summarized ${new Date().toISOString()} -->\n${summary}\n`,
+          file.date,
+        );
       }
-
-      const summaryText = toSummarize
-        .map((m) => `${m.role}: ${m.content.slice(0, 200)}`)
-        .join('\n');
-      const summary = `Summary of ${toSummarize.length} earlier messages:\n${summaryText.slice(0, 1000)}`;
-
-      const compacted = [
-        { role: 'system' as const, content: summary },
-        ...kept,
-      ];
-      return { compacted, summary };
+      touched.push(file.date);
     }
 
-    return { compacted: messages, summary: '' };
+    return touched;
   }
 
-  // --- Memory tools for the agent ---
+  private summarizeDailyLog(content: string): string {
+    // Local heuristic summary: keep the first line of each bullet so the
+    // shape of the day is preserved without LLM cost. A future enhancement
+    // can route through a summary model when one is configured.
+    const lines = content.split(/\r?\n/);
+    const bullets = lines.filter((l) => l.trim().startsWith('- '));
+    const compact = bullets.map((l) => l.split('\n')[0].slice(0, 200));
+    return `## Summary (${bullets.length} entries)\n${compact.join('\n')}`;
+  }
+
+  // --- Tools exposed to the agent ---
 
   createMemoryTools(): AgentTool<TSchema>[] {
     const tools: AgentTool<TSchema>[] = [];
 
-    if (this.config.exposeMemorySearch) {
+    if (this.config.exposeMemorySave) {
       tools.push({
-        name: 'memory_search',
-        description: 'Search long-term memory using keyword matching. Returns relevant memory entries.',
-        label: 'Memory Search',
+        name: 'memory_save',
+        label: 'Memory Save',
+        description:
+          'Persist a fact the agent should remember. Use `long_term` for durable facts about the user or the job (preferences, decisions, standing instructions). Use `short_term` for today\'s observations and session context — these end up in the daily log and may be compacted later.',
         parameters: Type.Object({
-          query: Type.String({ description: 'Search query' }),
+          scope: Type.Union(
+            [Type.Literal('long_term'), Type.Literal('short_term')],
+            { description: 'Where to save the entry.' },
+          ),
+          content: Type.String({
+            description: 'The fact or observation to remember. One self-contained sentence works best.',
+          }),
         }),
         execute: async (_id, params: any) => {
-          const results = await this.searchLongTerm(params.query);
-          if (results.length === 0) {
-            return textResult('No memory entries found matching the query.');
+          if (!this.storage) return textResult('Memory is offline — no Storage node connected.');
+          if (params.scope === 'long_term') {
+            await this.appendLongTerm(params.content);
+            return textResult('Saved to MEMORY.md (long-term).');
           }
-          const formatted = results
-            .map((r) => `[${r.key}] ${r.content}`)
-            .join('\n---\n');
-          return textResult(formatted);
+          const date = await this.appendShortTerm(params.content);
+          return textResult(`Saved to memory/${date}.md (short-term).`);
         },
       });
     }
@@ -157,33 +288,48 @@ export class MemoryEngine {
     if (this.config.exposeMemoryGet) {
       tools.push({
         name: 'memory_get',
-        description: 'Retrieve a specific memory entry by key.',
         label: 'Memory Get',
+        description:
+          'Read a memory file in full. Pass scope=long_term to fetch MEMORY.md, or scope=short_term with a date (YYYY-MM-DD) to fetch a specific daily log. Omit the date to fetch today.',
         parameters: Type.Object({
-          key: Type.String({ description: 'Memory entry key' }),
+          scope: Type.Union([
+            Type.Literal('long_term'),
+            Type.Literal('short_term'),
+          ]),
+          date: Type.Optional(
+            Type.String({
+              description: 'ISO date YYYY-MM-DD. Only used when scope=short_term. Defaults to today.',
+            }),
+          ),
         }),
         execute: async (_id, params: any) => {
-          const entry = await this.getLongTerm(params.key);
-          if (!entry) {
-            return textResult(`No memory entry found with key: ${params.key}`);
+          if (!this.storage) return textResult('Memory is offline — no Storage node connected.');
+          if (params.scope === 'long_term') {
+            const content = await this.readLongTerm();
+            return textResult(content ? content : '(MEMORY.md is empty)');
           }
-          return textResult(`[${entry.key}] ${entry.content}`);
+          const date = params.date ?? isoDate();
+          const content = await this.readShortTerm(date);
+          return textResult(content ? content : `(memory/${date}.md is empty)`);
         },
       });
     }
 
-    if (this.config.exposeMemorySave) {
+    if (this.config.exposeMemorySearch) {
       tools.push({
-        name: 'memory_save',
-        description: 'Save information to long-term memory for later retrieval.',
-        label: 'Memory Save',
+        name: 'memory_search',
+        label: 'Memory Search',
+        description:
+          'Find memories matching a keyword across MEMORY.md and every daily log. Returns file, line, and excerpt for each hit so the agent can follow up with memory_get.',
         parameters: Type.Object({
-          key: Type.String({ description: 'Unique key for this memory entry' }),
-          content: Type.String({ description: 'Content to remember' }),
+          query: Type.String({ description: 'Search term (case-insensitive substring match).' }),
         }),
         execute: async (_id, params: any) => {
-          await this.saveLongTerm(params.key, params.content);
-          return textResult(`Saved memory entry: ${params.key}`);
+          if (!this.storage) return textResult('Memory is offline — no Storage node connected.');
+          const hits = await this.search(params.query);
+          if (hits.length === 0) return textResult(`No memory entries matched "${params.query}".`);
+          const lines = hits.map((h) => `[${h.scope}] ${h.file}:${h.line} — ${h.excerpt}`);
+          return textResult(lines.join('\n'));
         },
       });
     }

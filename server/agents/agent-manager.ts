@@ -143,12 +143,14 @@ export class AgentManager {
       await PluginLoader.loadPlugins(config.tools.plugins, hooks, basePath);
     }
 
-    // Create runtime with hook registry
-    const runtime = this.buildRuntime(config, hooks);
+    // Create runtime with hook registry. Storage is passed so the memory
+    // engine can read/write MEMORY.md and the daily logs under
+    // <agentDir>/memory/.
+    const runtime = this.buildRuntime(config, hooks, storage);
 
     let bridge: EventBridge | null = null;
     const runtimeFactory: RuntimeFactory = (childConfig) => {
-      const childRuntime = this.buildRuntime(childConfig, hooks);
+      const childRuntime = this.buildRuntime(childConfig, hooks, storage);
       childRuntime.setBroadcast?.((event) => bridge?.broadcast(event));
       return childRuntime;
     };
@@ -401,7 +403,11 @@ export class AgentManager {
       : storagePath;
   }
 
-  private buildRuntime(config: AgentConfig, hooks: HookRegistry): AgentRuntime {
+  private buildRuntime(
+    config: AgentConfig,
+    hooks: HookRegistry,
+    storage: StorageEngine | null = null,
+  ): AgentRuntime {
     return new AgentRuntime(
       config,
       (provider) => Promise.resolve(this.apiKeys.get(provider)),
@@ -410,6 +416,7 @@ export class AgentManager {
       this.pluginRegistry,
       this.hitlRegistry,
       this.getSafetySettings(),
+      storage,
     );
   }
 
