@@ -129,10 +129,13 @@ function buildNodeData(nodeType: NodeType): FlowNodeData {
     const memDefaults = useSettingsStore.getState().memoryDefaults;
     return {
       ...defaults,
-      backend: memDefaults.backend,
-      maxSessionMessages: memDefaults.maxSessionMessages,
-      persistAcrossSessions: memDefaults.persistAcrossSessions,
+      autoLoadLongTerm: memDefaults.autoLoadLongTerm,
+      longTermMaxBytes: memDefaults.longTermMaxBytes,
+      autoLoadShortTermDays: memDefaults.autoLoadShortTermDays,
       compactionEnabled: memDefaults.compactionEnabled,
+      compactionAfterDays: memDefaults.compactionAfterDays,
+      compactionStrategy: memDefaults.compactionStrategy,
+      searchMode: memDefaults.searchMode,
     };
   }
 

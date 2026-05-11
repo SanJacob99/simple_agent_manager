@@ -1,78 +1,109 @@
 # Memory Node
 
-> Gives an agent persistent memory — long-term storage, session message management, compaction, and searchable recall via exposed tools.
+> Two-tier persistent memory for an agent. Inspired by OpenClaw: a single durable `MEMORY.md` plus per-day short-term logs, both saved alongside the agent's sessions on disk.
 
 <!-- source: src/types/nodes.ts#MemoryNodeData -->
-<!-- last-verified: 2026-05-06 -->
+<!-- last-verified: 2026-05-11 -->
 
 ## Overview
 
-The Memory Node configures how an agent remembers information across turns and sessions. When connected to an agent, it creates a `MemoryEngine` at runtime that manages two layers of memory: **long-term storage** (key-value entries with metadata) and **session messages** (recent conversation history with a configurable max).
+The Memory Node gives an agent a place to remember facts about **the job it
+is supposed to do** and **the user it's working with**. The model mirrors
+OpenClaw's two-tier design:
 
-The memory node can expose up to three tools to the agent — `memory_search`, `memory_get`, and `memory_save` — allowing the agent to actively manage its own memory during conversations. It also supports compaction strategies that summarize or trim older messages when history grows too large.
+- **Long-term memory** — a single `MEMORY.md` file holding durable facts:
+  user preferences, role, project decisions, standing instructions. Loaded at
+  session start and never auto-compacted.
+- **Short-term memory** — one Markdown file per day at
+  `memory/YYYY-MM-DD.md`, used to log observations and context from the
+  current session. Recent days are auto-loaded; older days can be compacted.
 
-Three backends are available: `builtin` (in-memory Map, suitable for development), `external` (delegates to a user-provided REST endpoint), and `cloud` (for managed memory services). Currently only the builtin backend is fully implemented.
+Persistence is delegated to the connected **Storage** node. Without a
+Storage node the memory engine is constructed but every tool returns
+`Memory is offline`. The same files are surfaced under `<agentDir>/memory/`
+so the user can audit, edit, or version-control them outside the app.
 
 ## Configuration
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
 | `label` | `string` | `"Memory"` | Display label on the canvas |
-| `backend` | `MemoryBackend` | `"builtin"` | Storage backend: `builtin`, `external`, or `cloud` |
-| `maxSessionMessages` | `number` | `100` | Maximum session messages before trimming |
-| `persistAcrossSessions` | `boolean` | `false` | Whether memory persists between sessions |
-| `compactionEnabled` | `boolean` | `false` | Enable automatic message compaction |
-| `compactionStrategy` | `string` | `"summary"` | Strategy: `summary` or `sliding-window` |
-| `compactionThreshold` | `number` | `0.8` | Usage ratio that triggers compaction (0-1) |
-| `exposeMemorySearch` | `boolean` | `true` | Give the agent a `memory_search` tool |
-| `exposeMemoryGet` | `boolean` | `true` | Give the agent a `memory_get` tool |
-| `exposeMemorySave` | `boolean` | `true` | Give the agent a `memory_save` tool |
-| `searchMode` | `string` | `"hybrid"` | Search algorithm: `keyword`, `semantic`, or `hybrid` |
-| `externalEndpoint` | `string` | `""` | REST endpoint for external/cloud backends |
-| `externalApiKey` | `string` | `""` | API key for external/cloud backends |
+| `autoLoadLongTerm` | `boolean` | `true` | Inject `MEMORY.md` into the system prompt at session start |
+| `longTermMaxBytes` | `number` | `8000` | Cap on injected `MEMORY.md` size. `0` = no cap |
+| `autoLoadShortTermDays` | `number` | `2` | How many recent daily logs to inject (today counts as 1) |
+| `compactionEnabled` | `boolean` | `false` | Periodically compact old daily logs |
+| `compactionAfterDays` | `number` | `7` | Daily logs older than this become compaction candidates |
+| `compactionStrategy` | `"summary" \| "sliding-window"` | `"summary"` | How an old daily log is collapsed |
+| `searchMode` | `"keyword" \| "hybrid"` | `"keyword"` | Search backend. `hybrid` reserved for when a vector node is wired |
+| `exposeMemorySearch` | `boolean` | `true` | Expose `memory_search` to the agent |
+| `exposeMemoryGet` | `boolean` | `true` | Expose `memory_get` to the agent |
+| `exposeMemorySave` | `boolean` | `true` | Expose `memory_save` to the agent |
 
 ## Runtime Behavior
 
-At runtime, the Memory Node configuration is resolved into a `ResolvedMemoryConfig` and used to instantiate a `MemoryEngine` (`server/runtime/memory-engine.ts`).
+At runtime the configuration is resolved into a `ResolvedMemoryConfig` and
+used to instantiate a `MemoryEngine` (`server/runtime/memory-engine.ts`).
+The engine receives a reference to the agent's `StorageEngine`, which
+already exposes the per-file primitives:
 
-**Long-term storage**: The `MemoryEngine` maintains a `Map<string, MemoryEntry>` where each entry has a `key`, `content`, `metadata`, and `timestamp`. Entries are saved, retrieved, and searched through the exposed memory tools.
+- `MEMORY.md` is read/written via `storage.readLongTermMemory()` /
+  `storage.writeLongTermMemory()`.
+- `memory/YYYY-MM-DD.md` files are appended via
+  `storage.appendDailyMemory(content, date)`.
 
-**Session messages**: Messages are stored per session ID with automatic trimming to `maxSessionMessages`. When the limit is exceeded, oldest messages are dropped.
+**Bootstrap injection.** `buildBootstrapContext()` assembles a markdown
+block to surface at session start: long-term first (capped at
+`longTermMaxBytes`), then the most recent `autoLoadShortTermDays` daily
+logs newest-first.
 
-**Compaction strategies**:
-- `sliding-window`: Keeps the most recent 30% of messages, drops the rest with a placeholder note
-- `summary`: Summarizes older messages into a system message, keeps recent 30%
+**Compaction strategies** (only applied to daily logs older than
+`compactionAfterDays`; long-term is never auto-compacted):
+
+- `sliding-window` — replaces the file's content with a compaction marker;
+  the old bulk is dropped.
+- `summary` — keeps the first line of every bullet so the shape of the
+  day stays searchable while the bulk is collapsed.
 
 **Memory tools** (created by `MemoryEngine.createMemoryTools()`):
-- `memory_search` — Keyword search over long-term entries, returns top 10 by recency
-- `memory_get` — Retrieve a specific entry by key
-- `memory_save` — Store a key-value entry to long-term memory
 
-These tools are injected alongside the agent's other tools during runtime creation.
+- `memory_save({ scope: "long_term" | "short_term", content })` — appends
+  a timestamped bullet to either `MEMORY.md` or today's daily log.
+- `memory_get({ scope, date? })` — returns the full contents of a memory
+  file. `date` is only consulted when `scope = short_term`; it defaults
+  to today.
+- `memory_search({ query })` — case-insensitive substring search across
+  `MEMORY.md` and every daily log. Returns at most 20 hits, each with
+  source file, line number, and a single-line excerpt so the agent can
+  follow up with `memory_get`.
+
+Each tool checks for the presence of a Storage engine. If none is wired
+the tool returns the string `Memory is offline — no Storage node
+connected.` instead of silently dropping data.
 
 ## Connections
 
-- **Sends to**: Agent Node (the agent that owns this memory)
-- **Receives from**: None
-- At most one Memory Node should be connected to an agent. If multiple are connected, only the first one found is used.
+- **Sends to**: Agent Node (the agent that owns this memory).
+- **Requires**: a Storage Node connected to the same agent. Without it
+  the memory engine has no place to read or write files and every tool
+  reports as offline.
+- At most one Memory Node should be connected to an agent. If multiple
+  are connected, only the first one found is used.
 
 ## Example
 
 ```json
 {
   "type": "memory",
-  "label": "Research Memory",
-  "backend": "builtin",
-  "maxSessionMessages": 50,
-  "persistAcrossSessions": false,
+  "label": "Project Memory",
+  "autoLoadLongTerm": true,
+  "longTermMaxBytes": 8000,
+  "autoLoadShortTermDays": 2,
   "compactionEnabled": true,
-  "compactionStrategy": "sliding-window",
-  "compactionThreshold": 0.8,
+  "compactionAfterDays": 14,
+  "compactionStrategy": "summary",
+  "searchMode": "keyword",
   "exposeMemorySearch": true,
   "exposeMemoryGet": true,
-  "exposeMemorySave": true,
-  "searchMode": "keyword",
-  "externalEndpoint": "",
-  "externalApiKey": ""
+  "exposeMemorySave": true
 }
 ```

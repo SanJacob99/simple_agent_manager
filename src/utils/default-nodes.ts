@@ -23,18 +23,16 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
       return {
         type: 'memory',
         label: 'Memory',
-        backend: 'builtin',
-        maxSessionMessages: 100,
-        persistAcrossSessions: false,
+        autoLoadLongTerm: true,
+        longTermMaxBytes: 8000,
+        autoLoadShortTermDays: 2,
         compactionEnabled: false,
+        compactionAfterDays: 7,
         compactionStrategy: 'summary',
-        compactionThreshold: 0.8,
+        searchMode: 'keyword',
         exposeMemorySearch: true,
         exposeMemoryGet: true,
         exposeMemorySave: true,
-        searchMode: 'hybrid',
-        externalEndpoint: '',
-        externalApiKey: '',
       };
     case 'tools':
       return {

@@ -4,7 +4,8 @@ import type { SubAgentOverridableField } from './sub-agent-types';
 
 export type { SubAgentOverridableField } from './sub-agent-types';
 
-export type MemoryBackend = 'builtin' | 'external' | 'cloud';
+export type MemorySearchMode = 'keyword' | 'hybrid';
+export type MemoryCompactionStrategy = 'summary' | 'sliding-window';
 export type ToolProfile = 'full' | 'coding' | 'messaging' | 'minimal' | 'custom';
 export type ToolGroup =
   | 'runtime'
@@ -293,18 +294,20 @@ export interface AgentConfig {
 }
 
 export interface ResolvedMemoryConfig {
-  backend: MemoryBackend;
-  maxSessionMessages: number;
-  persistAcrossSessions: boolean;
+  /** Inject `MEMORY.md` into the system prompt at session start. */
+  autoLoadLongTerm: boolean;
+  /** Max bytes of `MEMORY.md` to inject. 0 = no cap. */
+  longTermMaxBytes: number;
+  /** How many recent daily-log files to inject at session start. */
+  autoLoadShortTermDays: number;
+  /** Periodically compact daily logs older than `compactionAfterDays`. */
   compactionEnabled: boolean;
-  compactionThreshold: number;
-  compactionStrategy: string;
+  compactionAfterDays: number;
+  compactionStrategy: MemoryCompactionStrategy;
+  searchMode: MemorySearchMode;
   exposeMemorySearch: boolean;
   exposeMemoryGet: boolean;
   exposeMemorySave: boolean;
-  searchMode: string;
-  externalEndpoint: string;
-  externalApiKey: string;
 }
 
 export interface ResolvedToolsConfig {

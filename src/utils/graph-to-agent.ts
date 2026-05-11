@@ -189,18 +189,16 @@ export function resolveAgentConfig(
   const memoryNode = connectedNodes.find((n) => n.data.type === 'memory');
   const memory = memoryNode && memoryNode.data.type === 'memory'
     ? {
-        backend: memoryNode.data.backend,
-        maxSessionMessages: memoryNode.data.maxSessionMessages,
-        persistAcrossSessions: memoryNode.data.persistAcrossSessions,
+        autoLoadLongTerm: memoryNode.data.autoLoadLongTerm,
+        longTermMaxBytes: memoryNode.data.longTermMaxBytes,
+        autoLoadShortTermDays: memoryNode.data.autoLoadShortTermDays,
         compactionEnabled: memoryNode.data.compactionEnabled,
-        compactionThreshold: memoryNode.data.compactionThreshold,
+        compactionAfterDays: memoryNode.data.compactionAfterDays,
         compactionStrategy: memoryNode.data.compactionStrategy,
+        searchMode: memoryNode.data.searchMode,
         exposeMemorySearch: memoryNode.data.exposeMemorySearch,
         exposeMemoryGet: memoryNode.data.exposeMemoryGet,
         exposeMemorySave: memoryNode.data.exposeMemorySave,
-        searchMode: memoryNode.data.searchMode,
-        externalEndpoint: memoryNode.data.externalEndpoint,
-        externalApiKey: memoryNode.data.externalApiKey,
       }
     : null;
 
