@@ -3,7 +3,7 @@
 > Configures which tools an agent can use through profiles, groups, direct enables, skills, and plugins.
 
 <!-- source: src/types/nodes.ts#ToolsNodeData -->
-<!-- last-verified: 2026-05-06 -->
+<!-- last-verified: 2026-05-11 -->
 
 ## Overview
 
@@ -99,6 +99,10 @@ Skill handling happens in `resolveAgentConfig()` and feeds the `## Skills` secti
 3. **Inline blocks** — full markdown content from `SkillDefinition` entries on the Tools Node and from any per-tool `toolSettings.<tool>.skill` overrides the user has typed. An inline override for a given tool suppresses that tool's bundled reference, so the user's text becomes the sole source of guidance for it.
 
 Bundled references are computed from the resolved tool list (not from the stored `tools.skills` array), so `AgentConfig.tools.skills` only round-trips custom `SkillDefinition` entries and overrides.
+
+### Tool advertisement in the system prompt
+
+The resolved tool list is also surfaced under `## Tooling` in the system prompt. `graph-to-agent.ts` reads the live catalog from `useToolCatalogStore` and forwards an annotated `{ name, description, group }` list to `buildSystemPrompt()` as `toolsCatalog`. The builder renders that list grouped by tool group with each tool's description inline, plus a **Tool Selection** sub-block that maps user intent ("URL given" → fetch, "current facts needed" → search, "numeric work" → calculator, "workspace file" → read/list/edit, etc.) to the right tool. This lets the model pick a tool from intent rather than waiting for the user to say "use `<tool>`". When the catalog has not loaded yet, the builder falls back to a comma-separated `toolsSummary` string. The same wiring is applied to sub-agents in `server/agents/sub-agent-executor.ts`, sourcing the catalog from the server-side tool registry.
 
 ## Authoring a New Tool
 

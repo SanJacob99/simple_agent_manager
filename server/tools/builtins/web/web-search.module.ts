@@ -19,7 +19,8 @@ interface WebSearchContext {
 export default defineTool<WebSearchContext>({
   name: 'web_search',
   label: 'Web Search',
-  description: 'Search the web',
+  description:
+    'Search the web by query. Use for current events, recent news, fact lookups, or finding sources when you do not already have a URL.',
   group: 'web',
   icon: 'search',
   classification: 'read-only',
