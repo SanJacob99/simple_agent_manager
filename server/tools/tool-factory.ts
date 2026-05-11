@@ -54,11 +54,6 @@ export interface ToolFactoryContext {
    * going through scalar passthrough properties.
    */
   agentConfig?: AgentConfig;
-  /**
-   * Vector engine accessor. Built once per runtime so the four `vector_*`
-   * tool modules share an engine + sqlite handle.
-   */
-  getVectorEngine?: RuntimeHints['getVectorEngine'];
 }
 
 /**
@@ -82,7 +77,6 @@ export function createAgentTools(
     hitl: factoryContext?.hitl,
     getOpenrouterApiKey: factoryContext?.getOpenrouterApiKey,
     providerWeb: providerWebContext,
-    getVectorEngine: factoryContext?.getVectorEngine,
   };
   // Fall-back AgentConfig for code paths that don't have a real config.
   // Modules that need required fields will return null from `create`.

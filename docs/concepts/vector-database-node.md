@@ -1,13 +1,15 @@
 # Vector Database Node
 
-> Attaches a vector store to an agent and exposes industry-standard vector tools (`vector_search`, `vector_upsert`, `vector_delete`, `vector_get`). Default backend is `sqlite-vec`; default embedder is OpenRouter.
+> Attaches a vector store to an agent and auto-enables the four industry-standard vector tools (`vector_search`, `vector_upsert`, `vector_delete`, `vector_get`). Default backend is `sqlite-vec`; default embedder is OpenRouter.
 
 <!-- source: src/types/nodes.ts#VectorDatabaseNodeData -->
 <!-- last-verified: 2026-05-11 -->
 
 ## Overview
 
-The Vector Database Node attaches a vector collection to an agent for storing embeddings and serving semantic search. Multiple nodes can be connected to the same agent — each adds an independent collection, addressable by its `label`. When connected, four tools become available to the model:
+The Vector Database Node attaches a vector collection to an agent for storing embeddings and serving semantic search. Multiple nodes can be connected to the same agent — each adds an independent collection, addressable by its `label`.
+
+Wiring a `vectorDatabase` node to an agent **automatically enables** four tools on the agent. There is no user-facing on/off switch in the Tools node — the wiring is the enable signal, exactly like memory tools auto-attach when a Memory node is wired. The four tools are:
 
 - `vector_search` — top-K similarity search by query text (read-only)
 - `vector_upsert` — insert/update documents (state-mutating)
@@ -46,7 +48,7 @@ Selecting a non-`sqlite-vec` provider raises `UnsupportedProviderError` the firs
 
 ## Tools
 
-Enable the `vector` tool group on the Tools node — or pick individual tool names — to expose the four tools to the agent. The tools are registered through the tool-module auto-discovery system (`server/tools/builtins/vector/*.module.ts`) and return `null` from `create` when no `vectorDatabase` is wired, so they are never advertised to the model when there is no collection to talk to.
+The four tools are built by `createVectorTools(config, runtime)` in `server/runtime/vector-tools/index.ts` and appended to the agent's tool list in `AgentRuntime`'s constructor (the same path memory tools take from `MemoryEngine.createMemoryTools()`). The Tools node never sees them and the user has no checkbox to disable them — wiring the `vectorDatabase` node is the enable signal.
 
 When two or more `vectorDatabase` nodes are connected, every tool requires a `collection` parameter equal to one of the node labels. With a single attached node, `collection` is optional and defaults to that node.
 

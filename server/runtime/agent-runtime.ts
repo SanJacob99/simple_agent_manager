@@ -12,10 +12,8 @@ import { resolveProviderRuntimeAuth } from '../providers/provider-auth';
 import { resolveProviderStreamFn } from '../providers/stream-resolver';
 import { MemoryEngine } from './memory-engine';
 import { ContextEngine } from './context-engine';
-import {
-  getOrCreateVectorEngine,
-  closeVectorEngines,
-} from './vector-engine-registry';
+import { closeVectorEngines } from './vector-engine-registry';
+import { createVectorTools } from './vector-tools';
 import { resolveToolNames, createAgentTools } from '../tools/tool-factory';
 import { resolveRuntimeModel } from './model-resolver';
 import { isToolErrorDetails } from '../tools/tool-adapter';
@@ -199,21 +197,21 @@ export class AgentRuntime {
       }
       : undefined;
 
-    // Vector engine accessor — passed through to RuntimeHints so the
-    // four vector_* tool modules share one engine + sqlite handle per
-    // collection. Construction is lazy; an unreachable Ollama or a
-    // missing OpenRouter key cannot crash agent boot.
-    const getVectorEngine = (label?: string) =>
-      getOrCreateVectorEngine(config, label, {
-        cwd: workspaceCwd,
-        sandboxWorkdir: config.sandboxWorkdir,
-        modelId: config.modelId,
-        getOpenrouterApiKey,
-      });
+    // Vector tools are auto-attached when a vectorDatabase node is
+    // wired to this agent. There is no user-facing on/off switch — the
+    // wiring is the enable signal, exactly like MemoryEngine's tools.
+    // Construction is lazy inside the registry; an unreachable Ollama
+    // or missing OpenRouter key cannot crash agent boot.
+    const vectorTools = createVectorTools(config, {
+      cwd: workspaceCwd,
+      sandboxWorkdir: config.sandboxWorkdir,
+      modelId: config.modelId,
+      getOpenrouterApiKey,
+    });
 
     let tools = createAgentTools(
       toolNames,
-      memoryTools as AgentTool<TSchema>[],
+      [...(memoryTools as AgentTool<TSchema>[]), ...vectorTools],
       undefined,
       {
         cwd: workspaceCwd,
@@ -222,7 +220,6 @@ export class AgentRuntime {
         modelId: config.modelId,
         hitl: hitlContext,
         agentConfig: config,
-        getVectorEngine,
       },
     );
 

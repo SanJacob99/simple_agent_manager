@@ -1,23 +1,9 @@
-import type { AgentConfig, ResolvedVectorDatabaseConfig } from '../../../../shared/agent-config';
-import type { VectorDatabaseEngine } from '../../../runtime/vector-database-engine';
-import type { RuntimeHints } from '../../tool-module';
+import type { ResolvedVectorDatabaseConfig } from '../../../shared/agent-config';
+import type { VectorDatabaseEngine } from '../vector-database-engine';
 
 export interface VectorToolContext {
   collections: ResolvedVectorDatabaseConfig[];
   getEngine: (label?: string) => Promise<VectorDatabaseEngine | null>;
-}
-
-export function resolveVectorContext(
-  config: AgentConfig,
-  runtime: RuntimeHints,
-): VectorToolContext {
-  return {
-    collections: config.vectorDatabases ?? [],
-    getEngine: (label?: string) =>
-      runtime.getVectorEngine
-        ? runtime.getVectorEngine(label)
-        : Promise.resolve(null),
-  };
 }
 
 /**

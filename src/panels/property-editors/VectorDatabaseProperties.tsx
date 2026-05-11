@@ -47,6 +47,12 @@ export default function VectorDatabaseProperties({ nodeId, data }: Props) {
 
   return (
     <div className="space-y-1">
+      <p className="text-[11px] text-slate-400 px-1 pb-1">
+        Connecting this node enables <code>vector_search</code>,{' '}
+        <code>vector_upsert</code>, <code>vector_delete</code>, and{' '}
+        <code>vector_get</code> on the agent automatically.
+      </p>
+
       <Field label="Label">
         <input
           className={inputClass}

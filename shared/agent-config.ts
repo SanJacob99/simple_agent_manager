@@ -13,8 +13,7 @@ export type ToolGroup =
   | 'coding'
   | 'media'
   | 'communication'
-  | 'human'
-  | 'vector';
+  | 'human';
 export type CompactionStrategy = 'summary' | 'sliding-window' | 'trim-oldest';
 
 export type SystemPromptMode = 'auto' | 'append' | 'manual';
