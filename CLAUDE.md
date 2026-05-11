@@ -6,7 +6,7 @@ Simple Agent Manager is a node-based visual AI agent builder. The React app lets
 
 Important current behavior:
 
-- Interactive chat requires both a connected `contextEngine` node and a connected `storage` node.
+- Interactive chat requires a connected `provider` node, a `contextEngine` node, and a `storage` node.
 - `src/runtime/` is browser-side support code. The actual agent runtime lives under `server/runtime/`.
 - Some schema surfaces are ahead of product wiring. Verify `connectors`, `vectorDatabase`, `cron`, and `mcp` behavior in code before documenting them as fully implemented.
 
@@ -67,7 +67,7 @@ Concept docs live in `docs/concepts/` with one file per documented node type. Th
 1. Read `docs/concepts/_manifest.json` to find the concept doc for the changed node type
 2. Update the relevant sections (Configuration table, Defaults, Runtime Behavior, or Examples)
 3. Update the `<!-- last-verified: YYYY-MM-DD -->` comment with today's date
-4. If you change `cron`, create `docs/concepts/cron-node.md` from `docs/concepts/_template.md` and add it to the manifest first. The schema includes `cron`, but the manifest does not yet.
+4. The `cron` node has a concept doc (`docs/concepts/cron-node.md`) and is registered in the manifest. Update it when `CronNodeData` or the scheduler changes.
 
 ## Conventions
 
@@ -77,6 +77,6 @@ Concept docs live in `docs/concepts/` with one file per documented node type. Th
 - Runtime classes under `server/runtime/` must stay free of React dependencies
 - All node data interfaces include a `[key: string]: unknown` index signature
 - Peripheral nodes connect to agent nodes only, not to other peripheral nodes
-- Tool resolution follows `profile -> groups -> enabledTools -> plugins` in `shared/resolve-tool-names.ts`
+- Tool resolution in `shared/resolve-tool-names.ts`: `enabledGroups` is the source of truth when non-empty; the profile is the fallback when no groups are explicitly set. From the active groups, tools are expanded, then individual `enabledTools` are added, then plugin-contributed tools — and the whole list is deduplicated
 - `SkillsNode` entries and `ToolsNode.skills` are folded into system prompt content during `resolveAgentConfig()` and `buildSystemPrompt()`
 - Shared types that must work on both client and server should live in `shared/`, even if that means duplicating lightweight type aliases instead of importing from `src/`
