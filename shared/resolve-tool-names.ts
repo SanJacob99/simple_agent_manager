@@ -119,6 +119,7 @@ export const IMPLEMENTED_TOOL_NAMES = new Set<string>([
   'confirm_action',
   'music_generate',
   // memory tools are managed by the memory node, not the tools node
+  // vector tools are managed by the vector database node, not the tools node
   ...SESSION_TOOL_NAMES,
 ]);
 
