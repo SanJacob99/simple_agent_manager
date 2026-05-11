@@ -16,7 +16,8 @@ export type NodeType =
   | 'cron'
   | 'provider'
   | 'mcp'
-  | 'subAgent';
+  | 'subAgent'
+  | 'guardrails';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -41,25 +42,42 @@ export interface AgentNodeData {
 }
 
 // --- Memory Node (OpenClaw-inspired) ---
+//
+// Two-tier model that mirrors OpenClaw:
+//   - Long-term: a single `MEMORY.md` of durable facts (preferences, decisions,
+//     standing instructions). Never auto-compacted.
+//   - Short-term: `memory/YYYY-MM-DD.md` daily logs. Auto-loaded for recent
+//     days; older days can be compacted into a summary or rolled forward.
+// Persistence is delegated to the connected Storage node's memory directory;
+// the engine is a no-op when no Storage node is wired.
 
-export type MemoryBackend = 'builtin' | 'external' | 'cloud';
+export type MemorySearchMode = 'keyword' | 'hybrid';
+export type MemoryCompactionStrategy = 'summary' | 'sliding-window';
 
 export interface MemoryNodeData {
   [key: string]: unknown;
   type: 'memory';
   label: string;
-  backend: MemoryBackend;
-  maxSessionMessages: number;
-  persistAcrossSessions: boolean;
+  /** Inject `MEMORY.md` into the system prompt at session start. */
+  autoLoadLongTerm: boolean;
+  /** Max bytes of `MEMORY.md` to inject. 0 = no cap (whole file). */
+  longTermMaxBytes: number;
+  /** How many recent daily-log files to inject at session start (today counts as 1). */
+  autoLoadShortTermDays: number;
+  /** Periodically compact daily logs older than `compactionAfterDays`. */
   compactionEnabled: boolean;
-  compactionStrategy: 'summary' | 'sliding-window';
-  compactionThreshold: number;
+  /** Daily logs older than this many days become candidates for compaction. */
+  compactionAfterDays: number;
+  /** Strategy used when compacting an old daily log. */
+  compactionStrategy: MemoryCompactionStrategy;
+  /** `keyword` = case-insensitive substring across all files. `hybrid` = keyword + vector (when wired). */
+  searchMode: MemorySearchMode;
+  /** Expose `memory_search` to the agent. */
   exposeMemorySearch: boolean;
+  /** Expose `memory_get` (read whole file or line range) to the agent. */
   exposeMemoryGet: boolean;
+  /** Expose `memory_save` to the agent. Takes a `scope` of long_term | short_term. */
   exposeMemorySave: boolean;
-  searchMode: 'keyword' | 'semantic' | 'hybrid';
-  externalEndpoint: string;
-  externalApiKey: string;
 }
 
 // --- Tools Node (OpenClaw-inspired) ---
@@ -346,13 +364,31 @@ export interface StorageNodeData {
 
 // --- Vector Database Node ---
 
+export type VectorStoreProvider =
+  | 'sqlite-vec'
+  | 'pinecone'
+  | 'chromadb'
+  | 'qdrant'
+  | 'weaviate';
+
+export type EmbeddingProvider = 'openrouter' | 'ollama';
+
+export interface VectorEmbeddingConfig {
+  provider: EmbeddingProvider;
+  model: string;
+  baseUrl?: string;
+  dimensions?: number;
+}
+
 export interface VectorDatabaseNodeData {
   [key: string]: unknown;
   type: 'vectorDatabase';
   label: string;
-  provider: 'pinecone' | 'chromadb' | 'qdrant' | 'weaviate';
+  provider: VectorStoreProvider;
   collectionName: string;
   connectionString: string;
+  storagePath: string;
+  embedding: VectorEmbeddingConfig;
 }
 
 // --- Cron Node ---
@@ -424,6 +460,52 @@ export interface MCPNodeData {
   autoConnect: boolean;
 }
 
+// --- Guardrails Node ---
+
+/**
+ * Action taken when an input or output trips a guardrail rule.
+ * - `block`: refuse the message; the runtime aborts the run with a structured
+ *   `guardrail_blocked` error. Mirrors OpenAI AgentKit / n8n "stop on violation".
+ * - `warn`: emit a `guardrail:violation` event but allow the message through.
+ *   Useful for telemetry-only mode while tuning patterns.
+ */
+export type GuardrailAction = 'block' | 'warn';
+
+export interface GuardrailsNodeData {
+  [key: string]: unknown;
+  type: 'guardrails';
+  label: string;
+  /** Master toggle. When false, the guardrail is wired but not enforced. */
+  enabled: boolean;
+  /** Apply rules to user messages before they reach the model. */
+  checkInput: boolean;
+  /** Apply rules to the assistant's reply after each turn. */
+  checkOutput: boolean;
+  /** Maximum length of a user message in characters. 0 disables this rule. */
+  maxInputChars: number;
+  /**
+   * Case-insensitive substrings that, if present in the input or output,
+   * trigger the configured action. Stored as strings because the graph must
+   * remain JSON-serializable.
+   */
+  blockedTerms: string[];
+  /**
+   * Built-in PII categories enforced via well-tested regexes (email,
+   * US Social Security Number, generic credit-card-shaped numbers).
+   * Listed by id so the UI can render checkboxes without re-parsing.
+   */
+  piiCategories: GuardrailPiiCategory[];
+  /** Behavior when a rule matches. */
+  action: GuardrailAction;
+  /**
+   * Optional message shown to the user when the guardrail blocks an
+   * interaction. Empty falls back to a generic notice.
+   */
+  blockMessage: string;
+}
+
+export type GuardrailPiiCategory = 'email' | 'ssn' | 'credit_card';
+
 // --- Sub-Agent Node ---
 
 export interface SubAgentNodeData {
@@ -458,6 +540,7 @@ export type FlowNodeData =
   | CronNodeData
   | ProviderNodeData
   | MCPNodeData
-  | SubAgentNodeData;
+  | SubAgentNodeData
+  | GuardrailsNodeData;
 
 export type AppNode = Node<FlowNodeData>;

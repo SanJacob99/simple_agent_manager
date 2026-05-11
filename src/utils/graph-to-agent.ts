@@ -1,6 +1,6 @@
 import type { AppNode } from '../types/nodes';
 import type { Edge } from '@xyflow/react';
-import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides } from '../../shared/agent-config';
+import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides, ResolvedGuardrailConfig } from '../../shared/agent-config';
 import { resolveToolNames, IMPLEMENTED_TOOL_NAMES } from '../../shared/resolve-tool-names';
 import { buildSystemPrompt } from '../../shared/system-prompt-builder';
 import { eligibleBundledSkills } from '../../shared/default-tool-skills';
@@ -190,18 +190,16 @@ export function resolveAgentConfig(
   const memoryNode = connectedNodes.find((n) => n.data.type === 'memory');
   const memory = memoryNode && memoryNode.data.type === 'memory'
     ? {
-        backend: memoryNode.data.backend,
-        maxSessionMessages: memoryNode.data.maxSessionMessages,
-        persistAcrossSessions: memoryNode.data.persistAcrossSessions,
+        autoLoadLongTerm: memoryNode.data.autoLoadLongTerm,
+        longTermMaxBytes: memoryNode.data.longTermMaxBytes,
+        autoLoadShortTermDays: memoryNode.data.autoLoadShortTermDays,
         compactionEnabled: memoryNode.data.compactionEnabled,
-        compactionThreshold: memoryNode.data.compactionThreshold,
+        compactionAfterDays: memoryNode.data.compactionAfterDays,
         compactionStrategy: memoryNode.data.compactionStrategy,
+        searchMode: memoryNode.data.searchMode,
         exposeMemorySearch: memoryNode.data.exposeMemorySearch,
         exposeMemoryGet: memoryNode.data.exposeMemoryGet,
         exposeMemorySave: memoryNode.data.exposeMemorySave,
-        searchMode: memoryNode.data.searchMode,
-        externalEndpoint: memoryNode.data.externalEndpoint,
-        externalApiKey: memoryNode.data.externalApiKey,
       }
     : null;
 
@@ -357,6 +355,13 @@ export function resolveAgentConfig(
         provider: n.data.provider,
         collectionName: n.data.collectionName,
         connectionString: n.data.connectionString,
+        storagePath: n.data.storagePath,
+        embedding: {
+          provider: n.data.embedding.provider,
+          model: n.data.embedding.model,
+          baseUrl: n.data.embedding.baseUrl,
+          dimensions: n.data.embedding.dimensions,
+        },
       };
     });
 
@@ -375,6 +380,27 @@ export function resolveAgentConfig(
         timezone: n.data.timezone,
         maxRunDurationMs: n.data.maxRunDurationMs,
         retentionDays: n.data.retentionDays,
+      };
+    });
+
+  // --- Guardrails ---
+  // Each connected guardrails node becomes its own resolved entry; the
+  // runtime evaluates them in order and the first match wins for `block`.
+  const guardrails: ResolvedGuardrailConfig[] = connectedNodes
+    .filter((n) => n.data.type === 'guardrails')
+    .map((n) => {
+      if (n.data.type !== 'guardrails') throw new Error('unreachable');
+      return {
+        guardrailNodeId: n.id,
+        label: n.data.label,
+        enabled: n.data.enabled,
+        checkInput: n.data.checkInput,
+        checkOutput: n.data.checkOutput,
+        maxInputChars: n.data.maxInputChars,
+        blockedTerms: [...n.data.blockedTerms],
+        piiCategories: [...n.data.piiCategories],
+        action: n.data.action,
+        blockMessage: n.data.blockMessage,
       };
     });
 
@@ -589,6 +615,7 @@ export function resolveAgentConfig(
     crons,
     mcps,
     subAgents,
+    guardrails,
     // Exec tool cwd overrides agent-level workingDirectory when set
     workspacePath:
       (toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.exec?.cwd)

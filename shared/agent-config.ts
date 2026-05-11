@@ -4,9 +4,17 @@ import type { SubAgentOverridableField } from './sub-agent-types';
 
 export type { SubAgentOverridableField } from './sub-agent-types';
 
-export type MemoryBackend = 'builtin' | 'external' | 'cloud';
+export type MemorySearchMode = 'keyword' | 'hybrid';
+export type MemoryCompactionStrategy = 'summary' | 'sliding-window';
 export type ToolProfile = 'full' | 'coding' | 'messaging' | 'minimal' | 'custom';
-export type ToolGroup = 'runtime' | 'fs' | 'web' | 'coding' | 'media' | 'communication' | 'human';
+export type ToolGroup =
+  | 'runtime'
+  | 'fs'
+  | 'web'
+  | 'coding'
+  | 'media'
+  | 'communication'
+  | 'human';
 export type CompactionStrategy = 'summary' | 'sliding-window' | 'trim-oldest';
 
 export type SystemPromptMode = 'auto' | 'append' | 'manual';
@@ -94,6 +102,31 @@ export interface DiscoveredModelMetadata {
   raw?: unknown;
 }
 
+// --- Guardrails ---
+
+export type GuardrailAction = 'block' | 'warn';
+export type GuardrailPiiCategory = 'email' | 'ssn' | 'credit_card';
+
+/**
+ * Resolved guardrail rule set. Multiple guardrail nodes can be attached to a
+ * single agent; the runtime evaluates them in order and the first match wins
+ * for the `block` action. Storing each node as its own resolved entry keeps
+ * the per-node `label` available for the violation event payload, which is
+ * what the UI renders to explain *why* a turn was blocked.
+ */
+export interface ResolvedGuardrailConfig {
+  guardrailNodeId: string;
+  label: string;
+  enabled: boolean;
+  checkInput: boolean;
+  checkOutput: boolean;
+  maxInputChars: number;
+  blockedTerms: string[];
+  piiCategories: GuardrailPiiCategory[];
+  action: GuardrailAction;
+  blockMessage: string;
+}
+
 // --- Agent Config interfaces ---
 
 export interface ResolvedCronConfig {
@@ -154,6 +187,13 @@ export interface AgentConfig {
   crons: ResolvedCronConfig[];
   mcps: ResolvedMcpConfig[];
   subAgents: ResolvedSubAgentConfig[];
+  /**
+   * Optional input/output guardrail rule sets. When omitted or empty, the
+   * runtime skips all guardrail checks. Optional — not required —
+   * so existing AgentConfig fixtures and serialized graphs remain
+   * compatible without a backfill.
+   */
+  guardrails?: ResolvedGuardrailConfig[];
 
   /** Working directory for shell commands (exec tool). Independent of storage path. */
   workspacePath: string | null;
@@ -253,18 +293,20 @@ export interface AgentConfig {
 }
 
 export interface ResolvedMemoryConfig {
-  backend: MemoryBackend;
-  maxSessionMessages: number;
-  persistAcrossSessions: boolean;
+  /** Inject `MEMORY.md` into the system prompt at session start. */
+  autoLoadLongTerm: boolean;
+  /** Max bytes of `MEMORY.md` to inject. 0 = no cap. */
+  longTermMaxBytes: number;
+  /** How many recent daily-log files to inject at session start. */
+  autoLoadShortTermDays: number;
+  /** Periodically compact daily logs older than `compactionAfterDays`. */
   compactionEnabled: boolean;
-  compactionThreshold: number;
-  compactionStrategy: string;
+  compactionAfterDays: number;
+  compactionStrategy: MemoryCompactionStrategy;
+  searchMode: MemorySearchMode;
   exposeMemorySearch: boolean;
   exposeMemoryGet: boolean;
   exposeMemorySave: boolean;
-  searchMode: string;
-  externalEndpoint: string;
-  externalApiKey: string;
 }
 
 export interface ResolvedToolsConfig {
@@ -336,11 +378,29 @@ export interface ResolvedStorageConfig {
   maintenanceIntervalMinutes: number;
 }
 
+export type VectorStoreProvider =
+  | 'sqlite-vec'
+  | 'pinecone'
+  | 'chromadb'
+  | 'qdrant'
+  | 'weaviate';
+
+export type EmbeddingProvider = 'openrouter' | 'ollama';
+
+export interface ResolvedVectorEmbeddingConfig {
+  provider: EmbeddingProvider;
+  model: string;
+  baseUrl?: string;
+  dimensions?: number;
+}
+
 export interface ResolvedVectorDatabaseConfig {
   label: string;
-  provider: string;
+  provider: VectorStoreProvider;
   collectionName: string;
   connectionString: string;
+  storagePath: string;
+  embedding: ResolvedVectorEmbeddingConfig;
 }
 
 export type McpTransport = 'stdio' | 'http' | 'sse';

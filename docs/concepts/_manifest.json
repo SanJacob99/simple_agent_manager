@@ -45,7 +45,12 @@
     "vectorDatabase": {
       "doc": "vector-database-node.md",
       "type": "src/types/nodes.ts#VectorDatabaseNodeData",
-      "runtime": null
+      "runtime": "server/runtime/vector-database-engine.ts"
+    },
+    "cron": {
+      "doc": "cron-node.md",
+      "type": "src/types/nodes.ts#CronNodeData",
+      "runtime": "server/scheduling/cron-scheduler.ts"
     },
     "provider": {
       "doc": "provider-node.md",
@@ -61,6 +66,11 @@
       "doc": "sub-agent-node.md",
       "type": "src/types/nodes.ts#SubAgentNodeData",
       "runtime": "server/runtime/sub-agent-executor.ts"
+    },
+    "guardrails": {
+      "doc": "guardrails-node.md",
+      "type": "src/types/nodes.ts#GuardrailsNodeData",
+      "runtime": "server/runtime/guardrails-engine.ts"
     }
   }
 }

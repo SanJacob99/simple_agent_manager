@@ -34,13 +34,18 @@ Skills stored on the Tool Node are merged into system prompt content during grap
 | `toolSettings.textToSpeech.preferredProvider` | `string` | `""` | Default TTS provider: `openai`, `elevenlabs`, `google`, `microsoft`, `minimax`, or `openrouter` |
 | `toolSettings.textToSpeech.elevenLabsApiKey` | `string` | `""` | ElevenLabs API key. Empty reads `ELEVENLABS_API_KEY` from env |
 | `toolSettings.textToSpeech.elevenLabsDefaultVoice` | `string` | `""` | ElevenLabs voice id (e.g. `21m00Tcm4TlvDq8ikWAM`) |
+| `toolSettings.textToSpeech.elevenLabsDefaultModel` | `string` | `""` | ElevenLabs model override (e.g. `eleven_turbo_v2_5`). Empty = provider default |
 | `toolSettings.textToSpeech.openaiVoice` | `string` | `""` | OpenAI TTS voice (e.g. `alloy`). Uses the image-tool OpenAI API key |
 | `toolSettings.textToSpeech.openaiModel` | `string` | `""` | OpenAI TTS model (e.g. `gpt-4o-mini-tts`) |
 | `toolSettings.textToSpeech.geminiVoice` | `string` | `""` | Google Gemini TTS voice. Uses the image-tool Gemini API key |
+| `toolSettings.textToSpeech.geminiModel` | `string` | `""` | Google Gemini TTS model override. Uses the image-tool Gemini API key |
 | `toolSettings.textToSpeech.microsoftApiKey` | `string` | `""` | Azure Speech key. Empty reads `AZURE_SPEECH_KEY` from env |
 | `toolSettings.textToSpeech.microsoftRegion` | `string` | `""` | Azure region, e.g. `eastus` |
+| `toolSettings.textToSpeech.microsoftDefaultVoice` | `string` | `""` | Azure Speech default voice id |
 | `toolSettings.textToSpeech.minimaxApiKey` | `string` | `""` | MiniMax API key. Empty reads `MINIMAX_API_KEY` from env |
 | `toolSettings.textToSpeech.minimaxGroupId` | `string` | `""` | MiniMax group id. Empty reads `MINIMAX_GROUP_ID` from env |
+| `toolSettings.textToSpeech.minimaxDefaultVoice` | `string` | `""` | MiniMax default voice id |
+| `toolSettings.textToSpeech.minimaxDefaultModel` | `string` | `""` | MiniMax TTS model override (e.g. `speech-02-hd`) |
 | `toolSettings.textToSpeech.openrouterVoice` | `string` | `""` | Voice for the OpenRouter audio model (e.g. `alloy`). Uses the OpenRouter key from the global API key store |
 | `toolSettings.textToSpeech.openrouterModel` | `string` | `""` | OpenRouter audio-capable model id, e.g. `openai/gpt-4o-audio-preview` |
 | `toolSettings.textToSpeech.skill` | `string` | `""` | Optional inline markdown override for the text_to_speech skill. When non-empty, it replaces the bundled `text-to-speech/SKILL.md` reference with the user-authored text injected directly into the system prompt |
@@ -48,6 +53,20 @@ Skills stored on the Tool Node are merged into system prompt content during grap
 | `toolSettings.musicGenerate.geminiModel` | `string` | `""` | Google Lyria model override (reuses the image-tool Gemini API key) |
 | `toolSettings.musicGenerate.minimaxModel` | `string` | `""` | MiniMax music model override, e.g. `music-01` (reuses the text_to_speech MiniMax key and group id) |
 | `toolSettings.musicGenerate.skill` | `string` | `""` | Optional inline markdown override for the music_generate skill. When non-empty, it replaces the bundled `music-generate/SKILL.md` reference with the user-authored text injected directly into the system prompt |
+| `toolSettings.browser.userDataDir` | `string` | `""` | Chromium profile path. Empty = `<cwd>/.browser-profile/`. Relative paths resolve against the workspace |
+| `toolSettings.browser.headless` | `boolean` | `false` | When `false`, open a visible Chromium window; automatically falls back to headless if launch fails (no display). Set to `true` to force headless |
+| `toolSettings.browser.viewportWidth` | `number` | `1280` | Browser viewport width in pixels |
+| `toolSettings.browser.viewportHeight` | `number` | `800` | Browser viewport height in pixels |
+| `toolSettings.browser.timeoutMs` | `number` | `30000` | Per-action timeout in ms (navigation, clicks, fills) |
+| `toolSettings.browser.autoScreenshot` | `boolean` | `true` | Attach a screenshot to every state-changing action |
+| `toolSettings.browser.screenshotFormat` | `'jpeg' \| 'png'` | `'jpeg'` | Inline screenshot format. JPEG is smaller; PNG is lossless |
+| `toolSettings.browser.screenshotQuality` | `number` | `60` | JPEG quality 1-100. Ignored for PNG |
+| `toolSettings.browser.stealth` | `boolean` | `true` | Apply `puppeteer-extra-plugin-stealth` on launch to mask automation signals |
+| `toolSettings.browser.locale` | `string` | `""` | BCP-47 locale. Empty = `en-US` |
+| `toolSettings.browser.timezone` | `string` | `""` | IANA timezone. Empty = host system timezone |
+| `toolSettings.browser.userAgent` | `string` | `""` | Override the outbound User-Agent string. Empty = Playwright/stealth default |
+| `toolSettings.browser.cdpEndpoint` | `string` | `""` | CDP URL (e.g. `http://127.0.0.1:9222`). When set, attaches to a user-launched Chrome instead of spawning one |
+| `toolSettings.browser.skill` | `string` | `""` | Optional inline markdown override for the browser skill. See [browser-tool.md](browser-tool.md) for the full reference |
 
 > **Deprecated.** `subAgentSpawning` and `maxSubAgents` are no longer used by the runtime. Sub-agent capability is now declared via the [Sub-Agent Node](sub-agent-node.md). Existing graphs continue to load, but these fields have no effect.
 

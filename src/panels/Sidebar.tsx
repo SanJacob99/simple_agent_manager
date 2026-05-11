@@ -10,7 +10,8 @@ import {
   Cloud,
   Plug,
   Bot,
-  Clock,
+  ShieldAlert,
+  CalendarClock,
 } from 'lucide-react';
 import type { NodeType } from '../types/nodes';
 import { NODE_COLORS, NODE_LABELS, NODE_PASTEL } from '../utils/theme';
@@ -40,6 +41,7 @@ import {
   type AppView,
   type SettingsSectionId,
 } from '../settings/types';
+import TemplatesPanel from './TemplatesPanel';
 
 interface PaletteItem {
   type: NodeType;
@@ -68,10 +70,8 @@ const PERIPHERAL_ITEMS: PaletteItem[] = [
   { type: 'mcp', icon: <Plug size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
   { type: 'provider' as NodeType, icon: <Cloud size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
   { type: 'subAgent', icon: <Bot size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
-  // R-25 fix: cron node added to default palette so users can wire scheduled
-  // runs without REST/import. The runtime path (server/scheduling/cron-scheduler.ts)
-  // and the resolver were already wired; only the palette entry was missing.
-  { type: 'cron', icon: <Clock size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
+  { type: 'guardrails', icon: <ShieldAlert size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
+  { type: 'cron', icon: <CalendarClock size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
 ];
 
 const TILE_SHADOW =
@@ -192,17 +192,26 @@ export default function Sidebar({
       >
         <div className="flex h-full w-64 flex-col">
           {appView === 'canvas' ? (
-            <div className="flex-1 overflow-y-auto overflow-x-hidden px-[14px] pb-3 pt-3">
-              <div className="mb-2.5 space-y-2.5">
-                {CORE_ITEMS.map((item) => (
-                  <DraggableItem key={item.type} item={item} />
-                ))}
+            <div className="flex-1 overflow-y-auto overflow-x-hidden">
+              <div className="px-[14px] pb-3 pt-3">
+                <div className="mb-2.5 space-y-2.5">
+                  {CORE_ITEMS.map((item) => (
+                    <DraggableItem key={item.type} item={item} />
+                  ))}
+                </div>
+
+                <div className="space-y-2.5">
+                  {PERIPHERAL_ITEMS.map((item) => (
+                    <DraggableItem key={item.type} item={item} />
+                  ))}
+                </div>
               </div>
 
-              <div className="space-y-2.5">
-                {PERIPHERAL_ITEMS.map((item) => (
-                  <DraggableItem key={item.type} item={item} />
-                ))}
+              {/* Templates only render their richer UI in the expanded
+                  state (sidebar grows from 84px to 256px on hover). When
+                  collapsed, the borderline still hints that there's more. */}
+              <div className="pointer-events-none opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100">
+                <TemplatesPanel />
               </div>
             </div>
           ) : (

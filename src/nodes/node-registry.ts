@@ -11,6 +11,7 @@ import CronNode from './CronNode';
 import ProviderNode from './ProviderNode';
 import MCPNode from './MCPNode';
 import SubAgentNode from './SubAgentNode';
+import GuardrailsNode from './GuardrailsNode';
 
 export const nodeTypes = {
   agent: AgentNode,
@@ -26,4 +27,5 @@ export const nodeTypes = {
   provider: ProviderNode,
   mcp: MCPNode,
   subAgent: SubAgentNode,
+  guardrails: GuardrailsNode,
 } as const;

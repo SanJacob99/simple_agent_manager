@@ -23,18 +23,16 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
       return {
         type: 'memory',
         label: 'Memory',
-        backend: 'builtin',
-        maxSessionMessages: 100,
-        persistAcrossSessions: false,
+        autoLoadLongTerm: true,
+        longTermMaxBytes: 8000,
+        autoLoadShortTermDays: 2,
         compactionEnabled: false,
+        compactionAfterDays: 7,
         compactionStrategy: 'summary',
-        compactionThreshold: 0.8,
+        searchMode: 'keyword',
         exposeMemorySearch: true,
         exposeMemoryGet: true,
         exposeMemorySave: true,
-        searchMode: 'hybrid',
-        externalEndpoint: '',
-        externalApiKey: '',
       };
     case 'tools':
       return {
@@ -189,9 +187,14 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
       return {
         type: 'vectorDatabase',
         label: 'Vector DB',
-        provider: 'chromadb',
+        provider: 'sqlite-vec',
         collectionName: 'default',
         connectionString: '',
+        storagePath: '.sam/vector',
+        embedding: {
+          provider: 'openrouter',
+          model: 'openai/text-embedding-3-small',
+        },
       };
     case 'cron':
       return {
@@ -228,6 +231,19 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         toolPrefix: '',
         allowedTools: [],
         autoConnect: true,
+      };
+    case 'guardrails':
+      return {
+        type: 'guardrails',
+        label: 'Guardrails',
+        enabled: true,
+        checkInput: true,
+        checkOutput: true,
+        maxInputChars: 8000,
+        blockedTerms: [],
+        piiCategories: [],
+        action: 'block',
+        blockMessage: '',
       };
     case 'subAgent':
       return {

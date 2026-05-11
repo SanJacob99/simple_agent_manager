@@ -11,7 +11,10 @@ import type { ProviderPluginRegistry } from '../providers/plugin-registry';
 import { resolveProviderRuntimeAuth } from '../providers/provider-auth';
 import { resolveProviderStreamFn } from '../providers/stream-resolver';
 import { MemoryEngine } from './memory-engine';
+import type { StorageEngine } from '../storage/storage-engine';
 import { ContextEngine } from './context-engine';
+import { closeVectorEngines } from './vector-engine-registry';
+import { createVectorTools } from './vector-tools';
 import { resolveToolNames, createAgentTools } from '../tools/tool-factory';
 import { resolveRuntimeModel } from './model-resolver';
 import { isToolErrorDetails } from '../tools/tool-adapter';
@@ -103,6 +106,9 @@ export class AgentRuntime {
   private config: AgentConfig;
   private listeners = new Set<RuntimeEventListener>();
   private memoryEngine: MemoryEngine | null = null;
+  getMemoryEngine(): MemoryEngine | null {
+    return this.memoryEngine;
+  }
   private contextEngine: ContextEngine | null = null;
   private unsubscribeAgent: (() => void) | null = null;
   private hookRegistry: HookRegistry | null = null;
@@ -140,15 +146,18 @@ export class AgentRuntime {
     private readonly pluginRegistry?: ProviderPluginRegistry,
     private readonly hitlRegistry?: HitlRegistry,
     private readonly safetySettings: SafetySettings = DEFAULT_SAFETY_SETTINGS,
+    storage: StorageEngine | null = null,
   ) {
     this.config = config;
     this.getApiKeyFn = getApiKey;
     this.getDiscoveredModelFn = getDiscoveredModel ?? (() => undefined);
     this.hookRegistry = hookRegistry ?? null;
 
-    // Build memory engine
+    // Build memory engine. The engine writes to <agentDir>/memory/MEMORY.md
+    // and <agentDir>/memory/YYYY-MM-DD.md via the StorageEngine. When no
+    // storage is wired, memory tools become inert and report "offline".
     if (config.memory) {
-      this.memoryEngine = new MemoryEngine(config.memory);
+      this.memoryEngine = new MemoryEngine(config.memory, storage);
     }
 
     // Build context engine
@@ -195,9 +204,21 @@ export class AgentRuntime {
       }
       : undefined;
 
+    // Vector tools are auto-attached when a vectorDatabase node is
+    // wired to this agent. There is no user-facing on/off switch — the
+    // wiring is the enable signal, exactly like MemoryEngine's tools.
+    // Construction is lazy inside the registry; an unreachable Ollama
+    // or missing OpenRouter key cannot crash agent boot.
+    const vectorTools = createVectorTools(config, {
+      cwd: workspaceCwd,
+      sandboxWorkdir: config.sandboxWorkdir,
+      modelId: config.modelId,
+      getOpenrouterApiKey,
+    });
+
     let tools = createAgentTools(
       toolNames,
-      memoryTools as AgentTool<TSchema>[],
+      [...(memoryTools as AgentTool<TSchema>[]), ...vectorTools],
       undefined,
       {
         cwd: workspaceCwd,
@@ -775,6 +796,14 @@ export class AgentRuntime {
     this.clearActiveSession();
     this.unsubscribeAgent?.();
     this.listeners.clear();
+    // Best-effort close of any open sqlite handles. Awaited callers can
+    // use `destroyAsync()` if they need to block on it.
+    void closeVectorEngines(this.config);
+  }
+
+  async destroyAsync(): Promise<void> {
+    this.destroy();
+    await closeVectorEngines(this.config);
   }
 
   get state() {

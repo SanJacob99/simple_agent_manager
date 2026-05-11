@@ -398,6 +398,14 @@ app.delete('/api/sessions/:agentId/:sessionKey', async (req, res) => {
   try {
     const parsedConfig = JSON.parse(config) as ResolvedStorageConfig;
     const engine = getOrCreateEngine(parsedConfig, agentName);
+    const existing = await engine.getSession(req.params.sessionKey);
+    if (existing) {
+      await agentManager.fireSessionEndHook(
+        req.params.agentId,
+        req.params.sessionKey,
+        existing.sessionId,
+      );
+    }
     await engine.deleteSession(req.params.sessionKey);
     res.json({ ok: true });
   } catch (err) {
@@ -412,6 +420,13 @@ app.delete('/api/sessions/:agentId', async (req, res) => {
     const router = getOrCreateSessionRouter(parsedConfig, agentName, req.params.agentId);
     const engine = getOrCreateEngine(parsedConfig, agentName);
     const sessions = await router.listSessions();
+    for (const session of sessions) {
+      await agentManager.fireSessionEndHook(
+        req.params.agentId,
+        session.sessionKey,
+        session.sessionId,
+      );
+    }
     await Promise.all(sessions.map((session) => engine.deleteSession(session.sessionKey)));
     res.json({ ok: true, deleted: sessions.length });
   } catch (err) {

@@ -1,4 +1,9 @@
-import type { ThinkingLevel, CompactionStrategy, MemoryBackend } from '../types/nodes';
+import type {
+  ThinkingLevel,
+  CompactionStrategy,
+  MemoryCompactionStrategy,
+  MemorySearchMode,
+} from '../types/nodes';
 import type { SystemPromptMode } from '../../shared/agent-config';
 
 export type AppView = 'canvas' | 'settings';
@@ -49,10 +54,13 @@ export interface ContextEngineDefaults {
 }
 
 export interface MemoryDefaults {
-  backend: MemoryBackend;
-  maxSessionMessages: number;
-  persistAcrossSessions: boolean;
+  autoLoadLongTerm: boolean;
+  longTermMaxBytes: number;
+  autoLoadShortTermDays: number;
   compactionEnabled: boolean;
+  compactionAfterDays: number;
+  compactionStrategy: MemoryCompactionStrategy;
+  searchMode: MemorySearchMode;
 }
 
 export interface CronDefaults {
@@ -140,10 +148,13 @@ export const DEFAULT_CONTEXT_ENGINE_DEFAULTS: ContextEngineDefaults = {
 };
 
 export const DEFAULT_MEMORY_DEFAULTS: MemoryDefaults = {
-  backend: 'builtin',
-  maxSessionMessages: 100,
-  persistAcrossSessions: false,
+  autoLoadLongTerm: true,
+  longTermMaxBytes: 8000,
+  autoLoadShortTermDays: 2,
   compactionEnabled: false,
+  compactionAfterDays: 7,
+  compactionStrategy: 'summary',
+  searchMode: 'keyword',
 };
 
 export const DEFAULT_CRON_DEFAULTS: CronDefaults = {

@@ -115,6 +115,9 @@ export function buildSyntheticAgentConfig(
     crons: [],
     mcps: sub.mcps,
     subAgents: sub.recursiveSubAgentsEnabled ? parent.subAgents : [],
+    // Sub-agents inherit their parent's guardrails — a child run on the
+    // same agent should be subject to the same input/output filters.
+    guardrails: parent.guardrails,
 
     workspacePath: sub.workingDirectory || parent.workspacePath || null,
     sandboxWorkdir: parent.sandboxWorkdir,

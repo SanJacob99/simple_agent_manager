@@ -1,10 +1,13 @@
 import { useGraphStore } from '../../store/graph-store';
-import type { MemoryNodeData, MemoryBackend } from '../../types/nodes';
+import type {
+  MemoryNodeData,
+  MemorySearchMode,
+  MemoryCompactionStrategy,
+} from '../../types/nodes';
 import { Field, inputClass, selectClass } from './shared';
 
-const BACKENDS: MemoryBackend[] = ['builtin', 'external', 'cloud'];
-const SEARCH_MODES = ['keyword', 'semantic', 'hybrid'] as const;
-const COMPACTION_STRATEGIES = ['summary', 'sliding-window'] as const;
+const SEARCH_MODES: MemorySearchMode[] = ['keyword', 'hybrid'];
+const COMPACTION_STRATEGIES: MemoryCompactionStrategy[] = ['summary', 'sliding-window'];
 
 interface Props {
   nodeId: string;
@@ -46,43 +49,58 @@ export default function MemoryProperties({ nodeId, data }: Props) {
         />
       </Field>
 
-      <Field label="Backend">
-        <select
-          className={selectClass}
-          value={data.backend}
-          onChange={(e) => update(nodeId, { backend: e.target.value as MemoryBackend })}
-        >
-          {BACKENDS.map((b) => (
-            <option key={b} value={b}>{b}</option>
-          ))}
-        </select>
+      <p className="px-1 py-2 text-[10px] leading-snug text-slate-500">
+        Long-term memory lives in <code>MEMORY.md</code> (durable facts the
+        agent should always remember). Short-term memory is per-day in{' '}
+        <code>memory/YYYY-MM-DD.md</code> and is the place to log what
+        happened during a session. Requires a connected Storage node.
+      </p>
+
+      {/* Long-term (MEMORY.md) */}
+      <Field label="Long-term (MEMORY.md)">
+        <div className="space-y-2">
+          <Checkbox
+            label="Auto-load at session start"
+            checked={data.autoLoadLongTerm}
+            onChange={(v) => update(nodeId, { autoLoadLongTerm: v })}
+          />
+          <div>
+            <label className="text-[10px] text-slate-500">Max bytes injected (0 = no cap)</label>
+            <input
+              className={inputClass}
+              type="number"
+              min={0}
+              value={data.longTermMaxBytes}
+              onChange={(e) =>
+                update(nodeId, { longTermMaxBytes: parseInt(e.target.value) || 0 })
+              }
+            />
+          </div>
+        </div>
       </Field>
 
-      <Field label="Max Session Messages">
-        <input
-          className={inputClass}
-          type="number"
-          min={1}
-          value={data.maxSessionMessages}
-          onChange={(e) =>
-            update(nodeId, { maxSessionMessages: parseInt(e.target.value) || 100 })
-          }
-        />
+      {/* Short-term (daily logs) */}
+      <Field label="Short-term (daily logs)">
+        <div>
+          <label className="text-[10px] text-slate-500">Auto-load recent days (today = 1)</label>
+          <input
+            className={inputClass}
+            type="number"
+            min={0}
+            value={data.autoLoadShortTermDays}
+            onChange={(e) =>
+              update(nodeId, { autoLoadShortTermDays: parseInt(e.target.value) || 0 })
+            }
+          />
+        </div>
       </Field>
 
-      <Field label="Persistence">
-        <Checkbox
-          label="Persist across sessions"
-          checked={data.persistAcrossSessions}
-          onChange={(v) => update(nodeId, { persistAcrossSessions: v })}
-        />
-      </Field>
-
+      {/* Search */}
       <Field label="Search Mode">
         <select
           className={selectClass}
           value={data.searchMode}
-          onChange={(e) => update(nodeId, { searchMode: e.target.value })}
+          onChange={(e) => update(nodeId, { searchMode: e.target.value as MemorySearchMode })}
         >
           {SEARCH_MODES.map((m) => (
             <option key={m} value={m}>{m}</option>
@@ -91,7 +109,7 @@ export default function MemoryProperties({ nodeId, data }: Props) {
       </Field>
 
       {/* Compaction */}
-      <Field label="Compaction">
+      <Field label="Compaction (short-term only)">
         <div className="space-y-2">
           <Checkbox
             label="Enable compaction"
@@ -100,29 +118,29 @@ export default function MemoryProperties({ nodeId, data }: Props) {
           />
           {data.compactionEnabled && (
             <>
+              <div>
+                <label className="text-[10px] text-slate-500">Compact daily logs older than (days)</label>
+                <input
+                  className={inputClass}
+                  type="number"
+                  min={1}
+                  value={data.compactionAfterDays}
+                  onChange={(e) =>
+                    update(nodeId, { compactionAfterDays: parseInt(e.target.value) || 7 })
+                  }
+                />
+              </div>
               <select
                 className={selectClass}
                 value={data.compactionStrategy}
-                onChange={(e) => update(nodeId, { compactionStrategy: e.target.value })}
+                onChange={(e) =>
+                  update(nodeId, { compactionStrategy: e.target.value as MemoryCompactionStrategy })
+                }
               >
                 {COMPACTION_STRATEGIES.map((s) => (
                   <option key={s} value={s}>{s}</option>
                 ))}
               </select>
-              <div>
-                <label className="text-[10px] text-slate-500">Threshold (0-1)</label>
-                <input
-                  className={inputClass}
-                  type="number"
-                  min={0}
-                  max={1}
-                  step={0.1}
-                  value={data.compactionThreshold}
-                  onChange={(e) =>
-                    update(nodeId, { compactionThreshold: parseFloat(e.target.value) || 0.8 })
-                  }
-                />
-              </div>
             </>
           )}
         </div>
@@ -132,45 +150,22 @@ export default function MemoryProperties({ nodeId, data }: Props) {
       <Field label="Memory Tools">
         <div className="space-y-1.5">
           <Checkbox
-            label="memory_search (hybrid search)"
-            checked={data.exposeMemorySearch}
-            onChange={(v) => update(nodeId, { exposeMemorySearch: v })}
+            label="memory_save (write to long-term or short-term)"
+            checked={data.exposeMemorySave}
+            onChange={(v) => update(nodeId, { exposeMemorySave: v })}
           />
           <Checkbox
-            label="memory_get (read entry)"
+            label="memory_get (read MEMORY.md or a daily log)"
             checked={data.exposeMemoryGet}
             onChange={(v) => update(nodeId, { exposeMemoryGet: v })}
           />
           <Checkbox
-            label="memory_save (write entry)"
-            checked={data.exposeMemorySave}
-            onChange={(v) => update(nodeId, { exposeMemorySave: v })}
+            label="memory_search (search all memory files)"
+            checked={data.exposeMemorySearch}
+            onChange={(v) => update(nodeId, { exposeMemorySearch: v })}
           />
         </div>
       </Field>
-
-      {/* External backend config */}
-      {data.backend !== 'builtin' && (
-        <>
-          <Field label="External Endpoint">
-            <input
-              className={inputClass}
-              value={data.externalEndpoint}
-              onChange={(e) => update(nodeId, { externalEndpoint: e.target.value })}
-              placeholder="https://api.example.com/memory"
-            />
-          </Field>
-          <Field label="External API Key">
-            <input
-              className={inputClass}
-              type="password"
-              value={data.externalApiKey}
-              onChange={(e) => update(nodeId, { externalApiKey: e.target.value })}
-              placeholder="API key"
-            />
-          </Field>
-        </>
-      )}
     </div>
   );
 }

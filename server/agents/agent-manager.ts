@@ -6,7 +6,7 @@ import { StorageEngine } from '../storage/storage-engine';
 import { HookRegistry } from '../hooks/hook-registry';
 import { PluginLoader } from '../hooks/plugin-loader';
 import { registerInternalHooks } from '../hooks/internal-hooks';
-import { HOOK_NAMES, type BackendLifecycleContext } from '../hooks/hook-types';
+import { HOOK_NAMES, type BackendLifecycleContext, type SessionLifecycleContext } from '../hooks/hook-types';
 import { ProviderPluginRegistry } from '../providers/plugin-registry';
 import type { ApiKeyStore } from '../auth/api-keys';
 import { HitlRegistry } from '../hitl/hitl-registry';
@@ -143,12 +143,14 @@ export class AgentManager {
       await PluginLoader.loadPlugins(config.tools.plugins, hooks, basePath);
     }
 
-    // Create runtime with hook registry
-    const runtime = this.buildRuntime(config, hooks);
+    // Create runtime with hook registry. Storage is passed so the memory
+    // engine can read/write MEMORY.md and the daily logs under
+    // <agentDir>/memory/.
+    const runtime = this.buildRuntime(config, hooks, storage);
 
     let bridge: EventBridge | null = null;
     const runtimeFactory: RuntimeFactory = (childConfig) => {
-      const childRuntime = this.buildRuntime(childConfig, hooks);
+      const childRuntime = this.buildRuntime(childConfig, hooks, storage);
       childRuntime.setBroadcast?.((event) => bridge?.broadcast(event));
       return childRuntime;
     };
@@ -340,6 +342,29 @@ export class AgentManager {
   }
 
   /**
+   * Fire the SESSION_END hook for a session about to be deleted. No-op
+   * when the agent is not currently managed (the session can be deleted
+   * by HTTP without ever starting the agent runtime). Errors from
+   * hook handlers are logged inside HookRegistry.invoke and do not
+   * propagate, so the caller's deletion path is unaffected.
+   */
+  async fireSessionEndHook(
+    agentId: string,
+    sessionKey: string,
+    sessionId: string,
+  ): Promise<void> {
+    const managed = this.agents.get(agentId);
+    if (!managed) return;
+    const ctx: SessionLifecycleContext = {
+      agentId,
+      sessionId,
+      sessionKey,
+      phase: 'end',
+    };
+    await managed.hooks.invoke(HOOK_NAMES.SESSION_END, ctx);
+  }
+
+  /**
    * Manually run the configured compaction strategy on a session,
    * outside of an active run. Fails if the agent has not been started.
    */
@@ -378,7 +403,11 @@ export class AgentManager {
       : storagePath;
   }
 
-  private buildRuntime(config: AgentConfig, hooks: HookRegistry): AgentRuntime {
+  private buildRuntime(
+    config: AgentConfig,
+    hooks: HookRegistry,
+    storage: StorageEngine | null = null,
+  ): AgentRuntime {
     return new AgentRuntime(
       config,
       (provider) => Promise.resolve(this.apiKeys.get(provider)),
@@ -387,6 +416,7 @@ export class AgentManager {
       this.pluginRegistry,
       this.hitlRegistry,
       this.getSafetySettings(),
+      storage,
     );
   }
 

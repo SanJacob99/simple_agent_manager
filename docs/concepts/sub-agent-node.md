@@ -3,7 +3,7 @@
 > A peripheral that declares a named, one-shot sub-agent the parent agent can dispatch via `sessions_spawn`.
 
 <!-- source: src/types/nodes.ts#SubAgentNodeData -->
-<!-- last-verified: 2026-05-01 -->
+<!-- last-verified: 2026-05-07 -->
 
 ## Overview
 

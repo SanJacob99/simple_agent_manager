@@ -360,6 +360,130 @@ describe('graphStore.applyPatch', () => {
   });
 });
 
+describe('graphStore template selection + insertion', () => {
+  beforeEach(() => {
+    useGraphStore.setState({
+      nodes: [],
+      edges: [],
+      selectedNodeId: null,
+      pendingNameNodeId: null,
+    } as any);
+    localStorage.clear();
+  });
+
+  it('captures only selected nodes and the edges wired between them', () => {
+    useGraphStore.setState({
+      nodes: [
+        { id: 'a', type: 'agent', position: { x: 0, y: 0 }, selected: true, data: { type: 'agent', name: 'A' } as any },
+        { id: 's', type: 'storage', position: { x: 100, y: 0 }, selected: true, data: { type: 'storage', storagePath: '~/store' } as any },
+        { id: 'unrelated', type: 'tools', position: { x: 0, y: 200 }, selected: false, data: { type: 'tools' } as any },
+      ] as any,
+      edges: [
+        { id: 'e_s_a', source: 's', target: 'a' } as any,
+        { id: 'e_unrelated_a', source: 'unrelated', target: 'a' } as any,
+      ] as any,
+    });
+
+    const tpl = useGraphStore.getState().buildTemplateFromSelection();
+    expect(tpl).not.toBeNull();
+    expect(tpl!.nodes.map((n) => n.id).sort()).toEqual(['a', 's']);
+    // Only the edge wired between selected nodes survives.
+    expect(tpl!.edges).toHaveLength(1);
+    expect(tpl!.edges[0]).toMatchObject({ source: 's', target: 'a' });
+  });
+
+  it('returns null when nothing is selected', () => {
+    useGraphStore.setState({
+      nodes: [
+        { id: 'a', type: 'agent', position: { x: 0, y: 0 }, selected: false, data: { type: 'agent', name: 'A' } as any },
+      ] as any,
+      edges: [],
+    });
+    expect(useGraphStore.getState().buildTemplateFromSelection()).toBeNull();
+  });
+
+  it('insertTemplate adds nodes with fresh IDs and unique storage paths', () => {
+    // Existing graph has one storage node already.
+    useGraphStore.setState({
+      nodes: [
+        {
+          id: 'existing',
+          type: 'storage',
+          position: { x: 0, y: 0 },
+          data: { type: 'storage', storagePath: '~/.simple-agent-manager/storage' } as any,
+        },
+      ] as any,
+      edges: [],
+    });
+
+    const template = {
+      id: 'tpl_x',
+      name: 'group',
+      description: '',
+      createdAt: 0,
+      nodes: [
+        {
+          id: 'orig',
+          type: 'storage' as const,
+          position: { x: 0, y: 0 },
+          data: { type: 'storage', storagePath: '~/.simple-agent-manager/storage' } as any,
+        },
+      ],
+      edges: [],
+    };
+
+    const { nodeIds } = useGraphStore.getState().insertTemplate(template);
+    expect(nodeIds).toHaveLength(1);
+
+    const nodes = useGraphStore.getState().nodes;
+    expect(nodes).toHaveLength(2);
+    const inserted = nodes.find((n) => n.id === nodeIds[0])!;
+    expect(inserted.id).not.toBe('orig');
+    const insertedPath = (inserted.data as { storagePath: string }).storagePath;
+    expect(insertedPath).not.toBe('~/.simple-agent-manager/storage');
+    expect(insertedPath.startsWith('~/.simple-agent-manager/storage/')).toBe(true);
+  });
+
+  it('insertTemplate auto-renames agents to avoid collisions with existing names', () => {
+    useGraphStore.setState({
+      nodes: [
+        {
+          id: 'existing',
+          type: 'agent',
+          position: { x: 0, y: 0 },
+          data: { type: 'agent', name: 'Researcher', nameConfirmed: true } as any,
+        },
+      ] as any,
+      edges: [],
+    });
+
+    const template = {
+      id: 'tpl_x',
+      name: 'group',
+      description: '',
+      createdAt: 0,
+      nodes: [
+        {
+          id: 'orig',
+          type: 'agent' as const,
+          position: { x: 0, y: 0 },
+          data: { type: 'agent', name: 'Researcher', nameConfirmed: true } as any,
+        },
+      ],
+      edges: [],
+    };
+
+    useGraphStore.getState().insertTemplate(template);
+    useGraphStore.getState().insertTemplate(template);
+    const names = useGraphStore
+      .getState()
+      .nodes.filter((n) => n.data.type === 'agent')
+      .map((n) => (n.data as { name: string }).name);
+    expect(new Set(names).size).toBe(names.length);
+    expect(names).toContain('Researcher');
+  });
+});
+
 describe('graphStore.buildGraphSnapshot', () => {
   beforeEach(() => {
     useGraphStore.setState({
