@@ -344,13 +344,31 @@ export interface StorageNodeData {
 
 // --- Vector Database Node ---
 
+export type VectorStoreProvider =
+  | 'sqlite-vec'
+  | 'pinecone'
+  | 'chromadb'
+  | 'qdrant'
+  | 'weaviate';
+
+export type EmbeddingProvider = 'openrouter' | 'ollama';
+
+export interface VectorEmbeddingConfig {
+  provider: EmbeddingProvider;
+  model: string;
+  baseUrl?: string;
+  dimensions?: number;
+}
+
 export interface VectorDatabaseNodeData {
   [key: string]: unknown;
   type: 'vectorDatabase';
   label: string;
-  provider: 'pinecone' | 'chromadb' | 'qdrant' | 'weaviate';
+  provider: VectorStoreProvider;
   collectionName: string;
   connectionString: string;
+  storagePath: string;
+  embedding: VectorEmbeddingConfig;
 }
 
 // --- Cron Node ---

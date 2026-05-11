@@ -31,6 +31,7 @@ export const TOOL_GROUPS: Record<string, string[]> = {
   media: ['image', 'image_generate', 'show_image', 'canva', 'music_generate'],
   communication: ['send_message', 'text_to_speech'],
   human: ['ask_user', 'confirm_action'],
+  vector: ['vector_search', 'vector_upsert', 'vector_delete', 'vector_get'],
   sessions: [
     'sessions_list',
     'sessions_history',
@@ -89,6 +90,10 @@ export const ALL_TOOL_NAMES = [
   'ask_user',
   'confirm_action',
   'music_generate',
+  'vector_search',
+  'vector_upsert',
+  'vector_delete',
+  'vector_get',
   ...SESSION_TOOL_NAMES,
 ];
 
@@ -118,6 +123,10 @@ export const IMPLEMENTED_TOOL_NAMES = new Set<string>([
   'ask_user',
   'confirm_action',
   'music_generate',
+  'vector_search',
+  'vector_upsert',
+  'vector_delete',
+  'vector_get',
   // memory tools are managed by the memory node, not the tools node
   ...SESSION_TOOL_NAMES,
 ]);

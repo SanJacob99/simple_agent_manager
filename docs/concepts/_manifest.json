@@ -45,7 +45,7 @@
     "vectorDatabase": {
       "doc": "vector-database-node.md",
       "type": "src/types/nodes.ts#VectorDatabaseNodeData",
-      "runtime": null
+      "runtime": "server/runtime/vector-database-engine.ts"
     },
     "cron": {
       "doc": "cron-node.md",

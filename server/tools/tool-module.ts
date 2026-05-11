@@ -29,6 +29,7 @@ import type { AgentTool } from '@mariozechner/pi-agent-core';
 import type { AgentConfig } from '../../shared/agent-config';
 import type { ProviderPluginDefinition } from '../../shared/plugin-sdk';
 import type { AskUserContext } from './builtins/human/ask-user';
+import type { VectorDatabaseEngine } from '../runtime/vector-database-engine';
 
 /**
  * Provider-plugin web tool context. Passed through to `web_search` /
@@ -76,6 +77,14 @@ export interface RuntimeHints {
    * prefer it over their built-in implementations.
    */
   providerWeb?: ProviderWebContext;
+  /**
+   * Resolve (and lazily construct) the `VectorDatabaseEngine` for the
+   * named collection — or the only one attached when `label` is omitted.
+   * Returns `null` when no matching `vectorDatabase` node is wired. Used
+   * by the `vector_*` tool modules so a single engine instance (and its
+   * sqlite handle) is shared across `search`/`upsert`/`delete`/`get`.
+   */
+  getVectorEngine?: (label?: string) => Promise<VectorDatabaseEngine | null>;
 }
 
 /**

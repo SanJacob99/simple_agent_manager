@@ -368,6 +368,13 @@ export function resolveAgentConfig(
         provider: n.data.provider,
         collectionName: n.data.collectionName,
         connectionString: n.data.connectionString,
+        storagePath: n.data.storagePath,
+        embedding: {
+          provider: n.data.embedding.provider,
+          model: n.data.embedding.model,
+          baseUrl: n.data.embedding.baseUrl,
+          dimensions: n.data.embedding.dimensions,
+        },
       };
     });
 

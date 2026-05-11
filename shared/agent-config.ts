@@ -6,7 +6,15 @@ export type { SubAgentOverridableField } from './sub-agent-types';
 
 export type MemoryBackend = 'builtin' | 'external' | 'cloud';
 export type ToolProfile = 'full' | 'coding' | 'messaging' | 'minimal' | 'custom';
-export type ToolGroup = 'runtime' | 'fs' | 'web' | 'coding' | 'media' | 'communication' | 'human';
+export type ToolGroup =
+  | 'runtime'
+  | 'fs'
+  | 'web'
+  | 'coding'
+  | 'media'
+  | 'communication'
+  | 'human'
+  | 'vector';
 export type CompactionStrategy = 'summary' | 'sliding-window' | 'trim-oldest';
 
 export type SystemPromptMode = 'auto' | 'append' | 'manual';
@@ -375,11 +383,29 @@ export interface ResolvedStorageConfig {
   maintenanceIntervalMinutes: number;
 }
 
+export type VectorStoreProvider =
+  | 'sqlite-vec'
+  | 'pinecone'
+  | 'chromadb'
+  | 'qdrant'
+  | 'weaviate';
+
+export type EmbeddingProvider = 'openrouter' | 'ollama';
+
+export interface ResolvedVectorEmbeddingConfig {
+  provider: EmbeddingProvider;
+  model: string;
+  baseUrl?: string;
+  dimensions?: number;
+}
+
 export interface ResolvedVectorDatabaseConfig {
   label: string;
-  provider: string;
+  provider: VectorStoreProvider;
   collectionName: string;
   connectionString: string;
+  storagePath: string;
+  embedding: ResolvedVectorEmbeddingConfig;
 }
 
 export type McpTransport = 'stdio' | 'http' | 'sse';

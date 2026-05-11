@@ -189,9 +189,14 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
       return {
         type: 'vectorDatabase',
         label: 'Vector DB',
-        provider: 'chromadb',
+        provider: 'sqlite-vec',
         collectionName: 'default',
         connectionString: '',
+        storagePath: '.sam/vector',
+        embedding: {
+          provider: 'openrouter',
+          model: 'openai/text-embedding-3-small',
+        },
       };
     case 'cron':
       return {
