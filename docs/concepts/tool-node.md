@@ -74,12 +74,13 @@ Skills stored on the Tool Node are merged into system prompt content during grap
 
 Tool name resolution happens in `shared/resolve-tool-names.ts` in this order:
 
-1. Expand the selected profile into groups
-2. Expand the resulting groups into tool names
-3. Add `enabledGroups`
-4. Add `enabledTools`
-5. Add tools contributed by enabled tool plugins
-6. Deduplicate the final list
+1. Determine the active groups: if `enabledGroups` is non-empty, use it as the source of truth; otherwise fall back to expanding the selected profile into its default groups
+2. Expand those groups into tool names
+3. Add individual `enabledTools`
+4. Add tools contributed by enabled tool plugins
+5. Deduplicate the final list
+
+`enabledGroups` and the profile are **not** additive — when the user has explicitly enabled one or more groups, the profile's default group set is ignored entirely. The profile only acts as a seed when no groups are explicitly set.
 
 `server/runtime/tool-factory.ts` then instantiates concrete `AgentTool` objects:
 
