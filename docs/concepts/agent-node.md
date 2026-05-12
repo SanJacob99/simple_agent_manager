@@ -3,7 +3,7 @@
 > The central hub node that stores model and prompt settings while connected peripheral nodes supply runtime services.
 
 <!-- source: src/types/nodes.ts#AgentNodeData -->
-<!-- last-verified: 2026-05-06 -->
+<!-- last-verified: 2026-05-12 -->
 
 ## Overview
 
@@ -28,6 +28,7 @@ The Agent Node still owns `modelId`, `thinkingLevel`, and `modelCapabilities`. T
 | `systemPromptMode` | `SystemPromptMode` | `"append"` | Prompt assembly mode. `auto` emits only SAM sections (the user's `systemPrompt` field is ignored); `append` emits SAM sections then adds the user's `systemPrompt` as a final `## User Instructions` section; `manual` discards SAM sections and uses only the user's text |
 | `showReasoning` | `boolean` | `false` | Whether to expose reasoning output in the UI when supported |
 | `verbose` | `boolean` | `false` | Whether to prefer more verbose runtime output |
+| `coordination` | `AgentCoordinationConfig` | `{ role: "none", capabilities: [], maxConcurrentTasks: 1 }` | Optional control-plane role metadata. Manager agents can coordinate workflows; lead and specialist agents can receive assigned tasks |
 | `workingDirectory` | `string` | `""` | Working directory for the agent's exec tool. Empty = server `process.cwd()` |
 
 ### ModelCapabilityOverrides Fields
@@ -59,6 +60,7 @@ The Agent Node still owns `modelId`, `thinkingLevel`, and `modelCapabilities`. T
 6. Interactive chat requires a connected Provider Node, Context Engine Node, and Storage Node before the drawer can start a session.
 7. Runtime payload/fetch diagnostics in `AgentRuntime` are best-effort and non-blocking for successful streaming responses. The runtime avoids awaiting cloned 2xx response bodies, so debug logging cannot stall token streaming.
 8. Edits to `modelId`, the connected Provider Node, or `thinkingLevel` between turns are recorded in the session transcript. At the start of each run, `RunCoordinator.persistConfigChanges()` compares the current config against the last recorded baseline and appends pi-coding-agent's `model_change` / `thinking_level_change` entries when they drift. The model baseline is the most recent `model_change` entry, falling back to the provider/model on the most recent assistant message; the thinking-level baseline defaults to `'off'` when no prior change entry exists. No `model_change` is written on the first turn (the assistant message records the model implicitly), but a `thinking_level_change` is written on the first turn when the configured level differs from `'off'` so replays know what level was in effect.
+9. When `coordination.role` is `manager`, `lead`, or `specialist`, `RunCoordinator` injects coordination tools for that run. Manager tools create and control durable workflows; lead/specialist tools update assigned tasks. The deterministic state machine lives in `server/coordination/`, not inside the model prompt.
 
 ## Connections
 
@@ -95,6 +97,11 @@ The Agent Node still owns `modelId`, `thinkingLevel`, and `modelCapabilities`. T
   "systemPromptMode": "append",
   "showReasoning": false,
   "verbose": false,
+  "coordination": {
+    "role": "manager",
+    "capabilities": ["planning", "reporting"],
+    "maxConcurrentTasks": 1
+  },
   "workingDirectory": ""
 }
 ```

@@ -24,6 +24,9 @@ import { resolveOutboundSystemPrompt } from './runtime/resolve-system-prompt';
 import { launchChromeForCdp } from './tools/builtins/browser/chrome-launcher';
 import { mountSubAgentRoutes } from './routes/subagents';
 import { buildAgentChannelsRouter } from './routes/agent-channels';
+import { CoordinationStore } from './coordination/coordination-store';
+import { CoordinationService } from './coordination/coordination-service';
+import { buildCoordinationRouter } from './coordination/coordination-routes';
 import { SamAgentCoordinator } from './sam-agent/sam-agent-coordinator';
 import { AgentRuntime } from './runtime/agent-runtime';
 import path from 'path';
@@ -42,6 +45,8 @@ const catalogCache = new ProviderCatalogCache();
 const hitlRegistry = new HitlRegistry();
 const settingsFile = new SettingsFileStore();
 const graphFile = new GraphFileStore();
+const coordinationStore = new CoordinationStore();
+const coordinationService = new CoordinationService(coordinationStore);
 
 // Live safety settings — updated from the PUT /api/settings handler, read
 // lazily by AgentManager at agent-start time so newly started agents pick up
@@ -52,7 +57,9 @@ const agentManager = new AgentManager(
   pluginRegistry,
   hitlRegistry,
   () => currentSafetySettings,
+  coordinationService,
 );
+coordinationService.setGateway(agentManager);
 
 // --- SAMAgent coordinator ---
 //
@@ -118,6 +125,10 @@ mountSubAgentRoutes(app, {
 // --- Agent channels (peer-to-peer comms) REST routes ---
 
 app.use(buildAgentChannelsRouter(agentManager));
+
+// --- Agent coordination control plane REST routes ---
+
+app.use(buildCoordinationRouter(coordinationService));
 
 // --- Storage engine instances ---
 
@@ -934,6 +945,7 @@ async function shutdown() {
 
   agentManager.shutdown()
     .then(() => {
+      coordinationService.close();
       httpServer.close(() => {
         clearServerPid();
         console.log('Server closed.');

@@ -1,6 +1,7 @@
 // --- Shared type aliases (duplicated from src/types/ to keep shared/ self-contained) ---
 
 import type { SubAgentOverridableField } from './sub-agent-types';
+import type { AgentCoordinationConfig } from './coordination-types';
 
 export type { SubAgentOverridableField } from './sub-agent-types';
 
@@ -187,6 +188,7 @@ export interface AgentConfig {
   crons: ResolvedCronConfig[];
   mcps: ResolvedMcpConfig[];
   subAgents: ResolvedSubAgentConfig[];
+  coordination?: AgentCoordinationConfig;
   /**
    * Optional input/output guardrail rule sets. When omitted or empty, the
    * runtime skips all guardrail checks. Optional — not required —
