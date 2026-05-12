@@ -2,6 +2,7 @@ import type { AgentConfig, ResolvedSubAgentConfig } from '../../shared/agent-con
 import { buildSystemPrompt } from '../../shared/system-prompt-builder';
 import { resolveToolNames, IMPLEMENTED_TOOL_NAMES } from '../../shared/resolve-tool-names';
 import { eligibleBundledSkills } from '../../shared/default-tool-skills';
+import { getToolCatalog, isToolRegistryInitialized } from '../tools/tool-registry';
 
 export interface SubAgentSpawnOverrides {
   systemPromptAppend: string;
@@ -43,9 +44,26 @@ export function buildSyntheticAgentConfig(
   const userInstructions = appendText ? `${subPromptText}\n\n${appendText}` : subPromptText;
 
   const subToolNames = resolveToolNames(tools);
-  const toolsSummary = subToolNames
-    .filter((t) => IMPLEMENTED_TOOL_NAMES.has(t))
-    .join(', ') || null;
+  const advertisedToolNames = subToolNames.filter((t) => IMPLEMENTED_TOOL_NAMES.has(t));
+  const toolsSummary = advertisedToolNames.join(', ') || null;
+
+  // Build a rich catalog from the server-side tool registry so the sub-agent
+  // also sees per-tool descriptions in its "## Tooling" section. The
+  // registry is normally initialized at server startup; in stripped-down
+  // test setups it may not be, so we fall back to the bare summary.
+  const toolsCatalog = isToolRegistryInitialized()
+    ? (() => {
+        const catalog = new Map(getToolCatalog().map((t) => [t.name, t]));
+        return advertisedToolNames.map((name) => {
+          const entry = catalog.get(name);
+          return {
+            name,
+            description: entry?.description || undefined,
+            group: entry?.group,
+          };
+        });
+      })()
+    : null;
 
   const bundledRefs = eligibleBundledSkills(subToolNames);
   const skillsSections: string[] = [];
@@ -77,6 +95,7 @@ export function buildSyntheticAgentConfig(
     userInstructions,
     safetyGuardrails: '',
     toolsSummary,
+    toolsCatalog,
     skillsSummary,
     workspacePath: subWorkspacePath,
     bootstrapFiles: null,

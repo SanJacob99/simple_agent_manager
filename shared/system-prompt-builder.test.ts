@@ -270,6 +270,49 @@ describe('buildSystemPrompt', () => {
       expect(tooling.content).toContain('exec, read_file');
     });
 
+    it('includes Tool Selection guidance so the model picks tools from intent', () => {
+      const result = buildSystemPrompt(makeInput({ toolsSummary: 'web_fetch' }));
+      const tooling = result.sections.find((s) => s.key === 'tooling')!;
+      // Names the section so the model can locate it
+      expect(tooling.content).toMatch(/### Tool Selection/);
+      // Frames selection as intent-driven
+      expect(tooling.content).toMatch(/intent/);
+      // Mentions a concrete cue (URL -> fetch) so the model has an anchor
+      expect(tooling.content).toMatch(/URL/);
+    });
+
+    it('renders a grouped, annotated tool list when toolsCatalog is provided', () => {
+      const result = buildSystemPrompt(
+        makeInput({
+          toolsSummary: 'web_fetch, calculator',
+          toolsCatalog: [
+            { name: 'web_fetch', description: 'Retrieve a URL.', group: 'web' },
+            { name: 'calculator', description: 'Do math.' },
+          ],
+        }),
+      );
+      const tooling = result.sections.find((s) => s.key === 'tooling')!;
+      // Per-tool descriptions are visible in the prompt
+      expect(tooling.content).toContain('`web_fetch`');
+      expect(tooling.content).toContain('Retrieve a URL.');
+      expect(tooling.content).toContain('`calculator`');
+      expect(tooling.content).toContain('Do math.');
+      // Groups appear as headings; ungrouped tools land under "Other"
+      expect(tooling.content).toMatch(/\*\*Web\*\*/);
+      expect(tooling.content).toMatch(/\*\*Other\*\*/);
+      // The legacy comma-joined summary is no longer rendered when the
+      // catalog is used (we don't want both formats duplicating each other)
+      expect(tooling.content).not.toContain('web_fetch, calculator');
+    });
+
+    it('falls back to the comma-joined summary when toolsCatalog is empty/null', () => {
+      const result = buildSystemPrompt(
+        makeInput({ toolsSummary: 'exec, read_file', toolsCatalog: [] }),
+      );
+      const tooling = result.sections.find((s) => s.key === 'tooling')!;
+      expect(tooling.content).toContain('exec, read_file');
+    });
+
     it('emits selfUpdate section only when enabled', () => {
       const off = buildSystemPrompt(makeInput());
       expect(off.sections.find((s) => s.key === 'selfUpdate')).toBeUndefined();

@@ -9,7 +9,8 @@ import { createCalculatorTool } from './calculator';
 export default defineTool<void>({
   name: 'calculator',
   label: 'Calculator',
-  description: 'Evaluate a mathematical expression safely.',
+  description:
+    'Evaluate a mathematical expression safely. Use for any arithmetic, unit conversions, or numeric computation rather than working it out in prose.',
   // No group — `calculator` is a standalone utility that users enable
   // individually rather than via a group checkbox.
   icon: 'calculator',
