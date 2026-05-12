@@ -172,16 +172,29 @@ export default function SAMAgent({ onOpenSettings }: SAMAgentProps) {
             >
               <input
                 type="text"
-                disabled={!hasProvider || isStreaming}
+                // HITL pauses the run mid-turn — isStreaming stays true but
+                // the agent is blocked waiting on the user's answer, so the
+                // input must be unlocked while hitlPending is set.
+                disabled={!hasProvider || (isStreaming && !hitlPending)}
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleSend(); }}
-                placeholder={hasProvider ? (isStreaming ? 'SAMAgent is responding…' : hitlPending ? 'Type your answer…' : 'Ask SAMAgent…') : 'Configure provider in Settings'}
+                placeholder={
+                  !hasProvider
+                    ? 'Configure provider in Settings'
+                    : hitlPending
+                      ? hitlPending.kind === 'confirm'
+                        ? 'Answer yes or no…'
+                        : 'Type your answer…'
+                      : isStreaming
+                        ? 'SAMAgent is responding…'
+                        : 'Ask SAMAgent…'
+                }
                 className="flex-1 bg-transparent text-sm text-stone-800 placeholder:text-stone-400 focus:outline-none disabled:opacity-50"
               />
               <button
                 onClick={handleSend}
-                disabled={!hasProvider || isStreaming || draft.trim().length === 0}
+                disabled={!hasProvider || (isStreaming && !hitlPending) || draft.trim().length === 0}
                 title="Send"
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-stone-800 text-white transition hover:bg-stone-700 disabled:opacity-40"
               >

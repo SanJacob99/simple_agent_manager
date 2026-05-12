@@ -13,6 +13,11 @@ interface Props {
 
 export function SamAgentApplyCard({ messageId, toolCallId, resultJson, patchState }: Props) {
   const [expanded, setExpanded] = useState(false);
+  // Local "applying" latch — flips synchronously the moment the user clicks
+  // Apply, before applyPatch and setPatchState run. Guards against a fast
+  // double-click that would otherwise fire applyPatch twice within the same
+  // render cycle (each click adds the proposed nodes to the canvas again).
+  const [applying, setApplying] = useState(false);
   const applyPatch = useGraphStore((s) => s.applyPatch);
   const setPatchState = useSamAgentStore((s) => s.setPatchState);
 
@@ -52,6 +57,8 @@ export function SamAgentApplyCard({ messageId, toolCallId, resultJson, patchStat
   const summary = patch.rationale || `${patch.add_nodes.length} adds, ${patch.update_nodes.length} edits, ${patch.remove_nodes.length} deletes`;
 
   const handleApply = () => {
+    if (applying) return;
+    setApplying(true);
     const result = applyPatch(patch);
     if (result.ok) {
       setPatchState(messageId, toolCallId, 'applied');
@@ -59,10 +66,12 @@ export function SamAgentApplyCard({ messageId, toolCallId, resultJson, patchStat
     } else {
       setPatchState(messageId, toolCallId, 'failed');
       samAgentClient.patchState(messageId, toolCallId, 'failed');
+      setApplying(false);
     }
   };
 
   const handleDiscard = () => {
+    if (applying) return;
     setPatchState(messageId, toolCallId, 'discarded');
     samAgentClient.patchState(messageId, toolCallId, 'discarded');
   };
@@ -102,8 +111,20 @@ export function SamAgentApplyCard({ messageId, toolCallId, resultJson, patchStat
       )}
       {patchState === 'pending' && (
         <div className="mt-2 flex items-center gap-2">
-          <button onClick={handleApply} className="rounded-md bg-stone-800 px-3 py-1 text-xs text-white hover:bg-stone-700">Apply</button>
-          <button onClick={handleDiscard} className="rounded-md bg-stone-100 px-3 py-1 text-xs text-stone-700 hover:bg-stone-200">Discard</button>
+          <button
+            onClick={handleApply}
+            disabled={applying}
+            className="rounded-md bg-stone-800 px-3 py-1 text-xs text-white hover:bg-stone-700 disabled:opacity-50"
+          >
+            {applying ? 'Applying…' : 'Apply'}
+          </button>
+          <button
+            onClick={handleDiscard}
+            disabled={applying}
+            className="rounded-md bg-stone-100 px-3 py-1 text-xs text-stone-700 hover:bg-stone-200 disabled:opacity-50"
+          >
+            Discard
+          </button>
         </div>
       )}
     </div>

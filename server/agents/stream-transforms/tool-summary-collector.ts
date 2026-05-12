@@ -54,6 +54,7 @@ export class ToolSummaryCollector implements StreamTransform {
         runId: context.runId,
         toolCallId: raw.toolCallId,
         toolName: raw.toolName,
+        args: raw.args,
       } as any);
       return;
     }

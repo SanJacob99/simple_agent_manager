@@ -44,6 +44,13 @@ export interface Message {
   thinking?: string;
   toolName?: string;
   isToolError?: boolean;
+  /**
+   * Tool arguments captured from `tool:start`. Used by MessageBubble to
+   * render a meaningful in-flight preview while the tool is running —
+   * notably for `sessions_spawn` / `subagents`, where the args contain
+   * the sub-agent name and the assignment.
+   */
+  toolArgs?: Record<string, unknown>;
   images?: MessageImage[];
   audios?: MessageAudio[];
 }

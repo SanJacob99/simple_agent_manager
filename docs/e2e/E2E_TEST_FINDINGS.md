@@ -1,8 +1,10 @@
 # Simple Agent Manager — End-to-End Test Findings (Master Roll-up)
 
-<!-- last-verified: 2026-05-10 -->
+<!-- last-verified: 2026-05-11 -->
 
-> **Update 2026-05-10 — fix-and-rerun pass:** All 6 per-section F-NN findings (F-08, F-10, F-11, F-12, F-13 major, F-14) have been **RESOLVED** in this same session, plus R-25 (cron not in default palette). Type-check passes; full vitest suite passes (122 files / 1035 tests). The "win condition" UAT.10 still **CANNOT pass** in one session: it depends on R-26 (vector DB runtime backend), R-18 (persistent memory backend), R-16 (Safety tool-lock wiring), each of which is multi-day implementation work, plus several reference-image custom tools that aren't shipped. See "UAT.10 reality check" at the bottom.
+> **🏆 UAT.10 — PASS 2026-05-11.** The multi-agent content pipeline ran end-to-end live against OpenRouter (claude-haiku-4.5) with a real `sqlite-vec` vector store. All 5 binary criteria green: graph mirrors reference, configured via UI-equivalent path, ≥1 LinkedIn post written to disk, vector idempotency caught the duplicate at cosine distance 0.314 and short-circuited, retry cap halted at 3 attempts. Total cost: under $0.05 across 3 turns. Full evidence: [sections/uat10-dress-rehearsal.md](./sections/uat10-dress-rehearsal.md). **The win condition has been reached on this branch.** Three roadmap items the prior reality-check thought were blockers (R-26 vector backend, R-18 persistent memory, the four "custom tools") were either shipped by the 2026-05-09→2026-05-11 merge or proved unnecessary because the agent solved Stage 1 with built-in `web_search` + `vector_search` + `vector_upsert` and Stage 3 with `write_file` + `read_file`.
+>
+> **Update 2026-05-10 — fix-and-rerun pass:** All 6 per-section F-NN findings (F-08, F-10, F-11, F-12, F-13 major, F-14) have been **RESOLVED** in this same session, plus R-25 (cron not in default palette). Type-check passes; full vitest suite passes (122 files / 1035 tests). The "win condition" UAT.10 — at that point — could not pass: it depended on R-26 (vector DB runtime backend), R-18 (persistent memory backend), R-16 (Safety tool-lock wiring), all of which were multi-day implementation work, plus several reference-image custom tools that hadn't shipped. The intervening merge (commits `791266f` + `d0d646a` + `5f162ff` + `6dd7093`) closed R-26 and R-18; R-16 turned out not to gate the binary win.
 
 This document rolls up the complete E2E test execution against [`E2E_TEST_PLAN.md`](./E2E_TEST_PLAN.md). It indexes the per-section findings (`sections/0Nx-findings.md`) for full detail and consolidates the cross-cutting flows (CC.x), risk-driven scenarios (R-NN), and capstone UATs (UAT.1–UAT.10) here.
 
@@ -18,7 +20,8 @@ Per-section findings already on disk:
 - [07a-findings.md](./sections/07a-findings.md) — REST / WS / Auth / Storage / Sessions (22 TCs)
 - [07b-findings.md](./sections/07b-findings.md) — Tools / HITL / Skills / SAM CLI (26 TCs)
 - [00-not-executed.md](./sections/00-not-executed.md) — Consolidated catalog of TCs that could not be fully exercised live
-- [UAT10-ROADMAP.md](./UAT10-ROADMAP.md) — Implementation roadmap for the remaining UAT.10 gating items (R-16, R-18, R-26, custom tools, hook UI, dress rehearsal)
+- [uat10-dress-rehearsal.md](./sections/uat10-dress-rehearsal.md) — **UAT.10 binary PASS 2026-05-11**, full evidence for all 5 win-condition criteria
+- [UAT10-ROADMAP.md](./UAT10-ROADMAP.md) — Implementation roadmap (now mostly closed by the 2026-05-11 merge; retained as a historical record)
 
 Per-section totals: **263 TCs** executed, **194 fully live**, **69 partial/static/deferred (26%)**.
 
@@ -235,7 +238,7 @@ UAT.1–UAT.9 are build-up steps. UAT.10 is the binary win condition — replica
 
 ### UAT.10 — WIN CONDITION: Multi-agent content pipeline
 
-**Result:** ❌ **FAIL** (binary). Full failure analysis below; gating findings listed.
+**Result (originally judged 2026-05-10):** ❌ FAIL (binary). **Re-judged 2026-05-11 after the vector + memory + hooks merge: ✅ PASS.** Full evidence in [sections/uat10-dress-rehearsal.md](./sections/uat10-dress-rehearsal.md). The original failure analysis below is preserved as a historical record of the 2026-05-10 state.
 
 The product cannot replicate the reference image end-to-end today. The five binary criteria fail as follows:
 

@@ -23,6 +23,8 @@ export type SamAgentMessage = {
   text: string;
   timestamp: number;
   toolResults?: SamAgentToolResult[];
+  /** Concatenated thinking blocks emitted by the model during this turn. */
+  thinking?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -43,6 +45,9 @@ export type SamAgentEvent =
   | { type: 'message:start'; messageId: string }
   | { type: 'message:delta'; messageId: string; textDelta: string }
   | { type: 'message:end'; messageId: string; text: string }
+  | { type: 'thinking:start'; messageId: string }
+  | { type: 'thinking:delta'; messageId: string; textDelta: string }
+  | { type: 'thinking:end'; messageId: string }
   | { type: 'tool:start'; toolCallId: string; toolName: string; argsJson: string }
   | { type: 'tool:end'; toolCallId: string; resultJson: string }
   | { type: 'lifecycle:start' }

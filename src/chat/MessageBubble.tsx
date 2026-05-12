@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import { AlertTriangle, Brain, ChevronDown, Trash2, Wrench } from 'lucide-react';
+import { AlertTriangle, Bot, Brain, ChevronDown, Loader2, Trash2, Wrench } from 'lucide-react';
 import type { Message, MessageAudio } from '../store/session-store';
 import StreamingText from './StreamingText';
 import StreamingMarkdownRenderer from './StreamingMarkdownRenderer';
@@ -350,9 +350,97 @@ function MessageBubble({
   if (msg.role === 'tool') {
     const toolLabel = msg.toolName ?? 'tool';
     const isWaiting = !msg.content;
-    const borderColor = msg.isToolError ? 'border-red-500/20' : 'border-slate-600/30';
-    const bgColor = msg.isToolError ? 'bg-red-500/10' : 'bg-slate-800/40';
-    const iconColor = msg.isToolError ? 'text-red-400' : 'text-slate-400';
+    // Sub-agent spawn tools get a more prominent in-flight indicator —
+    // the model can sit on these for 30-60s while the child runs, and the
+    // small animate-pulse on a 12px wrench is too subtle to communicate
+    // "your agent is still working, the chat isn't dead." Detect by tool
+    // name and pull the sub-agent name from the call args when available.
+    const isSubAgentSpawn = isWaiting && (
+      toolLabel === 'sessions_spawn' ||
+      toolLabel === 'subagents' ||
+      toolLabel === 'agent_send'
+    );
+    const subAgentName =
+      isSubAgentSpawn
+        ? (msg.toolArgs?.name as string | undefined)
+            ?? (msg.toolArgs?.subAgentName as string | undefined)
+            ?? (msg.toolArgs?.agent as string | undefined)
+            ?? (msg.toolArgs?.to as string | undefined)
+            ?? (msg.toolArgs?.target as string | undefined)
+        : undefined;
+    const subAgentAssignment =
+      isSubAgentSpawn
+        ? (msg.toolArgs?.task as string | undefined)
+            ?? (msg.toolArgs?.message as string | undefined)
+            ?? (msg.toolArgs?.text as string | undefined)
+            ?? (msg.toolArgs?.prompt as string | undefined)
+        : undefined;
+    const borderColor = msg.isToolError
+      ? 'border-red-500/20'
+      : isSubAgentSpawn
+        ? 'border-emerald-500/40'
+        : 'border-slate-600/30';
+    const bgColor = msg.isToolError
+      ? 'bg-red-500/10'
+      : isSubAgentSpawn
+        ? 'bg-emerald-500/10'
+        : 'bg-slate-800/40';
+    const iconColor = msg.isToolError
+      ? 'text-red-400'
+      : isSubAgentSpawn
+        ? 'text-emerald-300'
+        : 'text-slate-400';
+
+    if (isSubAgentSpawn) {
+      // Compact running banner — never blank, always animating, names the
+      // active sub-agent so the user knows whose turn it is. Falls back to
+      // a generic label if the model didn't include a name field.
+      const headline = subAgentName
+        ? `Running sub-agent: ${subAgentName}`
+        : 'Spawning sub-agent…';
+      return (
+        <div className="group/msg flex justify-start">
+          <div className="max-w-[85%] w-full relative">
+            <div
+              className={`rounded-md border ${borderColor} ${bgColor} relative overflow-hidden`}
+            >
+              <div
+                className="absolute inset-0 pointer-events-none opacity-60"
+                style={{
+                  background:
+                    'linear-gradient(90deg, transparent 0%, rgba(16,185,129,0.18) 50%, transparent 100%)',
+                  backgroundSize: '200% 100%',
+                  animation: 'sub-agent-running-shimmer 2s linear infinite',
+                }}
+              />
+              <div className="relative flex items-center gap-2 px-3 py-2">
+                <Bot size={14} className={`${iconColor} shrink-0`} />
+                <Loader2 size={12} className={`${iconColor} animate-spin shrink-0`} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-[11px] text-emerald-100 font-medium truncate">
+                    {headline}
+                  </div>
+                  {subAgentAssignment && (
+                    <div className="text-[10px] text-slate-300/80 truncate">
+                      {subAgentAssignment}
+                    </div>
+                  )}
+                </div>
+                <span className="text-[9px] text-emerald-300/60 font-mono tabular-nums shrink-0">
+                  {toolLabel}
+                </span>
+              </div>
+            </div>
+            <style>{`
+              @keyframes sub-agent-running-shimmer {
+                0% { background-position: 200% 0; }
+                100% { background-position: -200% 0; }
+              }
+            `}</style>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="group/msg flex justify-start">
         <div className="max-w-[85%] w-full relative">
