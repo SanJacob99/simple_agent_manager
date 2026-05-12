@@ -133,6 +133,23 @@ describe('AgentProperties', () => {
     expect(screen.queryByRole('option', { name: /auto/i })).not.toBeInTheDocument();
   });
 
+  it('writes coordination role settings back to the graph store', () => {
+    const data = createAgentData();
+    seedGraph(data);
+
+    render(<AgentProperties nodeId="agent-1" data={data} />);
+
+    fireEvent.change(screen.getByDisplayValue('None'), {
+      target: { value: 'manager' },
+    });
+
+    const node = useGraphStore.getState().nodes.find((n) => n.id === 'agent-1');
+    expect(node?.data.type).toBe('agent');
+    if (node?.data.type === 'agent') {
+      expect(node.data.coordination?.role).toBe('manager');
+    }
+  });
+
   it('shows a searchable model popover with free and capability filters', () => {
     useModelCatalogStore.setState({
       models: {

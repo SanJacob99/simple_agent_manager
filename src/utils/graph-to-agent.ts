@@ -8,6 +8,7 @@ import { useToolCatalogStore } from '../store/tool-catalog-store';
 import type { SubAgentNodeData } from '../types/nodes';
 import { SUB_AGENT_NAME_REGEX } from '../../shared/sub-agent-types';
 import { CONNECTOR_CATALOG } from '../../shared/connectors/catalog';
+import { DEFAULT_COORDINATION_CONFIG } from '../../shared/coordination-types';
 import * as posixPath from 'path';
 
 function resolveSubAgent(
@@ -615,6 +616,7 @@ export function resolveAgentConfig(
     crons,
     mcps,
     subAgents,
+    coordination: data.coordination ?? { ...DEFAULT_COORDINATION_CONFIG },
     guardrails,
     // Exec tool cwd overrides agent-level workingDirectory when set
     workspacePath:

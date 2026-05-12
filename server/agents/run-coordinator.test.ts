@@ -817,6 +817,77 @@ describe('RunCoordinator', () => {
       const lastCall = addToolsCalls[addToolsCalls.length - 1];
       expect(lastCall).toEqual([]);
     });
+
+    it('combines session, coordination, and comm tools into a single per-run injection', async () => {
+      coordinator.destroy();
+      config = makeConfig(storagePath, {
+        tools: {
+          profile: 'custom',
+          resolvedTools: ['sessions_list'],
+          enabledGroups: [],
+          skills: [],
+          plugins: [],
+          subAgentSpawning: false,
+          maxSubAgents: 0,
+        },
+        coordination: { role: 'manager', capabilities: [], maxConcurrentTasks: 1 },
+        agentComm: [
+          {
+            commNodeId: 'comm-1',
+            label: 'to-beta',
+            targetAgentNodeId: 'agent-2',
+            targetAgentName: 'beta',
+            protocol: 'direct',
+            maxTurns: 10,
+            maxDepth: 3,
+            tokenBudget: 100_000,
+            rateLimitPerMinute: 30,
+            messageSizeCap: 16_000,
+            direction: 'bidirectional',
+          },
+        ],
+      });
+      runtime = mockRuntime();
+      const coordinationService = {} as any;
+      coordinator = new RunCoordinator(
+        'agent-1',
+        runtime,
+        config,
+        storage,
+        null,
+        undefined,
+        undefined,
+        undefined,
+        coordinationService,
+      );
+      coordinator.setCommBus({
+        send: vi.fn(async () => ({ ok: true, depth: 1, turns: 1, queuedWake: false })),
+        broadcast: vi.fn(async () => ({ results: [] })),
+        readChannelTranscript: vi.fn(async () => []),
+        appendChannelAssistantMessages: vi.fn(async () => {}),
+        addUsage: vi.fn(async () => {}),
+        readChannel: vi.fn(async () => ({})),
+      } as any);
+
+      const addToolsCalls: any[][] = [];
+      (runtime.addTools as any).mockImplementation((tools: any[]) => {
+        addToolsCalls.push(tools);
+      });
+
+      const result = await coordinator.dispatch({ sessionKey: 'combined-tools', text: 'Hello' });
+      await coordinator.wait(result.runId, 5000);
+
+      const injectionCalls = addToolsCalls.filter((tools) => tools.length > 0);
+      expect(injectionCalls).toHaveLength(1);
+      expect(injectionCalls[0].map((tool: any) => tool.name)).toEqual(
+        expect.arrayContaining([
+          'sessions_list',
+          'coordination_create_workflow',
+          'agent_send',
+        ]),
+      );
+      expect(addToolsCalls[addToolsCalls.length - 1]).toEqual([]);
+    });
   });
 
   describe('lifecycle events', () => {

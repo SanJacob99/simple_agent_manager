@@ -1,5 +1,6 @@
 import type { NodeType, FlowNodeData } from '../types/nodes';
 import type { SystemPromptMode } from '../../shared/agent-config';
+import { DEFAULT_COORDINATION_CONFIG } from '../../shared/coordination-types';
 
 export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
   switch (nodeType) {
@@ -17,6 +18,7 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         systemPromptMode: 'append' as SystemPromptMode,
         showReasoning: false,
         verbose: false,
+        coordination: { ...DEFAULT_COORDINATION_CONFIG },
         workingDirectory: '',
       };
     case 'memory':

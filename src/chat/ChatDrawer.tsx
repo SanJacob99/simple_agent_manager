@@ -5,6 +5,7 @@ import { useAgentConnectionStore } from '../store/agent-connection-store';
 import { useUILayoutStore } from '../store/ui-layout-store';
 import { resolveAgentConfig } from '../utils/graph-to-agent';
 import type { ImageAttachment } from '../../shared/protocol';
+import type { AgentConfig } from '../../shared/agent-config';
 import { useSessionStore, type Message } from '../store/session-store';
 import ChatInput from './ChatInput';
 import ChatMessages from './ChatMessages';
@@ -18,6 +19,8 @@ import PanelResizeHandle from '../panels/PanelResizeHandle';
 import { getChatConnectionIssue } from './chat-connection-state';
 import { shouldShowTranscriptLoading } from './transcript-loading';
 import PeerChannelsSection from './PeerChannelsSection';
+import WorkflowConsole from './WorkflowConsole';
+import { useCoordinationStore } from '../store/coordination-store';
 
 interface ChatDrawerProps {
   agentNodeId: string;
@@ -66,6 +69,14 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
     () => resolveAgentConfig(agentNodeId, nodes, edges),
     [agentNodeId, nodes, edges],
   );
+  const allAgentConfigs = useMemo(
+    () =>
+      nodes
+        .filter((node) => node.data.type === 'agent')
+        .map((node) => resolveAgentConfig(node.id, nodes, edges))
+        .filter((resolved): resolved is AgentConfig => resolved !== null),
+    [nodes, edges],
+  );
   const { width, onResizeStart } = useRightAnchoredResize({
     width: storedWidth,
     minWidth: 360,
@@ -89,6 +100,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
   const unbindStorage = useSessionStore((s) => s.unbindStorage);
   const loadSessionsFromDisk = useSessionStore((s) => s.loadSessionsFromDisk);
   const transcriptStatus = useSessionStore((s) => s.transcriptStatus);
+  const syncCoordinationAgents = useCoordinationStore((s) => s.syncAgents);
 
   // Find the agent node to get name
   const agentNode = nodes.find((n) => n.id === agentNodeId && n.data.type === 'agent');
@@ -130,6 +142,7 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
   const activeTranscriptStatus = activeSessionKey ? transcriptStatus[activeSessionKey] ?? 'idle' : 'idle';
 
   const creatingSessionRef = useRef(false);
+  const coordinationSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Auto-create default session if none exists
   useEffect(() => {
@@ -163,6 +176,26 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
   const contextInfo = useContextWindow(config);
 
   const chatStream = useChatStream(agentNodeId);
+
+  useEffect(() => {
+    if (coordinationSyncTimerRef.current) {
+      clearTimeout(coordinationSyncTimerRef.current);
+      coordinationSyncTimerRef.current = null;
+    }
+    if (config?.coordination?.role === 'manager') {
+      coordinationSyncTimerRef.current = setTimeout(() => {
+        void syncCoordinationAgents(allAgentConfigs);
+        coordinationSyncTimerRef.current = null;
+      }, 400);
+      return () => {
+        if (coordinationSyncTimerRef.current) {
+          clearTimeout(coordinationSyncTimerRef.current);
+          coordinationSyncTimerRef.current = null;
+        }
+      };
+    }
+    return undefined;
+  }, [allAgentConfigs, config?.coordination?.role, syncCoordinationAgents]);
 
   // Reconnect: when the active session changes (open, switch, reconnect),
   // ask the server for any pending HITL prompt so the banner shows up
@@ -511,6 +544,9 @@ export default function ChatDrawer({ agentNodeId, onClose }: ChatDrawerProps) {
             (c) => c.protocol === 'direct' && c.targetAgentNodeId,
           )}
         />
+        {config.coordination?.role === 'manager' && (
+          <WorkflowConsole managerAgentId={agentNodeId} />
+        )}
       </div>
 
       {/* Missing Peripherals Overlay */}
