@@ -309,19 +309,40 @@ export class ChannelSessionStore {
       return [];
     }
 
-    const lines = raw
-      .split('\n')
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0);
-
-    const tail = limit > 0 ? lines.slice(-limit) : lines;
-
-    return tail.map((l) => {
-      try {
-        return JSON.parse(l) as unknown;
-      } catch {
-        return l;
+    // ⚡ Bolt Optimization: Use an index-based search to extract the tail of the JSONL file
+    // without splitting the entire string into memory and allocating large intermediate arrays.
+    const tail: unknown[] = [];
+    if (limit > 0) {
+      let searchPos = raw.length;
+      while (searchPos > 0 && tail.length < limit) {
+        const newlinePos = raw.lastIndexOf('\n', searchPos - 1);
+        const line = raw.substring(newlinePos + 1, searchPos).trim();
+        if (line.length > 0) {
+          try {
+            tail.unshift(JSON.parse(line));
+          } catch {
+            tail.unshift(line);
+          }
+        }
+        searchPos = newlinePos;
       }
-    });
+    } else {
+      let searchPos = 0;
+      while (searchPos < raw.length) {
+        let newlinePos = raw.indexOf('\n', searchPos);
+        if (newlinePos === -1) newlinePos = raw.length;
+        const line = raw.substring(searchPos, newlinePos).trim();
+        if (line.length > 0) {
+          try {
+            tail.push(JSON.parse(line));
+          } catch {
+            tail.push(line);
+          }
+        }
+        searchPos = newlinePos + 1;
+      }
+    }
+
+    return tail;
   }
 }
