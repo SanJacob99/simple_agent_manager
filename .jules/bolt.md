@@ -16,3 +16,7 @@
 ## 2024-05-18 - Safe Concurrent Bulk File Cleanup
 **Learning:** Running unbounded `Promise.all` loops for concurrent file system I/O over arrays of paths (e.g., in `removeOrphanTranscripts`) accelerates disk operations but causes application-crashing `EMFILE` (too many open files) limits when the directory grows.
 **Action:** Batch concurrent file operations using a chunked execution pattern (e.g., `CHUNK_SIZE = 50`) to gain the speed of concurrency without triggering OS-level file descriptor limits.
+
+## 2024-05-14 - Prevent Massive Array Allocations during JSONL Tailing
+**Learning:** Using chained array methods (`.split('\n').map(...).filter(...)`) to extract the last N lines of large JSONL session transcripts forces parsing the entire payload into memory, causing massive intermediate array allocations, memory churn, and garbage collection pauses.
+**Action:** Replace `split('\n')` with single-pass backward extraction loops using `lastIndexOf('\n')` when tailing specific numbers of lines, and forward extraction with `indexOf('\n')` when reading the entire sequence. This entirely bypasses large intermediate array allocations.

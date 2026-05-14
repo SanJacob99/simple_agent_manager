@@ -309,12 +309,34 @@ export class ChannelSessionStore {
       return [];
     }
 
-    const lines = raw
-      .split('\n')
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0);
-
-    const tail = limit > 0 ? lines.slice(-limit) : lines;
+    // ⚡ Bolt Optimization: Use backward extraction with lastIndexOf to get the tail without
+    // splitting the entire potentially massive JSONL file, preventing huge array allocations
+    const tail: string[] = [];
+    if (limit > 0) {
+      let end = raw.length;
+      while (end > 0 && tail.length < limit) {
+        let start = raw.lastIndexOf('\n', end - 1);
+        const line = start === -1 ? raw.slice(0, end).trim() : raw.slice(start + 1, end).trim();
+        if (line.length > 0) {
+          tail.unshift(line);
+        }
+        if (start === -1) break;
+        end = start;
+      }
+    } else {
+      let start = 0;
+      while (start < raw.length) {
+        let end = raw.indexOf('\n', start);
+        if (end === -1) {
+          const line = raw.slice(start).trim();
+          if (line.length > 0) tail.push(line);
+          break;
+        }
+        const line = raw.slice(start, end).trim();
+        if (line.length > 0) tail.push(line);
+        start = end + 1;
+      }
+    }
 
     return tail.map((l) => {
       try {
