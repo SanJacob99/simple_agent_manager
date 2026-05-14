@@ -201,6 +201,26 @@ describe('music_generate.generate', () => {
     ).rejects.toThrow(/MiniMax Music: invalid prompt/);
   });
 
+  it('prevents path traversal when saving generated music', async () => {
+    const audio = Buffer.from([0x12, 0x34]);
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      jsonResponse({
+        predictions: [
+          { bytesBase64Encoded: audio.toString('base64'), mimeType: 'audio/wav' },
+        ],
+      }),
+    );
+
+    const tool = createMusicGenerateTool({ cwd: tmpDir, geminiApiKey: 'k' });
+    await expect(
+      tool.execute('t1', {
+        action: 'generate',
+        prompt: 'test',
+        filename: '../../../etc/passwd',
+      }),
+    ).rejects.toThrow(/Path escape detected/);
+  });
+
   it('surfaces Google Lyria HTTP error responses', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response('Permission denied', { status: 403 }),
