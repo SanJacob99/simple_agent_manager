@@ -309,14 +309,26 @@ export class ChannelSessionStore {
       return [];
     }
 
-    const lines = raw
-      .split('\n')
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0);
+    // ⚡ Bolt Optimization: Use a backward search loop with lastIndexOf('\n')
+    // to extract the required lines. This prevents massive intermediate
+    // array allocations from `.split().map().filter()` when processing large transcripts.
+    const tailLines: string[] = [];
+    let endIdx = raw.length;
 
-    const tail = limit > 0 ? lines.slice(-limit) : lines;
+    while (endIdx > 0 && (limit <= 0 || tailLines.length < limit)) {
+      let startIdx = raw.lastIndexOf('\n', endIdx - 1);
+      startIdx = startIdx === -1 ? 0 : startIdx + 1;
 
-    return tail.map((l) => {
+      const line = raw.substring(startIdx, endIdx).trim();
+      if (line.length > 0) {
+        tailLines.push(line);
+      }
+      endIdx = startIdx - 1;
+    }
+
+    tailLines.reverse();
+
+    return tailLines.map((l) => {
       try {
         return JSON.parse(l) as unknown;
       } catch {
