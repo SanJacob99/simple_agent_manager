@@ -3,7 +3,7 @@
 > Time-triggered agent runs on a configurable schedule.
 
 <!-- source: src/types/nodes.ts#CronNodeData -->
-<!-- last-verified: 2026-05-09 -->
+<!-- last-verified: 2026-05-15 -->
 
 ## Overview
 
