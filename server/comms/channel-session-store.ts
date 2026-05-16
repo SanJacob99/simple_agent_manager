@@ -309,14 +309,21 @@ export class ChannelSessionStore {
       return [];
     }
 
-    const lines = raw
-      .split('\n')
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0);
+    // ⚡ Bolt Optimization: Use backward search to extract tail lines without parsing the entire file
+    const tailStr: string[] = [];
+    let endIdx = raw.length;
+    while (endIdx > 0 && (limit <= 0 || tailStr.length < limit)) {
+      const startIdx = raw.lastIndexOf('\n', endIdx - 1);
+      const actualStart = startIdx === -1 ? 0 : startIdx + 1;
+      const line = raw.substring(actualStart, endIdx).trim();
+      if (line.length > 0) {
+        tailStr.push(line);
+      }
+      endIdx = actualStart - 1;
+    }
+    tailStr.reverse();
 
-    const tail = limit > 0 ? lines.slice(-limit) : lines;
-
-    return tail.map((l) => {
+    return tailStr.map((l) => {
       try {
         return JSON.parse(l) as unknown;
       } catch {
