@@ -3,7 +3,7 @@
 > How SAM assembles the system prompt that every agent run receives.
 
 <!-- source: shared/system-prompt-builder.ts, server/runtime/resolve-system-prompt.ts -->
-<!-- last-verified: 2026-05-11 -->
+<!-- last-verified: 2026-05-16 -->
 
 ## Overview
 
@@ -47,7 +47,7 @@ In `auto` and `append` modes, the builder emits these sections in order. Optiona
 | 11 | `time` | `timezone` is non-null | ISO-8601 current time and IANA timezone |
 | 12 | `replyTags` | `replyTags` is set | Whether the provider supports reply tags, with example |
 | 13 | `heartbeats` | `heartbeats` is set | Heartbeat prompt/ack tokens, or an "heartbeats disabled" note |
-| 14 | `runtime` | Always | One-line `Runtime: host=… \| os=… \| model=…`; `node=…` is appended when the server's Node version is available; `repo=…` is appended when a repo root is detected |
+| 14 | `runtime` | Always | One-line `Runtime: host=… \| os=… \| [node=…] \| model=… \| [repo=…]`. `node=…` is inserted between `os` and `model` when the server's Node version is available; `repo=…` is appended at the end when a repo root is detected |
 | 15 | `reasoning` | Always | Reasoning visibility level and thinking-effort note |
 
 ### Why the Runtime line omits `thinking=<level>`

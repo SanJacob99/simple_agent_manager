@@ -3,7 +3,7 @@
 > The central hub node that stores model and prompt settings while connected peripheral nodes supply runtime services.
 
 <!-- source: src/types/nodes.ts#AgentNodeData -->
-<!-- last-verified: 2026-05-06 -->
+<!-- last-verified: 2026-05-16 -->
 
 ## Overview
 
@@ -25,7 +25,7 @@ The Agent Node still owns `modelId`, `thinkingLevel`, and `modelCapabilities`. T
 | `description` | `string` | `""` | Optional purpose/summary for the agent |
 | `tags` | `string[]` | `[]` | Freeform tags used by the UI |
 | `modelCapabilities` | `ModelCapabilityOverrides` | `{}` | Snapshotted model metadata plus any user overrides |
-| `systemPromptMode` | `SystemPromptMode` | `"append"` | Prompt assembly mode. `auto` emits only SAM sections (the user's `systemPrompt` field is ignored); `append` emits SAM sections then adds the user's `systemPrompt` as a final `## User Instructions` section; `manual` discards SAM sections and uses only the user's text |
+| `systemPromptMode` | `SystemPromptMode` | `"append"` | Prompt assembly mode. `append` emits SAM sections then adds the user's `systemPrompt` as a final `## User Instructions` section; `manual` discards SAM sections and uses only the user's text. **Note:** `auto` is present in the type union but `resolveAgentConfig()` currently converts it to `append`, making the two modes functionally identical — `auto` has no distinct runtime effect. |
 | `showReasoning` | `boolean` | `false` | Whether to expose reasoning output in the UI when supported |
 | `verbose` | `boolean` | `false` | Whether to prefer more verbose runtime output |
 | `workingDirectory` | `string` | `""` | Working directory for the agent's exec tool. Empty = server `process.cwd()` |
