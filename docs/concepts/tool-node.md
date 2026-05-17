@@ -3,7 +3,7 @@
 > Configures which tools an agent can use through profiles, groups, direct enables, skills, and plugins.
 
 <!-- source: src/types/nodes.ts#ToolsNodeData -->
-<!-- last-verified: 2026-05-11 -->
+<!-- last-verified: 2026-05-17 -->
 
 ## Overview
 
@@ -23,11 +23,23 @@ Skills stored on the Tool Node are merged into system prompt content during grap
 | `label` | `string` | `"Tools"` | Display label on the canvas |
 | `profile` | `ToolProfile` | `"full"` | Preset tool collection: `full`, `coding`, `messaging`, `minimal`, `custom` |
 | `enabledTools` | `string[]` | `["ask_user", "confirm_action"]` | Individual tool names to enable beyond the profile. HITL tools are on by default and locked unless "Dangerous Fully Auto" mode is enabled in Settings |
-| `enabledGroups` | `ToolGroup[]` | `[]` | Additional tool groups to enable beyond the profile |
+| `enabledGroups` | `ToolGroup[]` | `[]` | Tool groups to activate. When non-empty, **replaces** the profile's group list entirely; profile groups are used only when this array is empty |
 | `skills` | `SkillDefinition[]` | `[]` | Skill definitions that are folded into prompt assembly |
 | `plugins` | `PluginDefinition[]` | `[]` | Plugin bundles that contribute tools, skills, and optional hooks |
 | `subAgentSpawning` | `boolean` | `false` | Whether the agent may spawn sub-agents |
 | `maxSubAgents` | `number` | `3` | Maximum concurrent sub-agents |
+| `toolSettings.exec.cwd` | `string` | `""` | Working directory for shell commands. When non-empty, overrides the agent-level `workingDirectory`. Empty = agent `workingDirectory` or server `process.cwd()` |
+| `toolSettings.exec.sandboxWorkdir` | `boolean` | `false` | When `true`, the exec tool constrains the `workdir` parameter to stay inside the configured cwd |
+| `toolSettings.exec.skill` | `string` | `""` | Optional inline markdown guidance for the exec tool. When non-empty, replaces the bundled exec skill reference in the system prompt |
+| `toolSettings.codeExecution.apiKey` | `string` | `""` | xAI API key for the `code_execution` tool. Empty reads `XAI_API_KEY` from env |
+| `toolSettings.codeExecution.model` | `string` | `""` | xAI model override (e.g. `grok-4-1-fast`). Empty = provider default |
+| `toolSettings.codeExecution.skill` | `string` | `""` | Optional inline markdown guidance for the code_execution tool |
+| `toolSettings.webSearch.tavilyApiKey` | `string` | `""` | Tavily API key for web search. Empty reads `TAVILY_API_KEY` from env; no key = DuckDuckGo fallback |
+| `toolSettings.webSearch.skill` | `string` | `""` | Optional inline markdown guidance for the web_search tool |
+| `toolSettings.image.openaiApiKey` | `string` | `""` | OpenAI API key for DALL-E image generation. Empty reads `OPENAI_API_KEY` from env |
+| `toolSettings.image.geminiApiKey` | `string` | `""` | Google/Gemini API key for image generation and TTS. Empty reads `GEMINI_API_KEY` from env |
+| `toolSettings.image.preferredModel` | `string` | `""` | Preferred image generation model (e.g. `openai/gpt-image-1` or `google/gemini-2.0-flash-exp`) |
+| `toolSettings.image.skill` | `string` | `""` | Optional inline markdown guidance for image generation tools |
 | `toolSettings.canva.portRangeStart` | `number` | `5173` | Lower bound of the port range canva auto-picks from |
 | `toolSettings.canva.portRangeEnd` | `number` | `5273` | Upper bound of the port range canva auto-picks from |
 | `toolSettings.canva.skill` | `string` | `""` | Optional inline markdown override for the canva skill. When non-empty, it replaces the bundled `canva/SKILL.md` reference with the user-authored text injected directly into the system prompt |
@@ -74,12 +86,11 @@ Skills stored on the Tool Node are merged into system prompt content during grap
 
 Tool name resolution happens in `shared/resolve-tool-names.ts` in this order:
 
-1. Expand the selected profile into groups
-2. Expand the resulting groups into tool names
-3. Add `enabledGroups`
-4. Add `enabledTools`
-5. Add tools contributed by enabled tool plugins
-6. Deduplicate the final list
+1. Determine the active groups: if `enabledGroups` is non-empty, use it directly; otherwise expand the selected profile into its default groups. The profile is only a fallback — setting `enabledGroups` replaces, not supplements, the profile's groups.
+2. Expand the active groups into canonical tool names
+3. Add individual `enabledTools` (aliases such as `bash` and `code_interpreter` are canonicalized to `exec` and `code_execution`)
+4. Add tools contributed by enabled tool plugins
+5. Deduplicate the final list
 
 `server/runtime/tool-factory.ts` then instantiates concrete `AgentTool` objects:
 

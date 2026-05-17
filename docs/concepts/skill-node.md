@@ -3,13 +3,13 @@
 > A standalone node for defining named skills that are injected into an agent's system prompt.
 
 <!-- source: src/types/nodes.ts#SkillsNodeData -->
-<!-- last-verified: 2026-04-21 -->
+<!-- last-verified: 2026-05-17 -->
 
 ## Overview
 
 The Skill Node provides a way to attach named skill capabilities to an agent without configuring a full Tools Node. Each enabled skill is converted into a `SkillDefinition` during config resolution and injected into the agent's system prompt as a `system-prompt` addition.
 
-This is distinct from the `skills` array inside the Tools Node. The Tools Node holds full `SkillDefinition` objects with custom markdown content, while the Skill Node holds a simple list of skill names. During config resolution, each skill name is wrapped into a `SkillDefinition` with auto-generated content (`"You have the skill: {name}"`).
+This is distinct from the `skills` array inside the Tools Node. The Tools Node holds full `SkillDefinition` objects with custom markdown content, while the Skill Node holds a simple list of skill names. During config resolution, each skill name is wrapped into a `SkillDefinition` with empty content (`''`); the name becomes a declarative tag in the `## Skills` section rather than injected markdown.
 
 Multiple Skill Nodes can be connected to a single agent — all enabled skills are merged together and combined with any skills from the Tools Node.
 
@@ -28,8 +28,8 @@ The Skill Node has no dedicated runtime class. Instead, its configuration is pro
    ```typescript
    { id: skillName, name: skillName, content: '', injectAs: 'system-prompt' }
    ```
-2. These definitions are merged with any skills from the connected Tools Node
-3. Skills with empty content render as a bullet list of names in the `## Skills` system prompt section; skills with authored content (typically from the Tools Node's `toolSettings.*.skill` fields) render as full markdown guidance blocks below the bullet list
+2. These definitions are merged with skills from the connected Tools Node (Tools Node skills take precedence on `id` collision).
+3. Skills with empty content render as a bullet list of names under the `### Tags` sub-section of `## Skills`; skills with authored content (from the Tools Node's `skills` array or `toolSettings.*.skill` overrides) render as full markdown guidance blocks in `### <Name>` sub-sections.
 
 The resulting system prompt tells the LLM it has certain capabilities, guiding its behavior and response style. Skill Node entries are intentionally declarative tags — to give the agent detailed usage guidance for a capability, configure it as a `SkillDefinition` on the Tools Node or use one of the per-tool `skill` fields in `toolSettings`.
 
