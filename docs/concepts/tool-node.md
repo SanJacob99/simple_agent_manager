@@ -3,13 +3,13 @@
 > Configures which tools an agent can use through profiles, groups, direct enables, skills, and plugins.
 
 <!-- source: src/types/nodes.ts#ToolsNodeData -->
-<!-- last-verified: 2026-05-11 -->
+<!-- last-verified: 2026-05-18 -->
 
 ## Overview
 
 The Tool Node defines the capabilities available to an agent at runtime. Rather than storing a flat tool list, it uses layered resolution:
 
-- a profile contributes baseline groups
+- `enabledGroups` is the primary group source; the profile is a UI preset that is used only as a fallback when `enabledGroups` is empty
 - groups add bundles of tools
 - individual tools opt specific names in
 - tool plugins add extra tools and skills
@@ -23,7 +23,7 @@ Skills stored on the Tool Node are merged into system prompt content during grap
 | `label` | `string` | `"Tools"` | Display label on the canvas |
 | `profile` | `ToolProfile` | `"full"` | Preset tool collection: `full`, `coding`, `messaging`, `minimal`, `custom` |
 | `enabledTools` | `string[]` | `["ask_user", "confirm_action"]` | Individual tool names to enable beyond the profile. HITL tools are on by default and locked unless "Dangerous Fully Auto" mode is enabled in Settings |
-| `enabledGroups` | `ToolGroup[]` | `[]` | Additional tool groups to enable beyond the profile |
+| `enabledGroups` | `ToolGroup[]` | `[]` | Tool groups to activate. When non-empty, these replace the profile's group list entirely; the profile is used as a fallback only when this is empty |
 | `skills` | `SkillDefinition[]` | `[]` | Skill definitions that are folded into prompt assembly |
 | `plugins` | `PluginDefinition[]` | `[]` | Plugin bundles that contribute tools, skills, and optional hooks |
 | `subAgentSpawning` | `boolean` | `false` | Whether the agent may spawn sub-agents |
@@ -74,12 +74,11 @@ Skills stored on the Tool Node are merged into system prompt content during grap
 
 Tool name resolution happens in `shared/resolve-tool-names.ts` in this order:
 
-1. Expand the selected profile into groups
-2. Expand the resulting groups into tool names
-3. Add `enabledGroups`
-4. Add `enabledTools`
-5. Add tools contributed by enabled tool plugins
-6. Deduplicate the final list
+1. Determine active groups: use `enabledGroups` when non-empty; fall back to the profile's group list when `enabledGroups` is empty (profile and `enabledGroups` are mutually exclusive — they do not combine)
+2. Expand the active groups into tool names
+3. Append `enabledTools`
+4. Append tools contributed by enabled tool plugins
+5. Deduplicate via a `Set` (aliases such as `code_interpreter → code_execution` are canonicalized at the add-site)
 
 `server/runtime/tool-factory.ts` then instantiates concrete `AgentTool` objects:
 
