@@ -309,19 +309,28 @@ export class ChannelSessionStore {
       return [];
     }
 
-    const lines = raw
-      .split('\n')
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0);
+    // ⚡ Bolt Optimization: Use a backward search loop with lastIndexOf('\n')
+    // to extract only the required tail lines from the raw file content.
+    // This entirely bypasses `.split().filter().map()` avoiding massive intermediate array
+    // allocations and garbage collection churn when parsing large JSONL logs.
+    const results: unknown[] = [];
+    let end = raw.length;
 
-    const tail = limit > 0 ? lines.slice(-limit) : lines;
+    while (end > 0 && (limit <= 0 || results.length < limit)) {
+      let start = raw.lastIndexOf('\n', end - 1);
+      const lineStart = start === -1 ? 0 : start + 1;
+      const line = raw.substring(lineStart, end).trim();
 
-    return tail.map((l) => {
-      try {
-        return JSON.parse(l) as unknown;
-      } catch {
-        return l;
+      if (line.length > 0) {
+        try {
+          results.push(JSON.parse(line));
+        } catch {
+          results.push(line);
+        }
       }
-    });
+      end = start;
+    }
+
+    return results.reverse();
   }
 }
