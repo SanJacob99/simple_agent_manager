@@ -12,6 +12,7 @@ import type { SystemPromptMode, SystemPromptSection, ResolvedSystemPrompt } from
  *   tooling        -- structured-tool source-of-truth + runtime tool-use guidance
  *   executionBias  -- act-in-turn, continue until done, recover, verify
  *   safety         -- short guardrail reminder (+ any user-supplied additions)
+ *   trustBoundaries -- model-agnostic prompt-injection defense (always)
  *   skills         -- how to load skills on demand (when available)
  *   selfUpdate     -- how to inspect/patch SAM's own config (when enabled)
  *   workspace      -- working directory + optional injected bootstrap files

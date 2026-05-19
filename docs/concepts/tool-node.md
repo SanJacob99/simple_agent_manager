@@ -9,9 +9,10 @@
 
 The Tool Node defines the capabilities available to an agent at runtime. Rather than storing a flat tool list, it uses layered resolution:
 
-- a profile contributes baseline groups
-- groups add bundles of tools
-- individual tools opt specific names in
+- a profile defines the default groups (used only when no explicit groups are set)
+- `enabledGroups`, when non-empty, replaces the profile's groups entirely
+- groups expand to bundles of tool names
+- individual tools in `enabledTools` add specific names on top
 - tool plugins add extra tools and skills
 
 Skills stored on the Tool Node are merged into system prompt content during graph resolution. The resolved tool names are then instantiated by `createAgentTools()` in `server/runtime/tool-factory.ts`.
@@ -23,7 +24,7 @@ Skills stored on the Tool Node are merged into system prompt content during grap
 | `label` | `string` | `"Tools"` | Display label on the canvas |
 | `profile` | `ToolProfile` | `"full"` | Preset tool collection: `full`, `coding`, `messaging`, `minimal`, `custom` |
 | `enabledTools` | `string[]` | `["ask_user", "confirm_action"]` | Individual tool names to enable beyond the profile. HITL tools are on by default and locked unless "Dangerous Fully Auto" mode is enabled in Settings |
-| `enabledGroups` | `ToolGroup[]` | `[]` | Additional tool groups to enable beyond the profile |
+| `enabledGroups` | `ToolGroup[]` | `[]` | Explicit tool groups to activate. When non-empty these **replace** the profile's groups entirely; the profile is only used as a fallback when this list is empty |
 | `skills` | `SkillDefinition[]` | `[]` | Skill definitions that are folded into prompt assembly |
 | `plugins` | `PluginDefinition[]` | `[]` | Plugin bundles that contribute tools, skills, and optional hooks |
 | `subAgentSpawning` | `boolean` | `false` | Whether the agent may spawn sub-agents |
@@ -74,12 +75,11 @@ Skills stored on the Tool Node are merged into system prompt content during grap
 
 Tool name resolution happens in `shared/resolve-tool-names.ts` in this order:
 
-1. Expand the selected profile into groups
-2. Expand the resulting groups into tool names
-3. Add `enabledGroups`
-4. Add `enabledTools`
-5. Add tools contributed by enabled tool plugins
-6. Deduplicate the final list
+1. Determine the active groups: use `enabledGroups` when non-empty; otherwise fall back to the groups defined by the selected `profile`
+2. Expand the active groups into tool names
+3. Add `enabledTools` (individual tool selections, with aliases canonicalized)
+4. Add tools contributed by enabled tool plugins
+5. Deduplicate the final list (via a `Set`)
 
 `server/runtime/tool-factory.ts` then instantiates concrete `AgentTool` objects:
 
