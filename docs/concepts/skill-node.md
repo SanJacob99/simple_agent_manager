@@ -3,13 +3,13 @@
 > A standalone node for defining named skills that are injected into an agent's system prompt.
 
 <!-- source: src/types/nodes.ts#SkillsNodeData -->
-<!-- last-verified: 2026-04-21 -->
+<!-- last-verified: 2026-05-20 -->
 
 ## Overview
 
 The Skill Node provides a way to attach named skill capabilities to an agent without configuring a full Tools Node. Each enabled skill is converted into a `SkillDefinition` during config resolution and injected into the agent's system prompt as a `system-prompt` addition.
 
-This is distinct from the `skills` array inside the Tools Node. The Tools Node holds full `SkillDefinition` objects with custom markdown content, while the Skill Node holds a simple list of skill names. During config resolution, each skill name is wrapped into a `SkillDefinition` with auto-generated content (`"You have the skill: {name}"`).
+This is distinct from the `skills` array inside the Tools Node. The Tools Node holds full `SkillDefinition` objects with custom markdown content, while the Skill Node holds a simple list of skill names. During config resolution, each skill name is wrapped into a `SkillDefinition` with empty content. Skills with empty content render as a bullet list of names in the `## Skills` system prompt section, which is how the agent learns it has those capabilities.
 
 Multiple Skill Nodes can be connected to a single agent — all enabled skills are merged together and combined with any skills from the Tools Node.
 
