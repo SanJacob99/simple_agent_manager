@@ -309,19 +309,42 @@ export class ChannelSessionStore {
       return [];
     }
 
-    const lines = raw
-      .split('\n')
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0);
-
-    const tail = limit > 0 ? lines.slice(-limit) : lines;
-
-    return tail.map((l) => {
-      try {
-        return JSON.parse(l) as unknown;
-      } catch {
-        return l;
+    // Bolt: Optimized backwards search to prevent full file split/parse
+    // when we only need the tail.
+    if (limit <= 0) {
+      const results: unknown[] = [];
+      let start = 0;
+      while (start < raw.length) {
+        let end = raw.indexOf('\n', start);
+        if (end === -1) end = raw.length;
+        const line = raw.substring(start, end).trim();
+        if (line.length > 0) {
+          try {
+            results.push(JSON.parse(line));
+          } catch {
+            results.push(line);
+          }
+        }
+        start = end + 1;
       }
-    });
+      return results;
+    }
+
+    const results: unknown[] = [];
+    let end = raw.length;
+    while (end > 0 && results.length < limit) {
+      const start = raw.lastIndexOf('\n', end - 1);
+      const line = (start === -1 ? raw.substring(0, end) : raw.substring(start + 1, end)).trim();
+      if (line.length > 0) {
+        try {
+          results.unshift(JSON.parse(line));
+        } catch {
+          results.unshift(line);
+        }
+      }
+      if (start === -1) break;
+      end = start;
+    }
+    return results;
   }
 }
