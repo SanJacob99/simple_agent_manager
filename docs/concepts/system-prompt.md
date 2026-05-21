@@ -3,7 +3,7 @@
 > How SAM assembles the system prompt that every agent run receives.
 
 <!-- source: shared/system-prompt-builder.ts, server/runtime/resolve-system-prompt.ts -->
-<!-- last-verified: 2026-05-11 -->
+<!-- last-verified: 2026-05-21 -->
 
 ## Overview
 
@@ -18,12 +18,11 @@ The same `resolveOutboundSystemPrompt()` is used by both the runtime and the `Sy
 
 ## Modes
 
-The Agent Node's `systemPromptMode` selects which assembly strategy the builder uses. Defined in [shared/agent-config.ts:8](shared/agent-config.ts#L8) as `'auto' | 'append' | 'manual'`.
+The Agent Node's `systemPromptMode` selects which assembly strategy the builder uses. Defined in [shared/agent-config.ts:8](shared/agent-config.ts#L8) as `'auto' | 'append' | 'manual'`. The `auto` value is retired — the property editor now offers only `append` and `manual`, and any graph that stored `auto` is silently migrated to `append` on load.
 
 | Mode | Behavior |
 |------|----------|
-| `auto` | Builds the full SAM section set. The user's `systemPrompt` field is **not** inserted; SAM sections are the whole prompt. |
-| `append` | Builds the full SAM section set, then adds a final `## User Instructions` section containing the user's `systemPrompt` text. |
+| `append` | Builds the full SAM section set, then adds a final `## User Instructions` section containing the user's `systemPrompt` text (skipped when the field is empty). |
 | `manual` | Discards SAM's sections. The user's `systemPrompt` text is the entire prompt, emitted as a single `manual` section. |
 
 Use `append` when you want SAM's guardrails and runtime context plus your own instructions on top. Use `manual` when you need full control and are willing to forgo SAM's default guidance, tooling contract, safety block, and runtime metadata.

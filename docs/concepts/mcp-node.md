@@ -3,7 +3,7 @@
 > Attaches an agent to a Model Context Protocol server — either a local subprocess or a remote HTTP/SSE endpoint — so the agent can call its tools.
 
 <!-- source: src/types/nodes.ts#MCPNodeData -->
-<!-- last-verified: 2026-04-22 -->
+<!-- last-verified: 2026-05-21 -->
 
 ## Overview
 
