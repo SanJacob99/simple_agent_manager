@@ -363,11 +363,24 @@ export class StorageEngine {
 
       for (const session of oldest) {
         if (currentUsage <= highWaterBytes) break;
+
+        // ⚡ Bolt Optimization: Use fs.stat to get the size of the individual file being deleted
+        // and subtract it from the running total. This avoids O(N^2) getDiskUsage() calls
+        // that repeatedly re-read the entire directory on every eviction.
+        let freedBytes = 0;
+        try {
+          const transcriptPath = this.resolveTranscriptPath(session);
+          const stat = await fs.stat(transcriptPath);
+          freedBytes = stat.size;
+        } catch {
+          // Ignore missing file
+        }
+
         evicted.push(session.sessionKey);
         if (!dryRun) {
           await this.deleteSession(session.sessionKey);
         }
-        currentUsage = await this.getDiskUsage();
+        currentUsage -= freedBytes;
       }
     }
 

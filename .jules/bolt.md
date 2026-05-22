@@ -16,3 +16,7 @@
 ## 2024-05-18 - Safe Concurrent Bulk File Cleanup
 **Learning:** Running unbounded `Promise.all` loops for concurrent file system I/O over arrays of paths (e.g., in `removeOrphanTranscripts`) accelerates disk operations but causes application-crashing `EMFILE` (too many open files) limits when the directory grows.
 **Action:** Batch concurrent file operations using a chunked execution pattern (e.g., `CHUNK_SIZE = 50`) to gain the speed of concurrency without triggering OS-level file descriptor limits.
+
+## 2026-05-22 - O(N^2) Bottleneck in Directory Size Re-calculation
+**Learning:** Calling an aggregate directory size function (like `getDiskUsage()`) inside a loop that deletes files (e.g., during cache eviction) introduces an O(N^2) I/O bottleneck. Every single file deletion triggers a full directory scan and sum, drastically slowing down large evictions.
+**Action:** When calculating remaining disk budget in an eviction loop, compute the size of the individual file being evicted (e.g., via `fs.stat`) prior to its deletion, and simply subtract that value from the running total, removing the need to re-scan the entire directory.
