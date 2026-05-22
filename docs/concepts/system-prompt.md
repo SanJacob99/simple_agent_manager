@@ -26,6 +26,8 @@ The Agent Node's `systemPromptMode` selects which assembly strategy the builder 
 | `append` | Builds the full SAM section set, then adds a final `## User Instructions` section containing the user's `systemPrompt` text. |
 | `manual` | Discards SAM's sections. The user's `systemPrompt` text is the entire prompt, emitted as a single `manual` section. |
 
+> **Implementation note:** `src/utils/graph-to-agent.ts` currently maps any non-`manual` value (including `auto`) to `'append'` before calling `buildSystemPrompt()`. As a result, selecting `auto` on the Agent Node produces the same runtime output as `append`. The `buildSystemPrompt()` function itself handles all three modes correctly; the distinction is lost at the graph-resolution layer.
+
 Use `append` when you want SAM's guardrails and runtime context plus your own instructions on top. Use `manual` when you need full control and are willing to forgo SAM's default guidance, tooling contract, safety block, and runtime metadata.
 
 ## Auto-assembled Sections
