@@ -3,7 +3,7 @@
 > Attaches an agent to a Model Context Protocol server — either a local subprocess or a remote HTTP/SSE endpoint — so the agent can call its tools.
 
 <!-- source: src/types/nodes.ts#MCPNodeData -->
-<!-- last-verified: 2026-04-22 -->
+<!-- last-verified: 2026-05-23 -->
 
 ## Overview
 
@@ -51,6 +51,7 @@ A local filesystem MCP server scoped to `/tmp`:
 
 ```json
 {
+  "type": "mcp",
   "label": "fs",
   "transport": "stdio",
   "command": "npx",
@@ -67,6 +68,7 @@ A remote HTTP MCP server with a bearer token:
 
 ```json
 {
+  "type": "mcp",
   "label": "search-mcp",
   "transport": "http",
   "url": "https://mcp.example.com/rpc",
