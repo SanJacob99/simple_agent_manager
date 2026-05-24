@@ -3,7 +3,7 @@
 > The central hub node that stores model and prompt settings while connected peripheral nodes supply runtime services.
 
 <!-- source: src/types/nodes.ts#AgentNodeData -->
-<!-- last-verified: 2026-05-06 -->
+<!-- last-verified: 2026-05-24 -->
 
 ## Overview
 
@@ -25,7 +25,7 @@ The Agent Node still owns `modelId`, `thinkingLevel`, and `modelCapabilities`. T
 | `description` | `string` | `""` | Optional purpose/summary for the agent |
 | `tags` | `string[]` | `[]` | Freeform tags used by the UI |
 | `modelCapabilities` | `ModelCapabilityOverrides` | `{}` | Snapshotted model metadata plus any user overrides |
-| `systemPromptMode` | `SystemPromptMode` | `"append"` | Prompt assembly mode. `auto` emits only SAM sections (the user's `systemPrompt` field is ignored); `append` emits SAM sections then adds the user's `systemPrompt` as a final `## User Instructions` section; `manual` discards SAM sections and uses only the user's text |
+| `systemPromptMode` | `SystemPromptMode` | `"append"` | Prompt assembly mode. `append` emits SAM sections then adds the user's `systemPrompt` as a final `## User Instructions` section; `manual` discards SAM sections and uses only the user's text. (`auto` is defined in the shared type but is not user-selectable — the property panel and `resolveAgentConfig()` both coerce it to `append`.) |
 | `showReasoning` | `boolean` | `false` | Whether to expose reasoning output in the UI when supported |
 | `verbose` | `boolean` | `false` | Whether to prefer more verbose runtime output |
 | `workingDirectory` | `string` | `""` | Working directory for the agent's exec tool. Empty = server `process.cwd()` |
@@ -50,7 +50,7 @@ The Agent Node still owns `modelId`, `thinkingLevel`, and `modelCapabilities`. T
 
 1. `resolveAgentConfig()` collects incoming peripheral nodes and creates a serializable `AgentConfig`.
 2. The connected Provider Node is resolved into `AgentConfig.provider`. If no Provider Node is connected, config resolution still succeeds, but runtime validation reports the graph as unrunnable.
-3. `buildSystemPrompt()` assembles the final system prompt based on `systemPromptMode`, tool summaries, skills, workspace path, and runtime metadata. The Runtime section emits `Runtime: host=… | os=… | model=…` with **no** `thinking=<level>` field or prose reasoning line — the thinking level is communicated to the provider via the API `reasoning.effort` parameter, and plain-text thinking directives in the system prompt can cause Gemini 3 to switch to a "think silently" mode (documented by Google's Gemini 3 prompting guide). See [system-prompt.md](system-prompt.md) for the full mode/section reference.
+3. `buildSystemPrompt()` assembles the final system prompt based on `systemPromptMode`, tool summaries, skills, workspace path, and runtime metadata. `resolveAgentConfig()` only ever passes `append` or `manual` to the builder — `auto` is defined in the shared type but not exposed in the UI or sent through the resolution pipeline. The Runtime section emits `Runtime: host=… | os=… | model=…` with **no** `thinking=<level>` field or prose reasoning line — the thinking level is communicated to the provider via the API `reasoning.effort` parameter, and plain-text thinking directives in the system prompt can cause Gemini 3 to switch to a "think silently" mode (documented by Google's Gemini 3 prompting guide). See [system-prompt.md](system-prompt.md) for the full mode/section reference.
 4. `server/runtime/agent-runtime.ts` creates the runtime agent, and `server/runtime/model-resolver.ts` resolves the final runtime model using:
    - the provider plugin's runtime provider id
    - the stored `modelId`

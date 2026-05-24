@@ -3,7 +3,7 @@
 > Configures which tools an agent can use through profiles, groups, direct enables, skills, and plugins.
 
 <!-- source: src/types/nodes.ts#ToolsNodeData -->
-<!-- last-verified: 2026-05-11 -->
+<!-- last-verified: 2026-05-24 -->
 
 ## Overview
 
@@ -74,12 +74,11 @@ Skills stored on the Tool Node are merged into system prompt content during grap
 
 Tool name resolution happens in `shared/resolve-tool-names.ts` in this order:
 
-1. Expand the selected profile into groups
-2. Expand the resulting groups into tool names
-3. Add `enabledGroups`
-4. Add `enabledTools`
-5. Add tools contributed by enabled tool plugins
-6. Deduplicate the final list
+1. Determine the active groups: if `enabledGroups` is non-empty, it is used as the sole source of group expansion and the profile is ignored. When `enabledGroups` is empty (the default), the profile's groups are used instead. The two are mutually exclusive — `enabledGroups` is not additive on top of the profile.
+2. Expand the active groups into individual tool names
+3. Add `enabledTools` (individual tool names enabled on the node)
+4. Add tools contributed by enabled tool plugins
+5. Deduplicate the final list (aliases such as `bash → exec` and `code_interpreter → code_execution` are canonicalized at add-time)
 
 `server/runtime/tool-factory.ts` then instantiates concrete `AgentTool` objects:
 
