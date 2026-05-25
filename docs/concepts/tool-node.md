@@ -3,7 +3,7 @@
 > Configures which tools an agent can use through profiles, groups, direct enables, skills, and plugins.
 
 <!-- source: src/types/nodes.ts#ToolsNodeData -->
-<!-- last-verified: 2026-05-11 -->
+<!-- last-verified: 2026-05-25 -->
 
 ## Overview
 
@@ -28,6 +28,18 @@ Skills stored on the Tool Node are merged into system prompt content during grap
 | `plugins` | `PluginDefinition[]` | `[]` | Plugin bundles that contribute tools, skills, and optional hooks |
 | `subAgentSpawning` | `boolean` | `false` | Whether the agent may spawn sub-agents |
 | `maxSubAgents` | `number` | `3` | Maximum concurrent sub-agents |
+| `toolSettings.exec.cwd` | `string` | `""` | Working directory for shell commands. Empty = server `process.cwd()`. Also propagated to `AgentConfig.workspacePath` when set, overriding the agent-level `workingDirectory` |
+| `toolSettings.exec.sandboxWorkdir` | `boolean` | `false` | When `true`, the exec tool constrains its `workdir` parameter to stay within `cwd` |
+| `toolSettings.exec.skill` | `string` | `""` | Optional inline markdown override for the exec skill. When non-empty, replaces the bundled exec guidance in the system prompt |
+| `toolSettings.codeExecution.apiKey` | `string` | `""` | xAI API key for the `code_execution` tool. Empty reads `XAI_API_KEY` from env |
+| `toolSettings.codeExecution.model` | `string` | `""` | xAI model override for code execution. Empty defaults to `grok-4-1-fast` |
+| `toolSettings.codeExecution.skill` | `string` | `""` | Optional inline markdown override for the code_execution skill |
+| `toolSettings.webSearch.tavilyApiKey` | `string` | `""` | Tavily API key for web search. Empty reads `TAVILY_API_KEY` from env. No key falls back to DuckDuckGo |
+| `toolSettings.webSearch.skill` | `string` | `""` | Optional inline markdown override for the web_search skill |
+| `toolSettings.image.openaiApiKey` | `string` | `""` | OpenAI API key for DALL-E image generation. Empty reads `OPENAI_API_KEY` from env |
+| `toolSettings.image.geminiApiKey` | `string` | `""` | Google/Gemini API key for image generation. Empty reads `GEMINI_API_KEY` from env |
+| `toolSettings.image.preferredModel` | `string` | `""` | Preferred image generation model (e.g. `openai/gpt-image-1` or `google/gemini-2.0-flash-exp`). Empty = provider default |
+| `toolSettings.image.skill` | `string` | `""` | Optional inline markdown override for the image tool skill |
 | `toolSettings.canva.portRangeStart` | `number` | `5173` | Lower bound of the port range canva auto-picks from |
 | `toolSettings.canva.portRangeEnd` | `number` | `5273` | Upper bound of the port range canva auto-picks from |
 | `toolSettings.canva.skill` | `string` | `""` | Optional inline markdown override for the canva skill. When non-empty, it replaces the bundled `canva/SKILL.md` reference with the user-authored text injected directly into the system prompt |
@@ -74,12 +86,11 @@ Skills stored on the Tool Node are merged into system prompt content during grap
 
 Tool name resolution happens in `shared/resolve-tool-names.ts` in this order:
 
-1. Expand the selected profile into groups
-2. Expand the resulting groups into tool names
-3. Add `enabledGroups`
-4. Add `enabledTools`
-5. Add tools contributed by enabled tool plugins
-6. Deduplicate the final list
+1. When `enabledGroups` is non-empty, use it as the sole active group set. When empty, fall back to the groups the selected `profile` maps to (profile is a UI preset; at runtime it is a fallback, not an additive layer).
+2. Expand the active groups into canonical tool names
+3. Add individual `enabledTools` (canonicalized: `bash → exec`, `code_interpreter → code_execution`)
+4. Add tools contributed by enabled tool plugins
+5. Deduplicate via a Set (canonical names only; aliases never survive into the final list)
 
 `server/runtime/tool-factory.ts` then instantiates concrete `AgentTool` objects:
 

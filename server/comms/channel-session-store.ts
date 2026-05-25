@@ -309,14 +309,31 @@ export class ChannelSessionStore {
       return [];
     }
 
-    const lines = raw
-      .split('\n')
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0);
+    // ⚡ Bolt Optimization: Use backward search to extract the last N lines.
+    // Bypasses parsing the entire payload and prevents massive intermediate array allocations
+    // caused by chained .split().map().filter() in hot paths.
+    if (!limit || limit <= 0) {
+      limit = Infinity;
+    }
 
-    const tail = limit > 0 ? lines.slice(-limit) : lines;
+    const tailStrs: string[] = [];
+    let currentIdx = raw.length;
 
-    return tail.map((l) => {
+    while (currentIdx > 0 && tailStrs.length < limit) {
+      const prevIdx = raw.lastIndexOf('\n', currentIdx - 1);
+      const startIndex = prevIdx === -1 ? 0 : prevIdx + 1;
+      const line = raw.substring(startIndex, currentIdx).trim();
+
+      if (line.length > 0) {
+        tailStrs.push(line);
+      }
+
+      currentIdx = prevIdx;
+    }
+
+    tailStrs.reverse();
+
+    return tailStrs.map((l) => {
       try {
         return JSON.parse(l) as unknown;
       } catch {
