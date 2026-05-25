@@ -3,7 +3,7 @@
 > How SAM assembles the system prompt that every agent run receives.
 
 <!-- source: shared/system-prompt-builder.ts, server/runtime/resolve-system-prompt.ts -->
-<!-- last-verified: 2026-05-11 -->
+<!-- last-verified: 2026-05-25 -->
 
 ## Overview
 
@@ -22,7 +22,7 @@ The Agent Node's `systemPromptMode` selects which assembly strategy the builder 
 
 | Mode | Behavior |
 |------|----------|
-| `auto` | Builds the full SAM section set. The user's `systemPrompt` field is **not** inserted; SAM sections are the whole prompt. |
+| `auto` | Defined in `SystemPromptMode` and handled by the builder (user instructions are not appended). **Currently unreachable**: `resolveAgentConfig()` in `src/utils/graph-to-agent.ts` converts every non-`manual` value to `'append'` before calling the builder, so `auto` behaves identically to `append` until the graph resolver is updated. |
 | `append` | Builds the full SAM section set, then adds a final `## User Instructions` section containing the user's `systemPrompt` text. |
 | `manual` | Discards SAM's sections. The user's `systemPrompt` text is the entire prompt, emitted as a single `manual` section. |
 
