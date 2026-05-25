@@ -8,11 +8,12 @@ import type { SystemPromptMode, SystemPromptSection, ResolvedSystemPrompt } from
  * pi-coding-agent default. This module owns the prompt's structure and
  * wording. Sections are:
  *
- *   identity       -- who is speaking, which harness, brand + posture
- *   tooling        -- structured-tool source-of-truth + runtime tool-use guidance
- *   executionBias  -- act-in-turn, continue until done, recover, verify
- *   safety         -- short guardrail reminder (+ any user-supplied additions)
- *   skills         -- how to load skills on demand (when available)
+ *   identity        -- who is speaking, which harness, brand + posture
+ *   tooling         -- structured-tool source-of-truth + runtime tool-use guidance
+ *   executionBias   -- act-in-turn, continue until done, recover, verify
+ *   safety          -- short guardrail reminder (+ any user-supplied additions)
+ *   trustBoundaries -- prompt-injection defense; always emitted
+ *   skills          -- how to load skills on demand (when available)
  *   selfUpdate     -- how to inspect/patch SAM's own config (when enabled)
  *   workspace      -- working directory + optional injected bootstrap files
  *   documentation  -- path to SAM docs (when known)

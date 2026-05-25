@@ -77,6 +77,6 @@ Concept docs live in `docs/concepts/` with one file per documented node type. Th
 - Runtime classes under `server/runtime/` must stay free of React dependencies
 - All node data interfaces include a `[key: string]: unknown` index signature
 - Peripheral nodes connect to agent nodes only, not to other peripheral nodes
-- Tool resolution follows `profile -> groups -> enabledTools -> plugins` in `shared/resolve-tool-names.ts`
+- Tool resolution follows `enabledGroups (or profile as fallback) -> tool names -> enabledTools -> plugins` in `shared/resolve-tool-names.ts`; `enabledGroups` and the profile are mutually exclusive — when `enabledGroups` is non-empty the profile is ignored
 - `SkillsNode` entries and `ToolsNode.skills` are folded into system prompt content during `resolveAgentConfig()` and `buildSystemPrompt()`
 - Shared types that must work on both client and server should live in `shared/`, even if that means duplicating lightweight type aliases instead of importing from `src/`
