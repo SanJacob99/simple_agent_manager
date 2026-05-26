@@ -3,7 +3,7 @@
 > Configures which tools an agent can use through profiles, groups, direct enables, skills, and plugins.
 
 <!-- source: src/types/nodes.ts#ToolsNodeData -->
-<!-- last-verified: 2026-05-25 -->
+<!-- last-verified: 2026-05-26 -->
 
 ## Overview
 
@@ -26,8 +26,8 @@ Skills stored on the Tool Node are merged into system prompt content during grap
 | `enabledGroups` | `ToolGroup[]` | `[]` | Additional tool groups to enable beyond the profile |
 | `skills` | `SkillDefinition[]` | `[]` | Skill definitions that are folded into prompt assembly |
 | `plugins` | `PluginDefinition[]` | `[]` | Plugin bundles that contribute tools, skills, and optional hooks |
-| `subAgentSpawning` | `boolean` | `false` | Whether the agent may spawn sub-agents |
-| `maxSubAgents` | `number` | `3` | Maximum concurrent sub-agents |
+| `subAgentSpawning` _(deprecated)_ | `boolean` | `false` | **Deprecated.** No longer used by the runtime. Sub-agent capability is now declared via the [Sub-Agent Node](sub-agent-node.md) |
+| `maxSubAgents` _(deprecated)_ | `number` | `3` | **Deprecated.** No longer used by the runtime. Sub-agent limits are controlled per Sub-Agent Node |
 | `toolSettings.exec.cwd` | `string` | `""` | Working directory for shell commands. Empty = server `process.cwd()`. Also propagated to `AgentConfig.workspacePath` when set, overriding the agent-level `workingDirectory` |
 | `toolSettings.exec.sandboxWorkdir` | `boolean` | `false` | When `true`, the exec tool constrains its `workdir` parameter to stay within `cwd` |
 | `toolSettings.exec.skill` | `string` | `""` | Optional inline markdown override for the exec skill. When non-empty, replaces the bundled exec guidance in the system prompt |

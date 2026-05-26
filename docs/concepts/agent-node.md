@@ -3,7 +3,7 @@
 > The central hub node that stores model and prompt settings while connected peripheral nodes supply runtime services.
 
 <!-- source: src/types/nodes.ts#AgentNodeData -->
-<!-- last-verified: 2026-05-25 -->
+<!-- last-verified: 2026-05-26 -->
 
 ## Overview
 
@@ -28,7 +28,7 @@ The Agent Node still owns `modelId`, `thinkingLevel`, and `modelCapabilities`. T
 | `systemPromptMode` | `SystemPromptMode` | `"append"` | Prompt assembly mode. `append` emits SAM sections then adds the user's `systemPrompt` as a final `## User Instructions` section; `manual` discards SAM sections and uses only the user's text. **`auto` is defined in the type but is currently treated as `append`** by `resolveAgentConfig()` in `src/utils/graph-to-agent.ts` (line 444 converts every non-`manual` value to `'append'`). The system prompt builder does handle `auto` distinctly (user instructions are not appended), but that path is unreachable until the graph resolver is updated. |
 | `showReasoning` | `boolean` | `false` | Whether to expose reasoning output in the UI when supported |
 | `verbose` | `boolean` | `false` | Whether to prefer more verbose runtime output |
-| `workingDirectory` | `string` | `""` | Working directory for the agent's exec tool. Empty = server `process.cwd()` |
+| `workingDirectory` | `string` | `""` | Working directory for the agent's exec tool. Empty = server `process.cwd()`. Overridden by `toolSettings.exec.cwd` on the connected Tools Node when that field is non-empty (see `graph-to-agent.ts` lines 620–624) |
 
 ### ModelCapabilityOverrides Fields
 
