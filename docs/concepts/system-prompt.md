@@ -3,7 +3,7 @@
 > How SAM assembles the system prompt that every agent run receives.
 
 <!-- source: shared/system-prompt-builder.ts, server/runtime/resolve-system-prompt.ts -->
-<!-- last-verified: 2026-05-25 -->
+<!-- last-verified: 2026-05-27 -->
 
 ## Overview
 
@@ -60,11 +60,12 @@ When `mode === 'append'` and the user's `systemPrompt` is non-empty, a final `us
 
 ## Server-side Resolution
 
-After the client builds the prompt, `resolveOutboundSystemPrompt()` in `server/runtime/resolve-system-prompt.ts` takes the `ResolvedSystemPrompt` from `AgentConfig` and applies three runtime transformations:
+After the client builds the prompt, `resolveOutboundSystemPrompt()` in `server/runtime/resolve-system-prompt.ts` takes the `ResolvedSystemPrompt` from `AgentConfig` and applies four runtime transformations:
 
-1. **Bundled-skills-root substitution.** Any `{{BUNDLED_SKILLS_ROOT}}` placeholder in sections or the assembled string is replaced with the real server-side path. Token estimates are recomputed for any section whose content changed.
-2. **Workspace fallback.** If the client-built prompt has no workspace section and the caller passed a `workspaceCwd`, a `workspace-runtime` section is appended with `## Workspace\n\nWorking directory: <cwd>`.
-3. **Confirmation policy (HITL).** When either `ask_user` or `confirm_action` is in the resolved tool list, the configured safety `confirmationPolicy` is appended as a `confirmationPolicy` section. Placeholders are filled from the enabled tool set:
+1. **Bundled-skills-root substitution.** Any `{SAM_BUNDLED_ROOT}` placeholder in sections or the assembled string is replaced with the real server-side path to `server/skills/bundled/`. Token estimates are recomputed for any section whose content changed.
+2. **Backend OS rewrite.** The `os=` field in the `runtime` section is rewritten to `process.platform` (the server's actual OS). The frontend fills `os=` from `navigator.platform` (the browser's host OS), but the agent runs server-side, so the agent should see the server's OS for things like exec command syntax.
+3. **Workspace fallback.** If the client-built prompt has no workspace section and the caller passed a `workspaceCwd`, a `workspace-runtime` section is appended with `## Workspace\n\nWorking directory: <cwd>`.
+4. **Confirmation policy (HITL).** When either `ask_user` or `confirm_action` is in the resolved tool list, the configured safety `confirmationPolicy` is appended as a `confirmationPolicy` section. Placeholders are filled from the enabled tool set:
    - `{{READ_ONLY_TOOLS}}` → read-classified tools
    - `{{STATE_MUTATING_TOOLS}}` → state-mutating tools + any unclassified tools (safe default)
    - `{{DESTRUCTIVE_TOOLS}}` → destructive tools
