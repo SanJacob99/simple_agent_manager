@@ -35,3 +35,8 @@
 **Vulnerability:** The `music_generate` tool used `path.resolve` to combine `ctx.cwd` and the user-provided filename input (via the parameter `filename`) to derive the target output path for writing the generated audio files, but did not perform bounds-checking, thereby allowing agents to write arbitrary files onto the system outside the designated workspace.
 **Learning:** `path.resolve` normalizes paths containing relative sequences (like `../`), allowing users to break out of base directories unless explicitly restricted.
 **Prevention:** Always ensure that resolved file paths intended for sandboxed environments are verified to be within boundaries, e.g., by checking if `!resolved.startsWith(ctx.cwd + path.sep) && resolved !== ctx.cwd`.
+
+## 2026-05-27 - [CRITICAL] Fix SSRF vulnerability in image tools
+**Vulnerability:** The `show_image` and `image` tools passed user-provided URLs directly to the `fetch` function without any validation, exposing an SSRF vulnerability similar to the one previously found in `web_fetch`.
+**Learning:** Any tool that makes external network requests via user-provided inputs must enforce protocol validation and DNS blocklists, not just dedicated web-fetching tools.
+**Prevention:** Always use a shared URL validation utility (e.g., `validateSafeUrl`) to enforce `http/https` protocols and block internal IPs before sending server-side requests in all tools.

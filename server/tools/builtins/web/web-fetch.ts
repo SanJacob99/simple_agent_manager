@@ -46,6 +46,74 @@ function isHtmlResponse(contentType: string | null, body: string): boolean {
   return head.startsWith('<!doctype html') || head.startsWith('<html');
 }
 
+export async function validateSafeUrl(urlString: string): Promise<URL> {
+  const parsedUrl = new URL(urlString);
+
+  // Enforce valid protocols
+  if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+    throw new Error('Error: Invalid URL protocol. Only http and https are allowed.');
+  }
+
+  // Block internal and reserved IP addresses/hostnames
+  const hostname = parsedUrl.hostname.toLowerCase();
+  if (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '0.0.0.0' ||
+    hostname === '::1' ||
+    hostname === '169.254.169.254' ||
+    hostname.endsWith('.internal') ||
+    hostname.endsWith('.local')
+  ) {
+    throw new Error('Error: Access to internal or restricted hosts is not permitted.');
+  }
+
+  // Perform DNS lookup and check resolved IP
+  let records: dns.LookupAddress[];
+  try {
+    // Use { all: true } to check ALL records returned by DNS to prevent multiple-A-record bypass
+    records = await dns.promises.lookup(hostname, { all: true });
+  } catch (err) {
+    throw new Error(`Error resolving hostname: ${err instanceof Error ? err.message : 'Unknown error'}`);
+  }
+
+  let selectedSafeIp: string | null = null;
+
+  for (const record of records) {
+    const address = record.address;
+    const isRestrictedV4 =
+      address === '127.0.0.1' ||
+      address === '0.0.0.0' ||
+      address === '169.254.169.254' ||
+      address.startsWith('10.') ||
+      address.startsWith('192.168.') ||
+      address.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\./) || // 172.16.0.0/12
+      address.match(/^127\./) || // 127.0.0.0/8
+      address.match(/^169\.254\./); // 169.254.0.0/16
+
+    const isRestrictedV6 =
+      address === '::1' ||
+      address === '::' ||
+      address.toLowerCase().startsWith('fc') || // ULA
+      address.toLowerCase().startsWith('fd') || // ULA
+      address.toLowerCase().startsWith('fe8') || // Link-local
+      address.toLowerCase().startsWith('fe9') || // Link-local
+      address.toLowerCase().startsWith('fea') || // Link-local
+      address.toLowerCase().startsWith('feb') || // Link-local
+      address.toLowerCase().startsWith('::ffff:'); // IPv4 mapped
+
+    if (isRestrictedV4 || isRestrictedV6) {
+      throw new Error('Error: Access to internal or restricted hosts is not permitted.');
+    }
+
+    if (!selectedSafeIp && record.family === 4) {
+      selectedSafeIp = address;
+    }
+  }
+
+  return parsedUrl;
+}
+
 export function createWebFetchTool(): AgentTool<TSchema> {
   return {
     name: 'web_fetch',
@@ -58,67 +126,10 @@ export function createWebFetchTool(): AgentTool<TSchema> {
     execute: async (_id, params: any, signal) => {
       try {
         // SECURITY: Prevent Server-Side Request Forgery (SSRF)
-        const parsedUrl = new URL(params.url);
-
-        // Enforce valid protocols
-        if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
-          return textResult('Error: Invalid URL protocol. Only http and https are allowed.');
-        }
-
-        // Block internal and reserved IP addresses/hostnames
-        const hostname = parsedUrl.hostname.toLowerCase();
-        if (
-          hostname === 'localhost' ||
-          hostname === '127.0.0.1' ||
-          hostname === '0.0.0.0' ||
-          hostname === '::1' ||
-          hostname === '169.254.169.254' ||
-          hostname.endsWith('.internal') ||
-          hostname.endsWith('.local')
-        ) {
-          return textResult('Error: Access to internal or restricted hosts is not permitted.');
-        }
-
-        // Perform DNS lookup and check resolved IP
         try {
-          // Use { all: true } to check ALL records returned by DNS to prevent multiple-A-record bypass
-          const records = await dns.promises.lookup(hostname, { all: true });
-          let selectedSafeIp: string | null = null;
-
-          for (const record of records) {
-            const address = record.address;
-            const isRestrictedV4 =
-              address === '127.0.0.1' ||
-              address === '0.0.0.0' ||
-              address === '169.254.169.254' ||
-              address.startsWith('10.') ||
-              address.startsWith('192.168.') ||
-              address.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\./) || // 172.16.0.0/12
-              address.match(/^127\./) || // 127.0.0.0/8
-              address.match(/^169\.254\./); // 169.254.0.0/16
-
-            const isRestrictedV6 =
-              address === '::1' ||
-              address === '::' ||
-              address.toLowerCase().startsWith('fc') || // ULA
-              address.toLowerCase().startsWith('fd') || // ULA
-              address.toLowerCase().startsWith('fe8') || // Link-local
-              address.toLowerCase().startsWith('fe9') || // Link-local
-              address.toLowerCase().startsWith('fea') || // Link-local
-              address.toLowerCase().startsWith('feb') || // Link-local
-              address.toLowerCase().startsWith('::ffff:'); // IPv4 mapped
-
-            if (isRestrictedV4 || isRestrictedV6) {
-              return textResult('Error: Access to internal or restricted hosts is not permitted.');
-            }
-
-            if (!selectedSafeIp && record.family === 4) {
-              selectedSafeIp = address;
-            }
-          }
-
+          await validateSafeUrl(params.url);
         } catch (err) {
-          return textResult(`Error resolving hostname: ${err instanceof Error ? err.message : 'Unknown error'}`);
+          return textResult(err instanceof Error ? err.message : 'Unknown error');
         }
 
         // Note: For full TOCTOU/DNS Rebinding protection, an HTTP Agent or custom
