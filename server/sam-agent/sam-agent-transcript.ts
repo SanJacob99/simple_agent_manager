@@ -14,10 +14,31 @@ export class SamAgentTranscriptStore {
     if (!existsSync(this.path)) return [];
     const raw = readFileSync(this.path, 'utf-8');
     if (raw.length === 0) return [];
-    return raw
-      .split('\n')
-      .filter((line) => line.length > 0)
-      .map((line) => JSON.parse(line) as SamAgentMessage);
+
+    // ⚡ Bolt Optimization: Use single-pass while loop with indexOf('\n')
+    // Bypasses parsing the entire payload and prevents massive intermediate array allocations
+    // caused by chained .split().map().filter() in hot paths.
+    const messages: SamAgentMessage[] = [];
+    let start = 0;
+    while (start < raw.length) {
+      const end = raw.indexOf('\n', start);
+      if (end === -1) {
+        // Last line without a newline
+        const line = raw.substring(start).trim();
+        if (line.length > 0) {
+          messages.push(JSON.parse(line) as SamAgentMessage);
+        }
+        break;
+      }
+
+      const line = raw.substring(start, end).trim();
+      if (line.length > 0) {
+        messages.push(JSON.parse(line) as SamAgentMessage);
+      }
+      start = end + 1;
+    }
+
+    return messages;
   }
 
   async append(message: SamAgentMessage): Promise<void> {

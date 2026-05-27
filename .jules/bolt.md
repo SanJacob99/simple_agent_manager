@@ -20,3 +20,7 @@
 ## 2024-05-19 - JSONL backward search for tailing
 **Learning:** Using chained `.split('\n').map().filter()` to process large string files (like JSONL transcripts) creates massive intermediate arrays and memory churn. When only extracting the last N lines (tailing), parsing the entire string is inefficient.
 **Action:** Use a backward search loop with `lastIndexOf('\n')` to extract only the required lines directly from the string, bypassing full file parsing and intermediate array allocations.
+
+## 2024-05-19 - JSONL full parse optimization
+**Learning:** Using chained `.split('\n').filter().map()` to process and fully parse large string files (like JSONL transcripts in `SamAgentTranscriptStore`) creates massive intermediate arrays and memory churn.
+**Action:** Use a single-pass `while` loop with `indexOf('\n')` and `substring()` to extract strings line by line directly, avoiding full array allocation before mapping/filtering.
