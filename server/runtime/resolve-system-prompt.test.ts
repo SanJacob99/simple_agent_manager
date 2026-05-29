@@ -46,7 +46,6 @@ function makeConfig(overrides?: Partial<AgentConfig>): AgentConfig {
       subAgentSpawning: false,
       maxSubAgents: 0,
     },
-    connectors: [],
     agentComm: [],
     memory: null,
     contextEngine: null,

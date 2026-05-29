@@ -53,6 +53,12 @@ const THINKING_COLORS: Record<ThinkingLevel, string | null> = {
   xhigh: '#f87171',
 };
 
+const ROLE_HINTS = {
+  manager: { label: 'M', color: '#38bdf8', title: 'Manager agent' },
+  lead: { label: 'L', color: '#22c55e', title: 'Lead agent' },
+  specialist: { label: 'S', color: '#f59e0b', title: 'Specialist agent' },
+} as const;
+
 function resolveProviderBrand(pluginId: string): BrandInfo {
   const key = pluginId.toLowerCase();
   return (
@@ -94,6 +100,8 @@ function AgentNodeComponent({ id, data, selected }: NodeProps<AgentNode>) {
 
   const llmBrand = resolveLlmBrand(data.modelId);
   const thinkingColor = THINKING_COLORS[data.thinkingLevel];
+  const role = data.coordination?.role ?? 'none';
+  const roleHint = role !== 'none' ? ROLE_HINTS[role] : null;
 
   const hints = (
     <>
@@ -138,6 +146,11 @@ function AgentNodeComponent({ id, data, selected }: NodeProps<AgentNode>) {
           title={`Thinking: ${data.thinkingLevel}`}
         >
           <Brain size={9} strokeWidth={2.5} />
+        </HexHint>
+      )}
+      {roleHint && (
+        <HexHint color={roleHint.color} title={roleHint.title}>
+          {roleHint.label}
         </HexHint>
       )}
     </>

@@ -7,6 +7,8 @@ import { eligibleBundledSkills } from '../../shared/default-tool-skills';
 import { useToolCatalogStore } from '../store/tool-catalog-store';
 import type { SubAgentNodeData } from '../types/nodes';
 import { SUB_AGENT_NAME_REGEX } from '../../shared/sub-agent-types';
+import { CONNECTOR_CATALOG } from '../../shared/connectors/catalog';
+import { DEFAULT_COORDINATION_CONFIG } from '../../shared/coordination-types';
 import * as posixPath from 'path';
 
 function resolveSubAgent(
@@ -257,6 +259,22 @@ export function resolveAgentConfig(
     addInline('music-generate', 'music_generate tool guidance', ts?.musicGenerate?.skill);
   }
 
+  // Dedup skill entries by id, keeping the first occurrence. Two Skills nodes
+  // (or a Skills node and a ToolsNode.skills entry) can enable the same skill
+  // name; without this, the same tag is rendered twice in the system prompt.
+  // Ordering of first occurrences is preserved.
+  {
+    const seenSkillIds = new Set<string>();
+    let writeIdx = 0;
+    for (let readIdx = 0; readIdx < allSkills.length; readIdx++) {
+      const skill = allSkills[readIdx];
+      if (seenSkillIds.has(skill.id)) continue;
+      seenSkillIds.add(skill.id);
+      allSkills[writeIdx++] = skill;
+    }
+    allSkills.length = writeIdx;
+  }
+
   const toolsConfig = toolsNode && toolsNode.data.type === 'tools'
     ? {
         profile: toolsNode.data.profile,
@@ -287,18 +305,6 @@ export function resolveAgentConfig(
         ragMinScore: contextNode.data.ragMinScore,
       }
     : null;
-
-  // --- Connectors ---
-  const connectors = connectedNodes
-    .filter((n) => n.data.type === 'connectors')
-    .map((n) => {
-      if (n.data.type !== 'connectors') throw new Error('unreachable');
-      return {
-        label: n.data.label,
-        connectorType: n.data.connectorType,
-        config: n.data.config,
-      };
-    });
 
   // --- Agent Communication ---
   const agentComm: ResolvedAgentCommConfig[] = connectedNodes
@@ -419,7 +425,7 @@ export function resolveAgentConfig(
   // Each MCP node resolves to a ResolvedMcpConfig. The node id is kept as
   // `mcpNodeId` so the server can push `mcp:status` events back to the UI
   // and the MCPNode component can light up a live connection hint.
-  const mcps = connectedNodes
+  const mcpsFromMcpNodes: ResolvedMcpConfig[] = connectedNodes
     .filter((n) => n.data.type === 'mcp')
     .map((n) => {
       if (n.data.type !== 'mcp') throw new Error('unreachable');
@@ -439,6 +445,38 @@ export function resolveAgentConfig(
       };
     });
 
+  // --- Connectors (fold into MCP) ---
+  // Each connector node is a curated MCP preset. The catalog entry supplies
+  // the server template and a buildEnv() that materializes secrets from
+  // process.env at resolve time. Unknown / unselected connectorIds are
+  // skipped here; they are surfaced separately by validateAgentRuntimeGraph.
+  const mcpsFromConnectors: ResolvedMcpConfig[] = [];
+  for (const n of connectedNodes) {
+    if (n.data.type !== 'connectors') continue;
+    const def = CONNECTOR_CATALOG[n.data.connectorId];
+    if (!def) continue;
+    const values: Record<string, string> = {};
+    for (const v of def.variables) {
+      values[v.key] = (n.data.config?.[v.key] ?? v.default);
+    }
+    mcpsFromConnectors.push({
+      mcpNodeId: n.id,
+      label: n.data.label,
+      transport: def.mcp.transport,
+      command: def.mcp.command ?? '',
+      args: def.mcp.args ?? [],
+      env: def.buildEnv(values),
+      cwd: '',
+      url: def.mcp.url ?? '',
+      headers: {},
+      toolPrefix: def.toolPrefix,
+      allowedTools: [],
+      autoConnect: true,
+    });
+  }
+
+  const mcps = [...mcpsFromMcpNodes, ...mcpsFromConnectors];
+
   // --- Build structured system prompt ---
   const agentMode = (data as any).systemPromptMode as SystemPromptMode | undefined;
   const mode: SystemPromptMode = agentMode === 'manual' ? 'manual' : 'append';
@@ -455,8 +493,13 @@ export function resolveAgentConfig(
     ? new Set(catalogState.tools.map((t) => t.name))
     : null;
   const advertisedToolNames = toolsConfig
-    ? resolvedToolNamesList.filter(
-        (t) => IMPLEMENTED_TOOL_NAMES.has(t) || catalogKnown?.has(t),
+    ? resolvedToolNamesList.filter((t) =>
+        // Always advertise tools we know are implemented offline. When the
+        // live catalog has NOT loaded yet (`catalogKnown` is null) we must
+        // NOT drop otherwise-resolved tools — doing so would make the same
+        // graph resolve to a different summary depending on catalog timing.
+        // Only filter against the catalog once it is actually available.
+        IMPLEMENTED_TOOL_NAMES.has(t) || catalogKnown === null || catalogKnown.has(t),
       )
     : [];
   const toolsSummary = toolsConfig ? advertisedToolNames.join(', ') : null;
@@ -583,7 +626,13 @@ export function resolveAgentConfig(
         modelId: data.modelId,
         thinkingLevel: data.thinkingLevel,
         modelCapabilities: data.modelCapabilities,
-        skills: allSkills,
+        // Strip the parent's inline auto-generated tool-guidance entries
+        // (`tool-skill-*`) before passing skills down. The sub-agent resolver
+        // only de-dupes ids it owns, so these would otherwise be inherited
+        // verbatim — advertising the PARENT's tool guidance for tools the
+        // sub-agent cannot call. A sub-agent gets tool guidance from its own
+        // enabled tools, so inheriting the parent's is always wrong.
+        skills: allSkills.filter((s) => !s.id.startsWith('tool-skill-')),
         mcps,
         workspacePath: data.workingDirectory ?? '',
       },
@@ -609,13 +658,13 @@ export function resolveAgentConfig(
     memory,
     tools: toolsConfig,
     contextEngine,
-    connectors,
     agentComm,
     storage,
     vectorDatabases,
     crons,
     mcps,
     subAgents,
+    coordination: data.coordination ?? { ...DEFAULT_COORDINATION_CONFIG },
     guardrails,
     // Exec tool cwd overrides agent-level workingDirectory when set
     workspacePath:
@@ -763,7 +812,12 @@ export function resolveAgentConfig(
 }
 
 export interface AgentGraphValidationError {
-  code: 'missing_provider' | 'duplicate_provider' | 'empty_plugin_id';
+  code:
+    | 'missing_provider'
+    | 'duplicate_provider'
+    | 'empty_plugin_id'
+    | 'unselected_connector'
+    | 'unknown_connector';
   message: string;
 }
 
@@ -799,6 +853,21 @@ export function validateAgentRuntimeGraph(
       code: 'empty_plugin_id',
       message: 'Provider node has no plugin selected.',
     });
+  }
+
+  for (const n of connectedNodes) {
+    if (n.data.type !== 'connectors') continue;
+    if (!n.data.connectorId) {
+      errors.push({
+        code: 'unselected_connector',
+        message: `Connector node "${n.data.label}" has no connector selected.`,
+      });
+    } else if (!CONNECTOR_CATALOG[n.data.connectorId]) {
+      errors.push({
+        code: 'unknown_connector',
+        message: `Connector node "${n.data.label}" references unknown connector "${n.data.connectorId}".`,
+      });
+    }
   }
 
   return errors;

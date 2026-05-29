@@ -17,7 +17,6 @@ describe('buildSyntheticAgentConfig', () => {
     memory: null,
     tools: null,
     contextEngine: null,
-    connectors: [],
     agentComm: [],
     storage: null,
     vectorDatabases: [],
@@ -67,7 +66,6 @@ describe('buildSyntheticAgentConfig', () => {
     expect(synthetic.systemPrompt.assembled).toContain('sub prompt');
     expect(synthetic.contextEngine).toBeNull();
     expect(synthetic.crons).toEqual([]);
-    expect(synthetic.connectors).toEqual([]);
     expect(synthetic.subAgents).toEqual([]);
   });
 

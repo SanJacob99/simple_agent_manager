@@ -2,6 +2,7 @@ import type { Node } from '@xyflow/react';
 import type { ModelCapabilityOverrides } from './model-metadata';
 import type { SystemPromptMode } from '../../shared/agent-config';
 import type { SubAgentOverridableField } from '../../shared/sub-agent-types';
+import type { AgentCoordinationConfig } from '../../shared/coordination-types';
 
 export type NodeType =
   | 'agent'
@@ -37,6 +38,7 @@ export interface AgentNodeData {
   systemPromptMode: SystemPromptMode;
   showReasoning: boolean;
   verbose: boolean;
+  coordination?: AgentCoordinationConfig;
   /** Working directory for the agent. Empty = server process.cwd() */
   workingDirectory: string;
 }
@@ -326,7 +328,10 @@ export interface ConnectorsNodeData {
   [key: string]: unknown;
   type: 'connectors';
   label: string;
-  connectorType: string;
+  /** Catalog ID, e.g. 'github'. Empty string means "not yet selected". */
+  connectorId: string;
+  /** Per-instance overrides for variables declared by the catalog entry.
+   *  Keys are catalog-defined; values are strings (env var names, etc.). */
   config: Record<string, string>;
 }
 

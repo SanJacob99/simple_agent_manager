@@ -3,7 +3,7 @@
 > Configures which tools an agent can use through profiles, groups, direct enables, skills, and plugins.
 
 <!-- source: src/types/nodes.ts#ToolsNodeData -->
-<!-- last-verified: 2026-05-25 -->
+<!-- last-verified: 2026-05-29 -->
 
 ## Overview
 
@@ -113,7 +113,9 @@ Bundled references are computed from the resolved tool list (not from the stored
 
 ### Tool advertisement in the system prompt
 
-The resolved tool list is also surfaced under `## Tooling` in the system prompt. `graph-to-agent.ts` reads the live catalog from `useToolCatalogStore` and forwards an annotated `{ name, description, group }` list to `buildSystemPrompt()` as `toolsCatalog`. The builder renders that list grouped by tool group with each tool's description inline, plus a **Tool Selection** sub-block that maps user intent ("URL given" → fetch, "current facts needed" → search, "numeric work" → calculator, "workspace file" → read/list/edit, etc.) to the right tool. This lets the model pick a tool from intent rather than waiting for the user to say "use `<tool>`". When the catalog has not loaded yet, the builder falls back to a comma-separated `toolsSummary` string. The same wiring is applied to sub-agents in `server/agents/sub-agent-executor.ts`, sourcing the catalog from the server-side tool registry.
+The resolved tool list is filtered before it reaches the prompt so the model is only told about tools it can actually call. A resolved tool name is kept if it is in the offline `IMPLEMENTED_TOOL_NAMES` baseline, or if the live `tool-catalog-store` (populated from `GET /api/tools`) knows it. When that catalog has **not** loaded yet, the resolver does not filter against it — otherwise-resolved names (including user-installed catalog tools) are kept rather than silently dropped, so the same graph resolves to the same advertisement regardless of catalog load timing.
+
+The filtered list is surfaced under `## Tooling` in the system prompt. `graph-to-agent.ts` reads the live catalog from `useToolCatalogStore` and forwards an annotated `{ name, description, group }` list to `buildSystemPrompt()` as `toolsCatalog`. The builder renders that list grouped by tool group with each tool's description inline, plus a **Tool Selection** sub-block that maps user intent ("URL given" → fetch, "current facts needed" → search, "numeric work" → calculator, "workspace file" → read/list/edit, etc.) to the right tool. This lets the model pick a tool from intent rather than waiting for the user to say "use `<tool>`". When the catalog has not loaded yet, the builder falls back to a comma-separated `toolsSummary` string. The same wiring is applied to sub-agents in `server/agents/sub-agent-executor.ts`, sourcing the catalog from the server-side tool registry.
 
 ## Authoring a New Tool
 

@@ -39,14 +39,45 @@ describe('exec tool', () => {
     await expect(tool.execute('t4', { command: 'shutdown' })).rejects.toThrow('blocked');
   });
 
-  it('blocks fork bombs', async () => {
+  it.skipIf(isWin)('blocks fork bombs', async () => {
     await expect(tool.execute('t5', { command: ':(){ :|:& };:' })).rejects.toThrow('blocked');
+  });
+
+  it.runIf(isWin)('blocks destructive PowerShell commands', async () => {
+    await expect(
+      tool.execute('t5-ps', { command: 'Remove-Item -Recurse -Force C:\\' }),
+    ).rejects.toThrow('blocked');
+    await expect(
+      tool.execute('t5-ps2', { command: 'Stop-Computer' }),
+    ).rejects.toThrow('blocked');
   });
 
   it('respects timeout', async () => {
     // `sleep` works in bash and as a PowerShell alias for Start-Sleep.
     const result = await tool.execute('t6', { command: 'sleep 60', timeout: 1 });
     expect(text(result)).toMatch(/timed out|Exit code/);
+  }, 10_000);
+
+  it('labels a timeout as timed out', async () => {
+    const result = await tool.execute('t6b', { command: 'sleep 60', timeout: 1 });
+    expect(text(result)).toContain('[timed out');
+  }, 10_000);
+
+  it('does not label an externally aborted run as timed out', async () => {
+    const ac = new AbortController();
+    const promise = tool.execute('t6c', { command: 'sleep 60' }, ac.signal);
+    // Abort shortly after start so the (default 30s) timeout never fires.
+    setTimeout(() => ac.abort(), 200);
+    const result = await promise;
+    const output = text(result);
+    expect(output).not.toContain('[timed out');
+  }, 10_000);
+
+  it('does not label a fast normal run as timed out', async () => {
+    const result = await tool.execute('t6d', { command: 'echo quick', timeout: 30 });
+    const output = text(result);
+    expect(output).not.toContain('[timed out');
+    expect(output).toContain('Exit code: 0');
   }, 10_000);
 
   it('uses workdir relative to cwd', async () => {

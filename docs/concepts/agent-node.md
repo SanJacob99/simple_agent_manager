@@ -3,7 +3,7 @@
 > The central hub node that stores model and prompt settings while connected peripheral nodes supply runtime services.
 
 <!-- source: src/types/nodes.ts#AgentNodeData -->
-<!-- last-verified: 2026-05-25 -->
+<!-- last-verified: 2026-05-29 -->
 
 ## Overview
 
@@ -28,6 +28,7 @@ The Agent Node still owns `modelId`, `thinkingLevel`, and `modelCapabilities`. T
 | `systemPromptMode` | `SystemPromptMode` | `"append"` | Prompt assembly mode. `append` emits SAM sections then adds the user's `systemPrompt` as a final `## User Instructions` section; `manual` discards SAM sections and uses only the user's text. **`auto` is defined in the type but is currently treated as `append`** by `resolveAgentConfig()` in `src/utils/graph-to-agent.ts` (line 444 converts every non-`manual` value to `'append'`). The system prompt builder does handle `auto` distinctly (user instructions are not appended), but that path is unreachable until the graph resolver is updated. |
 | `showReasoning` | `boolean` | `false` | Whether to expose reasoning output in the UI when supported |
 | `verbose` | `boolean` | `false` | Whether to prefer more verbose runtime output |
+| `coordination` | `AgentCoordinationConfig` | `{ role: "none", capabilities: [], maxConcurrentTasks: 1 }` | Optional control-plane role metadata. Manager agents can coordinate workflows; lead and specialist agents can receive assigned tasks |
 | `workingDirectory` | `string` | `""` | Working directory for the agent's exec tool. Empty = server `process.cwd()` |
 
 ### ModelCapabilityOverrides Fields
@@ -59,6 +60,9 @@ The Agent Node still owns `modelId`, `thinkingLevel`, and `modelCapabilities`. T
 6. Interactive chat requires a connected Provider Node, Context Engine Node, and Storage Node before the drawer can start a session.
 7. Runtime payload/fetch diagnostics in `AgentRuntime` are best-effort and non-blocking for successful streaming responses. The runtime avoids awaiting cloned 2xx response bodies, so debug logging cannot stall token streaming.
 8. Edits to `modelId`, the connected Provider Node, or `thinkingLevel` between turns are recorded in the session transcript. At the start of each run, `RunCoordinator.persistConfigChanges()` compares the current config against the last recorded baseline and appends pi-coding-agent's `model_change` / `thinking_level_change` entries when they drift. The model baseline is the most recent `model_change` entry, falling back to the provider/model on the most recent assistant message; the thinking-level baseline defaults to `'off'` when no prior change entry exists. No `model_change` is written on the first turn (the assistant message records the model implicitly), but a `thinking_level_change` is written on the first turn when the configured level differs from `'off'` so replays know what level was in effect.
+9. When `coordination.role` is `manager`, `lead`, or `specialist`, `RunCoordinator` injects coordination tools for that run. Manager tools create and control durable workflows; lead/specialist tools update assigned tasks. The deterministic state machine lives in `server/coordination/`, not inside the model prompt.
+10. The `after_tool_call` hook's transformed-result handling preserves non-text content blocks (e.g. generated images) instead of collapsing the result into a single text block.
+11. Run lifecycle is hardened against double-finalization and queue deadlock: a terminal-once guard prevents a run from being finalized as both success and error when its timeout fires during the final transcript write; the run-queue concurrency lease is always released even if a run throws before its try block (previously a synchronous throw could deadlock the queue); and an aborted run's cleanup no longer clobbers the next run's tools or active session on the shared runtime.
 
 ## Connections
 
@@ -95,6 +99,11 @@ The Agent Node still owns `modelId`, `thinkingLevel`, and `modelCapabilities`. T
   "systemPromptMode": "append",
   "showReasoning": false,
   "verbose": false,
+  "coordination": {
+    "role": "manager",
+    "capabilities": ["planning", "reporting"],
+    "maxConcurrentTasks": 1
+  },
   "workingDirectory": ""
 }
 ```

@@ -18,6 +18,10 @@ import {
 import { Field, inputClass, selectClass, textareaClass } from './shared';
 import SystemPromptPreview from '../SystemPromptPreview';
 import ModelCapabilitiesPanel from './ModelCapabilitiesPanel';
+import {
+  DEFAULT_COORDINATION_CONFIG,
+  type CoordinationRole,
+} from '../../../shared/coordination-types';
 
 const THINKING_LEVELS: ThinkingLevel[] = [
   'off',
@@ -118,6 +122,7 @@ export default function AgentProperties({ nodeId, data }: Props) {
   );
 
   const systemPromptMode = data.systemPromptMode === 'manual' ? 'manual' : 'append';
+  const coordination = data.coordination ?? DEFAULT_COORDINATION_CONFIG;
 
   useEffect(() => {
     if (data.systemPromptMode !== systemPromptMode) {
@@ -215,6 +220,15 @@ export default function AgentProperties({ nodeId, data }: Props) {
     }
   };
 
+  const updateCoordination = (updates: Partial<typeof coordination>) => {
+    update(nodeId, {
+      coordination: {
+        ...coordination,
+        ...updates,
+      },
+    });
+  };
+
   return (
     <div className="space-y-1">
       <Field label="Agent Name">
@@ -263,6 +277,56 @@ export default function AgentProperties({ nodeId, data }: Props) {
           placeholder="tag1, tag2, ..."
         />
       </Field>
+
+      <Field label="Coordination Role">
+        <select
+          className={selectClass}
+          value={coordination.role}
+          onChange={(e) =>
+            updateCoordination({ role: e.target.value as CoordinationRole })
+          }
+        >
+          <option value="none">None</option>
+          <option value="manager">Manager</option>
+          <option value="lead">Lead</option>
+          <option value="specialist">Specialist</option>
+        </select>
+      </Field>
+
+      {coordination.role !== 'none' && (
+        <>
+          <Field label="Coordination Capabilities">
+            <input
+              className={inputClass}
+              value={(coordination.capabilities ?? []).join(', ')}
+              onChange={(e) =>
+                updateCoordination({
+                  capabilities: e.target.value
+                    .split(',')
+                    .map((capability) => capability.trim())
+                    .filter(Boolean),
+                })
+              }
+              placeholder="research, frontend, qa"
+            />
+          </Field>
+
+          <Field label="Max Concurrent Tasks">
+            <input
+              className={inputClass}
+              type="number"
+              min={1}
+              max={20}
+              value={coordination.maxConcurrentTasks ?? 1}
+              onChange={(e) =>
+                updateCoordination({
+                  maxConcurrentTasks: Math.max(1, Number(e.target.value) || 1),
+                })
+              }
+            />
+          </Field>
+        </>
+      )}
 
       <Field label="Working Directory">
         <input

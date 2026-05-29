@@ -3,7 +3,7 @@
 > A standalone node for defining named skills that are injected into an agent's system prompt.
 
 <!-- source: src/types/nodes.ts#SkillsNodeData -->
-<!-- last-verified: 2026-05-24 -->
+<!-- last-verified: 2026-05-29 -->
 
 ## Overview
 
@@ -28,7 +28,7 @@ The Skill Node has no dedicated runtime class. Instead, its configuration is pro
    ```typescript
    { id: skillName, name: skillName, content: '', injectAs: 'system-prompt' }
    ```
-2. These definitions are merged with any skills from the connected Tools Node
+2. These definitions are merged with any skills from the connected Tools Node, then deduplicated by `id` keeping the first occurrence (so the same skill name enabled by two Skill Nodes — or by a Skill Node and the Tools Node's `skills` array — is rendered only once). The order of first occurrences is preserved.
 3. Skills with empty content render as a bullet list of names in the `## Skills` system prompt section; skills with authored content (typically from the Tools Node's `toolSettings.*.skill` fields) render as full markdown guidance blocks below the bullet list
 
 The resulting system prompt tells the LLM it has certain capabilities, guiding its behavior and response style. Skill Node entries are intentionally declarative tags — to give the agent detailed usage guidance for a capability, configure it as a `SkillDefinition` on the Tools Node or use one of the per-tool `skill` fields in `toolSettings`.

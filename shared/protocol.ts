@@ -204,6 +204,13 @@ export interface ToolStartEvent {
   runId?: string;
   toolCallId: string;
   toolName: string;
+  /**
+   * Tool arguments at call time. Forwarded from the pi-agent-core
+   * `tool_execution_start` event so the UI can render a meaningful
+   * "in-flight" preview before the tool returns — e.g. show the
+   * sub-agent name being spawned while `sessions_spawn` is running.
+   */
+  args?: Record<string, unknown>;
 }
 
 export interface ToolResultImage {

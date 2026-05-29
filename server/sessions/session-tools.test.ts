@@ -149,7 +149,6 @@ function createSpawnContext(overrides: Partial<SessionToolContext> = {}): Sessio
       maxSubAgents: 5,
     },
     contextEngine: null,
-    connectors: [],
     agentComm: [],
     storage: null,
     vectorDatabases: [],

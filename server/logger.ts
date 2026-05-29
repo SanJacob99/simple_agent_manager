@@ -56,6 +56,11 @@ function pruneApiLogs(): void {
  * Write a complete request/response exchange to logs/api/<id>.txt. Bodies
  * are never truncated so the raw provider response can be inspected. Files
  * are pruned to the most recent API_LOG_MAX_FILES.
+ *
+ * Successful (2xx) exchanges are only written when LOG_API_EXCHANGES is
+ * set — every agent turn is a fetch, so unconditional dumps fill the
+ * directory fast. Errors (non-2xx or network failures) are always written.
+ * Returns the file path, or '' when no file was written.
  */
 export function logApiExchange(input: {
   url: string;
@@ -67,6 +72,10 @@ export function logApiExchange(input: {
   responseBody?: string | null;
   error?: string | null;
 }): string {
+  const isError = Boolean(input.error) || (typeof input.status === 'number' && input.status >= 400);
+  if (!isError && !process.env.LOG_API_EXCHANGES) {
+    return '';
+  }
   const id = nextApiId();
   const file = path.join(apiDir, `${id}.txt`);
   const parts: string[] = [];

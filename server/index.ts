@@ -24,6 +24,9 @@ import { resolveOutboundSystemPrompt } from './runtime/resolve-system-prompt';
 import { launchChromeForCdp } from './tools/builtins/browser/chrome-launcher';
 import { mountSubAgentRoutes } from './routes/subagents';
 import { buildAgentChannelsRouter } from './routes/agent-channels';
+import { CoordinationStore } from './coordination/coordination-store';
+import { CoordinationService } from './coordination/coordination-service';
+import { buildCoordinationRouter } from './coordination/coordination-routes';
 import { SamAgentCoordinator } from './sam-agent/sam-agent-coordinator';
 import { AgentRuntime } from './runtime/agent-runtime';
 import path from 'path';
@@ -42,6 +45,8 @@ const catalogCache = new ProviderCatalogCache();
 const hitlRegistry = new HitlRegistry();
 const settingsFile = new SettingsFileStore();
 const graphFile = new GraphFileStore();
+const coordinationStore = new CoordinationStore();
+const coordinationService = new CoordinationService(coordinationStore);
 
 // Live safety settings — updated from the PUT /api/settings handler, read
 // lazily by AgentManager at agent-start time so newly started agents pick up
@@ -52,7 +57,9 @@ const agentManager = new AgentManager(
   pluginRegistry,
   hitlRegistry,
   () => currentSafetySettings,
+  coordinationService,
 );
+coordinationService.setGateway(agentManager);
 
 // --- SAMAgent coordinator ---
 //
@@ -118,6 +125,10 @@ mountSubAgentRoutes(app, {
 // --- Agent channels (peer-to-peer comms) REST routes ---
 
 app.use(buildAgentChannelsRouter(agentManager));
+
+// --- Agent coordination control plane REST routes ---
+
+app.use(buildCoordinationRouter(coordinationService));
 
 // --- Storage engine instances ---
 
@@ -212,6 +223,137 @@ app.post('/api/agents/:agentId/resolved-system-prompt', (req, res) => {
       workspaceCwd: workspaceCwd ?? config.workspacePath ?? process.cwd(),
     });
     res.json(resolved);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// --- Human-in-the-loop (HITL) control plane REST routes ---
+//
+// These mirror the WebSocket `hitl:respond` / `hitl:list` / abort paths so the
+// backend can resolve pending prompts headless (cron runs, sub-agents, CLI)
+// without a browser socket attached. They operate on the SAME `hitlRegistry`
+// instance the AgentManager and ws-handler use — never a second registry — so
+// a prompt registered by a running agent is resolvable over either transport.
+
+// List pending prompts for an agent's session. `sessionKey` is a required
+// query param (a prompt is always scoped to a session).
+app.get('/api/agents/:agentId/hitl', (req, res) => {
+  const { sessionKey } = req.query as { sessionKey?: string };
+  if (!sessionKey) {
+    res.status(400).json({ error: 'sessionKey query param is required' });
+    return;
+  }
+  try {
+    const pending = hitlRegistry.listForSession(req.params.agentId, sessionKey);
+    res.json({
+      pending: pending.map((p) => ({
+        toolCallId: p.toolCallId,
+        toolName: p.toolName,
+        kind: p.kind,
+        question: p.question,
+        createdAt: p.createdAt,
+        timeoutMs: p.timeoutMs,
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// Respond to a pending prompt. Body identifies the prompt by sessionKey and
+// optionally toolCallId; when toolCallId is omitted the OLDEST pending prompt
+// for the session is resolved (FIFO — see HitlRegistry.resolveForSession).
+// `answer` is the raw text; for confirm prompts it must parse to yes/no.
+app.post('/api/agents/:agentId/hitl/respond', (req, res) => {
+  const { sessionKey, toolCallId, answer } = (req.body ?? {}) as {
+    sessionKey?: string;
+    toolCallId?: string;
+    answer?: string;
+  };
+  if (!sessionKey) {
+    res.status(400).json({ error: 'sessionKey is required' });
+    return;
+  }
+  if (typeof answer !== 'string') {
+    res.status(400).json({ error: 'answer (string) is required' });
+    return;
+  }
+  try {
+    const routed = hitlRegistry.resolveForSession(
+      req.params.agentId,
+      sessionKey,
+      answer,
+      toolCallId,
+    );
+    if (routed === null) {
+      res.status(404).json({
+        error: toolCallId
+          ? `No pending HITL prompt for toolCallId ${toolCallId}`
+          : 'No pending HITL prompt for this session',
+      });
+      return;
+    }
+    if ('parseError' in routed) {
+      res.status(400).json({ error: routed.parseError });
+      return;
+    }
+    // Mirror the WS path: notify any attached clients that the prompt resolved.
+    agentManager.getBridge(req.params.agentId)?.broadcast({
+      type: 'hitl:resolved',
+      agentId: req.params.agentId,
+      sessionKey,
+      toolCallId: routed.resolved.toolCallId,
+      outcome: 'answered',
+    });
+    res.json({
+      ok: true,
+      toolCallId: routed.resolved.toolCallId,
+      kind: routed.kind,
+      normalized: routed.normalized,
+    });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// Cancel/reject a pending prompt. Body identifies the prompt by sessionKey and
+// optionally toolCallId; when toolCallId is omitted the OLDEST pending prompt
+// for the session is cancelled (FIFO). The blocked agent receives a cancelled
+// answer (reason: 'aborted').
+app.post('/api/agents/:agentId/hitl/cancel', (req, res) => {
+  const { sessionKey, toolCallId } = (req.body ?? {}) as {
+    sessionKey?: string;
+    toolCallId?: string;
+  };
+  if (!sessionKey) {
+    res.status(400).json({ error: 'sessionKey is required' });
+    return;
+  }
+  try {
+    const cancelled = hitlRegistry.cancelForSession(
+      req.params.agentId,
+      sessionKey,
+      'aborted',
+      toolCallId,
+    );
+    if (!cancelled) {
+      res.status(404).json({
+        error: toolCallId
+          ? `No pending HITL prompt for toolCallId ${toolCallId}`
+          : 'No pending HITL prompt for this session',
+      });
+      return;
+    }
+    agentManager.getBridge(req.params.agentId)?.broadcast({
+      type: 'hitl:resolved',
+      agentId: req.params.agentId,
+      sessionKey,
+      toolCallId: cancelled.toolCallId,
+      outcome: 'cancelled',
+      reason: 'aborted',
+    });
+    res.json({ ok: true, toolCallId: cancelled.toolCallId });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
@@ -533,7 +675,11 @@ app.post('/api/storage/maintenance', async (req, res) => {
   };
   try {
     const engine = getOrCreateEngine(config, agentName);
-    const report = await engine.runMaintenance();
+    // Pass the explicit mode from the live request body so a warm engine
+    // cache (carrying an older `maintenanceMode`) can't silently downgrade
+    // an enforce request to warn. The dry-run route hardcodes 'warn'; this
+    // route honors the user's request.
+    const report = await engine.runMaintenance(config.maintenanceMode ?? 'warn');
     res.json(report);
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
@@ -729,6 +875,10 @@ app.post('/api/providers/catalog/load', async (req, res) => {
         plugin,
         apiKeys,
       );
+      if (!auth.baseUrl) {
+        res.json({ models: {}, userModels: {}, syncedAt: null, userModelsRequireRefresh: false });
+        return;
+      }
       res.json(await catalogCache.refresh(request, plugin, {
         apiKey: auth.apiKey!,
         baseUrl: auth.baseUrl,
@@ -754,6 +904,10 @@ app.post('/api/providers/catalog/refresh', async (req, res) => {
     );
     if (!auth.apiKey) {
       res.status(400).json({ error: `No API key available for "${request.pluginId}".` });
+      return;
+    }
+    if (!auth.baseUrl) {
+      res.status(400).json({ error: `No baseUrl resolved for "${request.pluginId}". Provide request.baseUrl or define plugin.defaultBaseUrl.` });
       return;
     }
     res.json(await catalogCache.refresh(request, plugin, {
@@ -863,6 +1017,31 @@ initializeToolRegistry({ extraDirs: userToolsDir.dirs })
       // Register this PID so `sam restart` can find us next time.
       writeServerPid(process.pid);
 
+      // --- Auto-restore persisted agents from disk ---
+      // F-12 fix: walk every <storagePath>/<agentName>/agent-config.json and
+      // re-`start()` each agent so crons/sub-agent registries/hook bindings
+      // are live BEFORE the first WS client connects. Lazy-on-chat-open used
+      // to be the only restore path, which broke any boot-time hook (e.g.,
+      // the backend_start hook below depended on at least one client
+      // attaching first). Scoped to the user's persisted storage default
+      // (loaded from settings.json) with a sane fallback.
+      settingsFile.load().then(async (s) => {
+        const sd = (s.storageDefaults ?? {}) as { storagePath?: string };
+        const storagePath = sd.storagePath || '~/.simple-agent-manager/storage';
+        try {
+          const restored = await agentManager.restoreFromDisk(storagePath);
+          if (restored > 0) {
+            console.log(`[Agents] Auto-restored ${restored} agent(s) from ${storagePath}`);
+          } else {
+            console.log(`[Agents] No persisted agents to restore at ${storagePath}`);
+          }
+        } catch (err) {
+          console.error('[Agents] restoreFromDisk failed:', err);
+        }
+      }).catch(() => {
+        // settings already logged the load failure separately
+      });
+
       // --- backend_start hook (global) ---
       const globalRegistry = getGlobalHookRegistry();
       const startCtx: BackendLifecycleContext = { phase: 'start', timestamp: Date.now() };
@@ -897,6 +1076,7 @@ async function shutdown() {
 
   agentManager.shutdown()
     .then(() => {
+      coordinationService.close();
       httpServer.close(() => {
         clearServerPid();
         console.log('Server closed.');

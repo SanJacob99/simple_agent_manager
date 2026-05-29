@@ -8,6 +8,7 @@ import type {
 } from '../../shared/agent-comm-types';
 import type { SessionStoreEntry } from '../../shared/storage-types';
 import { canonicalChannelKey, parseChannelKey } from './channel-key';
+import { KeyedMutex } from '../util/mutex';
 
 export interface OpenArgs {
   pair: [string, string];
@@ -37,6 +38,21 @@ export interface ChannelSessionStoreOpts {
  * with user/assistant/tool messages plus `agent-comm-audit` events.
  */
 export class ChannelSessionStore {
+  /**
+   * Per-channel lock serializing read-modify-write of `channelMeta`
+   * (`appendUserMessage`, `addUsage`, `seal`). Without this, concurrent
+   * load→compute→persist sequences read the same snapshot and the last
+   * write wins, losing token/turn updates — which can let a channel skip
+   * budget sealing. Keyed by the canonical channel key so each channel's
+   * RMW is one critical section while unrelated channels stay concurrent.
+   *
+   * This is a SEPARATE mutex instance from AgentCommBus's send-lock, so the
+   * bus holding its own per-channel lock while calling these methods does
+   * not re-enter this lock — no deadlock. None of the methods below call
+   * each other, so there is no self-re-entrancy within this lock either.
+   */
+  private readonly metaLock = new KeyedMutex();
+
   constructor(private readonly opts: ChannelSessionStoreOpts) {}
 
   private storageFor(ownerAgentId: string): StorageEngine {
@@ -180,35 +196,37 @@ export class ChannelSessionStore {
    * turn counter. Throws if the channel is sealed.
    */
   async appendUserMessage(key: string, args: AppendUserArgs): Promise<ChannelSessionMeta> {
-    const { entry, channelMeta } = await this.requireEntry(key);
-    if (channelMeta.sealed) {
-      throw new Error(`channel-session-store: channel is sealed (${channelMeta.sealedReason}): ${key}`);
-    }
+    return this.metaLock.run(key, async () => {
+      const { entry, channelMeta } = await this.requireEntry(key);
+      if (channelMeta.sealed) {
+        throw new Error(`channel-session-store: channel is sealed (${channelMeta.sealedReason}): ${key}`);
+      }
 
-    const now = new Date().toISOString();
+      const now = new Date().toISOString();
 
-    // Append the transcript event
-    const record = {
-      type: 'message',
-      id: `chan-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      parentId: null,
-      timestamp: now,
-      message: {
-        role: 'user',
-        content: args.content,
-      },
-      channelMeta: args.meta,
-    };
-    await this.appendTranscriptLine(entry, record);
+      // Append the transcript event
+      const record = {
+        type: 'message',
+        id: `chan-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        parentId: null,
+        timestamp: now,
+        message: {
+          role: 'user',
+          content: args.content,
+        },
+        channelMeta: args.meta,
+      };
+      await this.appendTranscriptLine(entry, record);
 
-    // Update meta
-    const updatedMeta: ChannelSessionMeta = {
-      ...channelMeta,
-      turns: channelMeta.turns + 1,
-      lastActivityAt: now,
-    };
+      // Update meta
+      const updatedMeta: ChannelSessionMeta = {
+        ...channelMeta,
+        turns: channelMeta.turns + 1,
+        lastActivityAt: now,
+      };
 
-    return this.persistMeta(key, updatedMeta);
+      return this.persistMeta(key, updatedMeta);
+    });
   }
 
   /**
@@ -252,16 +270,18 @@ export class ChannelSessionStore {
     key: string,
     usage: { tokensIn: number; tokensOut: number },
   ): Promise<ChannelSessionMeta> {
-    const { channelMeta } = await this.requireEntry(key);
-    const now = new Date().toISOString();
-    const updatedMeta: ChannelSessionMeta = {
-      ...channelMeta,
-      tokensIn: channelMeta.tokensIn + usage.tokensIn,
-      tokensOut: channelMeta.tokensOut + usage.tokensOut,
-      lastActivityAt: now,
-    };
+    return this.metaLock.run(key, async () => {
+      const { channelMeta } = await this.requireEntry(key);
+      const now = new Date().toISOString();
+      const updatedMeta: ChannelSessionMeta = {
+        ...channelMeta,
+        tokensIn: channelMeta.tokensIn + usage.tokensIn,
+        tokensOut: channelMeta.tokensOut + usage.tokensOut,
+        lastActivityAt: now,
+      };
 
-    return this.persistMeta(key, updatedMeta);
+      return this.persistMeta(key, updatedMeta);
+    });
   }
 
   /**
@@ -269,25 +289,27 @@ export class ChannelSessionStore {
    * `sealed` audit event to the transcript (per spec §6.4/§6.5).
    */
   async seal(key: string, reason: AgentCommSealReason): Promise<ChannelSessionMeta> {
-    const { entry, channelMeta } = await this.requireEntry(key);
+    return this.metaLock.run(key, async () => {
+      const { entry, channelMeta } = await this.requireEntry(key);
 
-    const now = new Date().toISOString();
-    const updatedMeta: ChannelSessionMeta = {
-      ...channelMeta,
-      sealed: true,
-      sealedReason: reason,
-      lastActivityAt: now,
-    };
+      const now = new Date().toISOString();
+      const updatedMeta: ChannelSessionMeta = {
+        ...channelMeta,
+        sealed: true,
+        sealedReason: reason,
+        lastActivityAt: now,
+      };
 
-    // Append sealed audit event to the transcript first
-    const auditEvent: AgentCommAuditEvent = {
-      kind: 'agent-comm-audit',
-      ts: now,
-      event: { type: 'sealed', reason },
-    };
-    await this.appendTranscriptLine(entry, auditEvent);
+      // Append sealed audit event to the transcript first
+      const auditEvent: AgentCommAuditEvent = {
+        kind: 'agent-comm-audit',
+        ts: now,
+        event: { type: 'sealed', reason },
+      };
+      await this.appendTranscriptLine(entry, auditEvent);
 
-    return this.persistMeta(key, updatedMeta);
+      return this.persistMeta(key, updatedMeta);
+    });
   }
 
   /**

@@ -67,7 +67,6 @@ function makeAgentConfig(storagePath: string): AgentConfig {
       maxSubAgents: 0,
     },
     contextEngine: null,
-    connectors: [],
     agentComm: [],
     storage: {
       label: 'Storage',

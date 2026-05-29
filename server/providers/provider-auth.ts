@@ -9,9 +9,16 @@ export interface ResolvedProviderRuntimeAuth {
 
 /**
  * Normalize a base URL: trim whitespace, strip trailing slash.
+ *
+ * Tolerates undefined/null/empty input and returns ''. Callers (the
+ * catalog refresh / load routes) check for empty after this and surface
+ * a clean 400 instead of letting `.trim()` throw a 500. Same shape as
+ * the saved-key/env-var fallback chain in `resolveProviderRuntimeAuth`.
  */
-export function normalizeBaseUrl(url: string): string {
+export function normalizeBaseUrl(url: string | undefined | null): string {
+  if (typeof url !== 'string') return '';
   const trimmed = url.trim();
+  if (!trimmed) return '';
   return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
 }
 

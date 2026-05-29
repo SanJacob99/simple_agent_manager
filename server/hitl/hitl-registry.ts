@@ -34,6 +34,10 @@ export interface PendingHitlSnapshot {
 interface PendingEntry extends PendingHitlSnapshot {
   resolve: (answer: HitlAnswer) => void;
   timer: ReturnType<typeof setTimeout>;
+  // Monotonic insertion sequence. `createdAt` alone is not a reliable FIFO
+  // key because two prompts registered in the same millisecond would tie;
+  // `seq` breaks such ties deterministically in registration order.
+  seq: number;
 }
 
 export interface RegisterParams {
@@ -53,6 +57,7 @@ function keyOf(agentId: string, sessionKey: string, toolCallId: string): string 
 
 export class HitlRegistry {
   private readonly pending = new Map<string, PendingEntry>();
+  private seqCounter = 0;
 
   /**
    * Register a new pending prompt. Returns a Promise that resolves when
@@ -88,6 +93,7 @@ export class HitlRegistry {
         question: params.question,
         timeoutMs: params.timeoutMs,
         createdAt: Date.now(),
+        seq: this.seqCounter++,
         timer: setTimeout(() => finalize({ cancelled: true, reason: 'timeout' }), params.timeoutMs),
         resolve: finalize,
       };
@@ -114,39 +120,95 @@ export class HitlRegistry {
   }
 
   /**
-   * Resolve whichever prompt is currently pending for the session. Used by
-   * the dispatch path when a user message arrives and we need to route it
-   * to the HITL resolver instead of starting a new turn.
+   * Resolve a prompt that is currently pending for the session. Used by the
+   * dispatch path when a user message arrives and we need to route it to the
+   * HITL resolver instead of starting a new turn, and by the REST `respond`
+   * endpoint for headless control.
+   *
+   * Disambiguation when multiple prompts are pending for the same session:
+   *   1. If `toolCallId` is supplied, resolve exactly that prompt (deterministic
+   *      targeting). If no pending prompt matches that id, returns null.
+   *   2. If `toolCallId` is omitted, resolve the OLDEST pending prompt
+   *      (FIFO by createdAt, then registration `seq` to break same-ms ties)
+   *      rather than an arbitrary Map-iteration match. FIFO is the safe default
+   *      because the earliest prompt is the one the agent has been blocked on
+   *      the longest.
    *
    * Returns the matched entry's snapshot so callers can persist the answer
-   * with the correct toolCallId/kind. Returns null when nothing is pending.
+   * with the correct toolCallId/kind. Returns null when nothing matches.
    *
-   * If the pending prompt is `kind: 'confirm'` and the raw text does not
+   * If the resolved prompt is `kind: 'confirm'` and the raw text does not
    * parse to exactly yes/no (see `parseConfirm`), the entry is NOT resolved
-   * and `null` is returned along with a `parseError` so the caller can tell
-   * the user to try again.
+   * and a `parseError` is returned so the caller can tell the user to try
+   * again.
    */
   resolveForSession(
     agentId: string,
     sessionKey: string,
     rawText: string,
+    toolCallId?: string,
   ): { resolved: PendingHitlSnapshot; kind: HitlKind; normalized: string } | { parseError: string } | null {
+    const entry = this.selectForSession(agentId, sessionKey, toolCallId);
+    if (!entry) return null;
+
+    if (entry.kind === 'confirm') {
+      const parsed = parseConfirm(rawText);
+      if (!parsed) {
+        return { parseError: 'Please reply exactly "yes" or "no".' };
+      }
+      entry.resolve({ kind: 'confirm', answer: parsed });
+      return { resolved: snapshotOf(entry), kind: 'confirm', normalized: parsed };
+    }
+
+    entry.resolve({ kind: 'text', answer: rawText });
+    return { resolved: snapshotOf(entry), kind: 'text', normalized: rawText };
+  }
+
+  /**
+   * Cancel a single pending prompt for a session. When `toolCallId` is given,
+   * targets that exact prompt; otherwise cancels the OLDEST pending prompt
+   * (FIFO), mirroring `resolveForSession`'s disambiguation. Returns the
+   * cancelled prompt's snapshot, or null when nothing matched.
+   */
+  cancelForSession(
+    agentId: string,
+    sessionKey: string,
+    reason: 'aborted' | 'timeout',
+    toolCallId?: string,
+  ): PendingHitlSnapshot | null {
+    const entry = this.selectForSession(agentId, sessionKey, toolCallId);
+    if (!entry) return null;
+    const snapshot = snapshotOf(entry);
+    entry.resolve({ cancelled: true, reason });
+    return snapshot;
+  }
+
+  /**
+   * Pick the pending entry for a session to act on. With `toolCallId`, returns
+   * that exact entry (or null). Without it, returns the oldest pending entry
+   * for the session by (createdAt, seq) FIFO order, or null when none pending.
+   */
+  private selectForSession(
+    agentId: string,
+    sessionKey: string,
+    toolCallId?: string,
+  ): PendingEntry | null {
+    if (toolCallId) {
+      const entry = this.pending.get(keyOf(agentId, sessionKey, toolCallId));
+      return entry ?? null;
+    }
+    let oldest: PendingEntry | null = null;
     for (const entry of this.pending.values()) {
       if (entry.agentId !== agentId || entry.sessionKey !== sessionKey) continue;
-
-      if (entry.kind === 'confirm') {
-        const parsed = parseConfirm(rawText);
-        if (!parsed) {
-          return { parseError: 'Please reply exactly "yes" or "no".' };
-        }
-        entry.resolve({ kind: 'confirm', answer: parsed });
-        return { resolved: snapshotOf(entry), kind: 'confirm', normalized: parsed };
+      if (
+        oldest === null ||
+        entry.createdAt < oldest.createdAt ||
+        (entry.createdAt === oldest.createdAt && entry.seq < oldest.seq)
+      ) {
+        oldest = entry;
       }
-
-      entry.resolve({ kind: 'text', answer: rawText });
-      return { resolved: snapshotOf(entry), kind: 'text', normalized: rawText };
     }
-    return null;
+    return oldest;
   }
 
   /**

@@ -214,7 +214,14 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
 
         switch (event.type) {
           case 'message:start':
-            assistantContentRef.current = '';
+            // Do NOT reset assistantContentRef here. One user prompt can
+            // produce multiple runtime message_start/message_end cycles when
+            // the agent loops through tool calls (text → tool → text). The
+            // bubble for this turn must accumulate text across every cycle;
+            // wiping the accumulator on the second message:start caused
+            // earlier text to vanish and, if the second message contained
+            // only tool calls, left behind an empty bubble with usage stats.
+            // Turn-boundary reset happens once in sendMessage above.
             setReasoning(null);
             setIsReasoning(false);
             if (!assistantMsgCreatedRef.current) {
@@ -260,7 +267,10 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
           case 'reasoning:start':
             setIsReasoning(true);
             setReasoning('');
-            assistantThinkingRef.current = '';
+            // Do NOT reset assistantThinkingRef here. A turn with multiple
+            // thinking blocks (one per LLM pass in an agentic tool loop)
+            // would lose all but the last block. Turn-boundary reset
+            // happens once in sendMessage above.
             if (!assistantMsgCreatedRef.current) {
               addMessage(sessionKeyRef.current, {
                 id: assistantMsgIdRef.current,
@@ -312,6 +322,7 @@ export function useChatStream(agentNodeId: string): ChatStreamState {
               role: 'tool',
               content: '',
               toolName: (event as any).toolName,
+              toolArgs: (event as any).args,
               timestamp: Date.now(),
             });
             break;

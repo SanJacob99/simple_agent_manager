@@ -177,17 +177,15 @@ describe('ContextEngine.afterTurn', () => {
     // Budget 1000 - 200 reserved = 800. Auto trigger = 0.8 * 800 = 640.
     const engine = new ContextEngine(makeConfig({ compactionTrigger: 'auto' }));
     const messages = Array.from({ length: 10 }, () => userMsgOfTokens(100));
+    const originalLength = messages.length;
 
+    // afterTurn applies proactive compaction in place: the live message array
+    // must actually shrink. (The bug was that compact()'s result was
+    // discarded, so afterTurn left the history untouched and re-fired every
+    // subsequent turn.)
     await engine.afterTurn(messages);
 
-    // Without an active SessionManager `compact` can't persist, but it
-    // still runs and returns a reduced array. We only need to confirm
-    // afterTurn dispatched the compaction path; assert by spying that
-    // compact() was invoked via observable side effects on the engine.
-    // The simplest observable: manually invoke compact() ourselves and
-    // confirm a reduction is achievable for this input.
-    const compacted = await engine.compact(messages);
-    expect(compacted.length).toBeLessThan(messages.length);
+    expect(messages.length).toBeLessThan(originalLength);
   });
 
   it('does not compact in auto mode when usage is below 80%', async () => {

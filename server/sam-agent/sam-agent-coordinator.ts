@@ -35,6 +35,11 @@ export class SamAgentCoordinator {
   private currentRuntime: AgentRuntime | null = null;
   private currentMessageId: string | null = null;
   private currentText = '';
+  private currentThinking = '';
+  /** Length of currentText at the start of the current message block. Used to
+   *  detect non-streaming providers (no text_delta events) and fall back to
+   *  the message_end content for that block only. */
+  private currentBlockStart = 0;
   private toolResults: SamAgentToolResult[] = [];
   private inFlight = false;
 
@@ -122,6 +127,8 @@ export class SamAgentCoordinator {
 
       this.currentMessageId = randomUUID();
       this.currentText = '';
+      this.currentThinking = '';
+      this.currentBlockStart = 0;
       this.toolResults = [];
 
       // AgentRuntime.subscribe(listener) returns an unsubscribe function.
@@ -148,6 +155,7 @@ export class SamAgentCoordinator {
         text: this.currentText,
         timestamp: Date.now(),
         toolResults: this.toolResults.length > 0 ? this.toolResults : undefined,
+        thinking: this.currentThinking.length > 0 ? this.currentThinking : undefined,
       };
       await this.transcript.append(assistantMessage);
       this.opts.emit({ type: 'samAgent:event', event: { type: 'lifecycle:end' } });
@@ -161,12 +169,15 @@ export class SamAgentCoordinator {
    * shaped SamAgentEvents (colon-delimited) for the WS layer.
    *
    * Event mapping:
-   *   message_start            → message:start
-   *   message_update/text_delta → message:delta  (only text_delta assistantMessageEvents)
-   *   message_end              → message:end
-   *   tool_execution_start     → tool:start
-   *   tool_execution_end       → tool:end
-   *   agent_end, others        → ignored (lifecycle:end is emitted in dispatch())
+   *   message_start                 → message:start
+   *   message_update/text_delta     → message:delta
+   *   message_update/thinking_start → thinking:start
+   *   message_update/thinking_delta → thinking:delta
+   *   message_update/thinking_end   → thinking:end
+   *   message_end                   → message:end
+   *   tool_execution_start          → tool:start
+   *   tool_execution_end            → tool:end
+   *   agent_end, others             → ignored (lifecycle:end is emitted in dispatch())
    */
   private onRuntimeEvent(e: RuntimeEvent): void {
     const t = (e as any).type as string;
@@ -174,6 +185,10 @@ export class SamAgentCoordinator {
 
     switch (t) {
       case 'message_start':
+        // Mark where this block starts in the accumulator so we can detect
+        // non-streaming providers (no text_delta) at message_end without
+        // clobbering text from earlier blocks in the same turn.
+        this.currentBlockStart = this.currentText.length;
         this.opts.emit({
           type: 'samAgent:event',
           event: { type: 'message:start', messageId: this.currentMessageId! },
@@ -182,28 +197,52 @@ export class SamAgentCoordinator {
 
       case 'message_update': {
         // assistantMessageEvent contains the granular streaming event from pi-ai.
-        // We emit message:delta only for text_delta events to pass text chunks.
         const ame = (e as any).assistantMessageEvent;
-        if (ame?.type === 'text_delta') {
+        if (!ame?.type) break;
+
+        if (ame.type === 'text_delta') {
           const delta: string = ame.delta ?? '';
           this.currentText += delta;
           this.opts.emit({
             type: 'samAgent:event',
             event: { type: 'message:delta', messageId: this.currentMessageId!, textDelta: delta },
           });
+        } else if (ame.type === 'thinking_start') {
+          this.opts.emit({
+            type: 'samAgent:event',
+            event: { type: 'thinking:start', messageId: this.currentMessageId! },
+          });
+        } else if (ame.type === 'thinking_delta') {
+          const delta: string = ame.delta ?? '';
+          this.currentThinking += delta;
+          this.opts.emit({
+            type: 'samAgent:event',
+            event: { type: 'thinking:delta', messageId: this.currentMessageId!, textDelta: delta },
+          });
+        } else if (ame.type === 'thinking_end') {
+          this.opts.emit({
+            type: 'samAgent:event',
+            event: { type: 'thinking:end', messageId: this.currentMessageId! },
+          });
         }
         break;
       }
 
       case 'message_end': {
-        // Extract the final text from the message's content blocks.
-        const msg = (e as any).message;
-        if (msg?.content && Array.isArray(msg.content)) {
-          const textContent = msg.content
-            .filter((b: any) => b.type === 'text')
-            .map((b: any) => b.text ?? '')
-            .join('');
-          if (textContent) this.currentText = textContent;
+        // Non-streaming fallback: if no text_delta events grew the accumulator
+        // for this block, append the block's text from message.content. Crucially
+        // we APPEND rather than overwrite — earlier blocks in the same turn
+        // (e.g. text-then-tool-then-text) must be preserved.
+        const grew = this.currentText.length > this.currentBlockStart;
+        if (!grew) {
+          const msg = (e as any).message;
+          if (msg?.content && Array.isArray(msg.content)) {
+            const textContent = msg.content
+              .filter((b: any) => b.type === 'text')
+              .map((b: any) => b.text ?? '')
+              .join('');
+            if (textContent) this.currentText += textContent;
+          }
         }
         this.opts.emit({
           type: 'samAgent:event',

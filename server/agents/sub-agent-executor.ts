@@ -16,7 +16,7 @@ export interface SubAgentSpawnOverrides {
  * mutate the parent or sub config.
  *
  * Inheritance for fields NOT present on ResolvedSubAgentConfig (memory,
- * connectors, agentComm, vectorDatabases, crons): always cleared on the
+ * agentComm, vectorDatabases, crons): always cleared on the
  * synthetic config — sub-agents do not own these resources.
  *
  * Inheritance for fields present on the sub: take the sub's value (already
@@ -128,7 +128,6 @@ export function buildSyntheticAgentConfig(
     memory: null,
     tools,
     contextEngine: null,             // sub-agents are one-shot; no compaction
-    connectors: [],
     agentComm: [],
     storage: parent.storage,         // sub-sessions live under the parent's storage
     vectorDatabases: [],

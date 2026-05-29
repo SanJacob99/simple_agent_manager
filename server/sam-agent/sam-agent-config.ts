@@ -38,7 +38,6 @@ export function buildSamAgentConfig(params: BuildSamAgentConfigParams): AgentCon
     memory: null,
     tools: null,
     contextEngine: null,
-    connectors: [],
     agentComm: [],
     storage: null,
     vectorDatabases: [],

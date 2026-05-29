@@ -26,6 +26,7 @@ import os from 'os';
 import { AgentCommBus } from '../comms/agent-comm-bus';
 import { ChannelSessionStore } from '../comms/channel-session-store';
 import { ChannelRunQueue } from '../comms/channel-run-queue';
+import type { CoordinationService, AgentDispatchGateway } from '../coordination/coordination-service';
 
 export interface ManagedAgent {
   runtime: AgentRuntime;
@@ -52,7 +53,7 @@ export function getGlobalHookRegistry(): HookRegistry {
   return globalHookRegistry;
 }
 
-export class AgentManager {
+export class AgentManager implements AgentDispatchGateway {
   private agents = new Map<string, ManagedAgent>();
   /** Shared HITL registry — single instance for all agents managed by this server. */
   readonly hitlRegistry: HitlRegistry;
@@ -75,6 +76,7 @@ export class AgentManager {
     private readonly pluginRegistry: ProviderPluginRegistry,
     hitlRegistry?: HitlRegistry,
     getSafetySettings?: () => SafetySettings,
+    private readonly coordinationService?: CoordinationService,
   ) {
     this.hitlRegistry = hitlRegistry ?? new HitlRegistry();
     this.getSafetySettings = getSafetySettings ?? (() => DEFAULT_SAFETY_SETTINGS);
@@ -165,6 +167,7 @@ export class AgentManager {
       undefined,
       undefined,
       runtimeFactory,
+      this.coordinationService,
     );
 
     // Wire the agent-comm bus so this coordinator can drive
@@ -206,6 +209,8 @@ export class AgentManager {
       agentComm: config.agentComm ?? [],
     });
 
+    this.syncCoordinationAgents();
+
     // Seed context-usage breakdown for every zero-turn session this
     // agent already has on disk. Ensures the UI can render the
     // per-section panel immediately when a user opens an existing
@@ -244,6 +249,18 @@ export class AgentManager {
     if (!managed) throw new Error(`Agent ${agentId} not found`);
     managed.lastActivity = Date.now();
     return managed.coordinator.dispatch(params);
+  }
+
+  async ensureAgentStarted(config: AgentConfig): Promise<void> {
+    if (this.agents.has(config.id)) {
+      this.syncCoordinationAgents();
+      return;
+    }
+    await this.start(config);
+  }
+
+  listManagedAgentConfigs(): AgentConfig[] {
+    return [...this.agents.values()].map((managed) => managed.config);
   }
 
   async wait(agentId: string, runId: string, timeoutMs?: number): Promise<WaitResult> {
@@ -287,6 +304,7 @@ export class AgentManager {
     managed.runtime.destroy();
     managed.hooks.destroy();
     this.agents.delete(agentId);
+    this.syncCoordinationAgents();
   }
 
   has(agentId: string): boolean {
@@ -296,6 +314,14 @@ export class AgentManager {
   /** Returns all currently managed agents. Used by aggregate sub-agent routes. */
   listAgents(): ManagedAgent[] {
     return [...this.agents.values()];
+  }
+
+  private syncCoordinationAgents(): void {
+    const configs = this.listManagedAgentConfigs();
+    if (configs.length === 0) return;
+    this.coordinationService?.syncAgents({
+      agents: configs.map((config) => ({ config })),
+    });
   }
 
   /**

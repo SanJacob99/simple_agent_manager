@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import path from 'path';
 import type { SessionManager } from '@mariozechner/pi-coding-agent';
 import type { AgentMessage } from '@mariozechner/pi-agent-core';
+import type { AgentTool } from '@mariozechner/pi-agent-core';
 import type { AssistantMessage, ToolResultMessage, Usage, UserMessage } from '@mariozechner/pi-ai';
 import type { AgentRuntime, RuntimeEvent } from '../runtime/agent-runtime';
 import type { StorageEngine } from '../storage/storage-engine';
@@ -76,6 +77,8 @@ import {
   firstBlocking,
   type GuardrailViolation,
 } from '../runtime/guardrails-engine';
+import type { CoordinationService } from '../coordination/coordination-service';
+import { createCoordinationTools } from '../coordination/coordination-tools';
 
 export type RunStatus = 'pending' | 'running' | 'completed' | 'error';
 
@@ -244,6 +247,7 @@ export class RunCoordinator {
     sessionRouter?: SessionRouter,
     transcriptStore?: SessionTranscriptStore,
     private readonly runtimeFactory?: RuntimeFactory,
+    private readonly coordinationService?: CoordinationService,
   ) {
     this.transcriptStore = transcriptStore
       ?? (storage && config.storage
@@ -434,7 +438,7 @@ export class RunCoordinator {
         return canonicalChannelKey(this.agentId, peerEdge.targetAgentNodeId);
       },
     });
-    const adaptedCommTools = adaptAgentCommTools(commTools);
+    const channelRunTools = [...adaptAgentCommTools(commTools)];
 
     // 4. Set the receiver runtime's context to the channel transcript
     //    (which already includes the inbound user message — bus appended
@@ -442,7 +446,9 @@ export class RunCoordinator {
     const messageCountBefore = messages.length;
     this.runtime.setSessionContext(messages as AgentMessage[]);
     this.runtime.setCurrentSessionKey(channelKey);
-    this.runtime.addTools(adaptedCommTools);
+    if (channelRunTools.length > 0) {
+      this.runtime.addTools(channelRunTools);
+    }
 
     // 5. Append the channel-context system-prompt block for THIS run
     //    only. Restored after the run completes.
@@ -480,7 +486,9 @@ export class RunCoordinator {
       // Reset injected tools back to base. addTools resets to baseTools
       // first, so calling with [] is the canonical "remove per-run tools"
       // form used elsewhere in the coordinator.
-      this.runtime.addTools([]);
+      if (channelRunTools.length > 0) {
+        this.runtime.addTools([]);
+      }
 
       // 6b. Persist the assistant turn(s) produced by this run back to the
       //     channel JSONL transcript so the conversation history survives
@@ -1044,7 +1052,20 @@ export class RunCoordinator {
     record.queue = undefined;
     this.emitQueueLeft(record, 'started');
     this.emitQueueUpdates(affectedRunIds);
-    void this.executeRun(record, params);
+    // executeRun mutates record.status and opens the transcript BEFORE its
+    // own try/catch begins. A synchronous throw or early rejection there
+    // would leak the concurrency lease (release() never runs), permanently
+    // deadlocking the queue. Guard the fire-and-forget call so any failure
+    // path that escapes executeRun still releases the lease, finalizes the
+    // run as errored, and drains the next queued run.
+    void this.executeRun(record, params).catch((error) => {
+      console.error('[RunCoordinator] executeRun failed unexpectedly:', error);
+      this.concurrency.release(record.runId, record.sessionId);
+      if (record.status !== 'completed' && record.status !== 'error') {
+        this.finalizeRunError(record, classifyError(error));
+      }
+      this.tryStartNextRun();
+    });
   }
 
   /**
@@ -1468,7 +1489,7 @@ export class RunCoordinator {
 
     // Track whether we injected any per-run tools so the finally block
     // knows whether it needs to reset the runtime back to its base tool list.
-    let perRunToolsInjected = false;
+    const perRunTools: AgentTool[] = [];
 
     try {
       // Input guardrails — evaluated before any session/runtime mutation so
@@ -1559,8 +1580,20 @@ export class RunCoordinator {
         };
         const sessionTools = createSessionTools(sessionToolCtx);
         if (sessionTools.length > 0) {
-          this.runtime.addTools(sessionTools);
-          perRunToolsInjected = true;
+          perRunTools.push(...sessionTools);
+        }
+      }
+
+      if (this.coordinationService && this.config.coordination?.role && this.config.coordination.role !== 'none') {
+        const coordinationTools = createCoordinationTools({
+          service: this.coordinationService,
+          callerAgentId: this.agentId,
+          callerRunId: record.runId,
+          callerSessionKey: record.sessionKey,
+          config: this.config,
+        });
+        if (coordinationTools.length > 0) {
+          perRunTools.push(...coordinationTools);
         }
       }
 
@@ -1598,10 +1631,13 @@ export class RunCoordinator {
           });
           const adaptedCommTools = adaptAgentCommTools(commTools);
           if (adaptedCommTools.length > 0) {
-            this.runtime.addTools(adaptedCommTools);
-            perRunToolsInjected = true;
+            perRunTools.push(...adaptedCommTools);
           }
         }
+      }
+
+      if (perRunTools.length > 0) {
+        this.runtime.addTools(perRunTools);
       }
 
       await this.persistUserMessage(record, params, transcriptManager);
@@ -1936,10 +1972,20 @@ export class RunCoordinator {
       // per-run tools" form — matches the cleanup in dispatchChannel.
       // Only reset if we actually injected per-run tools to avoid a spurious
       // addTools([]) call on runs that have no per-run tools at all.
-      if (perRunToolsInjected) {
-        this.runtime.addTools([]);
+      //
+      // Guard against clobbering the NEXT run: there is a single shared
+      // `this.runtime`. When this run is aborted, the coordinator may have
+      // already started the next queued run on the same runtime (which
+      // re-set its tools/active session). Only clear the shared runtime if
+      // it still belongs to THIS run — i.e. its current session key still
+      // matches ours; otherwise the cleanup below would wipe the next run's
+      // freshly configured tools and active session.
+      if (this.runtime.getCurrentSessionKey() === record.sessionKey) {
+        if (perRunTools.length > 0) {
+          this.runtime.addTools([]);
+        }
+        this.runtime.clearActiveSession();
       }
-      this.runtime.clearActiveSession();
     }
   }
 
@@ -2531,6 +2577,13 @@ export class RunCoordinator {
   }
 
   private finalizeRunSuccess(record: RunRecord): void {
+    // Terminal-once guard: if the timeout timer fired during the `await
+    // transcriptWrites` gap in executeRun and already finalized this run as
+    // errored, do not re-run lifecycle emission, the end hook, or cleanup
+    // with a conflicting status. Finalization must be idempotent.
+    if (record.status === 'completed' || record.status === 'error') {
+      return;
+    }
     if (record.timeoutTimer) {
       clearTimeout(record.timeoutTimer);
     }
@@ -2570,6 +2623,12 @@ export class RunCoordinator {
   }
 
   private finalizeRunError(record: RunRecord, error: StructuredError): void {
+    // Terminal-once guard: finalization must be idempotent so a timeout and
+    // a success/error path racing across an `await` gap cannot both emit
+    // lifecycle events or run the end hook + cleanup twice.
+    if (record.status === 'completed' || record.status === 'error') {
+      return;
+    }
     if (record.timeoutTimer) {
       clearTimeout(record.timeoutTimer);
     }

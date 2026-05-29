@@ -1,5 +1,6 @@
 import fs from 'fs/promises';
 import { SessionManager, type SessionEntry, type SessionHeader } from '@mariozechner/pi-coding-agent';
+import { writeFileAtomic } from '../util/atomic-file';
 import type { BranchTree, ForkPoint } from '../../shared/storage-types';
 
 export interface CreatedTranscriptSession {
@@ -160,6 +161,9 @@ export class SessionTranscriptStore {
     entries: SessionEntry[],
   ): Promise<void> {
     const lines = [header, ...entries].map((entry) => JSON.stringify(entry));
-    await fs.writeFile(sessionFile, `${lines.join('\n')}\n`, 'utf-8');
+    // Atomic write (temp file + rename): a crash mid-write must not truncate
+    // the live .jsonl. In particular, losing/corrupting the header line (line 0)
+    // makes the whole transcript load as empty and get discarded on reopen.
+    await writeFileAtomic(sessionFile, `${lines.join('\n')}\n`);
   }
 }

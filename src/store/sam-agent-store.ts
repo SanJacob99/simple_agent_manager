@@ -12,6 +12,8 @@ export type SamAgentHitlPending = {
 type StreamingState = {
   messageId: string;
   text: string;
+  thinking: string;
+  isThinking: boolean;
   toolResults?: SamAgentMessage['toolResults'];
 };
 
@@ -33,10 +35,10 @@ interface SamAgentState {
 }
 
 /**
- * Per-store map from toolCallId → toolName for in-flight tool calls.
+ * Per-store map from toolCallId → { toolName, argsJson } for in-flight tool calls.
  * Kept outside Zustand state because it is transient bookkeeping, not UI state.
  */
-const pendingToolNames = new Map<string, string>();
+const pendingToolCalls = new Map<string, { toolName: string; argsJson: string }>();
 
 export const useSamAgentStore = create<SamAgentState>((set) => ({
   messages: [],
@@ -56,7 +58,23 @@ export const useSamAgentStore = create<SamAgentState>((set) => ({
   handleEvent: (event) => {
     switch (event.type) {
       case 'message:start':
-        set({ streaming: { messageId: event.messageId, text: '' } });
+        // Within one user turn the server keeps the same messageId across
+        // multiple runtime message_start cycles (text → tool → text). Only
+        // reset accumulators when we're starting a brand-new assistant turn;
+        // otherwise the second pass would wipe the text rendered during the
+        // first — the "appear and disappear" bug.
+        set((s) =>
+          s.streaming && s.streaming.messageId === event.messageId
+            ? {}
+            : {
+                streaming: {
+                  messageId: event.messageId,
+                  text: '',
+                  thinking: '',
+                  isThinking: false,
+                },
+              },
+        );
         break;
 
       case 'message:delta':
@@ -75,14 +93,56 @@ export const useSamAgentStore = create<SamAgentState>((set) => ({
         );
         break;
 
+      case 'thinking:start':
+        set((s) => {
+          if (s.streaming && s.streaming.messageId === event.messageId) {
+            return { streaming: { ...s.streaming, isThinking: true } };
+          }
+          // Thinking can arrive before any message:start (some providers emit
+          // it first). Initialise a streaming block on the fly.
+          return {
+            streaming: {
+              messageId: event.messageId,
+              text: '',
+              thinking: '',
+              isThinking: true,
+            },
+          };
+        });
+        break;
+
+      case 'thinking:delta':
+        set((s) =>
+          s.streaming
+            ? {
+                streaming: {
+                  ...s.streaming,
+                  thinking: s.streaming.thinking + event.textDelta,
+                  isThinking: true,
+                },
+              }
+            : {},
+        );
+        break;
+
+      case 'thinking:end':
+        set((s) =>
+          s.streaming ? { streaming: { ...s.streaming, isThinking: false } } : {},
+        );
+        break;
+
       case 'tool:start':
-        // Track tool name so tool:end can associate it with the result.
-        pendingToolNames.set(event.toolCallId, event.toolName);
+        // Track tool name + args so tool:end can associate them with the result.
+        pendingToolCalls.set(event.toolCallId, {
+          toolName: event.toolName,
+          argsJson: event.argsJson,
+        });
         break;
 
       case 'tool:end': {
-        const toolName = pendingToolNames.get(event.toolCallId) ?? '';
-        pendingToolNames.delete(event.toolCallId);
+        const pending = pendingToolCalls.get(event.toolCallId);
+        const toolName = pending?.toolName ?? '';
+        pendingToolCalls.delete(event.toolCallId);
         set((s) => {
           if (!s.streaming) return {};
           const existing = s.streaming.toolResults ?? [];
@@ -109,6 +169,7 @@ export const useSamAgentStore = create<SamAgentState>((set) => ({
             text: s.streaming.text,
             timestamp: Date.now(),
             toolResults: s.streaming.toolResults,
+            thinking: s.streaming.thinking.length > 0 ? s.streaming.thinking : undefined,
           };
           return { messages: [...s.messages, completed], streaming: null };
         });
@@ -151,8 +212,13 @@ export const useSamAgentStore = create<SamAgentState>((set) => ({
   },
 
   setPatchState: (messageId, toolCallId, state) => {
-    set((s) => ({
-      messages: s.messages.map((m) => {
+    // The patch can live in either `messages` (committed at lifecycle:end) or
+    // `streaming.toolResults` (in-flight turn). The Apply card renders against
+    // whichever holds it, so the patchState must propagate to both — otherwise
+    // clicking Apply on a live patch never flips the card off "pending" and a
+    // second click re-applies it.
+    set((s) => {
+      const updatedMessages = s.messages.map((m) => {
         if (m.id !== messageId || !m.toolResults) return m;
         return {
           ...m,
@@ -160,12 +226,22 @@ export const useSamAgentStore = create<SamAgentState>((set) => ({
             tr.toolCallId === toolCallId ? { ...tr, patchState: state } : tr,
           ),
         };
-      }),
-    }));
+      });
+      const updatedStreaming =
+        s.streaming && s.streaming.messageId === messageId && s.streaming.toolResults
+          ? {
+              ...s.streaming,
+              toolResults: s.streaming.toolResults.map((tr) =>
+                tr.toolCallId === toolCallId ? { ...tr, patchState: state } : tr,
+              ),
+            }
+          : s.streaming;
+      return { messages: updatedMessages, streaming: updatedStreaming };
+    });
   },
 
   clearLocal: () => {
-    pendingToolNames.clear();
+    pendingToolCalls.clear();
     set({ messages: [], streaming: null, hitlPending: null });
   },
 }));

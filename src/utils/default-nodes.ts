@@ -1,5 +1,6 @@
 import type { NodeType, FlowNodeData } from '../types/nodes';
 import type { SystemPromptMode } from '../../shared/agent-config';
+import { DEFAULT_COORDINATION_CONFIG } from '../../shared/coordination-types';
 
 export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
   switch (nodeType) {
@@ -9,7 +10,7 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         name: '',
         nameConfirmed: false,
         systemPrompt: 'You are a helpful assistant.',
-        modelId: 'anthropic/claude-sonnet-4-20250514',
+        modelId: 'anthropic/claude-sonnet-4-6',
         thinkingLevel: 'off',
         description: '',
         tags: [],
@@ -17,6 +18,7 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         systemPromptMode: 'append' as SystemPromptMode,
         showReasoning: false,
         verbose: false,
+        coordination: { ...DEFAULT_COORDINATION_CONFIG },
         workingDirectory: '',
       };
     case 'memory':
@@ -157,7 +159,7 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
       return {
         type: 'connectors',
         label: 'Connector',
-        connectorType: 'rest-api',
+        connectorId: '',
         config: {},
       };
     case 'storage':

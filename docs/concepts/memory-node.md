@@ -3,7 +3,7 @@
 > Two-tier persistent memory for an agent. Inspired by OpenClaw: a single durable `MEMORY.md` plus per-day short-term logs, both saved alongside the agent's sessions on disk.
 
 <!-- source: src/types/nodes.ts#MemoryNodeData -->
-<!-- last-verified: 2026-05-15 -->
+<!-- last-verified: 2026-05-29 -->
 
 ## Overview
 
@@ -63,6 +63,16 @@ logs newest-first.
   the old bulk is dropped.
 - `summary` — keeps the first line of every bullet so the shape of the
   day stays searchable while the bulk is collapsed.
+
+Compaction now **overwrites** the daily file (via an atomic
+`storage.writeDailyMemory(...)`) with the marker (sliding-window) or the
+one-line summary header (summary), so the file is actually pruned and
+collapsed. Previously compaction *appended* the marker/summary, which left
+the full original content in place and grew the file instead of freeing
+space, so search still pulled the full bulk.
+
+Long-term memory (`MEMORY.md`) appends are serialized, so two concurrent
+`memory_save(long_term)` calls in the same turn can no longer lose an entry.
 
 **Memory tools** (created by `MemoryEngine.createMemoryTools()`):
 

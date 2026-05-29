@@ -3,7 +3,7 @@
 > Provides filesystem-based persistence for agent sessions, routed transcripts, and memory files.
 
 <!-- source: src/types/nodes.ts#StorageNodeData -->
-<!-- last-verified: 2026-05-24 -->
+<!-- last-verified: 2026-05-29 -->
 
 ## Overview
 
@@ -52,6 +52,13 @@ At runtime, three pieces work together:
 - `StorageEngine` manages `sessions.json`, transcript path resolution, retention, and memory-file I/O.
 - `SessionRouter` maps inbound chat traffic onto stable `sessionKey` values such as `agent:<agent-id>:main`, applies daily/idle reset rules, and updates token/cost metadata.
 - `SessionTranscriptStore` provisions transcript files immediately and snapshots `SessionManager` state so empty or user-only sessions still exist on disk.
+
+Session-store writes are hardened against concurrency and partial-write corruption:
+
+- All read-modify-write mutations (create/update/delete/rotate) are serialized through an internal mutex, so concurrent sessions can't clobber each other's metadata (lost update).
+- The store and memory files are written **atomically** (temp file + rename), so a crash or disk-full mid-write can't truncate or corrupt the index.
+- A read failure is no longer silently treated as an empty store: only a genuinely missing file (`ENOENT`) yields an empty store, while a transient I/O error or a corrupt/unparseable file throws instead of letting the next write persist an empty store over real data.
+- Memory writes self-heal the `memory/` directory if it wasn't created at init.
 
 The resulting directory layout is:
 
