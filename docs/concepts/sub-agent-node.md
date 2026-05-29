@@ -3,7 +3,7 @@
 > A peripheral that declares a named, one-shot sub-agent the parent agent can dispatch via `sessions_spawn`.
 
 <!-- source: src/types/nodes.ts#SubAgentNodeData -->
-<!-- last-verified: 2026-05-07 -->
+<!-- last-verified: 2026-05-29 -->
 
 ## Overview
 
@@ -34,7 +34,7 @@ The Sub-Agent Node attaches to an Agent Node as a peripheral. Each declared sub-
 
 ## Runtime Behavior
 
-1. `resolveAgentConfig()` walks edges into each Sub-Agent Node, requires exactly one Tools Node, optionally accepts one Provider Node, and merges Skills/MCPs with the parent (dedicated wins by id).
+1. `resolveAgentConfig()` walks edges into each Sub-Agent Node, requires exactly one Tools Node, optionally accepts one Provider Node, and merges Skills/MCPs with the parent (dedicated wins by id). Before the parent's skills are passed down, `resolveAgentConfig()` strips the parent's auto-generated inline tool-guidance entries (ids prefixed `tool-skill-`); a sub-agent only ever gets tool guidance derived from its own enabled tools, never the parent's guidance for tools it cannot call.
 2. The parent's `sessions_spawn` tool is auto-enabled when `agentConfig.subAgents.length > 0`. Its schema lists declared sub-agent names as a literal-union enum.
 3. When the parent calls `sessions_spawn({ subAgent: "<name>", message, overrides })`, the runtime validates `overrides` against `subAgent.overridableFields`, builds a synthetic `AgentConfig`, and dispatches via `SubAgentExecutor` — bypassing the parent's run-concurrency slot so the sub runs alongside the parent's tool call.
 4. Each sub-session uses a key of shape `sub:<parentSessionKey>:<subAgentName>:<shortUuid>` and gets a durable `SessionStoreEntry` under the parent's `StorageEngine` before child dispatch starts.

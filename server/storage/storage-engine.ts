@@ -1,6 +1,8 @@
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
+import { writeFileAtomic } from '../util/atomic-file';
+import { Mutex } from '../util/mutex';
 import type { ResolvedStorageConfig } from '../../shared/agent-config';
 import type { SessionStoreEntry, MemoryFileInfo, MaintenanceReport } from '../../shared/storage-types';
 
@@ -14,6 +16,14 @@ export class StorageEngine {
   private readonly memoryDir: string;
   private readonly memoryEnabled: boolean;
   private storeCache: Record<string, SessionStoreEntry> | null = null;
+  /**
+   * Serializes every read-modify-write of the session store. A single
+   * StorageEngine instance is shared across all of an agent's concurrent
+   * sessions/runs, so without this lock two interleaved create/update/delete
+   * calls would each read the same snapshot and the later write would clobber
+   * the earlier one (lost update).
+   */
+  private readonly storeLock = new Mutex();
 
   private _safeJoin(base: string, target: string): string {
     const resolvedBase = path.resolve(base);
@@ -64,17 +74,31 @@ export class StorageEngine {
     try {
       const raw = await fs.readFile(this.storePath(), 'utf-8');
       this.storeCache = JSON.parse(raw) as Record<string, SessionStoreEntry>;
-    } catch {
-      this.storeCache = {};
+      return this.storeCache;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code === 'ENOENT') {
+        // No store file yet — an empty store is the correct initial state.
+        this.storeCache = {};
+        return this.storeCache;
+      }
+      // A transient I/O error (EACCES/EBUSY/EMFILE) or a corrupt/unparseable
+      // file must NOT be silently treated as "empty": caching {} here would
+      // cause the next createSession to persist an empty store over real data,
+      // destroying every other session's metadata. Surface the error and leave
+      // the cache unset so a subsequent call can retry once the cause clears.
+      throw new Error(
+        `Failed to read session store at ${this.storePath()}: ${(err as Error).message}`,
+      );
     }
-
-    return this.storeCache;
   }
 
   private async writeStore(store: Record<string, SessionStoreEntry>): Promise<void> {
+    // Atomic write (temp file + rename) so a crash or disk-full mid-write can
+    // never leave a truncated sessions.json that would fail to parse and wipe
+    // the store. Cache is updated only after the write durably succeeds.
+    await writeFileAtomic(this.storePath(), JSON.stringify(store, null, 2));
     this.storeCache = store;
-    await fs.mkdir(this.sessionsDir, { recursive: true });
-    await fs.writeFile(this.storePath(), JSON.stringify(store, null, 2), 'utf-8');
   }
 
   async listSessions(): Promise<SessionStoreEntry[]> {
@@ -89,10 +113,12 @@ export class StorageEngine {
   }
 
   async createSession(entry: SessionStoreEntry): Promise<void> {
-    const store = await this.readStore();
-    await this.writeStore({
-      ...store,
-      [entry.sessionKey]: entry,
+    await this.storeLock.run(async () => {
+      const store = await this.readStore();
+      await this.writeStore({
+        ...store,
+        [entry.sessionKey]: entry,
+      });
     });
   }
 
@@ -110,36 +136,49 @@ export class StorageEngine {
     sessionKey: string,
     partial: Partial<SessionStoreEntry>,
   ): Promise<void> {
-    const store = await this.readStore();
-    const existing = store[sessionKey];
-    if (!existing) {
-      return;
-    }
+    await this.storeLock.run(async () => {
+      const store = await this.readStore();
+      const existing = store[sessionKey];
+      if (!existing) {
+        return;
+      }
 
-    await this.writeStore({
-      ...store,
-      [sessionKey]: {
-        ...existing,
-        ...partial,
-      },
+      await this.writeStore({
+        ...store,
+        [sessionKey]: {
+          ...existing,
+          ...partial,
+        },
+      });
     });
   }
 
   async deleteSession(sessionKey: string): Promise<void> {
-    const store = await this.readStore();
-    const existing = store[sessionKey];
-    if (!existing) {
-      return;
-    }
+    const existing = await this.storeLock.run(async () => {
+      const store = await this.readStore();
+      const found = store[sessionKey];
+      if (!found) {
+        return null;
+      }
 
-    const { [sessionKey]: _deleted, ...rest } = store;
-    await this.writeStore(rest);
-    await this.deleteTranscriptFile(existing);
+      const { [sessionKey]: _deleted, ...rest } = store;
+      await this.writeStore(rest);
+      return found;
+    });
+
+    // Transcript file removal is independent of the store lock — keep the
+    // critical section limited to the index mutation.
+    if (existing) {
+      await this.deleteTranscriptFile(existing);
+    }
   }
 
   async deleteAllSessions(): Promise<void> {
-    const store = await this.readStore();
-    await this.writeStore({});
+    const store = await this.storeLock.run(async () => {
+      const current = await this.readStore();
+      await this.writeStore({});
+      return current;
+    });
     await Promise.all(
       Object.values(store).map((entry) => this.deleteTranscriptFile(entry)),
     );
@@ -328,11 +367,13 @@ export class StorageEngine {
     }
 
     if (!dryRun) {
-      const timestamp = Date.now();
-      const bakPath = path.join(this.sessionsDir, `sessions.${timestamp}.json.bak`);
-      await fs.rename(storeFilePath, bakPath);
-      this.storeCache = null;
-      await this.writeStore({});
+      await this.storeLock.run(async () => {
+        const timestamp = Date.now();
+        const bakPath = path.join(this.sessionsDir, `sessions.${timestamp}.json.bak`);
+        await fs.rename(storeFilePath, bakPath);
+        this.storeCache = null;
+        await this.writeStore({});
+      });
     }
 
     return true;
@@ -419,7 +460,31 @@ export class StorageEngine {
   async appendDailyMemory(content: string, date?: string): Promise<void> {
     const dateStr = date ?? new Date().toISOString().slice(0, 10);
     const filePath = this._safeJoin(this.memoryDir, `${dateStr}.md`);
+    // Self-heal the memory directory: init() only creates it when memory was
+    // enabled at construction, but a later write must not throw ENOENT.
+    await fs.mkdir(this.memoryDir, { recursive: true });
     await fs.appendFile(filePath, content, 'utf-8');
+  }
+
+  /**
+   * Overwrite a daily memory file with new content (atomic). Used by
+   * compaction to actually replace/prune the file instead of appending to it.
+   */
+  async writeDailyMemory(content: string, date: string): Promise<void> {
+    const filePath = this._safeJoin(this.memoryDir, `${date}.md`);
+    await writeFileAtomic(filePath, content);
+  }
+
+  /** Remove a daily memory file. Missing files are a no-op. */
+  async deleteDailyMemory(date: string): Promise<void> {
+    const filePath = this._safeJoin(this.memoryDir, `${date}.md`);
+    try {
+      await fs.unlink(filePath);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+        throw err;
+      }
+    }
   }
 
   async readDailyMemory(date: string): Promise<string | null> {
@@ -442,7 +507,7 @@ export class StorageEngine {
 
   async writeLongTermMemory(content: string): Promise<void> {
     const filePath = path.join(this.memoryDir, 'MEMORY.md');
-    await fs.writeFile(filePath, content, 'utf-8');
+    await writeFileAtomic(filePath, content);
   }
 
   async listMemoryFiles(): Promise<MemoryFileInfo[]> {

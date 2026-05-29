@@ -10,6 +10,7 @@ import type {
   Task,
   TaskBlockedInput,
   TaskCompleteInput,
+  TaskStatus,
   TaskUpdateInput,
   Workflow,
   WorkflowDetail,
@@ -79,6 +80,7 @@ export class CoordinationService {
   private gateway: AgentDispatchGateway | null = null;
   private readonly activeAssignments = new Map<string, ActiveAssignment>();
   private readonly dispatchChains = new Map<string, Promise<void>>();
+  private readonly watchdogTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(private readonly store: CoordinationStore) {}
 
@@ -92,6 +94,10 @@ export class CoordinationService {
       assignment.unsubscribe();
     }
     this.activeAssignments.clear();
+    for (const timer of this.watchdogTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.watchdogTimers.clear();
     this.store.close();
   }
 
@@ -165,6 +171,7 @@ export class CoordinationService {
       type: 'workflow_started',
       payload: { previousStatus: workflow.status },
     });
+    this.armWatchdog(updated);
     void this.dispatchReadyTasks(workflowId);
     return updated;
   }
@@ -200,6 +207,7 @@ export class CoordinationService {
       type: 'workflow_resumed',
       payload: {},
     });
+    this.armWatchdog(updated);
     void this.dispatchReadyTasks(workflowId);
     return updated;
   }
@@ -239,6 +247,7 @@ export class CoordinationService {
       endedAt: nowIso(),
     });
     if (!stopped) throw new Error(`Workflow ${workflowId} not found`);
+    this.clearWatchdog(workflowId);
     this.appendEvent({
       workflowId,
       agentId: callerAgentId,
@@ -444,6 +453,7 @@ export class CoordinationService {
           type: 'task_failed',
           payload: { error: message },
         });
+        this.completeWorkflowIfDone(workflowId);
       });
     }
   }
@@ -609,6 +619,8 @@ export class CoordinationService {
         payload: { error: event.error },
       });
       this.finishAssignment(runId);
+      void this.dispatchReadyTasks(workflowId);
+      this.completeWorkflowIfDone(workflowId);
     }
   }
 
@@ -642,20 +654,98 @@ export class CoordinationService {
     this.activeAssignments.delete(runId);
   }
 
+  /**
+   * Arm (or re-arm) a workflow-level watchdog driven by `budget.maxRuntimeSeconds`.
+   * If the workflow's total runtime (measured from `startedAt`) exceeds the budget,
+   * the workflow and its still-open tasks are forced to a terminal
+   * `stopped_by_watchdog` state so a stuck workflow can't run forever. The timer is
+   * cleared whenever the workflow reaches any terminal state to avoid leaks.
+   */
+  private armWatchdog(workflow: Workflow): void {
+    this.clearWatchdog(workflow.id);
+    const maxRuntimeSeconds = workflow.budget.maxRuntimeSeconds ?? 3600;
+    if (!Number.isFinite(maxRuntimeSeconds) || maxRuntimeSeconds <= 0) return;
+    const startedAtMs = workflow.startedAt ? Date.parse(workflow.startedAt) : Date.now();
+    const deadlineMs = (Number.isNaN(startedAtMs) ? Date.now() : startedAtMs) + maxRuntimeSeconds * 1000;
+    const delayMs = Math.max(0, deadlineMs - Date.now());
+    const timer = setTimeout(() => this.triggerWatchdog(workflow.id, maxRuntimeSeconds), delayMs);
+    if (typeof timer.unref === 'function') timer.unref();
+    this.watchdogTimers.set(workflow.id, timer);
+  }
+
+  private clearWatchdog(workflowId: string): void {
+    const timer = this.watchdogTimers.get(workflowId);
+    if (timer) {
+      clearTimeout(timer);
+      this.watchdogTimers.delete(workflowId);
+    }
+  }
+
+  private triggerWatchdog(workflowId: string, maxRuntimeSeconds: number): void {
+    this.clearWatchdog(workflowId);
+    const workflow = this.store.getWorkflow(workflowId);
+    if (!workflow || isTerminalWorkflow(workflow.status)) return;
+
+    const reason = `Workflow exceeded maxRuntimeSeconds (${maxRuntimeSeconds}s)`;
+
+    // Abort any in-flight runs so the underlying agents stop working.
+    for (const assignment of [...this.activeAssignments.values()]) {
+      if (assignment.workflowId !== workflowId) continue;
+      this.gateway?.abortRun(assignment.agentId, assignment.runId);
+      this.finishAssignment(assignment.runId);
+    }
+
+    // Move still-open tasks (pending/blocked/running) to a terminal cancelled state.
+    const cancelledTasks = this.store.cancelOpenTasks(workflowId, reason);
+    for (const task of cancelledTasks) {
+      this.appendEvent({
+        workflowId,
+        taskId: task.id,
+        agentId: task.assignedAgentId,
+        runId: task.runId,
+        type: 'task_cancelled',
+        payload: { reason },
+      });
+    }
+
+    this.store.updateWorkflow(workflowId, { status: 'stopped_by_watchdog', endedAt: nowIso() });
+    this.appendEvent({
+      workflowId,
+      agentId: workflow.ownerAgentId,
+      type: 'workflow_stopped',
+      payload: { reason, status: 'stopped_by_watchdog', maxRuntimeSeconds },
+    });
+  }
+
   private completeWorkflowIfDone(workflowId: string): void {
     const workflow = this.store.getWorkflow(workflowId);
     if (!workflow || workflow.status !== 'running') return;
     const tasks = this.store.listTasks(workflowId);
     if (tasks.length === 0) return;
-    if (tasks.every((task) => task.status === 'completed')) {
-      this.store.updateWorkflow(workflowId, { status: 'completed', endedAt: nowIso() });
-      this.appendEvent({
-        workflowId,
-        agentId: workflow.ownerAgentId,
-        type: 'workflow_completed',
-        payload: {},
-      });
-    }
+    // A workflow is "done" once every task has reached a terminal state. Terminal
+    // tasks are completed, failed, or cancelled — not just completed. Tasks that
+    // failed (e.g. via a budget abort) are never re-dispatched (only pending tasks
+    // are), so requiring every() task to be completed would hang forever.
+    const TERMINAL_TASK_STATUSES: TaskStatus[] = ['completed', 'failed', 'cancelled'];
+    const allTerminal = tasks.every((task) => TERMINAL_TASK_STATUSES.includes(task.status));
+    if (!allTerminal) return;
+    const allCompleted = tasks.every((task) => task.status === 'completed');
+    const status: WorkflowStatus = allCompleted ? 'completed' : 'failed';
+    this.store.updateWorkflow(workflowId, { status, endedAt: nowIso() });
+    this.clearWatchdog(workflowId);
+    this.appendEvent({
+      workflowId,
+      agentId: workflow.ownerAgentId,
+      type: allCompleted ? 'workflow_completed' : 'workflow_stopped',
+      payload: allCompleted
+        ? {}
+        : {
+            reason: 'tasks_failed',
+            status,
+            failedTasks: tasks.filter((task) => task.status === 'failed').map((task) => task.id),
+            cancelledTasks: tasks.filter((task) => task.status === 'cancelled').map((task) => task.id),
+          },
+    });
   }
 
   private buildTaskPrompt(workflow: Workflow, task: Task): string {

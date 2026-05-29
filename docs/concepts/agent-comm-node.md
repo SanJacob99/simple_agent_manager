@@ -3,7 +3,7 @@
 > Wakes a peer agent on send. Bounded by per-pair turn/depth/token limits and per-sender rate limits.
 
 <!-- source: src/types/nodes.ts#AgentCommNodeData -->
-<!-- last-verified: 2026-05-06 -->
+<!-- last-verified: 2026-05-29 -->
 
 ## Overview
 
@@ -38,6 +38,7 @@ Workspace-level defaults can be overridden in `Settings → Agent Comm Defaults`
 5. The receiver runs in **channel mode**: its system prompt is augmented with a channel-context block; the inbound message is the most-recent transcript event; tool calls (including more `agent_send`) are accepted up to the limits.
 6. Reaching `maxTurns` or exhausting `tokenBudget` seals the channel. Further sends return `channel_sealed`. Reaching `maxDepth` returns `depth_exceeded` without sealing. Exceeding `rateLimitPerMinute` returns `rate_limited` without sealing.
 7. Channel-sessions live under the canonical `<lo>` agent's `StorageEngine` and are hidden from normal session listings; the `Peer channels` section in the chat drawer surfaces them read-only.
+8. `AgentCommBus.send()` is serialized per channel: the limit checks (rate limit, token budget, turn count) and the subsequent mutations run inside a per-channel critical section. This closes a TOCTOU where two concurrent sends could both pass the checks and exceed `maxTurns` / token budget / rate limits. Channel session-store meta updates (usage/turn accounting, seal) are likewise serialized per channel.
 
 ## Connections
 

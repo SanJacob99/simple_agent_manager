@@ -2,6 +2,8 @@ import type { ResolvedAgentCommConfig } from '../../shared/agent-config';
 import type { AgentCommErrorCode } from '../../shared/agent-comm-types';
 import type { ChannelHandle, ChannelSessionStore } from './channel-session-store';
 import type { ChannelRunQueue } from './channel-run-queue';
+import { KeyedMutex } from '../util/mutex';
+import { canonicalChannelKey } from './channel-key';
 
 // ---------------------------------------------------------------------------
 // Public interfaces
@@ -68,6 +70,15 @@ export class AgentCommBus {
   private readonly registry = new Map<string, BusAgentRegistration>();
   /** agentId → array of accepted outbound ISO timestamps (rolling 60s window) */
   private readonly outboundLog = new Map<string, number[]>();
+  /**
+   * Per-channel lock serializing the check-and-mutate body of `send()`.
+   * Keyed by the canonical channel key so all sends on the same channel
+   * (in either direction) are atomic, while sends on unrelated channels
+   * stay concurrent. This closes the TOCTOU window where two concurrent
+   * sends both read pre-mutation limit state (rate / token budget / turns)
+   * and both append, exceeding the limits.
+   */
+  private readonly sendLock = new KeyedMutex();
 
   private readonly channelStore: ChannelSessionStore;
   private readonly queue: ChannelRunQueue;
@@ -155,150 +166,165 @@ export class AgentCommBus {
     }
 
     // ------------------------------------------------------------------
-    // 4. Rate limit
+    // Serialize the check-and-mutate body PER CHANNEL. The canonical
+    // channel key is deterministic from the (sorted) agent-id pair, so we
+    // can compute it here — before opening the channel — and use it both as
+    // the lock key and (later) to validate against the opened handle. All
+    // mutable-limit reads (rate, token budget, turns) and the corresponding
+    // mutations (append message, outbound-log push, seal) happen inside this
+    // critical section so concurrent sends on the same channel cannot both
+    // observe pre-mutation state and bypass the limits. Different channels
+    // use different keys and stay concurrent.
     // ------------------------------------------------------------------
-    const nowMs = Date.parse(this.now());
-    const windowStart = nowMs - 60_000;
-    const outboundTimestamps = this.outboundLog.get(fromAgentId) ?? [];
-    const recentTimestamps = outboundTimestamps.filter((ts) => ts > windowStart);
-    this.outboundLog.set(fromAgentId, recentTimestamps); // prune at check time so dormant agents don't accumulate entries
-    const pairRateLimit = pairMin(senderEdge.rateLimitPerMinute, receiverEdge.rateLimitPerMinute);
-    if (recentTimestamps.length >= pairRateLimit) {
-      return { ok: false, error: 'rate_limited' };
-    }
+    const lockKey = canonicalChannelKey(fromAgentId, receiverReg.agentId);
 
-    // ------------------------------------------------------------------
-    // 5. Channel state and write path — wrapped in try/catch so that
-    //    unexpected storage throws (e.g. owner storage missing) surface
-    //    as a shaped AgentCommErrorCode rather than an unhandled exception.
-    //    Pre-flight checks above (topology, direction, size, rate) already
-    //    return shaped errors and are intentionally left outside this block.
-    // ------------------------------------------------------------------
-    try {
-      const senderName = senderReg.agentName;
-      const receiverName = receiverReg.agentName;
-      const receiverAgentId = receiverReg.agentId;
-
-      // Sort agent IDs and names to produce the canonical pair
-      const swap = fromAgentId > receiverAgentId;
-      const pairIds: [string, string] = swap
-        ? [receiverAgentId, fromAgentId]
-        : [fromAgentId, receiverAgentId];
-      const pairNames: [string, string] = swap
-        ? [receiverName, senderName]
-        : [senderName, receiverName];
-
-      const handle: ChannelHandle = await this.channelStore.open({
-        pair: pairIds,
-        pairNames,
-      });
-      const channelKey = handle.key;
-      const channelMeta = handle.meta;
-
-      if (channelMeta.sealed) {
-        return { ok: false, error: 'channel_sealed' };
+    return this.sendLock.run(lockKey, async (): Promise<SendResult> => {
+      // ------------------------------------------------------------------
+      // 4. Rate limit
+      // ------------------------------------------------------------------
+      const nowMs = Date.parse(this.now());
+      const windowStart = nowMs - 60_000;
+      const outboundTimestamps = this.outboundLog.get(fromAgentId) ?? [];
+      const recentTimestamps = outboundTimestamps.filter((ts) => ts > windowStart);
+      this.outboundLog.set(fromAgentId, recentTimestamps); // prune at check time so dormant agents don't accumulate entries
+      const pairRateLimit = pairMin(senderEdge.rateLimitPerMinute, receiverEdge.rateLimitPerMinute);
+      if (recentTimestamps.length >= pairRateLimit) {
+        return { ok: false, error: 'rate_limited' };
       }
 
       // ------------------------------------------------------------------
-      // 6. Token budget
+      // 5. Channel state and write path — wrapped in try/catch so that
+      //    unexpected storage throws (e.g. owner storage missing) surface
+      //    as a shaped AgentCommErrorCode rather than an unhandled exception.
+      //    Pre-flight checks above (topology, direction, size, rate) already
+      //    return shaped errors and are intentionally left outside this block.
       // ------------------------------------------------------------------
-      const pairTokenBudget = pairMin(senderEdge.tokenBudget, receiverEdge.tokenBudget);
-      if (channelMeta.tokensIn + channelMeta.tokensOut >= pairTokenBudget) {
-        await this.channelStore.appendAudit(channelKey, {
-          kind: 'agent-comm-audit',
-          ts: this.now(),
-          event: { type: 'limit-tripped', code: 'token_budget_exceeded', from: senderName, to: receiverName },
+      try {
+        const senderName = senderReg.agentName;
+        const receiverName = receiverReg.agentName;
+        const receiverAgentId = receiverReg.agentId;
+
+        // Sort agent IDs and names to produce the canonical pair
+        const swap = fromAgentId > receiverAgentId;
+        const pairIds: [string, string] = swap
+          ? [receiverAgentId, fromAgentId]
+          : [fromAgentId, receiverAgentId];
+        const pairNames: [string, string] = swap
+          ? [receiverName, senderName]
+          : [senderName, receiverName];
+
+        const handle: ChannelHandle = await this.channelStore.open({
+          pair: pairIds,
+          pairNames,
         });
-        await this.channelStore.seal(channelKey, 'token_budget_exceeded');
-        return { ok: false, error: 'token_budget_exceeded' };
-      }
+        const channelKey = handle.key;
+        const channelMeta = handle.meta;
 
-      // ------------------------------------------------------------------
-      // 7. Depth
-      // ------------------------------------------------------------------
-      const depth = currentDepth + 1;
-      const pairMaxDepth = pairMin(senderEdge.maxDepth, receiverEdge.maxDepth);
-      if (depth > pairMaxDepth) {
-        return { ok: false, error: 'depth_exceeded' };
-      }
+        if (channelMeta.sealed) {
+          return { ok: false, error: 'channel_sealed' };
+        }
 
-      // ------------------------------------------------------------------
-      // 8. Turn count (pre-check — actual bump happens after appendUserMessage)
-      // ------------------------------------------------------------------
-      const pairMaxTurns = pairMin(senderEdge.maxTurns, receiverEdge.maxTurns);
-      if (channelMeta.turns + 1 > pairMaxTurns) {
-        await this.channelStore.appendAudit(channelKey, {
-          kind: 'agent-comm-audit',
-          ts: this.now(),
-          event: { type: 'limit-tripped', code: 'max_turns_reached', from: senderName, to: receiverName },
-        });
-        await this.channelStore.seal(channelKey, 'max_turns_reached');
-        return { ok: false, error: 'max_turns_reached' };
-      }
+        // ------------------------------------------------------------------
+        // 6. Token budget
+        // ------------------------------------------------------------------
+        const pairTokenBudget = pairMin(senderEdge.tokenBudget, receiverEdge.tokenBudget);
+        if (channelMeta.tokensIn + channelMeta.tokensOut >= pairTokenBudget) {
+          await this.channelStore.appendAudit(channelKey, {
+            kind: 'agent-comm-audit',
+            ts: this.now(),
+            event: { type: 'limit-tripped', code: 'token_budget_exceeded', from: senderName, to: receiverName },
+          });
+          await this.channelStore.seal(channelKey, 'token_budget_exceeded');
+          return { ok: false, error: 'token_budget_exceeded' };
+        }
 
-      // ------------------------------------------------------------------
-      // Success path
-      // ------------------------------------------------------------------
+        // ------------------------------------------------------------------
+        // 7. Depth
+        // ------------------------------------------------------------------
+        const depth = currentDepth + 1;
+        const pairMaxDepth = pairMin(senderEdge.maxDepth, receiverEdge.maxDepth);
+        if (depth > pairMaxDepth) {
+          return { ok: false, error: 'depth_exceeded' };
+        }
 
-      // Build message meta
-      const msgMeta = {
-        from: `agent:${senderName}`,
-        fromAgentId,
-        to: `agent:${receiverName}`,
-        toAgentId: receiverAgentId,
-        depth,
-        channelKey,
-      };
+        // ------------------------------------------------------------------
+        // 8. Turn count (pre-check — actual bump happens after appendUserMessage)
+        // ------------------------------------------------------------------
+        const pairMaxTurns = pairMin(senderEdge.maxTurns, receiverEdge.maxTurns);
+        if (channelMeta.turns + 1 > pairMaxTurns) {
+          await this.channelStore.appendAudit(channelKey, {
+            kind: 'agent-comm-audit',
+            ts: this.now(),
+            event: { type: 'limit-tripped', code: 'max_turns_reached', from: senderName, to: receiverName },
+          });
+          await this.channelStore.seal(channelKey, 'max_turns_reached');
+          return { ok: false, error: 'max_turns_reached' };
+        }
 
-      // Append user message (bumps turns)
-      const updatedMeta = await this.channelStore.appendUserMessage(channelKey, {
-        content: message,
-        meta: msgMeta,
-      });
+        // ------------------------------------------------------------------
+        // Success path
+        // ------------------------------------------------------------------
 
-      // Append audit event
-      await this.channelStore.appendAudit(channelKey, {
-        kind: 'agent-comm-audit',
-        ts: this.now(),
-        event: {
-          type: 'send',
-          from: senderName,
-          to: receiverName,
+        // Build message meta
+        const msgMeta = {
+          from: `agent:${senderName}`,
+          fromAgentId,
+          to: `agent:${receiverName}`,
+          toAgentId: receiverAgentId,
           depth,
-          chars: message.length,
-          end,
-        },
-      });
-
-      // Record rate usage (recentTimestamps is already pruned from the rate-limit check)
-      recentTimestamps.push(nowMs);
-      this.outboundLog.set(fromAgentId, recentTimestamps);
-
-      // Determine if this send reached the maxTurns boundary
-      const isFinalTurn = updatedMeta.turns >= pairMaxTurns;
-
-      // Pre-emptive seal when we've hit the turn cap
-      if (isFinalTurn) {
-        await this.channelStore.seal(channelKey, 'max_turns_reached');
-      }
-
-      // Wake the receiver unless the sender signalled end
-      if (!end) {
-        await this.dispatchChannelWake({
           channelKey,
-          receiverAgentId,
-          senderAgentName: senderName,
-          depth,
-          isFinalTurn,
-        });
-      }
+        };
 
-      return { ok: true, depth, turns: updatedMeta.turns, queuedWake: !end };
-    } catch {
-      // Spec §11: storage write fails → bus returns internal_error; turn
-      // counter NOT incremented (appendUserMessage threw before bumping).
-      return { ok: false, error: 'internal_error' };
-    }
+        // Append user message (bumps turns)
+        const updatedMeta = await this.channelStore.appendUserMessage(channelKey, {
+          content: message,
+          meta: msgMeta,
+        });
+
+        // Append audit event
+        await this.channelStore.appendAudit(channelKey, {
+          kind: 'agent-comm-audit',
+          ts: this.now(),
+          event: {
+            type: 'send',
+            from: senderName,
+            to: receiverName,
+            depth,
+            chars: message.length,
+            end,
+          },
+        });
+
+        // Record rate usage (recentTimestamps is already pruned from the rate-limit check)
+        recentTimestamps.push(nowMs);
+        this.outboundLog.set(fromAgentId, recentTimestamps);
+
+        // Determine if this send reached the maxTurns boundary
+        const isFinalTurn = updatedMeta.turns >= pairMaxTurns;
+
+        // Pre-emptive seal when we've hit the turn cap
+        if (isFinalTurn) {
+          await this.channelStore.seal(channelKey, 'max_turns_reached');
+        }
+
+        // Wake the receiver unless the sender signalled end
+        if (!end) {
+          await this.dispatchChannelWake({
+            channelKey,
+            receiverAgentId,
+            senderAgentName: senderName,
+            depth,
+            isFinalTurn,
+          });
+        }
+
+        return { ok: true, depth, turns: updatedMeta.turns, queuedWake: !end };
+      } catch {
+        // Spec §11: storage write fails → bus returns internal_error; turn
+        // counter NOT incremented (appendUserMessage threw before bumping).
+        return { ok: false, error: 'internal_error' };
+      }
+    });
   }
 
   // -------------------------------------------------------------------------

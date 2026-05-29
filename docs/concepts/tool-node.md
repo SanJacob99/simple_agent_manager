@@ -3,7 +3,7 @@
 > Configures which tools an agent can use through profiles, groups, direct enables, skills, and plugins.
 
 <!-- source: src/types/nodes.ts#ToolsNodeData -->
-<!-- last-verified: 2026-05-06 -->
+<!-- last-verified: 2026-05-29 -->
 
 ## Overview
 
@@ -99,6 +99,8 @@ Skill handling happens in `resolveAgentConfig()` and feeds the `## Skills` secti
 3. **Inline blocks** — full markdown content from `SkillDefinition` entries on the Tools Node and from any per-tool `toolSettings.<tool>.skill` overrides the user has typed. An inline override for a given tool suppresses that tool's bundled reference, so the user's text becomes the sole source of guidance for it.
 
 Bundled references are computed from the resolved tool list (not from the stored `tools.skills` array), so `AgentConfig.tools.skills` only round-trips custom `SkillDefinition` entries and overrides.
+
+The "Tools available" summary in the system prompt is filtered so the model is only told about tools it can actually call. A resolved tool name is kept if it is in the offline `IMPLEMENTED_TOOL_NAMES` baseline, or if the live `tool-catalog-store` (populated from `GET /api/tools`) knows it. When that catalog has **not** loaded yet, the resolver does not filter against it — otherwise-resolved names (including user-installed catalog tools) are kept rather than silently dropped, so the same graph resolves to the same summary regardless of catalog load timing. The catalog is only used to filter once it is actually loaded.
 
 ## Authoring a New Tool
 

@@ -228,6 +228,137 @@ app.post('/api/agents/:agentId/resolved-system-prompt', (req, res) => {
   }
 });
 
+// --- Human-in-the-loop (HITL) control plane REST routes ---
+//
+// These mirror the WebSocket `hitl:respond` / `hitl:list` / abort paths so the
+// backend can resolve pending prompts headless (cron runs, sub-agents, CLI)
+// without a browser socket attached. They operate on the SAME `hitlRegistry`
+// instance the AgentManager and ws-handler use — never a second registry — so
+// a prompt registered by a running agent is resolvable over either transport.
+
+// List pending prompts for an agent's session. `sessionKey` is a required
+// query param (a prompt is always scoped to a session).
+app.get('/api/agents/:agentId/hitl', (req, res) => {
+  const { sessionKey } = req.query as { sessionKey?: string };
+  if (!sessionKey) {
+    res.status(400).json({ error: 'sessionKey query param is required' });
+    return;
+  }
+  try {
+    const pending = hitlRegistry.listForSession(req.params.agentId, sessionKey);
+    res.json({
+      pending: pending.map((p) => ({
+        toolCallId: p.toolCallId,
+        toolName: p.toolName,
+        kind: p.kind,
+        question: p.question,
+        createdAt: p.createdAt,
+        timeoutMs: p.timeoutMs,
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// Respond to a pending prompt. Body identifies the prompt by sessionKey and
+// optionally toolCallId; when toolCallId is omitted the OLDEST pending prompt
+// for the session is resolved (FIFO — see HitlRegistry.resolveForSession).
+// `answer` is the raw text; for confirm prompts it must parse to yes/no.
+app.post('/api/agents/:agentId/hitl/respond', (req, res) => {
+  const { sessionKey, toolCallId, answer } = (req.body ?? {}) as {
+    sessionKey?: string;
+    toolCallId?: string;
+    answer?: string;
+  };
+  if (!sessionKey) {
+    res.status(400).json({ error: 'sessionKey is required' });
+    return;
+  }
+  if (typeof answer !== 'string') {
+    res.status(400).json({ error: 'answer (string) is required' });
+    return;
+  }
+  try {
+    const routed = hitlRegistry.resolveForSession(
+      req.params.agentId,
+      sessionKey,
+      answer,
+      toolCallId,
+    );
+    if (routed === null) {
+      res.status(404).json({
+        error: toolCallId
+          ? `No pending HITL prompt for toolCallId ${toolCallId}`
+          : 'No pending HITL prompt for this session',
+      });
+      return;
+    }
+    if ('parseError' in routed) {
+      res.status(400).json({ error: routed.parseError });
+      return;
+    }
+    // Mirror the WS path: notify any attached clients that the prompt resolved.
+    agentManager.getBridge(req.params.agentId)?.broadcast({
+      type: 'hitl:resolved',
+      agentId: req.params.agentId,
+      sessionKey,
+      toolCallId: routed.resolved.toolCallId,
+      outcome: 'answered',
+    });
+    res.json({
+      ok: true,
+      toolCallId: routed.resolved.toolCallId,
+      kind: routed.kind,
+      normalized: routed.normalized,
+    });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// Cancel/reject a pending prompt. Body identifies the prompt by sessionKey and
+// optionally toolCallId; when toolCallId is omitted the OLDEST pending prompt
+// for the session is cancelled (FIFO). The blocked agent receives a cancelled
+// answer (reason: 'aborted').
+app.post('/api/agents/:agentId/hitl/cancel', (req, res) => {
+  const { sessionKey, toolCallId } = (req.body ?? {}) as {
+    sessionKey?: string;
+    toolCallId?: string;
+  };
+  if (!sessionKey) {
+    res.status(400).json({ error: 'sessionKey is required' });
+    return;
+  }
+  try {
+    const cancelled = hitlRegistry.cancelForSession(
+      req.params.agentId,
+      sessionKey,
+      'aborted',
+      toolCallId,
+    );
+    if (!cancelled) {
+      res.status(404).json({
+        error: toolCallId
+          ? `No pending HITL prompt for toolCallId ${toolCallId}`
+          : 'No pending HITL prompt for this session',
+      });
+      return;
+    }
+    agentManager.getBridge(req.params.agentId)?.broadcast({
+      type: 'hitl:resolved',
+      agentId: req.params.agentId,
+      sessionKey,
+      toolCallId: cancelled.toolCallId,
+      outcome: 'cancelled',
+      reason: 'aborted',
+    });
+    res.json({ ok: true, toolCallId: cancelled.toolCallId });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 // --- Storage initialization ---
 
 app.post('/api/storage/init', async (req, res) => {

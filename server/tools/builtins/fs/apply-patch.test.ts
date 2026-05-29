@@ -127,6 +127,52 @@ describe('apply_patch', () => {
     await expect(tool.execute('t7', { input: patch })).rejects.toThrow('Failed to find');
   });
 
+  it('rolls back earlier hunks when a later hunk fails (atomicity)', async () => {
+    await fs.writeFile(path.join(tmpDir, 'first.txt'), 'original first\n');
+    await fs.writeFile(path.join(tmpDir, 'second.txt'), 'second body\n');
+    const tool = createApplyPatchTool({ cwd: tmpDir });
+    const patch = [
+      '*** Begin Patch',
+      '*** Update File: first.txt',
+      '@@',
+      '-original first',
+      '+changed first',
+      '*** Add File: brand-new.txt',
+      '+new content',
+      '*** Update File: second.txt',
+      '@@',
+      '-this line does not exist',
+      '+replacement',
+      '*** End Patch',
+    ].join('\n');
+
+    await expect(tool.execute('t-atomic', { input: patch })).rejects.toThrow('Failed to find');
+
+    // The earlier update must NOT have been committed.
+    expect(await fs.readFile(path.join(tmpDir, 'first.txt'), 'utf-8')).toBe('original first\n');
+    // The add must NOT have created a file.
+    await expect(fs.stat(path.join(tmpDir, 'brand-new.txt'))).rejects.toThrow();
+    // The unaffected file is untouched.
+    expect(await fs.readFile(path.join(tmpDir, 'second.txt'), 'utf-8')).toBe('second body\n');
+  });
+
+  it('treats deletion of a missing file as a no-op', async () => {
+    await fs.writeFile(path.join(tmpDir, 'keep.txt'), 'keep\n');
+    const tool = createApplyPatchTool({ cwd: tmpDir });
+    const patch = [
+      '*** Begin Patch',
+      '*** Delete File: already-gone.txt',
+      '*** Add File: keep2.txt',
+      '+keep two',
+      '*** End Patch',
+    ].join('\n');
+
+    const out = text(await tool.execute('t-missing-delete', { input: patch }));
+    expect(out).toContain('D already-gone.txt');
+    expect(out).toContain('A keep2.txt');
+    expect(await fs.readFile(path.join(tmpDir, 'keep2.txt'), 'utf-8')).toBe('keep two\n');
+  });
+
   it('creates parent directories for new files', async () => {
     const tool = createApplyPatchTool({ cwd: tmpDir });
     const patch = [

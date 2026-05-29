@@ -252,7 +252,14 @@ export class ContextEngine {
       messages as Array<{ content?: string | unknown }>,
     );
     if (tokens > triggerTokens) {
-      await this.compact(messages);
+      const compacted = await this.compact(messages);
+      // compact() is pure: it returns a new (possibly shorter) array and never
+      // mutates its input. Apply the result back onto the live message array
+      // in place so the agent's durable history actually shrinks — otherwise
+      // proactive compaction is a no-op and re-fires every subsequent turn.
+      if (compacted.length < messages.length) {
+        messages.splice(0, messages.length, ...compacted);
+      }
     }
   }
 

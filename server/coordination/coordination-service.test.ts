@@ -167,6 +167,43 @@ describe('CoordinationService', () => {
     expect(service.getTrace(workflow.id).map((event) => event.type)).toContain('run_completed');
   });
 
+  it('transitions the workflow to failed when a task fails instead of hanging in running', async () => {
+    const workflow = service.createWorkflow('manager', {
+      title: 'Will fail',
+      objective: 'Exercise failure path',
+    });
+    service.startWorkflow('manager', workflow.id);
+    const task = service.assignTask('manager', {
+      workflowId: workflow.id,
+      title: 'Doomed task',
+      description: 'This run errors out',
+      assignedAgentId: 'lead',
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(service.getWorkflowDetail(workflow.id)?.tasks[0].status).toBe('running');
+
+    gateway.emit('run_1', {
+      type: 'lifecycle:start',
+      runId: 'run_1',
+      agentId: 'lead',
+      sessionId: 'session_lead',
+      startedAt: Date.now(),
+    });
+    gateway.emit('run_1', {
+      type: 'lifecycle:error',
+      runId: 'run_1',
+      status: 'error',
+      startedAt: Date.now() - 10,
+      endedAt: Date.now(),
+      error: { code: 'aborted', message: 'budget abort', retriable: false },
+    });
+
+    const detail = service.getWorkflowDetail(workflow.id);
+    expect(detail?.tasks.find((t) => t.id === task.id)?.status).toBe('failed');
+    expect(detail?.workflow.status).toBe('failed');
+  });
+
   it('lazily syncs currently managed gateway agents before lifecycle checks', async () => {
     gateway.managedConfigs = [
       makeConfig('late-manager', 'manager'),

@@ -259,6 +259,22 @@ export function resolveAgentConfig(
     addInline('music-generate', 'music_generate tool guidance', ts?.musicGenerate?.skill);
   }
 
+  // Dedup skill entries by id, keeping the first occurrence. Two Skills nodes
+  // (or a Skills node and a ToolsNode.skills entry) can enable the same skill
+  // name; without this, the same tag is rendered twice in the system prompt.
+  // Ordering of first occurrences is preserved.
+  {
+    const seenSkillIds = new Set<string>();
+    let writeIdx = 0;
+    for (let readIdx = 0; readIdx < allSkills.length; readIdx++) {
+      const skill = allSkills[readIdx];
+      if (seenSkillIds.has(skill.id)) continue;
+      seenSkillIds.add(skill.id);
+      allSkills[writeIdx++] = skill;
+    }
+    allSkills.length = writeIdx;
+  }
+
   const toolsConfig = toolsNode && toolsNode.data.type === 'tools'
     ? {
         profile: toolsNode.data.profile,
@@ -478,7 +494,14 @@ export function resolveAgentConfig(
     : null;
   const toolsSummary = toolsConfig
     ? resolvedToolNamesList
-        .filter((t) => IMPLEMENTED_TOOL_NAMES.has(t) || catalogKnown?.has(t))
+        .filter((t) =>
+          // Always advertise tools we know are implemented offline. When the
+          // live catalog has NOT loaded yet (`catalogKnown` is null) we must
+          // NOT drop otherwise-resolved tools — doing so would make the same
+          // graph resolve to a different summary depending on catalog timing.
+          // Only filter against the catalog once it is actually available.
+          IMPLEMENTED_TOOL_NAMES.has(t) || catalogKnown === null || catalogKnown.has(t),
+        )
         .join(', ')
     : null;
 
@@ -584,7 +607,13 @@ export function resolveAgentConfig(
         modelId: data.modelId,
         thinkingLevel: data.thinkingLevel,
         modelCapabilities: data.modelCapabilities,
-        skills: allSkills,
+        // Strip the parent's inline auto-generated tool-guidance entries
+        // (`tool-skill-*`) before passing skills down. The sub-agent resolver
+        // only de-dupes ids it owns, so these would otherwise be inherited
+        // verbatim — advertising the PARENT's tool guidance for tools the
+        // sub-agent cannot call. A sub-agent gets tool guidance from its own
+        // enabled tools, so inheriting the parent's is always wrong.
+        skills: allSkills.filter((s) => !s.id.startsWith('tool-skill-')),
         mcps,
         workspacePath: data.workingDirectory ?? '',
       },

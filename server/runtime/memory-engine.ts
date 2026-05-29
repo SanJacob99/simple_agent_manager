@@ -2,6 +2,7 @@ import type { ResolvedMemoryConfig } from '../../shared/agent-config';
 import type { StorageEngine } from '../storage/storage-engine';
 import type { AgentTool, AgentToolResult } from '@mariozechner/pi-agent-core';
 import { Type, type TSchema } from '@sinclair/typebox';
+import { Mutex } from '../util/mutex';
 
 function textResult(text: string): AgentToolResult<undefined> {
   return { content: [{ type: 'text', text }], details: undefined };
@@ -38,6 +39,14 @@ export interface MemorySearchHit {
  * becomes a no-op and tools report that memory is offline.
  */
 export class MemoryEngine {
+  /**
+   * Serializes long-term (MEMORY.md) read-modify-write so two concurrent
+   * appends — e.g. parallel memory_save tool calls in a single turn — can't
+   * both read the same file content and have the later write drop the
+   * earlier append.
+   */
+  private readonly longTermLock = new Mutex();
+
   constructor(
     private readonly config: ResolvedMemoryConfig,
     private readonly storage: StorageEngine | null,
@@ -59,17 +68,21 @@ export class MemoryEngine {
   async appendLongTerm(content: string): Promise<void> {
     const storage = this.requireStorage();
     if (!storage) return;
-    const existing = (await storage.readLongTermMemory()) ?? '';
-    const stamp = new Date().toISOString();
-    const block = existing.endsWith('\n') || existing.length === 0 ? '' : '\n';
-    const entry = `${block}\n- (${stamp}) ${content.trim()}\n`;
-    await storage.writeLongTermMemory(existing + entry);
+    await this.longTermLock.run(async () => {
+      const existing = (await storage.readLongTermMemory()) ?? '';
+      const stamp = new Date().toISOString();
+      const block = existing.endsWith('\n') || existing.length === 0 ? '' : '\n';
+      const entry = `${block}\n- (${stamp}) ${content.trim()}\n`;
+      await storage.writeLongTermMemory(existing + entry);
+    });
   }
 
   async writeLongTerm(content: string): Promise<void> {
     const storage = this.requireStorage();
     if (!storage) return;
-    await storage.writeLongTermMemory(content);
+    await this.longTermLock.run(async () => {
+      await storage.writeLongTermMemory(content);
+    });
   }
 
   // --- Short-term (daily logs) ---
@@ -225,15 +238,17 @@ export class MemoryEngine {
 
       if (this.config.compactionStrategy === 'sliding-window') {
         // Replace the daily file with a single marker so search still finds
-        // its absence without leaving stale bulk on disk.
-        await storage.appendDailyMemory(
-          `\n<!-- compacted ${new Date().toISOString()} -->\n`,
+        // its absence without leaving stale bulk on disk. Must OVERWRITE, not
+        // append — appending would leave the full original content in place
+        // and grow the file instead of pruning it.
+        await storage.writeDailyMemory(
+          `<!-- compacted ${new Date().toISOString()} -->\n`,
           file.date,
         );
       } else {
         const summary = this.summarizeDailyLog(content);
-        await storage.appendDailyMemory(
-          `\n<!-- summarized ${new Date().toISOString()} -->\n${summary}\n`,
+        await storage.writeDailyMemory(
+          `<!-- summarized ${new Date().toISOString()} -->\n${summary}\n`,
           file.date,
         );
       }

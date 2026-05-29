@@ -265,28 +265,75 @@ export function createApplyPatchTool(ctx: FsToolContext): AgentTool<TSchema> {
 
       const summary: PatchSummary = { added: [], modified: [], deleted: [] };
 
+      // --- Staging phase: compute and validate every hunk in memory ---------
+      // Nothing is written to disk until the entire patch validates. Each
+      // staged op is either a 'write' (final bytes to persist) or a 'delete'.
+      type StagedOp =
+        | { kind: 'write'; path: string; resolved: string; contents: string; isAdd: boolean }
+        | { kind: 'delete'; path: string; resolved: string };
+      const staged: StagedOp[] = [];
+
       for (const hunk of hunks) {
         if (hunk.kind === 'add') {
           const resolved = resolvePath(hunk.path, ctx);
-          await fs.mkdir(path.dirname(resolved), { recursive: true });
-          await fs.writeFile(resolved, hunk.contents, 'utf-8');
+          staged.push({ kind: 'write', path: hunk.path, resolved, contents: hunk.contents, isAdd: true });
           summary.added.push(hunk.path);
           continue;
         }
 
         if (hunk.kind === 'delete') {
           const resolved = resolvePath(hunk.path, ctx);
-          await fs.rm(resolved);
+          staged.push({ kind: 'delete', path: hunk.path, resolved });
           summary.deleted.push(hunk.path);
           continue;
         }
 
-        // Update
+        // Update: read current content and validate the chunks now so a
+        // mismatch throws before anything is committed.
         const resolved = resolvePath(hunk.path, ctx);
         const content = await fs.readFile(resolved, 'utf-8');
         const updated = applyUpdateChunks(hunk.path, content, hunk.chunks);
-        await fs.writeFile(resolved, updated, 'utf-8');
+        staged.push({ kind: 'write', path: hunk.path, resolved, contents: updated, isAdd: false });
         summary.modified.push(hunk.path);
+      }
+
+      // --- Commit phase: writes only happen after full validation -----------
+      // Track files we have written so we can best-effort roll back if a later
+      // commit write fails partway through.
+      const written: Array<{ resolved: string; previous: string | null }> = [];
+      try {
+        for (const op of staged) {
+          if (op.kind === 'delete') {
+            // force: a missing target is a no-op rather than an aborting ENOENT.
+            await fs.rm(op.resolved, { force: true, recursive: true });
+            continue;
+          }
+          let previous: string | null = null;
+          try {
+            previous = await fs.readFile(op.resolved, 'utf-8');
+          } catch {
+            previous = null;
+          }
+          if (op.isAdd) {
+            await fs.mkdir(path.dirname(op.resolved), { recursive: true });
+          }
+          await fs.writeFile(op.resolved, op.contents, 'utf-8');
+          written.push({ resolved: op.resolved, previous });
+        }
+      } catch (err) {
+        // Best-effort rollback of files written during this commit.
+        for (const { resolved, previous } of [...written].reverse()) {
+          try {
+            if (previous === null) {
+              await fs.rm(resolved, { force: true });
+            } else {
+              await fs.writeFile(resolved, previous, 'utf-8');
+            }
+          } catch {
+            // Ignore rollback failures; surface the original error.
+          }
+        }
+        throw err;
       }
 
       const lines = ['Patch applied successfully:'];

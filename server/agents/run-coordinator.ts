@@ -1052,7 +1052,20 @@ export class RunCoordinator {
     record.queue = undefined;
     this.emitQueueLeft(record, 'started');
     this.emitQueueUpdates(affectedRunIds);
-    void this.executeRun(record, params);
+    // executeRun mutates record.status and opens the transcript BEFORE its
+    // own try/catch begins. A synchronous throw or early rejection there
+    // would leak the concurrency lease (release() never runs), permanently
+    // deadlocking the queue. Guard the fire-and-forget call so any failure
+    // path that escapes executeRun still releases the lease, finalizes the
+    // run as errored, and drains the next queued run.
+    void this.executeRun(record, params).catch((error) => {
+      console.error('[RunCoordinator] executeRun failed unexpectedly:', error);
+      this.concurrency.release(record.runId, record.sessionId);
+      if (record.status !== 'completed' && record.status !== 'error') {
+        this.finalizeRunError(record, classifyError(error));
+      }
+      this.tryStartNextRun();
+    });
   }
 
   /**
@@ -1959,10 +1972,20 @@ export class RunCoordinator {
       // per-run tools" form — matches the cleanup in dispatchChannel.
       // Only reset if we actually injected per-run tools to avoid a spurious
       // addTools([]) call on runs that have no per-run tools at all.
-      if (perRunTools.length > 0) {
-        this.runtime.addTools([]);
+      //
+      // Guard against clobbering the NEXT run: there is a single shared
+      // `this.runtime`. When this run is aborted, the coordinator may have
+      // already started the next queued run on the same runtime (which
+      // re-set its tools/active session). Only clear the shared runtime if
+      // it still belongs to THIS run — i.e. its current session key still
+      // matches ours; otherwise the cleanup below would wipe the next run's
+      // freshly configured tools and active session.
+      if (this.runtime.getCurrentSessionKey() === record.sessionKey) {
+        if (perRunTools.length > 0) {
+          this.runtime.addTools([]);
+        }
+        this.runtime.clearActiveSession();
       }
-      this.runtime.clearActiveSession();
     }
   }
 
@@ -2554,6 +2577,13 @@ export class RunCoordinator {
   }
 
   private finalizeRunSuccess(record: RunRecord): void {
+    // Terminal-once guard: if the timeout timer fired during the `await
+    // transcriptWrites` gap in executeRun and already finalized this run as
+    // errored, do not re-run lifecycle emission, the end hook, or cleanup
+    // with a conflicting status. Finalization must be idempotent.
+    if (record.status === 'completed' || record.status === 'error') {
+      return;
+    }
     if (record.timeoutTimer) {
       clearTimeout(record.timeoutTimer);
     }
@@ -2593,6 +2623,12 @@ export class RunCoordinator {
   }
 
   private finalizeRunError(record: RunRecord, error: StructuredError): void {
+    // Terminal-once guard: finalization must be idempotent so a timeout and
+    // a success/error path racing across an `await` gap cannot both emit
+    // lifecycle events or run the end hook + cleanup twice.
+    if (record.status === 'completed' || record.status === 'error') {
+      return;
+    }
     if (record.timeoutTimer) {
       clearTimeout(record.timeoutTimer);
     }

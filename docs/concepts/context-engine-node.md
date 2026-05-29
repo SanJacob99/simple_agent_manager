@@ -3,7 +3,7 @@
 > Manages token budgets, compaction, and transcript-aware context assembly so conversations stay inside the model's context window.
 
 <!-- source: src/types/nodes.ts#ContextEngineNodeData -->
-<!-- last-verified: 2026-05-06 -->
+<!-- last-verified: 2026-05-29 -->
 <!-- token-budget-inheritance, compaction-trigger-modes, tooltips -->
 
 ## Overview
@@ -36,7 +36,7 @@ The runtime creates a `ContextEngine` that exposes:
 - `buildTransformContext()` to plug into `pi-agent-core`
 - `assemble(messages)` to estimate tokens and call compaction when the budget would overflow (safety net)
 - `compact(messages)` to apply the configured reduction strategy
-- `afterTurn(messages)` to fire proactive compaction when the just-finished turn pushed usage past the trigger configured by `compactionTrigger` (see the table above)
+- `afterTurn(messages)` to fire proactive compaction when the just-finished turn pushed usage past the trigger configured by `compactionTrigger` (see the table above). `afterTurn` applies the compacted result back onto the live message array in place, so proactive/`auto`/`threshold` compaction genuinely reduces the in-memory history rather than recomputing and discarding it (which previously left history unchanged and re-fired every turn once over threshold). The `assemble()` overflow trim remains the safety net.
 
 Manual compaction: the Context Engine property panel shows a **Compact Now** button when `compactionTrigger` is `"manual"`. It calls `POST /api/sessions/:agentId/:sessionKey/compact`, which runs the configured `compactionStrategy` against the session transcript until it reaches `postCompactionTokenTarget`. The agent must be started (the chat session must have been opened at least once), and no run can be active on the target session.
 

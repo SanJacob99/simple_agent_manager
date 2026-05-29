@@ -576,10 +576,36 @@ export class AgentRuntime {
 
         await registry.invoke(HOOK_NAMES.AFTER_TOOL_CALL, afterCtx);
 
-        // If transformed, replace the result
+        // If transformed, apply the new text while preserving any non-text
+        // content blocks (e.g. image blocks) the tool originally produced.
         if (afterCtx.transformedResult !== undefined) {
+          const originalContent = result.content ?? [];
+          const transformedTextBlock = { type: 'text' as const, text: afterCtx.transformedResult };
+
+          // Replace the first text block in place with the transformed text and
+          // drop any remaining text blocks (their content was folded into the
+          // joined `resultText` the hook transformed). Non-text blocks are kept
+          // in their original positions.
+          let textApplied = false;
+          const newContent = originalContent.flatMap((c: any) => {
+            if ('text' in c) {
+              if (!textApplied) {
+                textApplied = true;
+                return [transformedTextBlock];
+              }
+              return [];
+            }
+            return [c];
+          });
+
+          // If the tool produced no text block at all, append the transformed
+          // text so the hook's output is not lost.
+          if (!textApplied) {
+            newContent.push(transformedTextBlock);
+          }
+
           return {
-            content: [{ type: 'text' as const, text: afterCtx.transformedResult }],
+            content: newContent,
             details: result.details,
           };
         }

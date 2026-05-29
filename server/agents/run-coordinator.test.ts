@@ -49,8 +49,15 @@ function mockRuntime(): AgentRuntime {
     getSystemPrompt: vi.fn(() => 'Test'),
     setActiveSession: vi.fn(),
     clearActiveSession: vi.fn(),
-    setCurrentSessionKey: vi.fn(),
-    getCurrentSessionKey: vi.fn(() => ''),
+    // Track the current session key statefully so tests exercise the
+    // per-run cleanup guard in executeRun's finally block, which only
+    // resets the shared runtime when getCurrentSessionKey() still matches
+    // the finishing run's session key.
+    _currentSessionKey: '',
+    setCurrentSessionKey: vi.fn((key: string) => {
+      runtime._currentSessionKey = key;
+    }),
+    getCurrentSessionKey: vi.fn(() => runtime._currentSessionKey),
     setBroadcast: vi.fn(),
     cancelPendingHitl: vi.fn(),
     setSessionContext: vi.fn((messages: any[]) => {
@@ -149,7 +156,20 @@ describe('RunCoordinator', () => {
 
   afterEach(async () => {
     coordinator.destroy();
-    await fs.rm(storagePath, { recursive: true, force: true });
+    // Some tests intentionally leave a run in flight (timeout/abort cases).
+    // Those runs may issue a final write after destroy(), which can re-create
+    // the temp dir while we delete it (ENOTEMPTY on Windows). Retry the
+    // removal a few times to absorb that race rather than blocking on the
+    // hanging runs.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await fs.rm(storagePath, { recursive: true, force: true });
+        break;
+      } catch (err) {
+        if (attempt >= 5) throw err;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    }
   });
 
   async function getSession(subKey: string) {

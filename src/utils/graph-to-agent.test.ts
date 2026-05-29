@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { resolveAgentConfig, validateAgentRuntimeGraph } from './graph-to-agent';
 import { CONNECTOR_CATALOG } from '../../shared/connectors/catalog';
+import { useToolCatalogStore } from '../store/tool-catalog-store';
 
 describe('resolveAgentConfig', () => {
   it('carries per-agent capability overrides into runtime config', () => {
@@ -389,6 +390,191 @@ describe('resolveAgentConfig', () => {
     // Bundled exec reference is suppressed because it's been overridden
     expect(prompt).not.toContain('{SAM_BUNDLED_ROOT}/exec/SKILL.md');
   });
+
+  it('dedupes skills enabled by multiple Skills nodes (renders each tag once)', () => {
+    const skillsNodeA = {
+      id: 'skills-a',
+      type: 'skills',
+      position: { x: -200, y: 0 },
+      data: { type: 'skills', label: 'A', enabledSkills: ['planning', 'shared-skill'] },
+    };
+    const skillsNodeB = {
+      id: 'skills-b',
+      type: 'skills',
+      position: { x: -200, y: 200 },
+      data: { type: 'skills', label: 'B', enabledSkills: ['shared-skill', 'writing'] },
+    };
+    // A Tools node is present so `config.tools.skills` carries the resolved
+    // (deduped) SkillDefinition list. Its own `skills` array seeds 'planning'
+    // too — exercising dedup across a Skills node and ToolsNode.skills.
+    const toolsNode = {
+      id: 'tools-1',
+      type: 'tools',
+      position: { x: -200, y: 400 },
+      data: {
+        type: 'tools',
+        label: 'Tools',
+        profile: 'custom',
+        enabledTools: [],
+        enabledGroups: [],
+        skills: [{ id: 'planning', name: 'planning', content: '', injectAs: 'system-prompt' }],
+        plugins: [],
+        subAgentSpawning: false,
+        maxSubAgents: 3,
+        toolSettings: {},
+      },
+    };
+    const config = resolveAgentConfig(
+      'agent-1',
+      [
+        {
+          id: 'agent-1',
+          type: 'agent',
+          position: { x: 0, y: 0 },
+          data: {
+            type: 'agent',
+            name: 'Agent',
+            nameConfirmed: true,
+            systemPrompt: '',
+            systemPromptMode: 'append' as const,
+            modelId: 'claude-sonnet-4-20250514',
+            thinkingLevel: 'off',
+            description: '',
+            tags: [],
+            modelCapabilities: {},
+          },
+        },
+        toolsNode,
+        skillsNodeA,
+        skillsNodeB,
+      ] as any,
+      [
+        { id: 'e0', source: 'tools-1', target: 'agent-1', type: 'data' },
+        { id: 'e1', source: 'skills-a', target: 'agent-1', type: 'data' },
+        { id: 'e2', source: 'skills-b', target: 'agent-1', type: 'data' },
+      ] as any,
+    );
+
+    // tools.skills carries the deduped SkillDefinition list (first occurrence wins,
+    // ordering preserved): planning, shared-skill, writing.
+    const ids = (config!.tools!.skills ?? []).map((s) => s.id);
+    expect(ids).toEqual(['planning', 'shared-skill', 'writing']);
+
+    // The shared tag is rendered exactly once in the prompt.
+    const prompt = config!.systemPrompt.assembled;
+    const occurrences = prompt.split('- shared-skill').length - 1;
+    expect(occurrences).toBe(1);
+  });
+
+  it('keeps user-catalog tools in the summary when the catalog has not loaded', () => {
+    // Default store state is `loaded: false`, so `catalogKnown` is null and we
+    // must NOT drop otherwise-resolved tool names. `my_user_tool` is not in
+    // IMPLEMENTED_TOOL_NAMES, so the old code silently omitted it.
+    useToolCatalogStore.setState({ tools: [], loaded: false });
+
+    const config = resolveAgentConfig(
+      'agent-1',
+      [
+        {
+          id: 'agent-1',
+          type: 'agent',
+          position: { x: 0, y: 0 },
+          data: {
+            type: 'agent',
+            name: 'Agent',
+            nameConfirmed: true,
+            systemPrompt: '',
+            systemPromptMode: 'append' as const,
+            modelId: 'claude-sonnet-4-20250514',
+            thinkingLevel: 'off',
+            description: '',
+            tags: [],
+            modelCapabilities: {},
+          },
+        },
+        {
+          id: 'tools-1',
+          type: 'tools',
+          position: { x: -200, y: 0 },
+          data: {
+            type: 'tools',
+            label: 'Tools',
+            profile: 'custom',
+            enabledTools: ['exec', 'my_user_tool'],
+            enabledGroups: [],
+            skills: [],
+            plugins: [],
+            subAgentSpawning: false,
+            maxSubAgents: 3,
+            toolSettings: {},
+          },
+        },
+      ] as any,
+      [{ id: 'e1', source: 'tools-1', target: 'agent-1', type: 'data' }] as any,
+    );
+
+    const prompt = config!.systemPrompt.assembled;
+    // Both the implemented tool and the unknown user tool survive.
+    expect(prompt).toContain('exec');
+    expect(prompt).toContain('my_user_tool');
+  });
+
+  it('filters user-catalog tools out of the summary only when the catalog IS loaded and lacks them', () => {
+    // Catalog loaded but does not know `my_user_tool` -> it should be dropped,
+    // preserving the existing "only advertise callable tools" behavior.
+    useToolCatalogStore.setState({
+      tools: [{ name: 'exec', label: 'exec', description: '' }] as any,
+      loaded: true,
+    });
+
+    const config = resolveAgentConfig(
+      'agent-1',
+      [
+        {
+          id: 'agent-1',
+          type: 'agent',
+          position: { x: 0, y: 0 },
+          data: {
+            type: 'agent',
+            name: 'Agent',
+            nameConfirmed: true,
+            systemPrompt: '',
+            systemPromptMode: 'append' as const,
+            modelId: 'claude-sonnet-4-20250514',
+            thinkingLevel: 'off',
+            description: '',
+            tags: [],
+            modelCapabilities: {},
+          },
+        },
+        {
+          id: 'tools-1',
+          type: 'tools',
+          position: { x: -200, y: 0 },
+          data: {
+            type: 'tools',
+            label: 'Tools',
+            profile: 'custom',
+            enabledTools: ['exec', 'my_user_tool'],
+            enabledGroups: [],
+            skills: [],
+            plugins: [],
+            subAgentSpawning: false,
+            maxSubAgents: 3,
+            toolSettings: {},
+          },
+        },
+      ] as any,
+      [{ id: 'e1', source: 'tools-1', target: 'agent-1', type: 'data' }] as any,
+    );
+
+    const prompt = config!.systemPrompt.assembled;
+    expect(prompt).toContain('exec');
+    expect(prompt).not.toContain('my_user_tool');
+
+    // Reset to the default unloaded state for other tests.
+    useToolCatalogStore.setState({ tools: [], loaded: false });
+  });
 });
 
 describe('provider node resolution', () => {
@@ -695,6 +881,45 @@ describe('SubAgentNode resolution', () => {
       baseEdges as any,
     );
     expect(config?.subAgents[0].workingDirectory).toBe('/work/subagent/researcher');
+  });
+
+  it('does not inherit the parent\'s inline tool-skill-* guidance', () => {
+    // Parent Tools node with an inline `exec` override -> generates a
+    // `tool-skill-exec` entry in the parent's allSkills. The sub-agent has no
+    // exec tool and no overrides, so it must NOT receive that guidance.
+    const parentTools = {
+      id: 'parent-tools-1',
+      type: 'tools',
+      position: { x: -200, y: 0 },
+      data: {
+        ...subAgentToolsNode.data,
+        label: 'parent tools',
+        enabledTools: ['exec'],
+        toolSettings: {
+          ...subAgentToolsNode.data.toolSettings,
+          exec: { cwd: '', sandboxWorkdir: false, skill: 'Parent-only exec guidance.' },
+        },
+      },
+    };
+
+    const edges = [
+      ...baseEdges,
+      { id: 'e7', source: 'parent-tools-1', target: 'agent-1' },
+    ];
+
+    const config = resolveAgentConfig(
+      'agent-1',
+      [baseAgent as any, baseProvider as any, subAgent as any, subAgentToolsNode as any, parentTools as any],
+      edges as any,
+    );
+
+    expect(config?.subAgents).toHaveLength(1);
+    const subSkillIds = config!.subAgents[0].skills.map((s) => s.id);
+    expect(subSkillIds).not.toContain('tool-skill-exec');
+    expect(subSkillIds.some((id) => id.startsWith('tool-skill-'))).toBe(false);
+
+    // Sanity: the parent itself still advertises its inline override.
+    expect(config!.systemPrompt.assembled).toContain('Parent-only exec guidance.');
   });
 });
 
