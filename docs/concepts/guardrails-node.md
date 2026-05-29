@@ -3,7 +3,7 @@
 > Configurable input/output safety checks that block or warn before a turn reaches the model and after the assistant replies.
 
 <!-- source: src/types/nodes.ts#GuardrailsNodeData -->
-<!-- last-verified: 2026-05-15 -->
+<!-- last-verified: 2026-05-29 -->
 
 ## Overview
 
