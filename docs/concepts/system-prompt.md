@@ -3,7 +3,7 @@
 > How SAM assembles the system prompt that every agent run receives.
 
 <!-- source: shared/system-prompt-builder.ts, server/runtime/resolve-system-prompt.ts -->
-<!-- last-verified: 2026-05-04 -->
+<!-- last-verified: 2026-05-25 -->
 
 ## Overview
 
@@ -22,7 +22,7 @@ The Agent Node's `systemPromptMode` selects which assembly strategy the builder 
 
 | Mode | Behavior |
 |------|----------|
-| `auto` | Builds the full SAM section set. The user's `systemPrompt` field is **not** inserted; SAM sections are the whole prompt. |
+| `auto` | Defined in `SystemPromptMode` and handled by the builder (user instructions are not appended). **Currently unreachable**: `resolveAgentConfig()` in `src/utils/graph-to-agent.ts` converts every non-`manual` value to `'append'` before calling the builder, so `auto` behaves identically to `append` until the graph resolver is updated. |
 | `append` | Builds the full SAM section set, then adds a final `## User Instructions` section containing the user's `systemPrompt` text. |
 | `manual` | Discards SAM's sections. The user's `systemPrompt` text is the entire prompt, emitted as a single `manual` section. |
 
@@ -35,7 +35,7 @@ In `auto` and `append` modes, the builder emits these sections in order. Optiona
 | Order | Section key | Emitted when | Contents |
 |-------|-------------|--------------|----------|
 | 1 | `identity` | Always | SAM brand, harness identity, "tool schemas are the contract" posture |
-| 2 | `tooling` | `toolsSummary` is non-null | Structured-tool guidance + the comma-separated list of enabled tool names |
+| 2 | `tooling` | `toolsSummary` or `toolsCatalog` is non-empty | Structured-tool guidance, a **Tool Selection** sub-section that maps user intent to the right tool, and the list of enabled tools — rendered as a grouped, annotated bullet list when `toolsCatalog` is supplied, or as a comma-separated fallback when only `toolsSummary` is present |
 | 3 | `executionBias` | Always | Act-in-turn, continue-until-done, recover, verify |
 | 4 | `safety` | Always | Default safety block, with `safetyGuardrails` user text appended when provided |
 | 5 | `trustBoundaries` | Always | Prompt-injection defense: frames tool output, fetched pages, and pasted content as untrusted DATA with concrete rules for handling injection attempts |

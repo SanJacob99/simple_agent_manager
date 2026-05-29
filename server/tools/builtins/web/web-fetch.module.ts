@@ -15,7 +15,8 @@ interface WebFetchContext {
 export default defineTool<WebFetchContext>({
   name: 'web_fetch',
   label: 'Web Fetch',
-  description: 'Fetch a URL and return its content',
+  description:
+    'Retrieve the contents of a specific URL. Use whenever the user gives or clearly implies a link to read, summarize, or extract data from.',
   group: 'web',
   icon: 'globe',
   classification: 'read-only',

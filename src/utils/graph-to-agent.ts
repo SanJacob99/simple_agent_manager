@@ -492,17 +492,35 @@ export function resolveAgentConfig(
   const catalogKnown = catalogState.loaded
     ? new Set(catalogState.tools.map((t) => t.name))
     : null;
-  const toolsSummary = toolsConfig
-    ? resolvedToolNamesList
-        .filter((t) =>
-          // Always advertise tools we know are implemented offline. When the
-          // live catalog has NOT loaded yet (`catalogKnown` is null) we must
-          // NOT drop otherwise-resolved tools — doing so would make the same
-          // graph resolve to a different summary depending on catalog timing.
-          // Only filter against the catalog once it is actually available.
-          IMPLEMENTED_TOOL_NAMES.has(t) || catalogKnown === null || catalogKnown.has(t),
-        )
-        .join(', ')
+  const advertisedToolNames = toolsConfig
+    ? resolvedToolNamesList.filter((t) =>
+        // Always advertise tools we know are implemented offline. When the
+        // live catalog has NOT loaded yet (`catalogKnown` is null) we must
+        // NOT drop otherwise-resolved tools — doing so would make the same
+        // graph resolve to a different summary depending on catalog timing.
+        // Only filter against the catalog once it is actually available.
+        IMPLEMENTED_TOOL_NAMES.has(t) || catalogKnown === null || catalogKnown.has(t),
+      )
+    : [];
+  const toolsSummary = toolsConfig ? advertisedToolNames.join(', ') : null;
+
+  // Build a rich catalog (name + description + group) when we have the live
+  // tool catalog loaded. The system-prompt builder renders this as a
+  // grouped, annotated bullet list so the model can pick tools from the
+  // user's intent without explicit "use X" prompts. When the catalog hasn't
+  // loaded yet the builder falls back to the comma-separated summary.
+  const catalogByName = catalogState.loaded
+    ? new Map(catalogState.tools.map((t) => [t.name, t]))
+    : null;
+  const toolsCatalog = catalogByName
+    ? advertisedToolNames.map((name) => {
+        const entry = catalogByName.get(name);
+        return {
+          name,
+          description: entry?.description || undefined,
+          group: entry?.group,
+        };
+      })
     : null;
 
   // Compose the Skills section of the system prompt. Three buckets:
@@ -564,6 +582,7 @@ export function resolveAgentConfig(
     userInstructions: data.systemPrompt,
     safetyGuardrails: options.safetyGuardrails ?? '',
     toolsSummary,
+    toolsCatalog,
     skillsSummary,
     workspacePath,
     bootstrapFiles: null,

@@ -399,11 +399,13 @@ export class StorageEngine {
     if (currentUsage > highWaterBytes) {
       // Evict oldest sessions by updatedAt until under highWaterBytes
       const sessions = await this.listSessions();
-      // listSessions returns newest-first, so reverse for oldest-first
-      const oldest = [...sessions].reverse();
+      // listSessions returns newest-first, so iterate backwards for oldest-first
+      // ⚡ Bolt Optimization: iterating backwards avoids the memory allocation and copying
+      // of [...sessions].reverse(), which can be costly on large datasets.
 
-      for (const session of oldest) {
+      for (let i = sessions.length - 1; i >= 0; i--) {
         if (currentUsage <= highWaterBytes) break;
+        const session = sessions[i];
         evicted.push(session.sessionKey);
         if (!dryRun) {
           await this.deleteSession(session.sessionKey);

@@ -8,11 +8,12 @@ import type { SystemPromptMode, SystemPromptSection, ResolvedSystemPrompt } from
  * pi-coding-agent default. This module owns the prompt's structure and
  * wording. Sections are:
  *
- *   identity       -- who is speaking, which harness, brand + posture
- *   tooling        -- structured-tool source-of-truth + runtime tool-use guidance
- *   executionBias  -- act-in-turn, continue until done, recover, verify
- *   safety         -- short guardrail reminder (+ any user-supplied additions)
- *   skills         -- how to load skills on demand (when available)
+ *   identity        -- who is speaking, which harness, brand + posture
+ *   tooling         -- structured-tool source-of-truth + runtime tool-use guidance
+ *   executionBias   -- act-in-turn, continue until done, recover, verify
+ *   safety          -- short guardrail reminder (+ any user-supplied additions)
+ *   trustBoundaries -- prompt-injection defense; always emitted
+ *   skills          -- how to load skills on demand (when available)
  *   selfUpdate     -- how to inspect/patch SAM's own config (when enabled)
  *   workspace      -- working directory + optional injected bootstrap files
  *   documentation  -- path to SAM docs (when known)
@@ -35,6 +36,18 @@ export interface SystemPromptBuilderInput {
   safetyGuardrails: string;
   /** Comma-separated list of enabled tool names, or null to omit tooling. */
   toolsSummary: string | null;
+  /**
+   * Optional rich list of enabled tools, with the description and group the
+   * Tool Module declared. When provided, the tooling section renders an
+   * annotated bullet list (grouped) so the model can pick tools naturally
+   * from the user's intent instead of waiting for an explicit "use X" hint.
+   * If omitted, the builder falls back to the comma-separated `toolsSummary`.
+   */
+  toolsCatalog?: Array<{
+    name: string;
+    description?: string;
+    group?: string;
+  }> | null;
   /** Pre-built Skills section body (existing bundled/tags/inline mix), or null. */
   skillsSummary: string | null;
   /** Working directory, or null to omit the workspace section. */
@@ -136,7 +149,40 @@ the harness exposes are the single source of truth:
   result is empty but the task implies data exists, check mutable
   state live (list, read, or query) before moving on.
 - When you're blocked on missing information, ask the user via the
-  \`ask_user\` tool; don't silently stall.`;
+  \`ask_user\` tool; don't silently stall.
+
+### Tool Selection
+
+Pick tools from the user's *intent*, not from explicit instructions to
+use a specific tool. The user should not have to say "use web_fetch" or
+"call the calculator" -- if the request maps cleanly to a tool, call it.
+
+Match the situation to the tool's purpose:
+
+- The user gives a URL or asks "what's on / what does <link> say" -> fetch the page.
+- The user asks for current facts, news, or sources you don't already have ->
+  search the web.
+- The user asks anything numeric (arithmetic, conversions, statistics) ->
+  use the calculator instead of doing math in prose.
+- The user mentions a file, path, or workspace artifact -> read / list / edit
+  the file directly rather than asking what's in it.
+- The user asks you to run, compile, or test something -> use the exec /
+  code-execution tool.
+- The user wants to generate or render an image, audio, or visualization ->
+  use the matching media tool.
+- The user is asking about session/transcript state ("what did we say earlier",
+  "list my sessions") -> use the session tools.
+
+When two tools could plausibly apply, pick the more specific one. When you
+have a URL, prefer \`web_fetch\` over \`web_search\`. When you can read a
+known file, prefer \`read_file\` over \`exec cat\`. Chain tools when one
+result feeds the next (search -> fetch -> read) instead of asking the user
+to do the chaining for you.
+
+You only need to ask the user before acting when (a) the request is
+genuinely ambiguous about *what* they want, or (b) the next step is
+destructive or irreversible -- in which case use the HITL tools, not a
+freeform question.`;
 
 const EXECUTION_BIAS = `## Execution Bias
 
@@ -226,6 +272,43 @@ const DEFAULT_REPLY_TAG_EXAMPLE = `<reply to="main">...</reply>`;
 
 function makeSection(key: string, label: string, content: string): SystemPromptSection {
   return { key, label, content, tokenEstimate: estimateTokens(content) };
+}
+
+function renderToolsCatalog(
+  catalog: NonNullable<SystemPromptBuilderInput['toolsCatalog']>,
+): string {
+  if (catalog.length === 0) return '';
+
+  // Group tools by their declared group so the model sees a coherent
+  // taxonomy ("web", "fs", "human"...) rather than an alphabet soup.
+  // Ungrouped tools fall under "other" so they still get rendered.
+  const groups = new Map<string, Array<{ name: string; description?: string }>>();
+  for (const tool of catalog) {
+    const key = tool.group ?? 'other';
+    const list = groups.get(key) ?? [];
+    list.push({ name: tool.name, description: tool.description });
+    groups.set(key, list);
+  }
+
+  const sections: string[] = [];
+  // Stable group order: keep "other" last; everything else sorted
+  // alphabetically so the prompt is deterministic across runs.
+  const groupKeys = [...groups.keys()].sort((a, b) => {
+    if (a === 'other') return 1;
+    if (b === 'other') return -1;
+    return a.localeCompare(b);
+  });
+
+  for (const key of groupKeys) {
+    const list = groups.get(key)!;
+    const heading = key === 'other' ? 'Other' : key[0].toUpperCase() + key.slice(1);
+    const lines = list
+      .map((t) => (t.description ? `- \`${t.name}\` — ${t.description}` : `- \`${t.name}\``))
+      .join('\n');
+    sections.push(`**${heading}**\n${lines}`);
+  }
+
+  return sections.join('\n\n');
 }
 
 function truncateFile(content: string, maxChars: number): string {
@@ -351,8 +434,15 @@ function buildAutoSections(input: SystemPromptBuilderInput): SystemPromptSection
   // 1. Identity / brand -- always
   sections.push(makeSection('identity', 'SAM Identity', IDENTITY));
 
-  // 2. Tooling (enabled tools + SAM-authored guidance)
-  if (input.toolsSummary) {
+  // 2. Tooling (enabled tools + SAM-authored guidance).
+  // Prefer the rich catalog rendering when the caller supplied descriptions;
+  // fall back to the legacy comma-joined `toolsSummary` so older callers and
+  // existing tests keep working unchanged.
+  if (input.toolsCatalog && input.toolsCatalog.length > 0) {
+    const list = renderToolsCatalog(input.toolsCatalog);
+    const content = `${TOOLING_GUIDANCE}\n\n### Enabled tools\n\n${list}`;
+    sections.push(makeSection('tooling', 'Tooling', content));
+  } else if (input.toolsSummary) {
     const content = `${TOOLING_GUIDANCE}\n\n### Enabled tools\n\n${input.toolsSummary}`;
     sections.push(makeSection('tooling', 'Tooling', content));
   }
