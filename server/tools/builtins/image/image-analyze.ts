@@ -2,6 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { Type, type TSchema } from '@sinclair/typebox';
 import type { AgentTool, AgentToolResult } from '@mariozechner/pi-agent-core';
+import { validateSafeUrl } from '../web/url-validator';
 
 function textResult(text: string): AgentToolResult<undefined> {
   return { content: [{ type: 'text', text }], details: undefined };
@@ -57,10 +58,19 @@ export function createImageAnalyzeTool(ctx: ImageAnalyzeContext): AgentTool<TSch
 
       // URL — fetch and return
       if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
-        const resp = await fetch(imagePath);
+        const { safeUrl, dispatcher } = await validateSafeUrl(imagePath);
+        const resp = await fetch(safeUrl, {
+          dispatcher,
+          redirect: 'error' // Do not follow redirects to prevent SSRF bypass
+        } as RequestInit & { dispatcher: unknown });
+
         if (!resp.ok) throw new Error(`Failed to fetch image: ${resp.status}`);
         const contentType = resp.headers.get('content-type') ?? 'image/png';
         const buffer = Buffer.from(await resp.arrayBuffer());
+
+        // Best-effort cleanup
+        void dispatcher.close().catch(() => {});
+
         return imageResult(prompt, contentType, buffer.toString('base64'));
       }
 
