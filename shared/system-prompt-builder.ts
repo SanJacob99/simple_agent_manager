@@ -21,7 +21,7 @@ import type { SystemPromptMode, SystemPromptSection, ResolvedSystemPrompt } from
  *   time           -- current date/time + timezone
  *   replyTags      -- reply-tag syntax (when supported)
  *   heartbeats     -- heartbeat prompt + ack behavior (when enabled)
- *   runtime        -- host/OS/node/model/repo-root/thinking-level (one line)
+ *   runtime        -- host/OS/node/model/repo-root (one line; thinking-level is sent via API param, not the prompt)
  *   reasoning      -- visibility level + /reasoning hint
  *
  * The confirmation policy (HITL) is appended later by the runtime

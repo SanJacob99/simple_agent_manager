@@ -3,7 +3,7 @@
 > Attaches a vector store to an agent and auto-enables the four industry-standard vector tools (`vector_search`, `vector_upsert`, `vector_delete`, `vector_get`). Default backend is `sqlite-vec`; default embedder is OpenRouter.
 
 <!-- source: src/types/nodes.ts#VectorDatabaseNodeData -->
-<!-- last-verified: 2026-05-15 -->
+<!-- last-verified: 2026-05-31 -->
 
 ## Overview
 
