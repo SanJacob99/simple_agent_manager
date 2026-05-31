@@ -35,3 +35,9 @@
 **Vulnerability:** The `music_generate` tool used `path.resolve` to combine `ctx.cwd` and the user-provided filename input (via the parameter `filename`) to derive the target output path for writing the generated audio files, but did not perform bounds-checking, thereby allowing agents to write arbitrary files onto the system outside the designated workspace.
 **Learning:** `path.resolve` normalizes paths containing relative sequences (like `../`), allowing users to break out of base directories unless explicitly restricted.
 **Prevention:** Always ensure that resolved file paths intended for sandboxed environments are verified to be within boundaries, e.g., by checking if `!resolved.startsWith(ctx.cwd + path.sep) && resolved !== ctx.cwd`.
+
+
+## 2026-05-31 - [CRITICAL] Refactor SSRF logic into reusable validator utility
+**Vulnerability:** While `web_fetch` had protections against SSRF (Server-Side Request Forgery) by pinning a safe IP using undici's dispatcher, tools like `show_image` and `image_analyze` were still calling `fetch()` directly with user-provided image URLs without any validation, remaining vulnerable to SSRF.
+**Learning:** SSRF protection logic involving DNS resolution, IP checks, and custom dispatchers is complex and shouldn't be duplicated. Leaving it in just one file exposes other network-facing tools.
+**Prevention:** Extract complex security validations (like SSRF prevention) into a shared utility (`validateSafeUrl`) and ensure all tools making external HTTP requests utilize it.
