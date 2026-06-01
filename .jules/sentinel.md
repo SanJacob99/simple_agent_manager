@@ -35,3 +35,8 @@
 **Vulnerability:** The `music_generate` tool used `path.resolve` to combine `ctx.cwd` and the user-provided filename input (via the parameter `filename`) to derive the target output path for writing the generated audio files, but did not perform bounds-checking, thereby allowing agents to write arbitrary files onto the system outside the designated workspace.
 **Learning:** `path.resolve` normalizes paths containing relative sequences (like `../`), allowing users to break out of base directories unless explicitly restricted.
 **Prevention:** Always ensure that resolved file paths intended for sandboxed environments are verified to be within boundaries, e.g., by checking if `!resolved.startsWith(ctx.cwd + path.sep) && resolved !== ctx.cwd`.
+
+## 2026-06-01 - [CRITICAL] Fix SSRF and DNS Rebinding TOCTOU in Image Fetching Tools
+**Vulnerability:** The `show_image` and `image_analyze` tools fetched external URLs directly using Node's `fetch` without validating the hostnames against private/restricted IPs, exposing an SSRF vulnerability where agents could target internal infrastructure.
+**Learning:** Native `fetch` does not inherently block internal/loopback IPs. Furthermore, standard DNS resolution checks are vulnerable to Time-Of-Check to Time-Of-Use (TOCTOU) DNS rebinding attacks if the underlying `fetch` request performs its own DNS lookup.
+**Prevention:** Always validate URLs using `validateSafeUrl` and use a custom HTTP dispatcher (e.g., via `undici`) to pin the validated IP address for the outgoing request, preventing DNS rebinding while preserving original hostnames for SNI.

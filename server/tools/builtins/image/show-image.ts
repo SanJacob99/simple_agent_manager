@@ -2,6 +2,8 @@ import fs from 'fs/promises';
 import path from 'path';
 import { Type, type TSchema } from '@sinclair/typebox';
 import type { AgentTool, AgentToolResult } from '@mariozechner/pi-agent-core';
+import { Agent } from 'undici';
+import { validateSafeUrl, isRestrictedAddress } from '../web/url-validator.js';
 
 const SUPPORTED_MIME: Record<string, string> = {
   '.png': 'image/png',
@@ -63,11 +65,54 @@ export function createShowImageTool(ctx: ShowImageContext): AgentTool<TSchema> {
 
       // Remote URL — fetch and embed
       if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
-        const resp = await fetch(imagePath);
-        if (!resp.ok) throw new Error(`Failed to fetch image: ${resp.status}`);
-        const contentType = resp.headers.get('content-type') ?? 'image/png';
-        const buffer = Buffer.from(await resp.arrayBuffer());
-        return buildResult(contentType, buffer.toString('base64'), caption);
+        let currentUrl = imagePath;
+        const MAX_REDIRECTS = 5;
+
+        for (let hop = 0; ; hop++) {
+          const { safeIp, safeFamily } = await validateSafeUrl(currentUrl);
+
+          const dispatcher = new Agent({
+            connect: {
+              lookup: (
+                _hostname: string,
+                _options: unknown,
+                callback: (err: Error | null, address: string, family: number) => void,
+              ) => {
+                if (isRestrictedAddress(safeIp)) {
+                  callback(new Error('restricted address'), '', 0);
+                  return;
+                }
+                callback(null, safeIp, safeFamily);
+              },
+            },
+          });
+
+          let resp: Response;
+          try {
+            resp = await fetch(currentUrl, {
+              redirect: 'manual',
+              dispatcher,
+            } as RequestInit & { dispatcher: unknown });
+          } finally {
+            void dispatcher.close().catch(() => {});
+          }
+
+          if (resp.status >= 300 && resp.status < 400) {
+            const location = resp.headers.get('location');
+            if (location) {
+              if (hop >= MAX_REDIRECTS) {
+                throw new Error(`Fetch error: too many redirects (>${MAX_REDIRECTS})`);
+              }
+              currentUrl = new URL(location, currentUrl).toString();
+              continue;
+            }
+          }
+
+          if (!resp.ok) throw new Error(`Failed to fetch image: ${resp.status}`);
+          const contentType = resp.headers.get('content-type') ?? 'image/png';
+          const buffer = Buffer.from(await resp.arrayBuffer());
+          return buildResult(contentType, buffer.toString('base64'), caption);
+        }
       }
 
       // Local file
