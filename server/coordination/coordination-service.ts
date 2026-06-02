@@ -68,11 +68,23 @@ function isTerminalWorkflow(status: WorkflowStatus): boolean {
 
 function collectTextPayloads(event: CoordinatorEvent): string | undefined {
   if (event.type !== 'lifecycle:end') return undefined;
-  const text = event.payloads
-    .filter((payload) => payload.type === 'text')
-    .map((payload) => payload.content)
-    .join('\n\n')
-    .trim();
+
+  // ⚡ Bolt Optimization: Single-pass iteration to prevent intermediate array allocations
+  // from chained .filter().map().join() during workflow payload collection.
+  let text = '';
+  let first = true;
+  for (let i = 0; i < event.payloads.length; i++) {
+    const payload = event.payloads[i];
+    if (payload.type === 'text') {
+      if (!first) {
+        text += '\n\n';
+      }
+      text += payload.content;
+      first = false;
+    }
+  }
+
+  text = text.trim();
   return text || undefined;
 }
 
