@@ -3,7 +3,7 @@
 > Durable manager-led workflow coordination for canvas agents.
 
 <!-- source: server/coordination/coordination-service.ts -->
-<!-- last-verified: 2026-05-12 -->
+<!-- last-verified: 2026-06-02 -->
 
 ## Overview
 
@@ -21,6 +21,29 @@ Agent roles live on `AgentNodeData.coordination` and resolve into `AgentConfig.c
 | `capabilities` | `string[]` | `[]` | Freeform capability tags used by managers and the workflow console |
 | `maxConcurrentTasks` | `number` | `1` | Declared task concurrency limit for future scheduling policy |
 
+### WorkflowBudget
+
+Workflows carry an optional `budget` object (`shared/coordination-types.ts#WorkflowBudget`) that the manager agent supplies when calling `coordination_create_workflow`. Defaults are applied by `DEFAULT_WORKFLOW_BUDGET`.
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `maxRuntimeSeconds` | `3600` | Hard wall-clock ceiling for the workflow, measured from `startedAt`. Triggers `stopped_by_watchdog` when exceeded. |
+| `maxToolCalls` | `50` | Total tool calls across all tasks. Exceeding this emits a `budget_warning` trace event (not a stop). |
+| `maxAgentTurns` | `20` | Total model turns across all tasks. Exceeding this emits a `budget_warning` trace event (not a stop). |
+| `maxSubtasks` | `20` | Hard cap on how many tasks a manager can assign to a single workflow. `coordination_assign_task` throws when reached. |
+| `maxTokens` | — | Optional total token budget (informational; not enforced today). |
+| `maxCostUsd` | — | Optional cost ceiling in USD (informational; not enforced today). |
+
+### Terminal Workflow Statuses
+
+| Status | Cause |
+|--------|-------|
+| `completed` | All tasks completed successfully (auto, see item 9 below) |
+| `failed` | At least one task failed/cancelled after all are terminal (auto) |
+| `cancelled` | Manager explicitly cancelled the workflow |
+| `stopped_by_user` | Manager called `stop` endpoint |
+| `stopped_by_watchdog` | `budget.maxRuntimeSeconds` deadline passed (auto) |
+
 ## Runtime Behavior
 
 1. When a manager-role Chat Drawer opens, the frontend resolves every canvas Agent into `AgentConfig` and posts them to `/api/coordination/agents/sync`.
@@ -30,6 +53,8 @@ Agent roles live on `AgentNodeData.coordination` and resolve into `AgentConfig.c
 5. Assigned tasks dispatch through `AgentManager.dispatch()` using session keys shaped like `agent:<agentId>:workflow:<workflowId>:task:<taskId>`.
 6. `CoordinationService` subscribes to the assigned run's coordinator events and appends trace events for run start/end, model calls, tool calls, task completion/failure, budget warnings, and reports.
 7. Stop marks the workflow `stop_requested`, aborts active assigned runs through `RunCoordinator.abort()`, cancels open tasks, writes a stop report, and marks the workflow `stopped_by_user`.
+8. **Watchdog auto-stop.** On workflow start and resume, `CoordinationService` arms a timer keyed to `budget.maxRuntimeSeconds` (default 3600 s). When the deadline passes, `stopped_by_watchdog` replaces the workflow status: in-flight task runs are aborted, all still-open tasks are cancelled, and a `workflow_stopped` trace event is appended. The timer is cleared whenever the workflow reaches any terminal state.
+9. **Workflow auto-completion.** After every task-outcome event (complete, failed, cancelled), `completeWorkflowIfDone` checks whether every task in the workflow is terminal (`completed`, `failed`, or `cancelled`). When all are terminal the workflow is promoted to `completed` if all succeeded, or `failed` if any did not — without waiting for a manager agent to call a stop endpoint. The watchdog timer is cleared on this path as well.
 
 ## Persistence
 
