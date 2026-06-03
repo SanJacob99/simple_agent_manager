@@ -407,10 +407,24 @@ export class StorageEngine {
         if (currentUsage <= highWaterBytes) break;
         const session = sessions[i];
         evicted.push(session.sessionKey);
+
+        // ⚡ Bolt Optimization: Calculate size of the specific file being evicted
+        // and subtract from total instead of repeatedly calling O(N) getDiskUsage().
+        let freedBytes = 0;
+        try {
+          const transcriptPath = this.resolveTranscriptPath(session);
+          const stat = await fs.stat(transcriptPath);
+          if (stat.isFile()) {
+            freedBytes = stat.size;
+          }
+        } catch {
+          // Ignore missing transcript
+        }
+
         if (!dryRun) {
           await this.deleteSession(session.sessionKey);
         }
-        currentUsage = await this.getDiskUsage();
+        currentUsage -= freedBytes;
       }
     }
 
