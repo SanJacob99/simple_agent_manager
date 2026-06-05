@@ -406,11 +406,24 @@ export class StorageEngine {
       for (let i = sessions.length - 1; i >= 0; i--) {
         if (currentUsage <= highWaterBytes) break;
         const session = sessions[i];
+
+        // ⚡ Bolt Optimization: stat the individual transcript being deleted and subtract its
+        // size from the running total, instead of re-reading the entire directory via
+        // getDiskUsage() on every eviction (which made mass eviction O(N^2) in disk I/O).
+        let freedBytes = 0;
+        try {
+          const transcriptPath = this.resolveTranscriptPath(session);
+          const stat = await fs.stat(transcriptPath);
+          freedBytes = stat.size;
+        } catch {
+          // Ignore missing file
+        }
+
         evicted.push(session.sessionKey);
         if (!dryRun) {
           await this.deleteSession(session.sessionKey);
         }
-        currentUsage = await this.getDiskUsage();
+        currentUsage -= freedBytes;
       }
     }
 
