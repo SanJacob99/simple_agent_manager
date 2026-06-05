@@ -8,6 +8,11 @@ dist
 .tmp/
 test-results/
 storage/
+# The broad `storage/` rule above is for the runtime data directory, but it
+# also matches the `server/storage/` source tree. Re-include the source so
+# new modules there can't be silently dropped from commits.
+!server/storage/
+!server/storage/**
 logs/
 settings.json
 graph.json
