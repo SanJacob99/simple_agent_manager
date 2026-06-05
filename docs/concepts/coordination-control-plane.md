@@ -3,7 +3,7 @@
 > Durable manager-led workflow coordination for canvas agents.
 
 <!-- source: server/coordination/coordination-service.ts -->
-<!-- last-verified: 2026-05-12 -->
+<!-- last-verified: 2026-06-05 -->
 
 ## Overview
 

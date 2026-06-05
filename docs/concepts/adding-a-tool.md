@@ -1,6 +1,6 @@
 # Authoring a Tool
 
-<!-- last-verified: 2026-04-23 -->
+<!-- last-verified: 2026-06-05 -->
 
 This guide walks through adding a new tool to SAM end-to-end using a hypothetical `weather` tool as the running example. If `weather` sounds too generic, mentally substitute whichever tool you're actually building.
 
