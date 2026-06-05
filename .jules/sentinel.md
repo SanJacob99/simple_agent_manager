@@ -39,3 +39,8 @@
 **Vulnerability:** The `image_analyze` and `show_image` tools fetched remote image URLs without any validation or DNS rebinding protection, exposing a Server-Side Request Forgery (SSRF) vulnerability. This allowed agents to probe internal endpoints and access restricted IP addresses (e.g. metadata services).
 **Learning:** All network requests triggered by user or agent inputs must be guarded against SSRF, not just dedicated web fetching tools. Bypassing DNS rebinding and restricting access to local IP ranges is a general requirement for any `fetch` call that accepts arbitrary URLs.
 **Prevention:** Extract URL validation and safe fetching logic (with custom `undici` Agents for IP pinning and explicit redirect handling) into a shared utility like `fetchSafeUrl`, and use it universally across all tools that make outbound HTTP requests.
+
+## 2026-04-26 - [LOW] Harden prefix-matching path boundary in browser screenshot tool
+**Issue:** `captureInlineScreenshot` in `browser.ts` reported the saved-path boundary using `absPath.startsWith(base)`, which prefix-matches sibling directories (e.g. `/workspace` vs `/workspace-secrets`). Severity is low/defense-in-depth: the actual write target is server-generated (`auto-${Date.now()}.${ext}` under `SCREENSHOT_DIR`), so this affects how `savedPath` is reported, not where files are written — practical exploitability is nil.
+**Learning:** `startsWith` on a bare directory string allows prefix matches; this is the same class of bug as the file-system-tools fix above, and worth fixing consistently even where it is not directly exploitable.
+**Prevention:** Use `absPath.startsWith(base + path.sep) || absPath === base` for workspace-boundary checks. (The code fix is already on `main`; this entry records the learning.)
