@@ -432,7 +432,13 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     const toDelete = Object.values(get().sessions).filter((session) => session.agentId === agentId);
 
     if (storageEngine) {
-      await Promise.all(toDelete.map((session) => storageEngine.deleteSession(session.sessionKey)));
+      // ⚡ Bolt Optimization: Batch concurrent file operations using a chunked execution
+      // pattern to prevent OS-level EMFILE (too many open files) limits while maintaining concurrency.
+      const CHUNK_SIZE = 50;
+      for (let i = 0; i < toDelete.length; i += CHUNK_SIZE) {
+        const chunk = toDelete.slice(i, i + CHUNK_SIZE);
+        await Promise.all(chunk.map((session) => storageEngine.deleteSession(session.sessionKey)));
+      }
     }
 
     set((state) => {
@@ -674,7 +680,13 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
     const overflow = sessions.slice(maxSessions);
     if (storageEngine) {
-      await Promise.all(overflow.map((session) => storageEngine.deleteSession(session.sessionKey)));
+      // ⚡ Bolt Optimization: Batch concurrent file operations using a chunked execution
+      // pattern to prevent OS-level EMFILE (too many open files) limits while maintaining concurrency.
+      const CHUNK_SIZE = 50;
+      for (let i = 0; i < overflow.length; i += CHUNK_SIZE) {
+        const chunk = overflow.slice(i, i + CHUNK_SIZE);
+        await Promise.all(chunk.map((session) => storageEngine.deleteSession(session.sessionKey)));
+      }
     }
 
     set((state) => {
