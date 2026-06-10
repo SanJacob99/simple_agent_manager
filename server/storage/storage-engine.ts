@@ -407,10 +407,22 @@ export class StorageEngine {
         if (currentUsage <= highWaterBytes) break;
         const session = sessions[i];
         evicted.push(session.sessionKey);
+
+        // ⚡ Bolt Optimization: Avoid O(N^2) file system I/O by fetching the individual file
+        // size and subtracting it from the running total, instead of recalculating the entire
+        // directory size on every eviction. This also fixes dryRun mode which previously
+        // would loop infinitely since the disk usage never actually dropped.
+        try {
+          const transcriptPath = this.resolveTranscriptPath(session);
+          const stat = await fs.stat(transcriptPath);
+          currentUsage -= stat.size;
+        } catch {
+          // Ignore missing files
+        }
+
         if (!dryRun) {
           await this.deleteSession(session.sessionKey);
         }
-        currentUsage = await this.getDiskUsage();
       }
     }
 
