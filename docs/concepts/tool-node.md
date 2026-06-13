@@ -3,7 +3,7 @@
 > Configures which tools an agent can use through profiles, groups, direct enables, skills, and plugins.
 
 <!-- source: src/types/nodes.ts#ToolsNodeData -->
-<!-- last-verified: 2026-05-29 -->
+<!-- last-verified: 2026-06-13 -->
 
 ## Overview
 
@@ -80,7 +80,7 @@ Skills stored on the Tool Node are merged into system prompt content during grap
 | `toolSettings.browser.cdpEndpoint` | `string` | `""` | CDP URL (e.g. `http://127.0.0.1:9222`). When set, attaches to a user-launched Chrome instead of spawning one |
 | `toolSettings.browser.skill` | `string` | `""` | Optional inline markdown override for the browser skill. See [browser-tool.md](browser-tool.md) for the full reference |
 
-> **Deprecated.** `subAgentSpawning` and `maxSubAgents` are no longer used by the runtime. Sub-agent capability is now declared via the [Sub-Agent Node](sub-agent-node.md). Existing graphs continue to load, but these fields have no effect.
+> **Note.** `subAgentSpawning` is still active: when `true`, the runtime enables the `sessions_spawn`, `sessions_yield`, and `subagents` session tools on the agent (controlled via `subAgentSpawning` in `ResolvedToolsConfig`, read by `run-coordinator.ts`). The [Sub-Agent Node](sub-agent-node.md) is the preferred way to declare named, configured sub-agents, but `subAgentSpawning` remains the switch for raw session-spawn capability. `maxSubAgents` is stored in `ResolvedToolsConfig` but is not currently enforced at runtime.
 
 ## Runtime Behavior
 
