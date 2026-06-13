@@ -262,10 +262,19 @@ export class MemoryEngine {
     // Local heuristic summary: keep the first line of each bullet so the
     // shape of the day is preserved without LLM cost. A future enhancement
     // can route through a summary model when one is configured.
+    // ⚡ Bolt Optimization: Use a single-pass loop instead of chained array methods
+    // to avoid intermediate array allocations.
+    const compact: string[] = [];
+    let bulletCount = 0;
     const lines = content.split(/\r?\n/);
-    const bullets = lines.filter((l) => l.trim().startsWith('- '));
-    const compact = bullets.map((l) => l.split('\n')[0].slice(0, 200));
-    return `## Summary (${bullets.length} entries)\n${compact.join('\n')}`;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (line.trim().startsWith('- ')) {
+        bulletCount++;
+        compact.push(line.slice(0, 200));
+      }
+    }
+    return `## Summary (${bulletCount} entries)\n${compact.join('\n')}`;
   }
 
   // --- Tools exposed to the agent ---
