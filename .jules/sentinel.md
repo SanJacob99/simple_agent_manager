@@ -35,3 +35,7 @@
 **Vulnerability:** The `music_generate` tool used `path.resolve` to combine `ctx.cwd` and the user-provided filename input (via the parameter `filename`) to derive the target output path for writing the generated audio files, but did not perform bounds-checking, thereby allowing agents to write arbitrary files onto the system outside the designated workspace.
 **Learning:** `path.resolve` normalizes paths containing relative sequences (like `../`), allowing users to break out of base directories unless explicitly restricted.
 **Prevention:** Always ensure that resolved file paths intended for sandboxed environments are verified to be within boundaries, e.g., by checking if `!resolved.startsWith(ctx.cwd + path.sep) && resolved !== ctx.cwd`.
+## 2026-06-14 - [CRITICAL] Fix Path Traversal in Browser User Data Directory
+**Vulnerability:** The browser tool used `path.resolve` to combine `ctx.cwd` and the user-provided `ctx.userDataDir` without bounds checking in `resolveUserDataDir`, allowing path traversal via `../` sequences or absolute paths to escape the agent workspace.
+**Learning:** Functions that return a resolved path based on user-provided input must validate that the output stays within the allowed base directory, even for configuration options like `userDataDir`. Absolute paths returned directly skip boundary checks altogether.
+**Prevention:** Always validate resolved paths to ensure they begin with the base directory followed by `path.sep` (or exactly match the base directory) to prevent traversal bypasses.
