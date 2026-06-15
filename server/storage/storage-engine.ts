@@ -407,10 +407,27 @@ export class StorageEngine {
         if (currentUsage <= highWaterBytes) break;
         const session = sessions[i];
         evicted.push(session.sessionKey);
+
+        let freedBytes = 0;
+        const transcriptPath = this.resolveTranscriptPath(session);
+        // Only count files within sessionsDir to match getDiskUsage behavior
+        if (transcriptPath === this.sessionsDir || transcriptPath.startsWith(this.sessionsDir + path.sep)) {
+          try {
+            const stat = await fs.stat(transcriptPath);
+            if (stat.isFile()) {
+              freedBytes = stat.size;
+            }
+          } catch {
+            // Ignore if file doesn't exist
+          }
+        }
+
         if (!dryRun) {
           await this.deleteSession(session.sessionKey);
         }
-        currentUsage = await this.getDiskUsage();
+        // ⚡ Bolt Optimization: Subtract file size from running total instead of calling getDiskUsage().
+        // This prevents O(N^2) file system I/O bottlenecks and fixes dry-run mode math.
+        currentUsage -= freedBytes;
       }
     }
 
