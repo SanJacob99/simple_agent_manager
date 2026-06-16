@@ -407,10 +407,25 @@ export class StorageEngine {
         if (currentUsage <= highWaterBytes) break;
         const session = sessions[i];
         evicted.push(session.sessionKey);
+
+        // ⚡ Bolt Optimization: Calculate size reduction by stat-ing the specific file
+        // instead of re-calculating getDiskUsage(), which causes O(N^2) file system I/O.
+        // This also makes simulation (dryRun) mode calculate accurately.
+        const transcriptPath = this.resolveTranscriptPath(session);
+        if (transcriptPath.startsWith(this.sessionsDir + path.sep) || transcriptPath === this.sessionsDir) {
+          try {
+            const stat = await fs.stat(transcriptPath);
+            if (stat.isFile()) {
+              currentUsage -= stat.size;
+            }
+          } catch {
+            // File might already be gone
+          }
+        }
+
         if (!dryRun) {
           await this.deleteSession(session.sessionKey);
         }
-        currentUsage = await this.getDiskUsage();
       }
     }
 
