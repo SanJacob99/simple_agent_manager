@@ -35,3 +35,8 @@
 **Vulnerability:** The `music_generate` tool used `path.resolve` to combine `ctx.cwd` and the user-provided filename input (via the parameter `filename`) to derive the target output path for writing the generated audio files, but did not perform bounds-checking, thereby allowing agents to write arbitrary files onto the system outside the designated workspace.
 **Learning:** `path.resolve` normalizes paths containing relative sequences (like `../`), allowing users to break out of base directories unless explicitly restricted.
 **Prevention:** Always ensure that resolved file paths intended for sandboxed environments are verified to be within boundaries, e.g., by checking if `!resolved.startsWith(ctx.cwd + path.sep) && resolved !== ctx.cwd`.
+
+## 2025-02-18 - SSRF protection refactoring and URL validation centralization
+**Vulnerability:** The web_fetch tool had built-in protection against SSRF, but other tools like image_analyze and show_image did not, meaning they could be used to make arbitrary HTTP requests to internal IP addresses or restricted networks via Server-Side Request Forgery.
+**Learning:** Security mechanisms like SSRF protection need to be centralized so they can be reused across all tools that fetch external resources. Redundant implementations lead to inconsistencies and security gaps.
+**Prevention:** Extract critical security validations (like DNS rebinding protection and restricted IP address filtering) into a shared utility function (e.g. fetchSafeUrl in url-validator.ts). Enforce the use of this utility for any external HTTP fetch operations.
