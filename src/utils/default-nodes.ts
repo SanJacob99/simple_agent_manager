@@ -247,6 +247,21 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         action: 'block',
         blockMessage: '',
       };
+    case 'observability':
+      return {
+        type: 'observability',
+        label: 'Observability',
+        enabled: true,
+        tracingEnabled: true,
+        exporter: 'console',
+        otlpEndpoint: '',
+        otlpHeaders: {},
+        serviceName: '',
+        sampleRatio: 1,
+        redactPii: true,
+        evalsEnabled: false,
+        evaluators: [],
+      };
     case 'subAgent':
       return {
         type: 'subAgent',

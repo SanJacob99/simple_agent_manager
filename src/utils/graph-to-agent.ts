@@ -421,6 +421,30 @@ export function resolveAgentConfig(
       };
     });
 
+  // --- Observability & Evals ---
+  // At most one observability node is read per agent; the first connected node
+  // wins. Absent resolves to null and the runtime stays a no-op.
+  const observabilityNode = connectedNodes.find(
+    (n) => n.data.type === 'observability',
+  );
+  const observability =
+    observabilityNode && observabilityNode.data.type === 'observability'
+      ? {
+          observabilityNodeId: observabilityNode.id,
+          label: observabilityNode.data.label,
+          enabled: observabilityNode.data.enabled,
+          tracingEnabled: observabilityNode.data.tracingEnabled,
+          exporter: observabilityNode.data.exporter,
+          otlpEndpoint: observabilityNode.data.otlpEndpoint,
+          otlpHeaders: { ...observabilityNode.data.otlpHeaders },
+          serviceName: observabilityNode.data.serviceName,
+          sampleRatio: observabilityNode.data.sampleRatio,
+          redactPii: observabilityNode.data.redactPii,
+          evalsEnabled: observabilityNode.data.evalsEnabled,
+          evaluators: observabilityNode.data.evaluators.map((ev) => ({ ...ev })),
+        }
+      : null;
+
   // --- MCP Servers ---
   // Each MCP node resolves to a ResolvedMcpConfig. The node id is kept as
   // `mcpNodeId` so the server can push `mcp:status` events back to the UI
@@ -666,6 +690,7 @@ export function resolveAgentConfig(
     subAgents,
     coordination: data.coordination ?? { ...DEFAULT_COORDINATION_CONFIG },
     guardrails,
+    observability,
     // Exec tool cwd overrides agent-level workingDirectory when set
     workspacePath:
       (toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.exec?.cwd)

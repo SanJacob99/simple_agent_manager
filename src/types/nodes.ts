@@ -18,7 +18,8 @@ export type NodeType =
   | 'provider'
   | 'mcp'
   | 'subAgent'
-  | 'guardrails';
+  | 'guardrails'
+  | 'observability';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -527,6 +528,67 @@ export interface SubAgentNodeData {
   recursiveSubAgentsEnabled: boolean;
 }
 
+// --- Observability & Evals Node ---
+//
+// Tracks where production agent tooling converged in 2026: OpenTelemetry-native
+// tracing (OpenInference span conventions) plus lightweight, run-time evals
+// (LLM-as-judge and heuristic checks). The node is a configuration surface; the
+// runtime engine (`server/runtime/observability-engine.ts`) defaults to a no-op
+// until the run coordinator opts into emitting spans and scores.
+
+/** Where captured spans are exported. */
+export type TraceExporter = 'none' | 'console' | 'otlp-http';
+
+/** How an evaluator scores a turn or session. */
+export type EvaluatorKind = 'llm-judge' | 'heuristic';
+
+/** Whether an evaluator runs per turn or once at session end. */
+export type EvaluatorScope = 'turn' | 'session';
+
+/** Built-in heuristic checks (no model call). */
+export type HeuristicCheck = 'non-empty' | 'no-tool-errors' | 'max-latency';
+
+export interface EvaluatorDefinition {
+  id: string;
+  name: string;
+  kind: EvaluatorKind;
+  scope: EvaluatorScope;
+  /** `llm-judge`: rubric/prompt the judge model scores against. Ignored for heuristics. */
+  rubric: string;
+  /** `llm-judge`: model used to judge. Empty string inherits the agent's model. */
+  judgeModelId: string;
+  /** `heuristic`: which built-in check to apply. Ignored for `llm-judge`. */
+  heuristic: HeuristicCheck;
+  /** Score in [0,1] at or above which the evaluator is considered a pass. */
+  passThreshold: number;
+  enabled: boolean;
+}
+
+export interface ObservabilityNodeData {
+  [key: string]: unknown;
+  type: 'observability';
+  label: string;
+  /** Master toggle. When false, no spans are emitted and no evaluators run. */
+  enabled: boolean;
+  // --- Tracing ---
+  tracingEnabled: boolean;
+  /** Exporter backend. `none` keeps spans in-memory only (useful for the eval path). */
+  exporter: TraceExporter;
+  /** OTLP/HTTP traces endpoint, e.g. `http://localhost:4318/v1/traces`. Used when `exporter === 'otlp-http'`. */
+  otlpEndpoint: string;
+  /** Extra headers for the OTLP exporter (e.g. `Authorization`). JSON-serializable. */
+  otlpHeaders: Record<string, string>;
+  /** `service.name` resource attribute. Empty string inherits the agent name. */
+  serviceName: string;
+  /** Head-sampling ratio in [0,1]. 1 = capture every run. */
+  sampleRatio: number;
+  /** Strip PII from span payloads before export, reusing the guardrail PII categories. */
+  redactPii: boolean;
+  // --- Evals ---
+  evalsEnabled: boolean;
+  evaluators: EvaluatorDefinition[];
+}
+
 // --- Union Types ---
 
 export type FlowNodeData =
@@ -543,6 +605,7 @@ export type FlowNodeData =
   | ProviderNodeData
   | MCPNodeData
   | SubAgentNodeData
-  | GuardrailsNodeData;
+  | GuardrailsNodeData
+  | ObservabilityNodeData;
 
 export type AppNode = Node<FlowNodeData>;
