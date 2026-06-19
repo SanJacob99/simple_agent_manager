@@ -128,6 +128,46 @@ export interface ResolvedGuardrailConfig {
   blockMessage: string;
 }
 
+// --- Observability & Evals ---
+
+export type TraceExporter = 'none' | 'console' | 'otlp-http';
+export type EvaluatorKind = 'llm-judge' | 'heuristic';
+export type EvaluatorScope = 'turn' | 'session';
+export type HeuristicCheck = 'non-empty' | 'no-tool-errors' | 'max-latency';
+
+export interface ResolvedEvaluatorConfig {
+  id: string;
+  name: string;
+  kind: EvaluatorKind;
+  scope: EvaluatorScope;
+  rubric: string;
+  judgeModelId: string;
+  heuristic: HeuristicCheck;
+  passThreshold: number;
+  enabled: boolean;
+}
+
+/**
+ * Resolved observability/eval configuration. At most one observability node is
+ * read per agent (first connected wins). Optional on `AgentConfig` so existing
+ * fixtures and serialized graphs stay valid without a backfill. The runtime
+ * engine treats a `null`/absent config as "fully disabled".
+ */
+export interface ResolvedObservabilityConfig {
+  observabilityNodeId: string;
+  label: string;
+  enabled: boolean;
+  tracingEnabled: boolean;
+  exporter: TraceExporter;
+  otlpEndpoint: string;
+  otlpHeaders: Record<string, string>;
+  serviceName: string;
+  sampleRatio: number;
+  redactPii: boolean;
+  evalsEnabled: boolean;
+  evaluators: ResolvedEvaluatorConfig[];
+}
+
 // --- Agent Config interfaces ---
 
 export interface ResolvedCronConfig {
@@ -196,6 +236,12 @@ export interface AgentConfig {
    * compatible without a backfill.
    */
   guardrails?: ResolvedGuardrailConfig[];
+  /**
+   * Optional observability/eval configuration. When omitted or disabled, the
+   * runtime emits no spans and runs no evaluators. Optional so existing
+   * AgentConfig fixtures and serialized graphs remain compatible.
+   */
+  observability?: ResolvedObservabilityConfig | null;
 
   /** Working directory for shell commands (exec tool). Independent of storage path. */
   workspacePath: string | null;

@@ -39,6 +39,7 @@ The default sidebar currently exposes these draggable nodes:
 | `connectors` | Configuration surface for external connector metadata |
 | `storage` | Session persistence, retention, maintenance, and memory file settings |
 | `vectorDatabase` | Configuration surface for vector-store metadata |
+| `observability` | OpenTelemetry tracing + run evals (scaffold; runtime is a no-op pending coordinator wiring) |
 
 The codebase also contains a `cron` node type and editor, but it is not part of the default palette and should be treated as in-progress unless you verify the full execution path.
 
