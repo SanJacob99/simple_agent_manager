@@ -3,7 +3,7 @@
 > Two-tier persistent memory for an agent. Inspired by OpenClaw: a single durable `MEMORY.md` plus per-day short-term logs, both saved alongside the agent's sessions on disk.
 
 <!-- source: src/types/nodes.ts#MemoryNodeData -->
-<!-- last-verified: 2026-05-29 -->
+<!-- last-verified: 2026-06-20 -->
 
 ## Overview
 
