@@ -128,6 +128,33 @@ export interface ResolvedGuardrailConfig {
   blockMessage: string;
 }
 
+// --- Observability ---
+
+export type TraceExporter = 'none' | 'console' | 'otlp' | 'langfuse';
+
+/**
+ * Resolved observability/telemetry config. Multiple observability nodes can be
+ * attached to a single agent; the runtime fans every span out to each enabled
+ * exporter. The node id is preserved so the UI can correlate emitted spans back
+ * to the node that produced them.
+ */
+export interface ResolvedObservabilityConfig {
+  observabilityNodeId: string;
+  label: string;
+  enabled: boolean;
+  exporter: TraceExporter;
+  endpoint: string;
+  headers: Record<string, string>;
+  serviceName: string;
+  sampleRate: number;
+  capturePrompts: boolean;
+  captureCompletions: boolean;
+  captureToolIO: boolean;
+  redactPii: boolean;
+  trackCost: boolean;
+  latencyWarnMs: number;
+}
+
 // --- Agent Config interfaces ---
 
 export interface ResolvedCronConfig {
@@ -196,6 +223,13 @@ export interface AgentConfig {
    * compatible without a backfill.
    */
   guardrails?: ResolvedGuardrailConfig[];
+
+  /**
+   * Optional run-level tracing/telemetry configs. When omitted or empty, the
+   * runtime emits no spans. Optional so existing AgentConfig fixtures and
+   * serialized graphs remain compatible without a backfill.
+   */
+  observability?: ResolvedObservabilityConfig[];
 
   /** Working directory for shell commands (exec tool). Independent of storage path. */
   workspacePath: string | null;

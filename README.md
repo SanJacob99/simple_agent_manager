@@ -39,8 +39,15 @@ The default sidebar currently exposes these draggable nodes:
 | `connectors` | Configuration surface for external connector metadata |
 | `storage` | Session persistence, retention, maintenance, and memory file settings |
 | `vectorDatabase` | Configuration surface for vector-store metadata |
+| `mcp` | Model Context Protocol server bindings (stdio/http/sse) |
+| `provider` | Provider plugin, auth method, and base-URL binding |
+| `subAgent` | Spawned sub-agent identity, model, and overridable fields |
+| `guardrails` | Input/output rule sets (blocked terms, PII, length) |
+| `observability` | Run-level tracing, token/cost accounting, and latency telemetry (config surface) |
 
 The codebase also contains a `cron` node type and editor, but it is not part of the default palette and should be treated as in-progress unless you verify the full execution path.
+
+A prioritized list of upcoming features lives in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Architecture
 

@@ -1,6 +1,6 @@
 import type { AppNode } from '../types/nodes';
 import type { Edge } from '@xyflow/react';
-import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides, ResolvedGuardrailConfig } from '../../shared/agent-config';
+import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides, ResolvedGuardrailConfig, ResolvedObservabilityConfig } from '../../shared/agent-config';
 import { resolveToolNames, IMPLEMENTED_TOOL_NAMES } from '../../shared/resolve-tool-names';
 import { buildSystemPrompt } from '../../shared/system-prompt-builder';
 import { eligibleBundledSkills } from '../../shared/default-tool-skills';
@@ -421,6 +421,31 @@ export function resolveAgentConfig(
       };
     });
 
+  // --- Observability ---
+  // Each connected observability node resolves to its own entry; the runtime
+  // fans every span out to each enabled exporter.
+  const observability: ResolvedObservabilityConfig[] = connectedNodes
+    .filter((n) => n.data.type === 'observability')
+    .map((n) => {
+      if (n.data.type !== 'observability') throw new Error('unreachable');
+      return {
+        observabilityNodeId: n.id,
+        label: n.data.label,
+        enabled: n.data.enabled,
+        exporter: n.data.exporter,
+        endpoint: n.data.endpoint,
+        headers: { ...n.data.headers },
+        serviceName: n.data.serviceName,
+        sampleRate: n.data.sampleRate,
+        capturePrompts: n.data.capturePrompts,
+        captureCompletions: n.data.captureCompletions,
+        captureToolIO: n.data.captureToolIO,
+        redactPii: n.data.redactPii,
+        trackCost: n.data.trackCost,
+        latencyWarnMs: n.data.latencyWarnMs,
+      };
+    });
+
   // --- MCP Servers ---
   // Each MCP node resolves to a ResolvedMcpConfig. The node id is kept as
   // `mcpNodeId` so the server can push `mcp:status` events back to the UI
@@ -666,6 +691,7 @@ export function resolveAgentConfig(
     subAgents,
     coordination: data.coordination ?? { ...DEFAULT_COORDINATION_CONFIG },
     guardrails,
+    observability,
     // Exec tool cwd overrides agent-level workingDirectory when set
     workspacePath:
       (toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.exec?.cwd)
