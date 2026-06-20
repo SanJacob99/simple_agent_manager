@@ -47,7 +47,18 @@ function summarizePayload(payload: any): string {
   const model: string = payload.model ?? 'unknown';
   const messages: any[] = payload.messages ?? [];
   const tools: any[] = payload.tools ?? [];
-  const lastUser = [...messages].reverse().find((m: any) => m.role === 'user');
+
+  // ⚡ Bolt Optimization: Use a backward for loop instead of [...messages].reverse().find(...)
+  // This avoids costly O(N) array allocation and copying, especially for large message histories,
+  // while finding the most recent user message efficiently.
+  let lastUser: any = undefined;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'user') {
+      lastUser = messages[i];
+      break;
+    }
+  }
+
   let lastUserText = '';
   if (lastUser) {
     const content = lastUser.content;
