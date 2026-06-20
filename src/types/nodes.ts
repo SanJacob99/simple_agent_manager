@@ -18,7 +18,8 @@ export type NodeType =
   | 'provider'
   | 'mcp'
   | 'subAgent'
-  | 'guardrails';
+  | 'guardrails'
+  | 'observability';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -508,6 +509,55 @@ export interface GuardrailsNodeData {
 
 export type GuardrailPiiCategory = 'email' | 'ssn' | 'credit_card';
 
+// --- Observability Node ---
+//
+// Configuration surface for run-level tracing, token/cost accounting, and
+// latency telemetry. Mirrors the OpenTelemetry GenAI semantic conventions and
+// common agent-observability backends (OTLP collectors, Langfuse). Treated as
+// an extension surface: the graph resolves it into `AgentConfig.observability`,
+// and the run coordinator is expected to honor it when emitting trace spans.
+
+/**
+ * Where trace spans are shipped.
+ * - `none`: tracing wired but no export (spans are dropped). Useful for keeping
+ *   the node configured while temporarily silencing telemetry.
+ * - `console`: spans are logged to the server console. Zero-dependency default
+ *   for local debugging.
+ * - `otlp`: OpenTelemetry Protocol over HTTP to a collector `endpoint`.
+ * - `langfuse`: Langfuse ingestion endpoint (uses `headers` for the key pair).
+ */
+export type TraceExporter = 'none' | 'console' | 'otlp' | 'langfuse';
+
+export interface ObservabilityNodeData {
+  [key: string]: unknown;
+  type: 'observability';
+  label: string;
+  /** Master toggle. When false the node is wired but emits no spans. */
+  enabled: boolean;
+  /** Destination for emitted spans. */
+  exporter: TraceExporter;
+  /** OTLP/Langfuse endpoint URL. Empty = exporter default or env var. */
+  endpoint: string;
+  /** Extra HTTP headers for the exporter (e.g. `Authorization: Bearer ...`). */
+  headers: Record<string, string>;
+  /** `service.name` resource attribute attached to every span. */
+  serviceName: string;
+  /** Fraction of runs sampled for tracing, 0..1 (1 = trace every run). */
+  sampleRate: number;
+  /** Record the rendered prompt on LLM spans. */
+  capturePrompts: boolean;
+  /** Record the model completion text on LLM spans. */
+  captureCompletions: boolean;
+  /** Record tool-call arguments and results as span events. */
+  captureToolIO: boolean;
+  /** Strip emails/SSNs/credit-card numbers from captured text before export. */
+  redactPii: boolean;
+  /** Track token usage and estimated cost per run as span attributes. */
+  trackCost: boolean;
+  /** Emit a `latency.warn` span event when a turn exceeds this many ms. 0 = off. */
+  latencyWarnMs: number;
+}
+
 // --- Sub-Agent Node ---
 
 export interface SubAgentNodeData {
@@ -543,6 +593,7 @@ export type FlowNodeData =
   | ProviderNodeData
   | MCPNodeData
   | SubAgentNodeData
-  | GuardrailsNodeData;
+  | GuardrailsNodeData
+  | ObservabilityNodeData;
 
 export type AppNode = Node<FlowNodeData>;

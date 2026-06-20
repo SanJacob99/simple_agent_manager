@@ -71,6 +71,11 @@
       "doc": "guardrails-node.md",
       "type": "src/types/nodes.ts#GuardrailsNodeData",
       "runtime": "server/runtime/guardrails-engine.ts"
+    },
+    "observability": {
+      "doc": "observability-node.md",
+      "type": "src/types/nodes.ts#ObservabilityNodeData",
+      "runtime": null
     }
   }
 }

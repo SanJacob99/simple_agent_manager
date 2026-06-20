@@ -264,5 +264,22 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         workingDirectory: '',
         recursiveSubAgentsEnabled: false,
       };
+    case 'observability':
+      return {
+        type: 'observability',
+        label: 'Observability',
+        enabled: true,
+        exporter: 'console',
+        endpoint: '',
+        headers: {},
+        serviceName: 'simple-agent-manager',
+        sampleRate: 1,
+        capturePrompts: true,
+        captureCompletions: true,
+        captureToolIO: true,
+        redactPii: false,
+        trackCost: true,
+        latencyWarnMs: 0,
+      };
   }
 }

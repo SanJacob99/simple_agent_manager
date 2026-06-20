@@ -1310,3 +1310,89 @@ describe('validateAgentRuntimeGraph — connector validation', () => {
     expect(errors.find((e) => e.code === 'unselected_connector')).toBeUndefined();
   });
 });
+
+describe('resolveAgentConfig — observability', () => {
+  function agentNode() {
+    return {
+      id: 'agent-1',
+      type: 'agent',
+      position: { x: 0, y: 0 },
+      data: {
+        type: 'agent',
+        name: 'Agent',
+        nameConfirmed: true,
+        systemPrompt: 'Test',
+        systemPromptMode: 'manual' as const,
+        modelId: 'claude-sonnet-4-20250514',
+        thinkingLevel: 'off',
+        description: '',
+        tags: [],
+        modelCapabilities: {},
+      },
+    };
+  }
+
+  function observabilityNode(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'obs-1',
+      type: 'observability',
+      position: { x: -200, y: 0 },
+      data: {
+        type: 'observability',
+        label: 'Tracing',
+        enabled: true,
+        exporter: 'otlp',
+        endpoint: 'https://otlp.example.com/v1/traces',
+        headers: { Authorization: 'Bearer abc' },
+        serviceName: 'sam-test',
+        sampleRate: 0.5,
+        capturePrompts: true,
+        captureCompletions: false,
+        captureToolIO: true,
+        redactPii: true,
+        trackCost: true,
+        latencyWarnMs: 2000,
+        ...overrides,
+      },
+    };
+  }
+
+  it('resolves a connected observability node into observability[]', () => {
+    const config = resolveAgentConfig(
+      'agent-1',
+      [agentNode(), observabilityNode()] as any,
+      [{ id: 'e1', source: 'obs-1', target: 'agent-1', type: 'data' }] as any,
+    );
+
+    expect(config?.observability).toHaveLength(1);
+    const obs = config!.observability![0];
+    expect(obs.observabilityNodeId).toBe('obs-1');
+    expect(obs.exporter).toBe('otlp');
+    expect(obs.endpoint).toBe('https://otlp.example.com/v1/traces');
+    expect(obs.headers).toEqual({ Authorization: 'Bearer abc' });
+    expect(obs.sampleRate).toBe(0.5);
+    expect(obs.captureCompletions).toBe(false);
+    expect(obs.redactPii).toBe(true);
+    expect(obs.latencyWarnMs).toBe(2000);
+  });
+
+  it('copies the headers map so later node edits do not mutate the resolved config', () => {
+    const node = observabilityNode();
+    const config = resolveAgentConfig(
+      'agent-1',
+      [agentNode(), node] as any,
+      [{ id: 'e1', source: 'obs-1', target: 'agent-1', type: 'data' }] as any,
+    );
+    (node.data.headers as Record<string, string>)['X-Extra'] = 'leaked';
+    expect(config!.observability![0].headers).toEqual({ Authorization: 'Bearer abc' });
+  });
+
+  it('omits observability entries for unconnected nodes', () => {
+    const config = resolveAgentConfig(
+      'agent-1',
+      [agentNode(), observabilityNode()] as any,
+      [] as any,
+    );
+    expect(config?.observability).toHaveLength(0);
+  });
+});
