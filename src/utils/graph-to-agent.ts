@@ -1,6 +1,6 @@
 import type { AppNode } from '../types/nodes';
 import type { Edge } from '@xyflow/react';
-import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides, ResolvedGuardrailConfig } from '../../shared/agent-config';
+import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides, ResolvedGuardrailConfig, ResolvedEvaluationConfig } from '../../shared/agent-config';
 import { resolveToolNames, IMPLEMENTED_TOOL_NAMES } from '../../shared/resolve-tool-names';
 import { buildSystemPrompt } from '../../shared/system-prompt-builder';
 import { eligibleBundledSkills } from '../../shared/default-tool-skills';
@@ -421,6 +421,35 @@ export function resolveAgentConfig(
       };
     });
 
+  // --- Evaluation suites ---
+  // Each connected evaluation node becomes its own resolved suite, keyed by
+  // `evaluationNodeId` so a run report can be correlated back to the node.
+  const evaluations: ResolvedEvaluationConfig[] = connectedNodes
+    .filter((n) => n.data.type === 'evaluation')
+    .map((n) => {
+      if (n.data.type !== 'evaluation') throw new Error('unreachable');
+      return {
+        evaluationNodeId: n.id,
+        label: n.data.label,
+        enabled: n.data.enabled,
+        judgeMode: n.data.judgeMode,
+        judgeModelId: n.data.judgeModelId,
+        judgePrompt: n.data.judgePrompt,
+        scoreScale: n.data.scoreScale,
+        passThreshold: n.data.passThreshold,
+        cases: n.data.cases.map((c) => ({
+          id: c.id,
+          name: c.name,
+          input: c.input,
+          expected: c.expected,
+          tags: [...c.tags],
+        })),
+        autoRunOnSave: n.data.autoRunOnSave,
+        maxFailures: n.data.maxFailures,
+        caseTimeoutMs: n.data.caseTimeoutMs,
+      };
+    });
+
   // --- MCP Servers ---
   // Each MCP node resolves to a ResolvedMcpConfig. The node id is kept as
   // `mcpNodeId` so the server can push `mcp:status` events back to the UI
@@ -666,6 +695,7 @@ export function resolveAgentConfig(
     subAgents,
     coordination: data.coordination ?? { ...DEFAULT_COORDINATION_CONFIG },
     guardrails,
+    evaluations,
     // Exec tool cwd overrides agent-level workingDirectory when set
     workspacePath:
       (toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.exec?.cwd)

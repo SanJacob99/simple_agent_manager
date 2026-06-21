@@ -8,7 +8,7 @@ import type {
 const ALL_NODE_TYPES = new Set([
   'agent', 'memory', 'tools', 'skills', 'contextEngine', 'agentComm',
   'connectors', 'storage', 'vectorDatabase', 'cron', 'provider', 'mcp',
-  'subAgent',
+  'subAgent', 'guardrails', 'evaluation',
 ]);
 
 const SUB_AGENT_ALLOWED_PERIPHERALS = new Set(['tools', 'provider', 'skills', 'mcp']);

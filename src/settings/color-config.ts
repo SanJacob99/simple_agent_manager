@@ -120,6 +120,7 @@ export const COLOR_GROUPS: ColorVarGroup[] = [
       { name: '--c-node-provider', label: 'Provider' },
       { name: '--c-node-mcp', label: 'MCP' },
       { name: '--c-node-subagent', label: 'Sub-Agent' },
+      { name: '--c-node-evaluation', label: 'Evaluation' },
     ],
   },
   {
