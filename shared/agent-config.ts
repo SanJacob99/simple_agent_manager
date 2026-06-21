@@ -128,6 +128,41 @@ export interface ResolvedGuardrailConfig {
   blockMessage: string;
 }
 
+// --- Evaluation ---
+
+export type EvalJudgeMode = 'heuristic' | 'llm';
+export type EvalScoreScale = 'binary' | 'numeric';
+
+export interface ResolvedEvalCase {
+  id: string;
+  name: string;
+  input: string;
+  expected: string;
+  tags: string[];
+}
+
+/**
+ * Resolved evaluation suite. Each connected evaluation node becomes its own
+ * entry, keyed by `evaluationNodeId` so a run report can be correlated back to
+ * the node on the canvas. Runtime grading is not yet wired -- the suite is
+ * carried through the AgentConfig so the resolved graph stays complete and the
+ * eval runner can be layered on without a schema migration.
+ */
+export interface ResolvedEvaluationConfig {
+  evaluationNodeId: string;
+  label: string;
+  enabled: boolean;
+  judgeMode: EvalJudgeMode;
+  judgeModelId: string;
+  judgePrompt: string;
+  scoreScale: EvalScoreScale;
+  passThreshold: number;
+  cases: ResolvedEvalCase[];
+  autoRunOnSave: boolean;
+  maxFailures: number;
+  caseTimeoutMs: number;
+}
+
 // --- Agent Config interfaces ---
 
 export interface ResolvedCronConfig {
@@ -196,6 +231,13 @@ export interface AgentConfig {
    * compatible without a backfill.
    */
   guardrails?: ResolvedGuardrailConfig[];
+
+  /**
+   * Optional offline evaluation suites attached to this agent. When omitted or
+   * empty, no suites are wired. Optional so existing AgentConfig fixtures and
+   * serialized graphs remain compatible without a backfill.
+   */
+  evaluations?: ResolvedEvaluationConfig[];
 
   /** Working directory for shell commands (exec tool). Independent of storage path. */
   workspacePath: string | null;

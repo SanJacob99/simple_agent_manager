@@ -18,7 +18,8 @@ export type NodeType =
   | 'provider'
   | 'mcp'
   | 'subAgent'
-  | 'guardrails';
+  | 'guardrails'
+  | 'evaluation';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -527,6 +528,61 @@ export interface SubAgentNodeData {
   recursiveSubAgentsEnabled: boolean;
 }
 
+// --- Evaluation Node ---
+//
+// Declares an offline evaluation suite for the agent it connects to. Each
+// suite is a set of test cases (an input prompt plus a reference answer or
+// rubric) that can be replayed against the agent and graded -- either with a
+// deterministic heuristic or with an LLM-as-judge. This brings the "evals as a
+// first-class graph object" pattern (OpenAI AgentKit, Anthropic, Braintrust,
+// LangSmith/Langfuse) onto the canvas so regressions are caught before ship.
+
+/** How a case response is graded. */
+export type EvalJudgeMode = 'heuristic' | 'llm';
+
+/**
+ * - `binary`: each case is pass/fail.
+ * - `numeric`: the judge returns a 0-1 score; a case passes when the score is
+ *   at or above `passThreshold`.
+ */
+export type EvalScoreScale = 'binary' | 'numeric';
+
+export interface EvalCase {
+  id: string;
+  name: string;
+  /** User message sent to the agent for this case. */
+  input: string;
+  /** Reference answer (heuristic mode) or grading rubric (llm mode). */
+  expected: string;
+  tags: string[];
+}
+
+export interface EvaluationNodeData {
+  [key: string]: unknown;
+  type: 'evaluation';
+  label: string;
+  /** Master toggle. When false the suite is wired but never runs. */
+  enabled: boolean;
+  /** Grading strategy applied to each case response. */
+  judgeMode: EvalJudgeMode;
+  /** Model used when `judgeMode` is `llm`. Empty = inherit the agent's model. */
+  judgeModelId: string;
+  /** Rubric / system prompt handed to the judge model in `llm` mode. */
+  judgePrompt: string;
+  /** Pass/fail vs. graded score. */
+  scoreScale: EvalScoreScale;
+  /** Minimum score (0-1) for a `numeric` case to count as passing. */
+  passThreshold: number;
+  /** Test cases replayed against the connected agent. */
+  cases: EvalCase[];
+  /** Re-run the suite automatically whenever the agent config changes. */
+  autoRunOnSave: boolean;
+  /** Abort the run after this many failing cases. 0 = run every case. */
+  maxFailures: number;
+  /** Per-case wall-clock timeout in milliseconds. */
+  caseTimeoutMs: number;
+}
+
 // --- Union Types ---
 
 export type FlowNodeData =
@@ -543,6 +599,7 @@ export type FlowNodeData =
   | ProviderNodeData
   | MCPNodeData
   | SubAgentNodeData
-  | GuardrailsNodeData;
+  | GuardrailsNodeData
+  | EvaluationNodeData;
 
 export type AppNode = Node<FlowNodeData>;

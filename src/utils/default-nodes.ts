@@ -247,6 +247,22 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         action: 'block',
         blockMessage: '',
       };
+    case 'evaluation':
+      return {
+        type: 'evaluation',
+        label: 'Evaluation',
+        enabled: true,
+        judgeMode: 'llm',
+        judgeModelId: '',
+        judgePrompt:
+          'You are a strict grader. Compare the agent RESPONSE against the EXPECTED answer/rubric. Reply only with PASS or FAIL (binary), or a score from 0 to 1 (numeric).',
+        scoreScale: 'binary',
+        passThreshold: 0.7,
+        cases: [],
+        autoRunOnSave: false,
+        maxFailures: 0,
+        caseTimeoutMs: 60000,
+      };
     case 'subAgent':
       return {
         type: 'subAgent',

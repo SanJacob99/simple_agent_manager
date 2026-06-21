@@ -15,6 +15,7 @@ export const NODE_COLORS: Record<NodeType, string> = {
   mcp: 'var(--c-node-mcp)',
   subAgent: 'var(--c-node-subagent)',
   guardrails: 'var(--c-node-guardrails)',
+  evaluation: 'var(--c-node-evaluation)',
 };
 
 export const NODE_PASTEL: Record<NodeType, { bg: string; fg: string }> = {
@@ -32,6 +33,7 @@ export const NODE_PASTEL: Record<NodeType, { bg: string; fg: string }> = {
   mcp:            { bg: '#CFE9E2', fg: '#2FA8A1' },
   subAgent:       { bg: '#E8DCFB', fg: '#9450C9' },
   guardrails:     { bg: '#FCE2E0', fg: '#B53A2C' },
+  evaluation:     { bg: '#CFEAF0', fg: '#2A8FA3' },
 };
 
 export const NODE_LABELS: Record<NodeType, string> = {
@@ -49,4 +51,5 @@ export const NODE_LABELS: Record<NodeType, string> = {
   mcp: 'MCP',
   subAgent: 'Sub-Agent',
   guardrails: 'Guardrails',
+  evaluation: 'Evaluation',
 };

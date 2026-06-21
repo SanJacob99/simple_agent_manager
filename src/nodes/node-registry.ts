@@ -12,6 +12,7 @@ import ProviderNode from './ProviderNode';
 import MCPNode from './MCPNode';
 import SubAgentNode from './SubAgentNode';
 import GuardrailsNode from './GuardrailsNode';
+import EvaluationNode from './EvaluationNode';
 
 export const nodeTypes = {
   agent: AgentNode,
@@ -28,4 +29,5 @@ export const nodeTypes = {
   mcp: MCPNode,
   subAgent: SubAgentNode,
   guardrails: GuardrailsNode,
+  evaluation: EvaluationNode,
 } as const;
