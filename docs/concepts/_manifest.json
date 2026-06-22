@@ -71,6 +71,11 @@
       "doc": "guardrails-node.md",
       "type": "src/types/nodes.ts#GuardrailsNodeData",
       "runtime": "server/runtime/guardrails-engine.ts"
+    },
+    "evals": {
+      "doc": "evals-node.md",
+      "type": "src/types/nodes.ts#EvalsNodeData",
+      "runtime": "server/runtime/evals-engine.ts"
     }
   }
 }

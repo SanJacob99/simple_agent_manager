@@ -128,6 +128,45 @@ export interface ResolvedGuardrailConfig {
   blockMessage: string;
 }
 
+// --- Evals ---
+
+export type EvalAssertionType =
+  | 'contains'
+  | 'not_contains'
+  | 'equals'
+  | 'regex'
+  | 'llm_judge';
+
+export interface ResolvedEvalAssertion {
+  id: string;
+  type: EvalAssertionType;
+  value: string;
+  caseSensitive?: boolean;
+}
+
+export interface ResolvedEvalCase {
+  id: string;
+  name: string;
+  input: string;
+  assertions: ResolvedEvalAssertion[];
+}
+
+/**
+ * Resolved eval suite. Multiple evals nodes can attach to one agent; each
+ * resolves to its own entry so the per-node `label` can be surfaced in result
+ * reporting. The `evalNodeId` lets the server correlate a suite run back to the
+ * node that defined it. Scoring lives in `server/runtime/evals-engine.ts`.
+ */
+export interface ResolvedEvalConfig {
+  evalNodeId: string;
+  label: string;
+  enabled: boolean;
+  cases: ResolvedEvalCase[];
+  passThreshold: number;
+  judgeModelId: string;
+  maxConcurrency: number;
+}
+
 // --- Agent Config interfaces ---
 
 export interface ResolvedCronConfig {
@@ -196,6 +235,14 @@ export interface AgentConfig {
    * compatible without a backfill.
    */
   guardrails?: ResolvedGuardrailConfig[];
+  /**
+   * Optional eval suites attached to the agent. When omitted or empty the
+   * agent has no associated evals. Optional so existing AgentConfig fixtures
+   * and serialized graphs stay compatible without a backfill. Scoring lives in
+   * `server/runtime/evals-engine.ts`; full per-case agent execution is a
+   * documented extension surface not yet wired into the run coordinator.
+   */
+  evals?: ResolvedEvalConfig[];
 
   /** Working directory for shell commands (exec tool). Independent of storage path. */
   workspacePath: string | null;
