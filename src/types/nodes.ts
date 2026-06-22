@@ -18,7 +18,8 @@ export type NodeType =
   | 'provider'
   | 'mcp'
   | 'subAgent'
-  | 'guardrails';
+  | 'guardrails'
+  | 'evals';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -508,6 +509,71 @@ export interface GuardrailsNodeData {
 
 export type GuardrailPiiCategory = 'email' | 'ssn' | 'credit_card';
 
+// --- Evals Node ---
+//
+// Eval-driven agent development: attach a suite of test cases to an agent and
+// score its responses against deterministic and (planned) LLM-judge
+// assertions. This mirrors the workflow popularized by OpenAI Evals, Promptfoo,
+// and Braintrust — define inputs + expectations, run them on every prompt or
+// model change, and watch the pass rate. The scoring core lives in
+// `server/runtime/evals-engine.ts`; orchestrating a full agent run per case is
+// a documented extension surface and is not yet wired into the run coordinator.
+
+/**
+ * How a single assertion grades the agent's final response.
+ * - `contains` / `not_contains`: substring presence / absence.
+ * - `equals`: exact string match (after trim).
+ * - `regex`: JavaScript regular expression test.
+ * - `llm_judge`: a rubric graded by a judge model. Deterministic scoring
+ *   treats these as `pending` until the judge pass runs.
+ */
+export type EvalAssertionType =
+  | 'contains'
+  | 'not_contains'
+  | 'equals'
+  | 'regex'
+  | 'llm_judge';
+
+export interface EvalAssertion {
+  id: string;
+  type: EvalAssertionType;
+  /**
+   * The expectation. For `contains`/`not_contains`/`equals` it is the literal
+   * text; for `regex` it is the pattern; for `llm_judge` it is the grading
+   * rubric handed to the judge model.
+   */
+  value: string;
+  /** Applies to `contains`/`not_contains`/`equals`. Defaults to false. */
+  caseSensitive?: boolean;
+}
+
+export interface EvalCase {
+  id: string;
+  name: string;
+  /** User message sent to the agent when the case runs. */
+  input: string;
+  /** Assertions evaluated against the agent's final response. */
+  assertions: EvalAssertion[];
+}
+
+export interface EvalsNodeData {
+  [key: string]: unknown;
+  type: 'evals';
+  label: string;
+  /** When false, the suite is wired into the graph but never executed. */
+  enabled: boolean;
+  cases: EvalCase[];
+  /**
+   * Fraction (0–1) of a case's assertions that must pass for the case to count
+   * as a pass. 1 means every assertion must pass.
+   */
+  passThreshold: number;
+  /** Model used to grade `llm_judge` assertions. Empty = inherit the agent's model. */
+  judgeModelId: string;
+  /** Upper bound on cases executed in parallel when the runner is invoked. */
+  maxConcurrency: number;
+}
+
 // --- Sub-Agent Node ---
 
 export interface SubAgentNodeData {
@@ -543,6 +609,7 @@ export type FlowNodeData =
   | ProviderNodeData
   | MCPNodeData
   | SubAgentNodeData
-  | GuardrailsNodeData;
+  | GuardrailsNodeData
+  | EvalsNodeData;
 
 export type AppNode = Node<FlowNodeData>;

@@ -247,6 +247,16 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         action: 'block',
         blockMessage: '',
       };
+    case 'evals':
+      return {
+        type: 'evals',
+        label: 'Evals',
+        enabled: true,
+        cases: [],
+        passThreshold: 1,
+        judgeModelId: '',
+        maxConcurrency: 2,
+      };
     case 'subAgent':
       return {
         type: 'subAgent',
