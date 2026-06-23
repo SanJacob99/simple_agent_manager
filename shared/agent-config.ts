@@ -128,6 +128,52 @@ export interface ResolvedGuardrailConfig {
   blockMessage: string;
 }
 
+// --- Telemetry / Observability ---
+
+/**
+ * Where assembled telemetry spans are sent.
+ * - `none`: spans are built in-memory but never exported (useful while wiring).
+ * - `console`: pretty-print each completed run span to the server log.
+ * - `file`: append newline-delimited JSON spans to `filePath`.
+ * - `otlp`: POST OTLP/HTTP JSON to an OpenTelemetry collector at `otlpEndpoint`.
+ */
+export type TelemetryExporter = 'none' | 'console' | 'file' | 'otlp';
+
+/**
+ * Resolved observability configuration. A single telemetry node attaches to an
+ * agent and instruments its runs: token usage, cost estimates, turn latency,
+ * and tool-call spans. Mirrors the resolved-config shape used by guardrails so
+ * the runtime can treat peripheral instrumentation uniformly. Multiple nodes
+ * resolve to multiple entries; the runtime fans each completed span out to
+ * every enabled exporter.
+ */
+export interface ResolvedTelemetryConfig {
+  telemetryNodeId: string;
+  label: string;
+  enabled: boolean;
+  /** Record prompt/response token counts per turn. */
+  captureTokens: boolean;
+  /** Derive a USD cost estimate from token counts and the model price table. */
+  captureCost: boolean;
+  /** Record wall-clock latency per turn and per tool call. */
+  captureLatency: boolean;
+  /** Emit a child span for every tool invocation (name, duration, error). */
+  captureToolCalls: boolean;
+  exporter: TelemetryExporter;
+  /** OTLP/HTTP collector endpoint, e.g. `http://localhost:4318/v1/traces`. */
+  otlpEndpoint: string;
+  /** Extra headers for the OTLP request (e.g. `Authorization`). */
+  otlpHeaders: Record<string, string>;
+  /** Destination for the `file` exporter. Relative paths resolve to the workspace. */
+  filePath: string;
+  /** `service.name` resource attribute attached to every span. */
+  serviceName: string;
+  /** Fraction of runs to record, 0..1. 1 records every run. */
+  sampleRate: number;
+  /** Strip message/prompt content from spans, keeping only counts and metadata. */
+  redactContent: boolean;
+}
+
 // --- Agent Config interfaces ---
 
 export interface ResolvedCronConfig {
@@ -196,6 +242,12 @@ export interface AgentConfig {
    * compatible without a backfill.
    */
   guardrails?: ResolvedGuardrailConfig[];
+  /**
+   * Optional observability instrumentation. When omitted or empty, the runtime
+   * emits no telemetry. Optional so existing AgentConfig fixtures and serialized
+   * graphs remain compatible without a backfill.
+   */
+  telemetry?: ResolvedTelemetryConfig[];
 
   /** Working directory for shell commands (exec tool). Independent of storage path. */
   workspacePath: string | null;

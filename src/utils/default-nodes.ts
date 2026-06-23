@@ -247,6 +247,23 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         action: 'block',
         blockMessage: '',
       };
+    case 'telemetry':
+      return {
+        type: 'telemetry',
+        label: 'Telemetry',
+        enabled: true,
+        captureTokens: true,
+        captureCost: true,
+        captureLatency: true,
+        captureToolCalls: true,
+        exporter: 'console',
+        otlpEndpoint: 'http://localhost:4318/v1/traces',
+        otlpHeaders: {},
+        filePath: '.sam/telemetry.jsonl',
+        serviceName: 'simple-agent-manager',
+        sampleRate: 1,
+        redactContent: false,
+      };
     case 'subAgent':
       return {
         type: 'subAgent',

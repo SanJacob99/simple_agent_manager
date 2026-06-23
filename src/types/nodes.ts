@@ -18,7 +18,8 @@ export type NodeType =
   | 'provider'
   | 'mcp'
   | 'subAgent'
-  | 'guardrails';
+  | 'guardrails'
+  | 'telemetry';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -508,6 +509,44 @@ export interface GuardrailsNodeData {
 
 export type GuardrailPiiCategory = 'email' | 'ssn' | 'credit_card';
 
+// --- Telemetry / Observability Node ---
+
+/**
+ * Where the runtime ships assembled spans. See `TelemetryExporter` in
+ * `shared/agent-config.ts` for the resolved-config mirror of this surface.
+ */
+export type TelemetryExporter = 'none' | 'console' | 'file' | 'otlp';
+
+export interface TelemetryNodeData {
+  [key: string]: unknown;
+  type: 'telemetry';
+  label: string;
+  /** Master toggle. When false, the node is wired but no spans are emitted. */
+  enabled: boolean;
+  /** Record prompt/response token counts per turn. */
+  captureTokens: boolean;
+  /** Derive a USD cost estimate from token counts and the model price table. */
+  captureCost: boolean;
+  /** Record wall-clock latency per turn and per tool call. */
+  captureLatency: boolean;
+  /** Emit a child span for every tool invocation (name, duration, error). */
+  captureToolCalls: boolean;
+  /** Destination for completed spans. */
+  exporter: TelemetryExporter;
+  /** OTLP/HTTP collector endpoint, e.g. `http://localhost:4318/v1/traces`. */
+  otlpEndpoint: string;
+  /** Extra headers for the OTLP request (e.g. `Authorization: Bearer ...`). */
+  otlpHeaders: Record<string, string>;
+  /** Destination for the `file` exporter. Relative paths resolve to the workspace. */
+  filePath: string;
+  /** `service.name` resource attribute attached to every span. */
+  serviceName: string;
+  /** Fraction of runs to record, 0..1. 1 records every run. */
+  sampleRate: number;
+  /** Strip message/prompt content from spans, keeping only counts and metadata. */
+  redactContent: boolean;
+}
+
 // --- Sub-Agent Node ---
 
 export interface SubAgentNodeData {
@@ -543,6 +582,7 @@ export type FlowNodeData =
   | ProviderNodeData
   | MCPNodeData
   | SubAgentNodeData
-  | GuardrailsNodeData;
+  | GuardrailsNodeData
+  | TelemetryNodeData;
 
 export type AppNode = Node<FlowNodeData>;
