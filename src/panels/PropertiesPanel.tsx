@@ -15,6 +15,7 @@ import ProviderProperties from './property-editors/ProviderProperties';
 import MCPProperties from './property-editors/MCPProperties';
 import SubAgentProperties from './property-editors/SubAgentProperties';
 import GuardrailsProperties from './property-editors/GuardrailsProperties';
+import TelemetryProperties from './property-editors/TelemetryProperties';
 import type { FlowNodeData } from '../types/nodes';
 import { useUILayoutStore } from '../store/ui-layout-store';
 import { useRightAnchoredResize } from './useRightAnchoredResize';
@@ -50,6 +51,8 @@ function PropertyEditorForType({ nodeId, data }: { nodeId: string; data: FlowNod
       return <SubAgentProperties nodeId={nodeId} data={data} />;
     case 'guardrails':
       return <GuardrailsProperties nodeId={nodeId} data={data} />;
+    case 'telemetry':
+      return <TelemetryProperties nodeId={nodeId} data={data} />;
   }
 }
 

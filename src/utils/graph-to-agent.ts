@@ -1,6 +1,6 @@
 import type { AppNode } from '../types/nodes';
 import type { Edge } from '@xyflow/react';
-import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides, ResolvedGuardrailConfig } from '../../shared/agent-config';
+import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides, ResolvedGuardrailConfig, ResolvedTelemetryConfig } from '../../shared/agent-config';
 import { resolveToolNames, IMPLEMENTED_TOOL_NAMES } from '../../shared/resolve-tool-names';
 import { buildSystemPrompt } from '../../shared/system-prompt-builder';
 import { eligibleBundledSkills } from '../../shared/default-tool-skills';
@@ -421,6 +421,32 @@ export function resolveAgentConfig(
       };
     });
 
+  // --- Telemetry / Observability ---
+  // Each connected telemetry node resolves to its own entry; the runtime fans
+  // every completed span out to each enabled exporter. The node id is kept as
+  // `telemetryNodeId` so spans can be attributed back to a specific instrument.
+  const telemetry: ResolvedTelemetryConfig[] = connectedNodes
+    .filter((n) => n.data.type === 'telemetry')
+    .map((n) => {
+      if (n.data.type !== 'telemetry') throw new Error('unreachable');
+      return {
+        telemetryNodeId: n.id,
+        label: n.data.label,
+        enabled: n.data.enabled,
+        captureTokens: n.data.captureTokens,
+        captureCost: n.data.captureCost,
+        captureLatency: n.data.captureLatency,
+        captureToolCalls: n.data.captureToolCalls,
+        exporter: n.data.exporter,
+        otlpEndpoint: n.data.otlpEndpoint,
+        otlpHeaders: { ...n.data.otlpHeaders },
+        filePath: n.data.filePath,
+        serviceName: n.data.serviceName,
+        sampleRate: n.data.sampleRate,
+        redactContent: n.data.redactContent,
+      };
+    });
+
   // --- MCP Servers ---
   // Each MCP node resolves to a ResolvedMcpConfig. The node id is kept as
   // `mcpNodeId` so the server can push `mcp:status` events back to the UI
@@ -666,6 +692,7 @@ export function resolveAgentConfig(
     subAgents,
     coordination: data.coordination ?? { ...DEFAULT_COORDINATION_CONFIG },
     guardrails,
+    telemetry,
     // Exec tool cwd overrides agent-level workingDirectory when set
     workspacePath:
       (toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.exec?.cwd)

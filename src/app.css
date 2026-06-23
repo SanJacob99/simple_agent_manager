@@ -94,6 +94,7 @@
   --color-node-mcp: var(--c-node-mcp);
   --color-node-subagent: var(--c-node-subagent);
   --color-node-guardrails: var(--c-node-guardrails);
+  --color-node-telemetry: var(--c-node-telemetry);
 }
 
 :root {
@@ -175,6 +176,7 @@
   --c-node-mcp: #06b6d4;        /* cyan */
   --c-node-subagent: #c084fc;   /* light purple — sibling of Agent's deeper purple */
   --c-node-guardrails: #dc2626; /* warning red — strong/visible for safety affordance */
+  --c-node-telemetry: #2563eb;  /* blue — observability/metrics */
 
   /* Surface colors that bypass the Tailwind palette */
   --c-code-bg: #0d1117;
