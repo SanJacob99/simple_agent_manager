@@ -76,6 +76,11 @@
       "doc": "telemetry-node.md",
       "type": "src/types/nodes.ts#TelemetryNodeData",
       "runtime": "server/runtime/telemetry-engine.ts"
+    },
+    "structuredOutput": {
+      "doc": "structured-output-node.md",
+      "type": "src/types/nodes.ts#StructuredOutputNodeData",
+      "runtime": "server/runtime/structured-output-engine.ts"
     }
   }
 }
