@@ -40,6 +40,7 @@ The default sidebar currently exposes these draggable nodes:
 | `storage` | Session persistence, retention, maintenance, and memory file settings |
 | `vectorDatabase` | Configuration surface for vector-store metadata |
 | `telemetry` | Observability instrumentation: per-run/turn/tool spans (tokens, cost, latency) exported to console, file, or an OTLP collector |
+| `structuredOutput` | JSON-Schema output contract: constrains the agent's final response, then validates and optionally re-prompts to repair it |
 
 The codebase also contains a `cron` node type and editor, but it is not part of the default palette and should be treated as in-progress unless you verify the full execution path.
 

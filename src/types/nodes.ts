@@ -19,7 +19,8 @@ export type NodeType =
   | 'mcp'
   | 'subAgent'
   | 'guardrails'
-  | 'telemetry';
+  | 'telemetry'
+  | 'structuredOutput';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -547,6 +548,48 @@ export interface TelemetryNodeData {
   redactContent: boolean;
 }
 
+// --- Structured Output Node ---
+
+/**
+ * How the JSON-Schema constraint is applied to the model request. See the
+ * resolved-config mirror `StructuredOutputStrategy` in `shared/agent-config.ts`.
+ * - `tool`: expose the schema as a single forced tool call (works on any
+ *   tool-calling model, including providers without native structured outputs).
+ * - `responseFormat`: use the provider's native `response_format`/`json_schema`
+ *   constrained-decoding mode where available.
+ * - `prompt`: append the schema to the system prompt as guidance only (no
+ *   hard constraint); validation still runs on the response.
+ */
+export type StructuredOutputStrategy = 'tool' | 'responseFormat' | 'prompt';
+
+/** What the runtime does when a final response fails schema validation. */
+export type StructuredOutputRepair = 'none' | 'reprompt';
+
+/** Terminal behavior once repair attempts are exhausted. */
+export type StructuredOutputOnFailure = 'error' | 'passthrough';
+
+export interface StructuredOutputNodeData {
+  [key: string]: unknown;
+  type: 'structuredOutput';
+  label: string;
+  /** Master toggle. When false the node is wired but the response is unconstrained. */
+  enabled: boolean;
+  /** Name attached to the schema; used as the tool / response_format name. */
+  schemaName: string;
+  /** JSON Schema (draft 2020-12 subset) the final response must satisfy, as text. */
+  schema: string;
+  /** strict = reject invalid output; loose = validate and warn but pass through. */
+  strict: boolean;
+  /** How the constraint is applied to the model request. */
+  strategy: StructuredOutputStrategy;
+  /** What to do when the model returns output that fails validation. */
+  repair: StructuredOutputRepair;
+  /** Max re-prompt attempts when `repair` is `reprompt`. */
+  maxRepairAttempts: number;
+  /** When repair is exhausted: surface an error or pass the raw text through. */
+  onFailure: StructuredOutputOnFailure;
+}
+
 // --- Sub-Agent Node ---
 
 export interface SubAgentNodeData {
@@ -583,6 +626,7 @@ export type FlowNodeData =
   | MCPNodeData
   | SubAgentNodeData
   | GuardrailsNodeData
-  | TelemetryNodeData;
+  | TelemetryNodeData
+  | StructuredOutputNodeData;
 
 export type AppNode = Node<FlowNodeData>;

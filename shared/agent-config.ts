@@ -174,6 +174,46 @@ export interface ResolvedTelemetryConfig {
   redactContent: boolean;
 }
 
+// --- Structured Output ---
+
+/**
+ * How the JSON-Schema constraint is applied to the model request.
+ * - `tool`: expose the schema as a single forced tool call (portable across any
+ *   tool-calling model).
+ * - `responseFormat`: use the provider's native constrained-decoding mode
+ *   (`response_format` / `json_schema`) where available.
+ * - `prompt`: append the schema to the system prompt as guidance only.
+ */
+export type StructuredOutputStrategy = 'tool' | 'responseFormat' | 'prompt';
+
+/** What the runtime does when a final response fails schema validation. */
+export type StructuredOutputRepair = 'none' | 'reprompt';
+
+/** Terminal behavior once repair attempts are exhausted. */
+export type StructuredOutputOnFailure = 'error' | 'passthrough';
+
+/**
+ * Resolved structured-output configuration. A single structured-output node
+ * attaches to an agent and constrains its final response to a JSON Schema.
+ * Unlike most peripherals this resolves to a single optional value (an agent has
+ * one output contract), keeping `AgentConfig.outputSchema` a scalar.
+ */
+export interface ResolvedStructuredOutputConfig {
+  structuredOutputNodeId: string;
+  label: string;
+  enabled: boolean;
+  /** Name attached to the schema; used as the tool / response_format name. */
+  schemaName: string;
+  /** Raw JSON Schema text. Kept as a string so AgentConfig stays serializable
+   *  even when the schema is invalid; the runtime parses and reports errors. */
+  schema: string;
+  strict: boolean;
+  strategy: StructuredOutputStrategy;
+  repair: StructuredOutputRepair;
+  maxRepairAttempts: number;
+  onFailure: StructuredOutputOnFailure;
+}
+
 // --- Agent Config interfaces ---
 
 export interface ResolvedCronConfig {
@@ -248,6 +288,13 @@ export interface AgentConfig {
    * graphs remain compatible without a backfill.
    */
   telemetry?: ResolvedTelemetryConfig[];
+  /**
+   * Optional output contract. When set and `enabled`, the runtime constrains the
+   * agent's final response to this JSON Schema and validates/repairs it. Optional
+   * and scalar (one contract per agent) so existing AgentConfig fixtures and
+   * serialized graphs remain compatible without a backfill.
+   */
+  outputSchema?: ResolvedStructuredOutputConfig;
 
   /** Working directory for shell commands (exec tool). Independent of storage path. */
   workspacePath: string | null;

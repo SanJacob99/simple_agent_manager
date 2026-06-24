@@ -37,13 +37,22 @@ suite against the resolved agent, score it, and track regressions across runs.
 - Reuses the existing run-coordinator to execute cases headlessly
 - Pairs naturally with the Telemetry node for per-case cost/latency
 
-## 3. Structured Output node — *proposed*
+## 3. Structured Output node — *scaffolded*
 
 Constrain an agent's final response to a JSON Schema (OpenAI/Anthropic structured
-outputs, tool-call-as-schema). A `structuredOutput` node would carry a schema,
-a strict/loose mode, and a repair policy (re-prompt on validation failure).
-Resolves into `AgentConfig.outputSchema` and is enforced in the runtime's
-finalize step.
+outputs, tool-call-as-schema). The `structuredOutput` node carries a schema,
+a strict/loose mode, a strategy (forced tool / native `response_format` / prompt),
+and a repair policy (re-prompt on validation failure). Resolves into the scalar
+`AgentConfig.outputSchema` and is enforced in the runtime's finalize step.
+
+- Node: `structuredOutput` (`src/types/nodes.ts#StructuredOutputNodeData`)
+- Resolved: `AgentConfig.outputSchema` (`shared/agent-config.ts#ResolvedStructuredOutputConfig`)
+- Engine: `server/runtime/structured-output-engine.ts` (dependency-free JSON-Schema
+  validator + JSON extraction + repair-prompt builder + stateful `StructuredOutputEnforcer`)
+- Doc: `docs/concepts/structured-output-node.md`
+- **Remaining:** apply the chosen strategy to the model request in
+  `server/runtime/model-resolver.ts` / `server/agents/run-coordinator.ts`, then
+  run `enforcer.evaluate()` on the final response and loop on `shouldRepair`.
 
 ## 4. Triggers node (event-driven beyond cron) — *proposed*
 
