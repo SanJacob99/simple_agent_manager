@@ -3,7 +3,7 @@
 > A peripheral that declares a named, one-shot sub-agent the parent agent can dispatch via `sessions_spawn`.
 
 <!-- source: src/types/nodes.ts#SubAgentNodeData -->
-<!-- last-verified: 2026-05-29 -->
+<!-- last-verified: 2026-06-10 -->
 
 ## Overview
 
@@ -65,7 +65,7 @@ The Sub-Agent Node attaches to an Agent Node as a peripheral. Each declared sub-
   "description": "Researches a topic and reports back with sources.",
   "systemPrompt": "You are a research assistant. Search the web; return concise findings with sources.",
   "modelIdMode": "custom",
-  "modelId": "anthropic/claude-opus-4-7",
+  "modelId": "anthropic/claude-opus-4-8",
   "thinkingLevelMode": "inherit",
   "thinkingLevel": "off",
   "modelCapabilities": {},

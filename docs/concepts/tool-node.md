@@ -3,7 +3,7 @@
 > Configures which tools an agent can use through profiles, groups, direct enables, skills, and plugins.
 
 <!-- source: src/types/nodes.ts#ToolsNodeData -->
-<!-- last-verified: 2026-05-29 -->
+<!-- last-verified: 2026-06-10 -->
 
 ## Overview
 
@@ -98,6 +98,7 @@ Tool name resolution happens in `shared/resolve-tool-names.ts` in this order:
 - session tools are skipped because they are injected later by the run coordinator
 - `calculator` and the built-in `web_fetch` have real implementations
 - `canva` writes HTML/CSS/JS into `<cwd>/.canva/<name>/` and serves each canvas from its own static HTTP server on a port auto-picked from the configured range
+- `send_message` is in the `communication` group alongside `text_to_speech` but has no runtime implementation yet — it is a reserved name and enabling it has no effect at runtime
 - `text_to_speech` synthesizes audio via ElevenLabs, Google Gemini, Microsoft Azure, MiniMax, OpenAI, or OpenRouter (audio-capable chat model, e.g. `openai/gpt-4o-audio-preview`) and writes the resulting file into `<cwd>/audio/`
 - `music_generate` generates music or ambient audio via Google Lyria or MiniMax Music and writes the resulting file into `<cwd>/music/`. The Gemini API key is reused from the image settings, and the MiniMax API key and group id are reused from text_to_speech
 - `code_interpreter` is treated as a legacy alias and canonicalized to `code_execution` during tool-name resolution, so older saved configs still enable the same runtime tool
