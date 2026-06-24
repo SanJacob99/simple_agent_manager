@@ -3,7 +3,7 @@
 > Time-triggered agent runs on a configurable schedule.
 
 <!-- source: src/types/nodes.ts#CronNodeData -->
-<!-- last-verified: 2026-05-15 -->
+<!-- last-verified: 2026-06-24 -->
 
 ## Overview
 
@@ -41,7 +41,9 @@ Properties are derived from the TypeScript interface in
 ## Runtime Behavior
 
 `graph-to-agent.ts` resolves connected `cron` nodes into
-`ResolvedCronConfig[]` on the `AgentConfig`. The
+`ResolvedCronConfig[]` on the `AgentConfig` (each entry includes a
+`cronNodeId` field set to the cron node's graph id, used by the server
+to route status events back to the correct canvas node). The
 [`CronScheduler`](../../server/scheduling/cron-scheduler.ts) reconciles
 the current schedule list against running jobs whenever the agent config
 changes:
