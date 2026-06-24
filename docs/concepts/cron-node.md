@@ -3,7 +3,7 @@
 > Time-triggered agent runs on a configurable schedule.
 
 <!-- source: src/types/nodes.ts#CronNodeData -->
-<!-- last-verified: 2026-05-15 -->
+<!-- last-verified: 2026-06-11 -->
 
 ## Overview
 
@@ -58,10 +58,11 @@ conversation. `sessionMode: 'ephemeral'` allocates a fresh session per
 tick — useful when each run should be independent (cron-driven ingest,
 report generation).
 
-`retentionDays` is read by the maintenance scheduler when present. The
-storage engine's pruning behavior is partial today (see
-[`docs/audit-2026-05-09.md`](../audit-2026-05-09.md) §2.5), so verify
-end-to-end retention if your deployment depends on it.
+`retentionDays` is carried through `ResolvedCronConfig` but the cron
+scheduler does not currently consume it for per-cron transcript pruning.
+General session retention (driven by `StorageNode.pruneAfterDays`) is
+enforced by the `MaintenanceScheduler` and is independent of this field.
+Cron-specific transcript retention is not yet implemented.
 
 ## Connections
 
