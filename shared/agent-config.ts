@@ -272,7 +272,7 @@ export interface AgentConfig {
 
   /** Path for the persistent browser profile. Absolute or relative to workspace. Empty = <cwd>/.browser-profile. */
   browserUserDataDir?: string;
-  /** When true Chromium runs without a visible window. Default true. */
+  /** When true Chromium runs without a visible window. Default false. */
   browserHeadless?: boolean;
   browserViewportWidth?: number;
   browserViewportHeight?: number;
