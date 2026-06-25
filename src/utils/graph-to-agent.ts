@@ -1,6 +1,6 @@
 import type { AppNode } from '../types/nodes';
 import type { Edge } from '@xyflow/react';
-import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides, ResolvedGuardrailConfig, ResolvedTelemetryConfig } from '../../shared/agent-config';
+import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides, ResolvedGuardrailConfig, ResolvedTelemetryConfig, ResolvedStructuredOutputConfig } from '../../shared/agent-config';
 import { resolveToolNames, IMPLEMENTED_TOOL_NAMES } from '../../shared/resolve-tool-names';
 import { buildSystemPrompt } from '../../shared/system-prompt-builder';
 import { eligibleBundledSkills } from '../../shared/default-tool-skills';
@@ -447,6 +447,47 @@ export function resolveAgentConfig(
       };
     });
 
+  // --- Structured Output ---
+  // An agent has a single final-response contract, so we take the first
+  // connected, enabled structuredOutput node (falling back to the first node if
+  // none is enabled, so the UI can still surface a disabled instrument). The
+  // schema text is pre-parsed here: if it does not parse, `schemaJson` is null
+  // and the runtime treats the node as advisory (prompt-only) rather than hard
+  // enforcing an unparseable schema.
+  const structuredOutputNodes = connectedNodes.filter(
+    (n) => n.data.type === 'structuredOutput',
+  );
+  const structuredOutputNode =
+    structuredOutputNodes.find(
+      (n) => n.data.type === 'structuredOutput' && n.data.enabled,
+    ) ?? structuredOutputNodes[0];
+  let structuredOutput: ResolvedStructuredOutputConfig | undefined;
+  if (structuredOutputNode && structuredOutputNode.data.type === 'structuredOutput') {
+    const d = structuredOutputNode.data;
+    let schemaJson: Record<string, unknown> | null = null;
+    try {
+      const parsed = JSON.parse(d.schema);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        schemaJson = parsed as Record<string, unknown>;
+      }
+    } catch {
+      schemaJson = null;
+    }
+    structuredOutput = {
+      structuredOutputNodeId: structuredOutputNode.id,
+      label: d.label,
+      enabled: d.enabled,
+      schemaName: d.schemaName,
+      schema: d.schema,
+      schemaJson,
+      format: d.format,
+      mode: d.mode,
+      onFailure: d.onFailure,
+      maxRepairAttempts: d.maxRepairAttempts,
+      includeSchemaInPrompt: d.includeSchemaInPrompt,
+    };
+  }
+
   // --- MCP Servers ---
   // Each MCP node resolves to a ResolvedMcpConfig. The node id is kept as
   // `mcpNodeId` so the server can push `mcp:status` events back to the UI
@@ -693,6 +734,7 @@ export function resolveAgentConfig(
     coordination: data.coordination ?? { ...DEFAULT_COORDINATION_CONFIG },
     guardrails,
     telemetry,
+    structuredOutput,
     // Exec tool cwd overrides agent-level workingDirectory when set
     workspacePath:
       (toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.exec?.cwd)

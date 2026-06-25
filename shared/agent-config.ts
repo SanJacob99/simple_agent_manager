@@ -174,6 +174,42 @@ export interface ResolvedTelemetryConfig {
   redactContent: boolean;
 }
 
+// --- Structured Output ---
+
+/** Enforcement strictness for unknown keys. */
+export type StructuredOutputMode = 'strict' | 'lenient';
+
+/** Provider response-format hint. */
+export type StructuredOutputFormat = 'json_schema' | 'json_object' | 'none';
+
+/** Behavior when the final response fails schema validation. */
+export type StructuredOutputOnFailure = 'repair' | 'error' | 'passthrough';
+
+/**
+ * Resolved structured-output configuration. Unlike telemetry/guardrails (which
+ * resolve to arrays), an agent has a single final-response contract, so this is
+ * a single optional entry: the first connected, enabled `structuredOutput` node
+ * wins. The runtime parses the final assistant message, validates it against
+ * `schema`, and applies `onFailure` when validation fails. `schemaJson` is the
+ * pre-parsed schema (graph resolution fails fast on invalid JSON) so the runtime
+ * never re-parses untrusted text.
+ */
+export interface ResolvedStructuredOutputConfig {
+  structuredOutputNodeId: string;
+  label: string;
+  enabled: boolean;
+  schemaName: string;
+  /** Raw JSON Schema source, preserved for provider response-format payloads. */
+  schema: string;
+  /** Parsed schema object, or null when the source did not parse. */
+  schemaJson: Record<string, unknown> | null;
+  format: StructuredOutputFormat;
+  mode: StructuredOutputMode;
+  onFailure: StructuredOutputOnFailure;
+  maxRepairAttempts: number;
+  includeSchemaInPrompt: boolean;
+}
+
 // --- Agent Config interfaces ---
 
 export interface ResolvedCronConfig {
@@ -248,6 +284,13 @@ export interface AgentConfig {
    * graphs remain compatible without a backfill.
    */
   telemetry?: ResolvedTelemetryConfig[];
+  /**
+   * Optional structured-output contract for the agent's final response. When
+   * omitted, the final response is unconstrained free text. Optional so existing
+   * AgentConfig fixtures and serialized graphs remain compatible without a
+   * backfill.
+   */
+  structuredOutput?: ResolvedStructuredOutputConfig;
 
   /** Working directory for shell commands (exec tool). Independent of storage path. */
   workspacePath: string | null;
