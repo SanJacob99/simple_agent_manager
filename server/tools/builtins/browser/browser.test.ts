@@ -4,8 +4,10 @@ import {
   buildGateQuestion,
   gateIfWriting,
   inferBrowserNotices,
+  __resolveUserDataDirForTests,
   type BrowserToolContext,
 } from './browser';
+import path from 'path';
 import { HitlRegistry } from '../../../hitl/hitl-registry';
 import type { AskUserContext } from '../human/ask-user';
 
@@ -189,5 +191,34 @@ describe('gateIfWriting', () => {
       const text = (outcome.result.content[0] as { text: string }).text;
       expect(text).toMatch(/timeout/);
     }
+  });
+});
+
+describe('resolveUserDataDir', () => {
+  it('allows safe relative paths', () => {
+    const ctx = baseCtx({ cwd: '/workspace', userDataDir: 'profile' });
+    expect(__resolveUserDataDirForTests(ctx)).toBe(path.resolve('/workspace/profile'));
+  });
+
+  it('allows safe absolute paths within workspace', () => {
+    const ctx = baseCtx({ cwd: '/workspace', userDataDir: path.resolve('/workspace/profile') });
+    expect(__resolveUserDataDirForTests(ctx)).toBe(path.resolve('/workspace/profile'));
+  });
+
+  it('prevents absolute paths outside workspace', () => {
+    const ctx = baseCtx({ cwd: '/workspace', userDataDir: path.resolve('/etc/passwd') });
+    expect(() => __resolveUserDataDirForTests(ctx)).toThrow(/Path escape detected/);
+  });
+
+  it('prevents relative paths escaping workspace', () => {
+    const ctx = baseCtx({ cwd: '/workspace', userDataDir: '../outside' });
+    expect(() => __resolveUserDataDirForTests(ctx)).toThrow(/Path escape detected/);
+  });
+});
+
+describe('resolveUserDataDir absolute bypass', () => {
+  it('prevents unnormalized absolute paths escaping workspace', () => {
+    const ctx = baseCtx({ cwd: '/workspace', userDataDir: '/workspace/../etc/passwd' });
+    expect(() => __resolveUserDataDirForTests(ctx)).toThrow(/Path escape detected/);
   });
 });
