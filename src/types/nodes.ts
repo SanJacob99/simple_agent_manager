@@ -19,7 +19,8 @@ export type NodeType =
   | 'mcp'
   | 'subAgent'
   | 'guardrails'
-  | 'telemetry';
+  | 'telemetry'
+  | 'structuredOutput';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -547,6 +548,64 @@ export interface TelemetryNodeData {
   redactContent: boolean;
 }
 
+// --- Structured Output Node ---
+//
+// Constrains an agent's final response to a JSON Schema, mirroring the
+// OpenAI/Anthropic structured-output and tool-call-as-schema patterns. The
+// resolved config is enforced in the runtime's finalize step (see
+// `server/runtime/structured-output-engine.ts`): the assistant's final message
+// is parsed and validated against the schema, and — depending on `onFailure` —
+// the runtime either re-prompts the model to repair the output, raises an
+// error, or passes the raw text through unchanged.
+
+/**
+ * How strongly the schema is enforced.
+ * - `strict`: unknown object keys are rejected (`additionalProperties: false`
+ *   is implied where the schema does not say otherwise).
+ * - `lenient`: validates declared keys but tolerates extra ones.
+ */
+export type StructuredOutputMode = 'strict' | 'lenient';
+
+/**
+ * Response-format hint passed to providers that support it.
+ * - `json_schema`: full JSON Schema constraint (OpenAI structured outputs,
+ *   Anthropic tool-schema enforcement).
+ * - `json_object`: ask for any valid JSON object (no schema constraint).
+ * - `none`: do not request a provider-side format; validate client-side only.
+ */
+export type StructuredOutputFormat = 'json_schema' | 'json_object' | 'none';
+
+/**
+ * What the runtime does when the final response fails schema validation.
+ * - `repair`: re-prompt the model with the validation errors, up to
+ *   `maxRepairAttempts` times.
+ * - `error`: fail the run with a validation error.
+ * - `passthrough`: keep the raw (invalid) text and flag it as unvalidated.
+ */
+export type StructuredOutputOnFailure = 'repair' | 'error' | 'passthrough';
+
+export interface StructuredOutputNodeData {
+  [key: string]: unknown;
+  type: 'structuredOutput';
+  label: string;
+  /** Master toggle. When false, the node is wired but the final response is unconstrained. */
+  enabled: boolean;
+  /** Schema identifier surfaced to providers as the response-format name. */
+  schemaName: string;
+  /** JSON Schema source text. Parsed and validated at resolve and finalize time. */
+  schema: string;
+  /** Provider response-format hint. */
+  format: StructuredOutputFormat;
+  /** Enforcement strictness for unknown keys. */
+  mode: StructuredOutputMode;
+  /** Behavior when the final response fails validation. */
+  onFailure: StructuredOutputOnFailure;
+  /** Max re-prompt attempts when `onFailure` is `repair`. */
+  maxRepairAttempts: number;
+  /** Append a compact rendering of the schema to the system prompt as guidance. */
+  includeSchemaInPrompt: boolean;
+}
+
 // --- Sub-Agent Node ---
 
 export interface SubAgentNodeData {
@@ -583,6 +642,7 @@ export type FlowNodeData =
   | MCPNodeData
   | SubAgentNodeData
   | GuardrailsNodeData
-  | TelemetryNodeData;
+  | TelemetryNodeData
+  | StructuredOutputNodeData;
 
 export type AppNode = Node<FlowNodeData>;

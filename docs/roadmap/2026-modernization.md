@@ -37,13 +37,22 @@ suite against the resolved agent, score it, and track regressions across runs.
 - Reuses the existing run-coordinator to execute cases headlessly
 - Pairs naturally with the Telemetry node for per-case cost/latency
 
-## 3. Structured Output node — *proposed*
+## 3. Structured Output node — *scaffolded*
 
 Constrain an agent's final response to a JSON Schema (OpenAI/Anthropic structured
-outputs, tool-call-as-schema). A `structuredOutput` node would carry a schema,
-a strict/loose mode, and a repair policy (re-prompt on validation failure).
-Resolves into `AgentConfig.outputSchema` and is enforced in the runtime's
-finalize step.
+outputs, tool-call-as-schema). The `structuredOutput` node carries a schema, a
+strict/lenient mode, a provider response-format hint, and a failure policy
+(repair / error / passthrough).
+
+- Node: `structuredOutput` (`src/types/nodes.ts#StructuredOutputNodeData`)
+- Resolved: `AgentConfig.structuredOutput` (`shared/agent-config.ts#ResolvedStructuredOutputConfig`)
+- Engine: `server/runtime/structured-output-engine.ts` (dependency-free JSON
+  Schema validator, JSON extraction, repair-prompt + provider-payload builders)
+- Doc: `docs/concepts/structured-output-node.md`
+- **Remaining:** wire `enforceFinalResponse` into the finalize step of
+  `server/agents/run-coordinator.ts` (validate the final message, run the repair
+  loop up to `maxRepairAttempts`, attach `responseFormatPayload` to the model
+  request) and fold `buildSchemaPromptGuidance` into the system prompt.
 
 ## 4. Triggers node (event-driven beyond cron) — *proposed*
 
@@ -79,7 +88,9 @@ resolved into the model request in `server/runtime/model-resolver.ts`.
 ## Sequencing
 
 1. Finish wiring **Telemetry** (#1) — it is the measurement substrate the rest lean on.
-2. Land **Evals** (#2) on top of telemetry for cost-aware scoring.
-3. **Structured Output** (#3) and **Budget** (#5) are small, high-value, independent.
-4. **Triggers** (#4) and **Knowledge** (#6) are larger; schedule after the above.
-5. **Prompt-cache** (#7) is an incremental agent-node enhancement, land opportunistically.
+2. Finish wiring **Structured Output** (#3) — scaffolded; integrate the finalize-step
+   enforcement + repair loop next.
+3. Land **Evals** (#2) on top of telemetry for cost-aware scoring.
+4. **Budget** (#5) is small, high-value, independent.
+5. **Triggers** (#4) and **Knowledge** (#6) are larger; schedule after the above.
+6. **Prompt-cache** (#7) is an incremental agent-node enhancement, land opportunistically.
