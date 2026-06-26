@@ -1,6 +1,6 @@
 import type { AppNode } from '../types/nodes';
 import type { Edge } from '@xyflow/react';
-import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides, ResolvedGuardrailConfig, ResolvedTelemetryConfig } from '../../shared/agent-config';
+import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides, ResolvedGuardrailConfig, ResolvedTelemetryConfig, ResolvedStructuredOutputConfig, ResolvedBudgetConfig } from '../../shared/agent-config';
 import { resolveToolNames, IMPLEMENTED_TOOL_NAMES } from '../../shared/resolve-tool-names';
 import { buildSystemPrompt } from '../../shared/system-prompt-builder';
 import { eligibleBundledSkills } from '../../shared/default-tool-skills';
@@ -447,6 +447,68 @@ export function resolveAgentConfig(
       };
     });
 
+  // --- Structured Output ---
+  // At most one structured-output node constrains an agent's final response. If
+  // several are connected the last one wins, since a single response cannot
+  // satisfy two schemas. The schema text is parsed here so the runtime receives
+  // ready-to-use JSON; unparseable text resolves to schema=null/valid=false and
+  // the runtime treats enforcement as disabled.
+  const structuredOutputNodes = connectedNodes.filter(
+    (n) => n.data.type === 'structuredOutput',
+  );
+  let outputSchema: ResolvedStructuredOutputConfig | undefined;
+  if (structuredOutputNodes.length > 0) {
+    const n = structuredOutputNodes[structuredOutputNodes.length - 1];
+    if (n.data.type !== 'structuredOutput') throw new Error('unreachable');
+    let schema: Record<string, unknown> | null = null;
+    let schemaValid = false;
+    try {
+      const parsed = JSON.parse(n.data.schemaText);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        schema = parsed as Record<string, unknown>;
+        schemaValid = true;
+      }
+    } catch {
+      schema = null;
+      schemaValid = false;
+    }
+    outputSchema = {
+      structuredOutputNodeId: n.id,
+      label: n.data.label,
+      enabled: n.data.enabled,
+      schemaName: n.data.schemaName,
+      schema,
+      schemaText: n.data.schemaText,
+      schemaValid,
+      strict: n.data.strict,
+      repairPolicy: n.data.repairPolicy,
+      maxRepairAttempts: n.data.maxRepairAttempts,
+      includeSchemaInPrompt: n.data.includeSchemaInPrompt,
+    };
+  }
+
+  // --- Budget / Rate Governance ---
+  // Each connected budget node resolves to its own entry; the runtime enforces
+  // the tightest active ceiling across all entries. The node id is kept as
+  // `budgetNodeId` so a breach can be attributed back to a specific governor.
+  const budgets: ResolvedBudgetConfig[] = connectedNodes
+    .filter((n) => n.data.type === 'budget')
+    .map((n) => {
+      if (n.data.type !== 'budget') throw new Error('unreachable');
+      return {
+        budgetNodeId: n.id,
+        label: n.data.label,
+        enabled: n.data.enabled,
+        maxUsdPerSession: n.data.maxUsdPerSession,
+        maxUsdPerDay: n.data.maxUsdPerDay,
+        maxTokensPerRun: n.data.maxTokensPerRun,
+        maxToolCallsPerRun: n.data.maxToolCallsPerRun,
+        enforcement: n.data.enforcement,
+        fallbackModelId: n.data.fallbackModelId,
+        warnThreshold: n.data.warnThreshold,
+      };
+    });
+
   // --- MCP Servers ---
   // Each MCP node resolves to a ResolvedMcpConfig. The node id is kept as
   // `mcpNodeId` so the server can push `mcp:status` events back to the UI
@@ -693,6 +755,8 @@ export function resolveAgentConfig(
     coordination: data.coordination ?? { ...DEFAULT_COORDINATION_CONFIG },
     guardrails,
     telemetry,
+    outputSchema,
+    budgets,
     // Exec tool cwd overrides agent-level workingDirectory when set
     workspacePath:
       (toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.exec?.cwd)

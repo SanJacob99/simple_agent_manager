@@ -13,6 +13,8 @@ import MCPNode from './MCPNode';
 import SubAgentNode from './SubAgentNode';
 import GuardrailsNode from './GuardrailsNode';
 import TelemetryNode from './TelemetryNode';
+import StructuredOutputNode from './StructuredOutputNode';
+import BudgetNode from './BudgetNode';
 
 export const nodeTypes = {
   agent: AgentNode,
@@ -30,4 +32,6 @@ export const nodeTypes = {
   subAgent: SubAgentNode,
   guardrails: GuardrailsNode,
   telemetry: TelemetryNode,
+  structuredOutput: StructuredOutputNode,
+  budget: BudgetNode,
 } as const;

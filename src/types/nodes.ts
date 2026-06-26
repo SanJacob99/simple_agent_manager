@@ -19,7 +19,9 @@ export type NodeType =
   | 'mcp'
   | 'subAgent'
   | 'guardrails'
-  | 'telemetry';
+  | 'telemetry'
+  | 'structuredOutput'
+  | 'budget';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -547,6 +549,76 @@ export interface TelemetryNodeData {
   redactContent: boolean;
 }
 
+// --- Structured Output Node ---
+
+/**
+ * What the runtime does when the agent's final response fails JSON-Schema
+ * validation. See `OutputRepairPolicy` in `shared/agent-config.ts` for the
+ * resolved-config mirror.
+ * - `repair`: re-prompt the model with the validation errors, up to
+ *   `maxRepairAttempts` times.
+ * - `passthrough`: keep the original text and attach the validation errors as
+ *   metadata (best-effort mode).
+ * - `error`: fail the run with the validation errors.
+ */
+export type OutputRepairPolicy = 'repair' | 'passthrough' | 'error';
+
+export interface StructuredOutputNodeData {
+  [key: string]: unknown;
+  type: 'structuredOutput';
+  label: string;
+  /** Master toggle. When false, the node is wired but the response is unconstrained. */
+  enabled: boolean;
+  /** Name for the schema, surfaced to the model and used as the tool/span name. */
+  schemaName: string;
+  /** The JSON Schema as edited text. Parsed during graph resolution. */
+  schemaText: string;
+  /**
+   * Strict mode requires the response to validate exactly (e.g. no extra
+   * properties when the schema forbids them). Loose mode tolerates a superset.
+   */
+  strict: boolean;
+  /** What to do when validation fails. */
+  repairPolicy: OutputRepairPolicy;
+  /** Maximum re-prompt attempts when `repairPolicy` is `repair`. */
+  maxRepairAttempts: number;
+  /** Inject the schema into the system prompt so the model targets it up front. */
+  includeSchemaInPrompt: boolean;
+}
+
+// --- Budget / Rate-Governance Node ---
+
+/**
+ * What the runtime does when a budget ceiling is reached. See
+ * `BudgetEnforcement` in `shared/agent-config.ts` for the resolved-config mirror.
+ * - `warn`: log/emit a warning and continue.
+ * - `downshift`: switch to `fallbackModelId` for the rest of the run, then warn.
+ * - `block`: hard-stop the run before the offending turn/tool call.
+ */
+export type BudgetEnforcement = 'warn' | 'downshift' | 'block';
+
+export interface BudgetNodeData {
+  [key: string]: unknown;
+  type: 'budget';
+  label: string;
+  /** Master toggle. When false, the node is wired but no ceilings are enforced. */
+  enabled: boolean;
+  /** Max USD spend per session before enforcement. 0 disables this ceiling. */
+  maxUsdPerSession: number;
+  /** Max USD spend per UTC day across sessions. 0 disables this ceiling. */
+  maxUsdPerDay: number;
+  /** Max model tokens (prompt + completion) per single run. 0 disables. */
+  maxTokensPerRun: number;
+  /** Max tool invocations per single run. 0 disables. */
+  maxToolCallsPerRun: number;
+  /** Action taken when a ceiling is hit. */
+  enforcement: BudgetEnforcement;
+  /** Cheaper model used when `enforcement` is `downshift`. */
+  fallbackModelId: string;
+  /** Emit a warning once spend crosses this fraction (0..1) of any ceiling. */
+  warnThreshold: number;
+}
+
 // --- Sub-Agent Node ---
 
 export interface SubAgentNodeData {
@@ -583,6 +655,8 @@ export type FlowNodeData =
   | MCPNodeData
   | SubAgentNodeData
   | GuardrailsNodeData
-  | TelemetryNodeData;
+  | TelemetryNodeData
+  | StructuredOutputNodeData
+  | BudgetNodeData;
 
 export type AppNode = Node<FlowNodeData>;
