@@ -174,6 +174,80 @@ export interface ResolvedTelemetryConfig {
   redactContent: boolean;
 }
 
+// --- Structured Output ---
+
+/**
+ * What the runtime does when the agent's final response fails validation
+ * against the resolved JSON Schema. Mirror of `OutputRepairPolicy` in
+ * `src/types/nodes.ts`.
+ */
+export type OutputRepairPolicy = 'repair' | 'passthrough' | 'error';
+
+/**
+ * Resolved structured-output configuration. At most one structured-output node
+ * attaches to an agent; if several are connected the last resolved entry wins
+ * (a single response cannot satisfy two schemas). The runtime validates the
+ * agent's final response against `schema` in its finalize step and applies
+ * `repairPolicy` on failure.
+ */
+export interface ResolvedStructuredOutputConfig {
+  structuredOutputNodeId: string;
+  label: string;
+  enabled: boolean;
+  /** Name surfaced to the model and used as the tool/span name. */
+  schemaName: string;
+  /**
+   * The parsed JSON Schema, or `null` when `schemaText` did not parse as JSON.
+   * Kept as plain JSON so `AgentConfig` stays serializable.
+   */
+  schema: Record<string, unknown> | null;
+  /** Raw schema source, retained for prompt injection and round-tripping. */
+  schemaText: string;
+  /** Whether the schema parsed cleanly. `false` disables enforcement at runtime. */
+  schemaValid: boolean;
+  /** Require an exact match (forbid extra properties when the schema does). */
+  strict: boolean;
+  repairPolicy: OutputRepairPolicy;
+  /** Maximum re-prompt attempts when `repairPolicy` is `repair`. */
+  maxRepairAttempts: number;
+  /** Inject the schema into the system prompt so the model targets it up front. */
+  includeSchemaInPrompt: boolean;
+}
+
+// --- Budget / Rate Governance ---
+
+/**
+ * Action taken when a budget ceiling is reached. Mirror of `BudgetEnforcement`
+ * in `src/types/nodes.ts`.
+ */
+export type BudgetEnforcement = 'warn' | 'downshift' | 'block';
+
+/**
+ * Resolved budget configuration. A budget node enforces spend and rate ceilings
+ * on a run, complementing guardrails (content safety) with cost safety. Multiple
+ * nodes resolve to multiple entries; the runtime enforces the tightest active
+ * ceiling across all entries. Consumes the same per-1M-token price table as the
+ * telemetry engine to convert tokens into USD.
+ */
+export interface ResolvedBudgetConfig {
+  budgetNodeId: string;
+  label: string;
+  enabled: boolean;
+  /** Max USD per session. 0 disables this ceiling. */
+  maxUsdPerSession: number;
+  /** Max USD per UTC day across sessions. 0 disables this ceiling. */
+  maxUsdPerDay: number;
+  /** Max model tokens (prompt + completion) per run. 0 disables. */
+  maxTokensPerRun: number;
+  /** Max tool invocations per run. 0 disables. */
+  maxToolCallsPerRun: number;
+  enforcement: BudgetEnforcement;
+  /** Cheaper model used when `enforcement` is `downshift`. */
+  fallbackModelId: string;
+  /** Emit a warning once spend crosses this fraction (0..1) of any ceiling. */
+  warnThreshold: number;
+}
+
 // --- Agent Config interfaces ---
 
 export interface ResolvedCronConfig {
@@ -248,6 +322,19 @@ export interface AgentConfig {
    * graphs remain compatible without a backfill.
    */
   telemetry?: ResolvedTelemetryConfig[];
+  /**
+   * Optional structured-output constraint. When present and `schemaValid`, the
+   * runtime validates the agent's final response against the schema and applies
+   * the configured repair policy. Optional so existing AgentConfig fixtures and
+   * serialized graphs remain compatible without a backfill.
+   */
+  outputSchema?: ResolvedStructuredOutputConfig;
+  /**
+   * Optional spend/rate ceilings. When omitted or empty, the runtime enforces no
+   * budget. Optional so existing AgentConfig fixtures and serialized graphs
+   * remain compatible without a backfill.
+   */
+  budgets?: ResolvedBudgetConfig[];
 
   /** Working directory for shell commands (exec tool). Independent of storage path. */
   workspacePath: string | null;
