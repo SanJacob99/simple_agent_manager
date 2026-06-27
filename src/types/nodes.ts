@@ -19,7 +19,8 @@ export type NodeType =
   | 'mcp'
   | 'subAgent'
   | 'guardrails'
-  | 'telemetry';
+  | 'telemetry'
+  | 'structuredOutput';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -547,6 +548,46 @@ export interface TelemetryNodeData {
   redactContent: boolean;
 }
 
+// --- Structured Output Node ---
+
+/**
+ * `strict`: the final response must validate cleanly — declared `required`
+ * fields present and (for objects) no undeclared properties when the schema
+ * sets `additionalProperties: false`. `loose`: only validate the keywords that
+ * are present, ignoring extra properties. Mirrors `StructuredOutputMode` in
+ * `shared/agent-config.ts`.
+ */
+export type StructuredOutputMode = 'strict' | 'loose';
+
+/**
+ * What the runtime does when the final response fails schema validation.
+ * - `reprompt`: feed the validation errors back and ask the model to fix the
+ *   output, up to `maxRepairAttempts` times.
+ * - `passthrough`: keep the (invalid) response but flag it as unvalidated.
+ * - `error`: fail the run with a validation error.
+ */
+export type StructuredOutputOnError = 'reprompt' | 'passthrough' | 'error';
+
+export interface StructuredOutputNodeData {
+  [key: string]: unknown;
+  type: 'structuredOutput';
+  label: string;
+  /** Master toggle. When false, the node is wired but the schema is not enforced. */
+  enabled: boolean;
+  /** JSON Schema (draft-07 subset) the final response must satisfy, as a JSON string. */
+  schema: string;
+  /** Name advertised to the model / used as the schema-as-tool name. */
+  schemaName: string;
+  /** Validation strictness — see `StructuredOutputMode`. */
+  mode: StructuredOutputMode;
+  /** Behavior on validation failure — see `StructuredOutputOnError`. */
+  onValidationError: StructuredOutputOnError;
+  /** Max re-prompt attempts when `onValidationError` is `reprompt`. */
+  maxRepairAttempts: number;
+  /** Append the schema and a "respond with JSON matching this schema" instruction to the system prompt. */
+  includeSchemaInPrompt: boolean;
+}
+
 // --- Sub-Agent Node ---
 
 export interface SubAgentNodeData {
@@ -583,6 +624,7 @@ export type FlowNodeData =
   | MCPNodeData
   | SubAgentNodeData
   | GuardrailsNodeData
-  | TelemetryNodeData;
+  | TelemetryNodeData
+  | StructuredOutputNodeData;
 
 export type AppNode = Node<FlowNodeData>;

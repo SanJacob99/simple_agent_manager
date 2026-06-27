@@ -174,6 +174,48 @@ export interface ResolvedTelemetryConfig {
   redactContent: boolean;
 }
 
+// --- Structured Output ---
+
+/**
+ * `strict`: validate required fields and reject undeclared properties when the
+ * schema sets `additionalProperties: false`. `loose`: validate only the
+ * keywords present, ignoring extra properties.
+ */
+export type StructuredOutputMode = 'strict' | 'loose';
+
+/**
+ * Repair policy when the final response fails schema validation.
+ * - `reprompt`: feed validation errors back to the model, up to
+ *   `maxRepairAttempts` retries.
+ * - `passthrough`: keep the invalid response, flagged as unvalidated.
+ * - `error`: fail the run.
+ */
+export type StructuredOutputOnError = 'reprompt' | 'passthrough' | 'error';
+
+/**
+ * Resolved structured-output configuration. At most one structured-output node
+ * constrains an agent: its `schema` (raw JSON Schema text) is the contract the
+ * final response must satisfy. The runtime validates the response in its
+ * finalize step and applies the repair policy. `schema` is kept as raw text so
+ * `AgentConfig` stays serializable and the schema round-trips through
+ * import/export unchanged; the engine parses it lazily.
+ */
+export interface ResolvedStructuredOutputConfig {
+  structuredOutputNodeId: string;
+  label: string;
+  enabled: boolean;
+  /** Raw JSON Schema text. Parsed lazily by the structured-output engine. */
+  schema: string;
+  /** Name advertised to the model / used as the schema-as-tool name. */
+  schemaName: string;
+  mode: StructuredOutputMode;
+  onValidationError: StructuredOutputOnError;
+  /** Max re-prompt attempts when `onValidationError` is `reprompt`. */
+  maxRepairAttempts: number;
+  /** Append the schema and an instruction to the system prompt. */
+  includeSchemaInPrompt: boolean;
+}
+
 // --- Agent Config interfaces ---
 
 export interface ResolvedCronConfig {
@@ -248,6 +290,13 @@ export interface AgentConfig {
    * graphs remain compatible without a backfill.
    */
   telemetry?: ResolvedTelemetryConfig[];
+  /**
+   * Optional structured-output contract. At most one structured-output node
+   * constrains the agent's final response to a JSON Schema. Omitted when no
+   * structured-output node is connected, so existing AgentConfig fixtures and
+   * serialized graphs remain compatible without a backfill.
+   */
+  outputSchema?: ResolvedStructuredOutputConfig;
 
   /** Working directory for shell commands (exec tool). Independent of storage path. */
   workspacePath: string | null;
