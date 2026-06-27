@@ -1,6 +1,6 @@
 import type { AppNode } from '../types/nodes';
 import type { Edge } from '@xyflow/react';
-import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides, ResolvedGuardrailConfig, ResolvedTelemetryConfig } from '../../shared/agent-config';
+import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides, ResolvedGuardrailConfig, ResolvedTelemetryConfig, ResolvedStructuredOutputConfig } from '../../shared/agent-config';
 import { resolveToolNames, IMPLEMENTED_TOOL_NAMES } from '../../shared/resolve-tool-names';
 import { buildSystemPrompt } from '../../shared/system-prompt-builder';
 import { eligibleBundledSkills } from '../../shared/default-tool-skills';
@@ -447,6 +447,29 @@ export function resolveAgentConfig(
       };
     });
 
+  // --- Structured Output ---
+  // At most one structured-output node constrains an agent's final response.
+  // The first connected node wins; any extras are ignored. The node id is kept
+  // as `structuredOutputNodeId` so the runtime can attribute validation events
+  // back to the instrument in the graph.
+  const structuredOutputNode = connectedNodes.find(
+    (n) => n.data.type === 'structuredOutput',
+  );
+  const outputSchema: ResolvedStructuredOutputConfig | undefined =
+    structuredOutputNode && structuredOutputNode.data.type === 'structuredOutput'
+      ? {
+          structuredOutputNodeId: structuredOutputNode.id,
+          label: structuredOutputNode.data.label,
+          enabled: structuredOutputNode.data.enabled,
+          schema: structuredOutputNode.data.schema,
+          schemaName: structuredOutputNode.data.schemaName,
+          mode: structuredOutputNode.data.mode,
+          onValidationError: structuredOutputNode.data.onValidationError,
+          maxRepairAttempts: structuredOutputNode.data.maxRepairAttempts,
+          includeSchemaInPrompt: structuredOutputNode.data.includeSchemaInPrompt,
+        }
+      : undefined;
+
   // --- MCP Servers ---
   // Each MCP node resolves to a ResolvedMcpConfig. The node id is kept as
   // `mcpNodeId` so the server can push `mcp:status` events back to the UI
@@ -693,6 +716,7 @@ export function resolveAgentConfig(
     coordination: data.coordination ?? { ...DEFAULT_COORDINATION_CONFIG },
     guardrails,
     telemetry,
+    outputSchema,
     // Exec tool cwd overrides agent-level workingDirectory when set
     workspacePath:
       (toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.exec?.cwd)
