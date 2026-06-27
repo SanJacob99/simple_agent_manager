@@ -35,3 +35,7 @@
 **Vulnerability:** The `music_generate` tool used `path.resolve` to combine `ctx.cwd` and the user-provided filename input (via the parameter `filename`) to derive the target output path for writing the generated audio files, but did not perform bounds-checking, thereby allowing agents to write arbitrary files onto the system outside the designated workspace.
 **Learning:** `path.resolve` normalizes paths containing relative sequences (like `../`), allowing users to break out of base directories unless explicitly restricted.
 **Prevention:** Always ensure that resolved file paths intended for sandboxed environments are verified to be within boundaries, e.g., by checking if `!resolved.startsWith(ctx.cwd + path.sep) && resolved !== ctx.cwd`.
+## 2026-06-27 - [CRITICAL] Fix absolute path bypass in StorageEngine
+**Vulnerability:** The StorageEngine bypassed directory traversal checks if `sessionFile` was an absolute path (`path.isAbsolute`), allowing agents to read or write files anywhere on the disk.
+**Learning:** Checking for an absolute path and skipping safety validations is insecure, because `path.resolve` handles absolute paths inherently and should always be followed by strict prefix matching to enforce boundary confinement.
+**Prevention:** Avoid special-casing absolute paths to skip sandbox boundary checks. Resolve all inputs against the intended base directory and strictly check boundaries.
