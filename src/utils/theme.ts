@@ -16,6 +16,8 @@ export const NODE_COLORS: Record<NodeType, string> = {
   subAgent: 'var(--c-node-subagent)',
   guardrails: 'var(--c-node-guardrails)',
   telemetry: 'var(--c-node-telemetry)',
+  structuredOutput: 'var(--c-node-structured-output)',
+  budget: 'var(--c-node-budget)',
 };
 
 export const NODE_PASTEL: Record<NodeType, { bg: string; fg: string }> = {
@@ -34,6 +36,8 @@ export const NODE_PASTEL: Record<NodeType, { bg: string; fg: string }> = {
   subAgent:       { bg: '#E8DCFB', fg: '#9450C9' },
   guardrails:     { bg: '#FCE2E0', fg: '#B53A2C' },
   telemetry:      { bg: '#D6E4FB', fg: '#2563EB' },
+  structuredOutput: { bg: '#DCE7F0', fg: '#3B6E8F' },
+  budget:         { bg: '#D7F0E4', fg: '#1F9D6B' },
 };
 
 export const NODE_LABELS: Record<NodeType, string> = {
@@ -52,4 +56,6 @@ export const NODE_LABELS: Record<NodeType, string> = {
   subAgent: 'Sub-Agent',
   guardrails: 'Guardrails',
   telemetry: 'Telemetry',
+  structuredOutput: 'Structured Output',
+  budget: 'Budget',
 };
