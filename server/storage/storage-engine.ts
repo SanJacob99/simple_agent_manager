@@ -194,10 +194,8 @@ export class StorageEngine {
       return this._safeJoin(this.sessionsDir, `${entry.sessionId}.jsonl`);
     }
 
-    if (path.isAbsolute(entry.sessionFile)) {
-      return entry.sessionFile;
-    }
-
+    // SECURITY: Use _safeJoin for all paths, including absolute paths, to prevent
+    // path traversal and ensure the target file resolves inside agentDir.
     return this._safeJoin(this.agentDir, entry.sessionFile);
   }
 
