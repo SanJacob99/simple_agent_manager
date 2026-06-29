@@ -3,7 +3,7 @@
 > Attaches a vector store to an agent and auto-enables the four industry-standard vector tools (`vector_search`, `vector_upsert`, `vector_delete`, `vector_get`). Default backend is `sqlite-vec`; default embedder is OpenRouter.
 
 <!-- source: src/types/nodes.ts#VectorDatabaseNodeData -->
-<!-- last-verified: 2026-05-15 -->
+<!-- last-verified: 2026-06-29 -->
 
 ## Overview
 
@@ -34,9 +34,9 @@ The agent's embedding model lives **on the same node**. Insert-time and query-ti
 
 ## Runtime Behaviour
 
-Resolved by `src/utils/graph-to-agent.ts` into `AgentConfig.vectorDatabases: ResolvedVectorDatabaseConfig[]`. The `AgentRuntime` constructor (`server/runtime/agent-runtime.ts`) wires a lazy `getVectorEngine(label?)` accessor into `RuntimeHints` — the four vector tool modules under `server/tools/builtins/vector/` use it to resolve a shared `VectorDatabaseEngine` instance per collection.
+Resolved by `src/utils/graph-to-agent.ts` into `AgentConfig.vectorDatabases: ResolvedVectorDatabaseConfig[]`. The `AgentRuntime` constructor (`server/runtime/agent-runtime.ts`) calls `createVectorTools(config, runtime)` which is defined in `server/runtime/vector-tools/index.ts`. Each tool resolves its engine instance via `getOrCreateVectorEngine` from `server/runtime/vector-engine-registry.ts`, which caches one `VectorDatabaseEngine` per collection label.
 
-Engine lifecycle (`server/runtime/vector-database-engine.ts`):
+Engine lifecycle (`server/runtime/vector-database-engine.ts` via `server/runtime/vector-engine-registry.ts`):
 
 1. On first use, `init()` opens a SQLite file under `<storagePath>/<sanitized-collectionName>.db`, loads the `sqlite-vec` extension, and creates a metadata table plus a documents table.
 2. The first `upsert` call embeds the document(s), reads the vector dimension, and creates the `vec_<collection>` virtual table sized for that dimension. The dimension is persisted in the metadata table.
