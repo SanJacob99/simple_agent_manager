@@ -97,6 +97,7 @@
   --color-node-telemetry: var(--c-node-telemetry);
   --color-node-structured-output: var(--c-node-structured-output);
   --color-node-budget: var(--c-node-budget);
+  --color-node-evals: var(--c-node-evals);
 }
 
 :root {
@@ -181,6 +182,7 @@
   --c-node-telemetry: #2563eb;  /* blue — observability/metrics */
   --c-node-structured-output: #3b6e8f; /* steel blue — schema/contract */
   --c-node-budget: #1f9d6b;     /* green — cost/spend governance */
+  --c-node-evals: #7c3aed;      /* violet — evaluation/scoring */
 
   /* Surface colors that bypass the Tailwind palette */
   --c-code-bg: #0d1117;

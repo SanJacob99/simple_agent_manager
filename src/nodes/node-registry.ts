@@ -15,6 +15,7 @@ import GuardrailsNode from './GuardrailsNode';
 import TelemetryNode from './TelemetryNode';
 import StructuredOutputNode from './StructuredOutputNode';
 import BudgetNode from './BudgetNode';
+import EvalsNode from './EvalsNode';
 
 export const nodeTypes = {
   agent: AgentNode,
@@ -34,4 +35,5 @@ export const nodeTypes = {
   telemetry: TelemetryNode,
   structuredOutput: StructuredOutputNode,
   budget: BudgetNode,
+  evals: EvalsNode,
 } as const;

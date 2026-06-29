@@ -223,6 +223,44 @@ export interface ResolvedBudgetConfig {
   blockMessage: string;
 }
 
+// --- Evaluations ---
+
+export type EvalGraderType =
+  | 'exact_match'
+  | 'contains'
+  | 'regex'
+  | 'json_schema'
+  | 'llm_judge';
+
+export interface ResolvedEvalCase {
+  id: string;
+  input: string;
+  expected: string;
+  /** Resolved grader: the case's own grader, or the suite `defaultGrader`. */
+  grader: EvalGraderType;
+  weight: number;
+}
+
+/**
+ * Resolved evaluation suite. Multiple eval nodes can attach to one agent (e.g. a
+ * smoke suite plus a regression suite); each resolves to its own entry and the
+ * `sam eval` runner executes them independently. The runner replays each case
+ * through the resolved agent headlessly and scores the reply with the named
+ * grader, mirroring eval-driven workflows from OpenAI Evals, Braintrust,
+ * Promptfoo, and LangSmith datasets.
+ */
+export interface ResolvedEvalsConfig {
+  evalsNodeId: string;
+  label: string;
+  enabled: boolean;
+  cases: ResolvedEvalCase[];
+  passThreshold: number;
+  judgeModelId: string;
+  judgePrompt: string;
+  maxConcurrency: number;
+  failOnRegression: boolean;
+}
+
 // --- Agent Config interfaces ---
 
 export interface ResolvedCronConfig {
@@ -309,6 +347,13 @@ export interface AgentConfig {
    * serialized graphs remain compatible without a backfill.
    */
   budgets?: ResolvedBudgetConfig[];
+  /**
+   * Optional evaluation suites. When omitted or empty, the agent has no
+   * attached evals. Not part of the live run path — consumed by the `sam eval`
+   * runner and the Settings evals panel. Optional so existing AgentConfig
+   * fixtures and serialized graphs remain compatible without a backfill.
+   */
+  evals?: ResolvedEvalsConfig[];
 
   /** Working directory for shell commands (exec tool). Independent of storage path. */
   workspacePath: string | null;

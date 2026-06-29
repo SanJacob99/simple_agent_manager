@@ -1,6 +1,6 @@
 import type { AppNode } from '../types/nodes';
 import type { Edge } from '@xyflow/react';
-import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides, ResolvedGuardrailConfig, ResolvedTelemetryConfig, ResolvedStructuredOutputConfig, ResolvedBudgetConfig } from '../../shared/agent-config';
+import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides, ResolvedGuardrailConfig, ResolvedTelemetryConfig, ResolvedStructuredOutputConfig, ResolvedBudgetConfig, ResolvedEvalsConfig, EvalGraderType } from '../../shared/agent-config';
 import { resolveToolNames, IMPLEMENTED_TOOL_NAMES } from '../../shared/resolve-tool-names';
 import { buildSystemPrompt } from '../../shared/system-prompt-builder';
 import { eligibleBundledSkills } from '../../shared/default-tool-skills';
@@ -491,6 +491,35 @@ export function resolveAgentConfig(
       };
     });
 
+  // --- Evaluations ---
+  // Each connected evals node resolves to its own suite; the `sam eval` runner
+  // executes them independently. The node id is kept as `evalsNodeId` so a
+  // suite report can be attributed back to a specific node. Each case's grader
+  // falls back to the suite `defaultGrader` when unset.
+  const evals: ResolvedEvalsConfig[] = connectedNodes
+    .filter((n) => n.data.type === 'evals')
+    .map((n) => {
+      if (n.data.type !== 'evals') throw new Error('unreachable');
+      const defaultGrader = n.data.defaultGrader as EvalGraderType;
+      return {
+        evalsNodeId: n.id,
+        label: n.data.label,
+        enabled: n.data.enabled,
+        cases: n.data.cases.map((c) => ({
+          id: c.id,
+          input: c.input,
+          expected: c.expected,
+          grader: (c.grader ?? defaultGrader) as EvalGraderType,
+          weight: typeof c.weight === 'number' && c.weight > 0 ? c.weight : 1,
+        })),
+        passThreshold: n.data.passThreshold,
+        judgeModelId: n.data.judgeModelId,
+        judgePrompt: n.data.judgePrompt,
+        maxConcurrency: n.data.maxConcurrency,
+        failOnRegression: n.data.failOnRegression,
+      };
+    });
+
   // --- MCP Servers ---
   // Each MCP node resolves to a ResolvedMcpConfig. The node id is kept as
   // `mcpNodeId` so the server can push `mcp:status` events back to the UI
@@ -739,6 +768,7 @@ export function resolveAgentConfig(
     telemetry,
     outputSchema,
     budgets,
+    evals,
     // Exec tool cwd overrides agent-level workingDirectory when set
     workspacePath:
       (toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.exec?.cwd)

@@ -18,6 +18,7 @@ export const NODE_COLORS: Record<NodeType, string> = {
   telemetry: 'var(--c-node-telemetry)',
   structuredOutput: 'var(--c-node-structured-output)',
   budget: 'var(--c-node-budget)',
+  evals: 'var(--c-node-evals)',
 };
 
 export const NODE_PASTEL: Record<NodeType, { bg: string; fg: string }> = {
@@ -38,6 +39,7 @@ export const NODE_PASTEL: Record<NodeType, { bg: string; fg: string }> = {
   telemetry:      { bg: '#D6E4FB', fg: '#2563EB' },
   structuredOutput: { bg: '#DCE7F0', fg: '#3B6E8F' },
   budget:         { bg: '#D7F0E4', fg: '#1F9D6B' },
+  evals:          { bg: '#EADCF7', fg: '#7C3AED' },
 };
 
 export const NODE_LABELS: Record<NodeType, string> = {
@@ -58,4 +60,5 @@ export const NODE_LABELS: Record<NodeType, string> = {
   telemetry: 'Telemetry',
   structuredOutput: 'Structured Output',
   budget: 'Budget',
+  evals: 'Evals',
 };

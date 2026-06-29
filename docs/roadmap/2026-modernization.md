@@ -25,17 +25,24 @@ conventions.
   turn span around `runtime.prompt()`, record tool spans, export on finalize) and
   surface a live cost/latency hint on the agent node.
 
-## 2. Evaluations node — *proposed*
+## 2. Evaluations node — *scaffolded*
 
 Eval-driven agent development is now table stakes (OpenAI Evals, Braintrust,
-Promptfoo, LangSmith datasets). An `evals` node would hold a dataset of
-input → expected pairs plus graders (exact-match, JSON-schema, LLM-as-judge,
-tool-trajectory). A `sam eval` CLI command and a Settings panel would run the
-suite against the resolved agent, score it, and track regressions across runs.
+Promptfoo, LangSmith datasets). The `evals` node holds a dataset of
+input → expected cases plus a grader per case (exact-match, contains, regex,
+JSON-schema, LLM-as-judge). A `sam eval` CLI command and a Settings panel run
+the suite against the resolved agent, score it, and track regressions across runs.
 
-- New node `evals`, resolved `AgentConfig.evals`, engine `server/evals/eval-runner.ts`
-- Reuses the existing run-coordinator to execute cases headlessly
-- Pairs naturally with the Telemetry node for per-case cost/latency
+- Node: `evals` (`src/types/nodes.ts#EvalsNodeData`)
+- Resolved: `AgentConfig.evals` (`shared/agent-config.ts#ResolvedEvalsConfig`)
+- Engine: `server/evals/eval-runner.ts` (dependency-free graders + weighted
+  `EvalRunner` with injected case executor / judge; the JSON-schema grader
+  reuses the structured-output validator)
+- Doc: `docs/concepts/evals-node.md`
+- **Remaining:** wire `EvalRunner` into `server/agents/run-coordinator.ts` (replay
+  each case as a headless ephemeral run, supply a real `JudgeFn`), add a `sam eval`
+  subcommand, and surface a Settings evals panel with per-case cost/latency
+  (pairs naturally with the Telemetry node).
 
 ## 3. Structured Output node — *scaffolded*
 
@@ -90,13 +97,46 @@ with large stable system prompts. Add cache-breakpoint controls to the Agent and
 Context Engine nodes (mark system prompt / tool catalog / memory as cacheable),
 resolved into the model request in `server/runtime/model-resolver.ts`.
 
+## 8. Agent-to-Agent (A2A) interop node — *proposed*
+
+`agentComm` is an in-process bus; `subAgent` is in-tree. Neither lets this agent
+talk to agents built on *other* frameworks. The emerging Agent-to-Agent (A2A)
+protocol (agent cards, task/message envelopes, streaming updates) is becoming
+the lingua franca for cross-framework agent interop, much as MCP standardized
+tools. An `a2a` node would expose this agent as an A2A server (publish an agent
+card, accept remote tasks) and/or register remote A2A agents as callable
+delegates — resolved into `AgentConfig.a2a`, served from `server/a2a/`.
+
+## 9. Reflection / Self-critique node — *proposed*
+
+Reflexion-style "draft → critique → revise" loops measurably lift answer quality
+on hard tasks. A `reflection` node would wrap the finalize step: after the agent
+produces a candidate reply, a critic pass (same model or a cheaper one) scores it
+against a rubric and, below a threshold, feeds the critique back for up to *N*
+revisions. Resolved into `AgentConfig.reflection`; enforced in the run-coordinator
+finalize step alongside Structured Output and Guardrails. Pairs with the Evals
+node — the same rubric grades both.
+
+## 10. Sandbox / Compute node — *proposed*
+
+Agents that run code need isolation. A `sandbox` node would define an execution
+environment (container/microVM/firecracker or a constrained local workdir), a
+resource ceiling (CPU/mem/wall-clock), a network egress policy, and a filesystem
+mount scope — resolved into `AgentConfig.sandbox` and consumed by the `exec` /
+`code_execution` tools instead of today's raw `workspacePath`. Complements the
+Budget node (cost safety) and Guardrails (content safety) with execution safety.
+
 ---
 
 ## Sequencing
 
 1. Finish wiring **Telemetry** (#1) — it is the measurement substrate the rest lean on.
-2. Land **Evals** (#2) on top of telemetry for cost-aware scoring.
-3. **Structured Output** (#3) and **Budget** (#5) are scaffolded — next is wiring
+2. **Structured Output** (#3) and **Budget** (#5) are scaffolded — next is wiring
    both into the run-coordinator finalize/turn loop (see each item's *Remaining*).
+3. **Evals** (#2) is scaffolded — wire `EvalRunner` into a headless replay path and
+   add the `sam eval` subcommand; it pairs with Telemetry for cost-aware scoring and
+   with **Reflection** (#9), which can share its rubric.
 4. **Triggers** (#4) and **Knowledge** (#6) are larger; schedule after the above.
 5. **Prompt-cache** (#7) is an incremental agent-node enhancement, land opportunistically.
+6. **A2A** (#8), **Reflection** (#9), and **Sandbox** (#10) are the next design wave —
+   A2A for interop, Reflection for quality, Sandbox for execution safety.
