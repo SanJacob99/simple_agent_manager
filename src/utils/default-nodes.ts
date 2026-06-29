@@ -264,6 +264,43 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         sampleRate: 1,
         redactContent: false,
       };
+    case 'structuredOutput':
+      return {
+        type: 'structuredOutput',
+        label: 'Structured Output',
+        enabled: true,
+        schemaName: 'response',
+        schema: JSON.stringify(
+          {
+            type: 'object',
+            properties: {
+              answer: { type: 'string' },
+            },
+            required: ['answer'],
+            additionalProperties: false,
+          },
+          null,
+          2,
+        ),
+        strict: true,
+        onValidationError: 'repair',
+        maxRepairAttempts: 1,
+        injectSchemaIntoPrompt: true,
+      };
+    case 'budget':
+      return {
+        type: 'budget',
+        label: 'Budget',
+        enabled: true,
+        maxUsdPerRun: 0,
+        maxUsdPerDay: 0,
+        maxTokensPerRun: 0,
+        maxToolCallsPerRun: 0,
+        maxRunsPerMinute: 0,
+        degradePolicy: 'warn',
+        downshiftModelId: '',
+        blockMessage: '',
+      };
     case 'subAgent':
       return {
         type: 'subAgent',

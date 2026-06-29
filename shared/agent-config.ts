@@ -174,6 +174,55 @@ export interface ResolvedTelemetryConfig {
   redactContent: boolean;
 }
 
+// --- Structured Output ---
+
+export type StructuredOutputOnError = 'repair' | 'warn' | 'block';
+
+/**
+ * Resolved structured-output constraint. At most one structured-output node
+ * binds to an agent, so this resolves to a single optional value on
+ * `AgentConfig` rather than a list (unlike guardrails/telemetry). The runtime
+ * validates the agent's final reply against `schema` in the finalize step and
+ * applies `onValidationError`.
+ */
+export interface ResolvedStructuredOutputConfig {
+  structuredOutputNodeId: string;
+  label: string;
+  enabled: boolean;
+  schemaName: string;
+  /** Raw JSON Schema text exactly as authored on the node. */
+  schema: string;
+  strict: boolean;
+  onValidationError: StructuredOutputOnError;
+  maxRepairAttempts: number;
+  injectSchemaIntoPrompt: boolean;
+}
+
+// --- Budget / Rate-Governance ---
+
+export type BudgetDegradePolicy = 'warn' | 'downshift' | 'block';
+
+/**
+ * Resolved spend/rate envelope. Multiple budget nodes can attach to one agent
+ * (e.g. a per-run token cap plus a per-day USD cap); the runtime enforces all
+ * of them and the strictest reached ceiling wins. Mirrors the resolved-config
+ * shape used by guardrails so the runtime treats cost safety and content
+ * safety uniformly.
+ */
+export interface ResolvedBudgetConfig {
+  budgetNodeId: string;
+  label: string;
+  enabled: boolean;
+  maxUsdPerRun: number;
+  maxUsdPerDay: number;
+  maxTokensPerRun: number;
+  maxToolCallsPerRun: number;
+  maxRunsPerMinute: number;
+  degradePolicy: BudgetDegradePolicy;
+  downshiftModelId: string;
+  blockMessage: string;
+}
+
 // --- Agent Config interfaces ---
 
 export interface ResolvedCronConfig {
@@ -248,6 +297,18 @@ export interface AgentConfig {
    * graphs remain compatible without a backfill.
    */
   telemetry?: ResolvedTelemetryConfig[];
+  /**
+   * Optional structured-output constraint. When omitted or `null`, the agent's
+   * reply is unconstrained. At most one structured-output node binds to an
+   * agent. Optional so existing AgentConfig fixtures remain compatible.
+   */
+  outputSchema?: ResolvedStructuredOutputConfig | null;
+  /**
+   * Optional spend/rate envelopes. When omitted or empty, the runtime enforces
+   * no cost or rate ceilings. Optional so existing AgentConfig fixtures and
+   * serialized graphs remain compatible without a backfill.
+   */
+  budgets?: ResolvedBudgetConfig[];
 
   /** Working directory for shell commands (exec tool). Independent of storage path. */
   workspacePath: string | null;

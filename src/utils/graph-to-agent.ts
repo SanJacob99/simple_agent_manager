@@ -1,6 +1,6 @@
 import type { AppNode } from '../types/nodes';
 import type { Edge } from '@xyflow/react';
-import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides, ResolvedGuardrailConfig, ResolvedTelemetryConfig } from '../../shared/agent-config';
+import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides, ResolvedGuardrailConfig, ResolvedTelemetryConfig, ResolvedStructuredOutputConfig, ResolvedBudgetConfig } from '../../shared/agent-config';
 import { resolveToolNames, IMPLEMENTED_TOOL_NAMES } from '../../shared/resolve-tool-names';
 import { buildSystemPrompt } from '../../shared/system-prompt-builder';
 import { eligibleBundledSkills } from '../../shared/default-tool-skills';
@@ -447,6 +447,50 @@ export function resolveAgentConfig(
       };
     });
 
+  // --- Structured Output ---
+  // At most one structured-output node binds to an agent; the first connected
+  // node wins. Resolves to a single optional value (or null) rather than a list.
+  const structuredOutputNode = connectedNodes.find(
+    (n) => n.data.type === 'structuredOutput',
+  );
+  const outputSchema: ResolvedStructuredOutputConfig | null =
+    structuredOutputNode && structuredOutputNode.data.type === 'structuredOutput'
+      ? {
+          structuredOutputNodeId: structuredOutputNode.id,
+          label: structuredOutputNode.data.label,
+          enabled: structuredOutputNode.data.enabled,
+          schemaName: structuredOutputNode.data.schemaName,
+          schema: structuredOutputNode.data.schema,
+          strict: structuredOutputNode.data.strict,
+          onValidationError: structuredOutputNode.data.onValidationError,
+          maxRepairAttempts: structuredOutputNode.data.maxRepairAttempts,
+          injectSchemaIntoPrompt: structuredOutputNode.data.injectSchemaIntoPrompt,
+        }
+      : null;
+
+  // --- Budget / Rate-Governance ---
+  // Each connected budget node resolves to its own envelope; the runtime
+  // enforces all of them and the strictest reached ceiling wins. The node id is
+  // kept as `budgetNodeId` so a `budget:exceeded` event can name the offender.
+  const budgets: ResolvedBudgetConfig[] = connectedNodes
+    .filter((n) => n.data.type === 'budget')
+    .map((n) => {
+      if (n.data.type !== 'budget') throw new Error('unreachable');
+      return {
+        budgetNodeId: n.id,
+        label: n.data.label,
+        enabled: n.data.enabled,
+        maxUsdPerRun: n.data.maxUsdPerRun,
+        maxUsdPerDay: n.data.maxUsdPerDay,
+        maxTokensPerRun: n.data.maxTokensPerRun,
+        maxToolCallsPerRun: n.data.maxToolCallsPerRun,
+        maxRunsPerMinute: n.data.maxRunsPerMinute,
+        degradePolicy: n.data.degradePolicy,
+        downshiftModelId: n.data.downshiftModelId,
+        blockMessage: n.data.blockMessage,
+      };
+    });
+
   // --- MCP Servers ---
   // Each MCP node resolves to a ResolvedMcpConfig. The node id is kept as
   // `mcpNodeId` so the server can push `mcp:status` events back to the UI
@@ -693,6 +737,8 @@ export function resolveAgentConfig(
     coordination: data.coordination ?? { ...DEFAULT_COORDINATION_CONFIG },
     guardrails,
     telemetry,
+    outputSchema,
+    budgets,
     // Exec tool cwd overrides agent-level workingDirectory when set
     workspacePath:
       (toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.exec?.cwd)

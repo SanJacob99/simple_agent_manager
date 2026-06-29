@@ -37,13 +37,21 @@ suite against the resolved agent, score it, and track regressions across runs.
 - Reuses the existing run-coordinator to execute cases headlessly
 - Pairs naturally with the Telemetry node for per-case cost/latency
 
-## 3. Structured Output node — *proposed*
+## 3. Structured Output node — *scaffolded*
 
 Constrain an agent's final response to a JSON Schema (OpenAI/Anthropic structured
-outputs, tool-call-as-schema). A `structuredOutput` node would carry a schema,
-a strict/loose mode, and a repair policy (re-prompt on validation failure).
-Resolves into `AgentConfig.outputSchema` and is enforced in the runtime's
+outputs, tool-call-as-schema). The `structuredOutput` node carries a schema, a
+strict/loose mode, and a repair policy (re-prompt on validation failure). It
+resolves into `AgentConfig.outputSchema` and is enforced in the runtime's
 finalize step.
+
+- Node: `structuredOutput` (`src/types/nodes.ts#StructuredOutputNodeData`)
+- Resolved: `AgentConfig.outputSchema` (`shared/agent-config.ts#ResolvedStructuredOutputConfig`)
+- Engine: `server/runtime/structured-output-engine.ts` (dependency-free JSON-Schema validator)
+- Doc: `docs/concepts/structured-output-node.md`
+- **Remaining:** call `evaluateReply` in `server/agents/run-coordinator.ts`'s
+  finalize step (repair/warn/block per policy) and add the native
+  `response_format`/strict-tool path in `server/runtime/model-resolver.ts`.
 
 ## 4. Triggers node (event-driven beyond cron) — *proposed*
 
@@ -53,12 +61,20 @@ an event source registry (`webhook`, `fileWatch`, `queue`, `manual`), feeding th
 same headless-run path the cron scheduler already uses
 (`server/scheduling/`).
 
-## 5. Budget / Rate-Governance node — *proposed*
+## 5. Budget / Rate-Governance node — *scaffolded*
 
-A `budget` node enforcing spend and rate ceilings: max USD per session/day, max
-tokens per run, max tool calls, and a degrade policy (downshift model, warn, or
-hard-stop). Complements Guardrails (content safety) with cost safety. Consumes
-the same price table as the Telemetry node.
+The `budget` node enforces spend and rate ceilings: max USD per run/day, max
+tokens per run, max tool calls per run, max runs per minute, and a degrade
+policy (downshift model, warn, or hard-stop). Complements Guardrails (content
+safety) with cost safety. Consumes the same price table as the Telemetry node.
+
+- Node: `budget` (`src/types/nodes.ts#BudgetNodeData`)
+- Resolved: `AgentConfig.budgets` (`shared/agent-config.ts#ResolvedBudgetConfig`)
+- Engine: `server/runtime/budget-engine.ts` (`BudgetLedger` with rolling day/minute windows)
+- Doc: `docs/concepts/budget-node.md`
+- **Remaining:** own one `BudgetLedger` per agent in
+  `server/agents/run-coordinator.ts` and apply each `BudgetDecision`
+  (downshift the model, abort with `budget_exceeded`, or emit `budget:exceeded`).
 
 ## 6. Knowledge / Ingestion node — *proposed*
 
@@ -80,6 +96,7 @@ resolved into the model request in `server/runtime/model-resolver.ts`.
 
 1. Finish wiring **Telemetry** (#1) — it is the measurement substrate the rest lean on.
 2. Land **Evals** (#2) on top of telemetry for cost-aware scoring.
-3. **Structured Output** (#3) and **Budget** (#5) are small, high-value, independent.
+3. **Structured Output** (#3) and **Budget** (#5) are scaffolded — next is wiring
+   both into the run-coordinator finalize/turn loop (see each item's *Remaining*).
 4. **Triggers** (#4) and **Knowledge** (#6) are larger; schedule after the above.
 5. **Prompt-cache** (#7) is an incremental agent-node enhancement, land opportunistically.

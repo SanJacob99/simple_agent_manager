@@ -95,6 +95,8 @@
   --color-node-subagent: var(--c-node-subagent);
   --color-node-guardrails: var(--c-node-guardrails);
   --color-node-telemetry: var(--c-node-telemetry);
+  --color-node-structured-output: var(--c-node-structured-output);
+  --color-node-budget: var(--c-node-budget);
 }
 
 :root {
@@ -177,6 +179,8 @@
   --c-node-subagent: #c084fc;   /* light purple — sibling of Agent's deeper purple */
   --c-node-guardrails: #dc2626; /* warning red — strong/visible for safety affordance */
   --c-node-telemetry: #2563eb;  /* blue — observability/metrics */
+  --c-node-structured-output: #3b6e8f; /* steel blue — schema/contract */
+  --c-node-budget: #1f9d6b;     /* green — cost/spend governance */
 
   /* Surface colors that bypass the Tailwind palette */
   --c-code-bg: #0d1117;

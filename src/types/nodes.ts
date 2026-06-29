@@ -19,7 +19,9 @@ export type NodeType =
   | 'mcp'
   | 'subAgent'
   | 'guardrails'
-  | 'telemetry';
+  | 'telemetry'
+  | 'structuredOutput'
+  | 'budget';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -547,6 +549,85 @@ export interface TelemetryNodeData {
   redactContent: boolean;
 }
 
+// --- Structured Output Node ---
+
+/**
+ * What the runtime does when the agent's final reply fails JSON-Schema
+ * validation.
+ * - `repair`: re-prompt the model up to `maxRepairAttempts` times with the
+ *   validation errors, asking it to return conforming JSON. Mirrors the
+ *   "auto-fixing" output parsers in LangChain / Instructor / BAML.
+ * - `warn`: emit a `structured_output:invalid` event but pass the reply
+ *   through unchanged. Useful while tuning a schema.
+ * - `block`: finalize the run with a `structured_output_invalid` error,
+ *   the way a strict tool-call schema would reject a malformed argument.
+ */
+export type StructuredOutputOnError = 'repair' | 'warn' | 'block';
+
+export interface StructuredOutputNodeData {
+  [key: string]: unknown;
+  type: 'structuredOutput';
+  label: string;
+  /** Master toggle. When false, the node is wired but the reply is unconstrained. */
+  enabled: boolean;
+  /** Schema identifier surfaced to the model and used in OpenAI `response_format`. */
+  schemaName: string;
+  /**
+   * The JSON Schema the final reply must satisfy, stored as a JSON *string* so
+   * the graph stays serializable. Parsed and validated by the runtime; an
+   * unparseable schema disables enforcement and surfaces a warning.
+   */
+  schema: string;
+  /**
+   * `true` forwards the schema to providers that support native structured
+   * outputs (`response_format: json_schema`, strict tool calls). `false`
+   * relies on prompt guidance plus post-hoc validation only.
+   */
+  strict: boolean;
+  /** Behaviour when the reply does not conform to the schema. */
+  onValidationError: StructuredOutputOnError;
+  /** Maximum re-prompt rounds when `onValidationError` is `repair`. */
+  maxRepairAttempts: number;
+  /** Append the schema to the system prompt so models without native support still comply. */
+  injectSchemaIntoPrompt: boolean;
+}
+
+// --- Budget / Rate-Governance Node ---
+
+/**
+ * What the runtime does when a budget ceiling is reached.
+ * - `warn`: emit a `budget:exceeded` event and keep going. Telemetry-only.
+ * - `downshift`: switch the run to `downshiftModelId` (a cheaper model) for the
+ *   remainder of the run, then warn. No-op if no downshift model is set.
+ * - `block`: stop the run with a `budget_exceeded` error before the next turn
+ *   or tool call.
+ */
+export type BudgetDegradePolicy = 'warn' | 'downshift' | 'block';
+
+export interface BudgetNodeData {
+  [key: string]: unknown;
+  type: 'budget';
+  label: string;
+  /** Master toggle. When false, the node is wired but no ceilings are enforced. */
+  enabled: boolean;
+  /** Max estimated USD spend per run. 0 disables this ceiling. */
+  maxUsdPerRun: number;
+  /** Max estimated USD spend per rolling 24h window. 0 disables this ceiling. */
+  maxUsdPerDay: number;
+  /** Max total tokens (prompt + completion) per run. 0 disables this ceiling. */
+  maxTokensPerRun: number;
+  /** Max tool invocations per run. 0 disables this ceiling. */
+  maxToolCallsPerRun: number;
+  /** Max runs started per rolling minute. 0 disables this ceiling. */
+  maxRunsPerMinute: number;
+  /** Behaviour when any ceiling is reached. */
+  degradePolicy: BudgetDegradePolicy;
+  /** Model used when `degradePolicy` is `downshift`. Empty falls back to `warn`. */
+  downshiftModelId: string;
+  /** Message returned to the user when a `block` policy stops a run. Empty = generic notice. */
+  blockMessage: string;
+}
+
 // --- Sub-Agent Node ---
 
 export interface SubAgentNodeData {
@@ -583,6 +664,8 @@ export type FlowNodeData =
   | MCPNodeData
   | SubAgentNodeData
   | GuardrailsNodeData
-  | TelemetryNodeData;
+  | TelemetryNodeData
+  | StructuredOutputNodeData
+  | BudgetNodeData;
 
 export type AppNode = Node<FlowNodeData>;
