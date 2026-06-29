@@ -431,9 +431,12 @@ export class StorageEngine {
     if (!dryRun && this.config.maxEntries > 0) {
       const sessions = await this.listSessions();
       if (sessions.length > this.config.maxEntries) {
-        const overflow = [...sessions].reverse().slice(0, sessions.length - this.config.maxEntries);
-        for (const session of overflow) {
-          await this.deleteSession(session.sessionKey);
+        // ⚡ Bolt Optimization: Avoid [...sessions].reverse() and slice to prevent massive intermediate array allocations
+        const numToRemove = sessions.length - this.config.maxEntries;
+        let removed = 0;
+        for (let i = sessions.length - 1; i >= 0 && removed < numToRemove; i--) {
+          await this.deleteSession(sessions[i].sessionKey);
+          removed++;
         }
       }
     }
