@@ -3,7 +3,7 @@
 > The central hub node that stores model and prompt settings while connected peripheral nodes supply runtime services.
 
 <!-- source: src/types/nodes.ts#AgentNodeData -->
-<!-- last-verified: 2026-05-29 -->
+<!-- last-verified: 2026-06-30 -->
 
 ## Overview
 
@@ -20,7 +20,7 @@ The Agent Node still owns `modelId`, `thinkingLevel`, and `modelCapabilities`. T
 | `name` | `string` | `""` | Display name for the agent |
 | `nameConfirmed` | `boolean` | `false` | Whether the user has confirmed the generated or edited name |
 | `systemPrompt` | `string` | `"You are a helpful assistant."` | User-owned system prompt or appended instructions |
-| `modelId` | `string` | `"anthropic/claude-sonnet-4-20250514"` | Model id for the connected provider |
+| `modelId` | `string` | `"anthropic/claude-sonnet-4-6"` | Model id for the connected provider |
 | `thinkingLevel` | `ThinkingLevel` | `"off"` | Requested reasoning level for supported models |
 | `description` | `string` | `""` | Optional purpose/summary for the agent |
 | `tags` | `string[]` | `[]` | Freeform tags used by the UI |
@@ -66,7 +66,7 @@ The Agent Node still owns `modelId`, `thinkingLevel`, and `modelCapabilities`. T
 
 ## Connections
 
-- Receives from: Provider, Memory, Tools, Skills, Context Engine, Agent Comm, Connectors, Storage, Vector Database, Cron, and Sub-Agent nodes
+- Receives from: Provider, Memory, Tools, Skills, Context Engine, Agent Comm, Connectors, Storage, Vector Database, Cron, MCP, Sub-Agent, Guardrails, Telemetry, Structured Output, and Budget nodes
 - Sends to: None
 - Only peripheral-to-agent connections are supported
 - Runtime validation requires exactly one connected Provider Node
@@ -79,7 +79,7 @@ The Agent Node still owns `modelId`, `thinkingLevel`, and `modelCapabilities`. T
   "name": "Research Assistant",
   "nameConfirmed": true,
   "systemPrompt": "You are a research assistant. Search the web for information, save important findings to memory, and provide well-sourced answers.",
-  "modelId": "anthropic/claude-sonnet-4-20250514",
+  "modelId": "anthropic/claude-sonnet-4-6",
   "thinkingLevel": "medium",
   "description": "Web research agent with memory",
   "tags": ["research", "web"],
