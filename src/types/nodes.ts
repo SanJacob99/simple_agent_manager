@@ -21,7 +21,8 @@ export type NodeType =
   | 'guardrails'
   | 'telemetry'
   | 'structuredOutput'
-  | 'budget';
+  | 'budget'
+  | 'evals';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -628,6 +629,67 @@ export interface BudgetNodeData {
   blockMessage: string;
 }
 
+// --- Evaluations Node ---
+
+/**
+ * How a single eval case is scored.
+ * - `exact_match`: the trimmed reply must equal `expected` exactly.
+ * - `contains`: the reply must contain `expected` as a substring (case-insensitive).
+ * - `regex`: `expected` is a JS regular expression the reply must match.
+ * - `json_schema`: `expected` is a JSON Schema the reply (parsed as JSON) must satisfy.
+ * - `llm_judge`: a judge model scores the reply against `expected` using `judgePrompt`.
+ */
+export type EvalGraderType =
+  | 'exact_match'
+  | 'contains'
+  | 'regex'
+  | 'json_schema'
+  | 'llm_judge';
+
+/** A single input → expected pair plus the grader used to score the reply. */
+export interface EvalCase {
+  /** Stable identifier so per-case scores can be tracked across runs. */
+  id: string;
+  /** The prompt sent to the agent for this case. */
+  input: string;
+  /**
+   * Reference value. Its meaning depends on `grader`: the expected text
+   * (`exact_match`/`contains`), a regex source (`regex`), a JSON Schema string
+   * (`json_schema`), or judge rubric/reference (`llm_judge`).
+   */
+  expected: string;
+  /** Grader for this case. Falls back to the node's `defaultGrader` when omitted. */
+  grader?: EvalGraderType;
+  /** Relative weight in the suite score. Defaults to 1. */
+  weight: number;
+}
+
+export interface EvalsNodeData {
+  [key: string]: unknown;
+  type: 'evals';
+  label: string;
+  /** Master toggle. When false the suite is wired but never executed. */
+  enabled: boolean;
+  /** The dataset of input → expected cases. */
+  cases: EvalCase[];
+  /** Grader used for cases that do not specify their own. */
+  defaultGrader: EvalGraderType;
+  /** Weighted suite score (0..1) at or above which the suite is considered passing. */
+  passThreshold: number;
+  /** Model used for `llm_judge` cases. Empty falls back to the agent's model. */
+  judgeModelId: string;
+  /** Rubric appended to the judge prompt for `llm_judge` cases. */
+  judgePrompt: string;
+  /** Max cases executed concurrently by the runner. */
+  maxConcurrency: number;
+  /**
+   * When true, the runner compares the suite score against the previously
+   * recorded best and flags a regression if it drops. Surfaces eval-driven
+   * regression gating in CI / `sam eval`.
+   */
+  failOnRegression: boolean;
+}
+
 // --- Sub-Agent Node ---
 
 export interface SubAgentNodeData {
@@ -666,6 +728,7 @@ export type FlowNodeData =
   | GuardrailsNodeData
   | TelemetryNodeData
   | StructuredOutputNodeData
-  | BudgetNodeData;
+  | BudgetNodeData
+  | EvalsNodeData;
 
 export type AppNode = Node<FlowNodeData>;

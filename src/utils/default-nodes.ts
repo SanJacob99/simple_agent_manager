@@ -301,6 +301,28 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         downshiftModelId: '',
         blockMessage: '',
       };
+    case 'evals':
+      return {
+        type: 'evals',
+        label: 'Evals',
+        enabled: true,
+        cases: [
+          {
+            id: 'smoke-1',
+            input: 'Reply with the single word: ready',
+            expected: 'ready',
+            grader: 'contains',
+            weight: 1,
+          },
+        ],
+        defaultGrader: 'contains',
+        passThreshold: 0.8,
+        judgeModelId: '',
+        judgePrompt:
+          'Score how well the reply satisfies the expected answer. Respond with a score from 0 to 1.',
+        maxConcurrency: 4,
+        failOnRegression: false,
+      };
     case 'subAgent':
       return {
         type: 'subAgent',

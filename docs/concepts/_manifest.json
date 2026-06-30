@@ -86,6 +86,11 @@
       "doc": "budget-node.md",
       "type": "src/types/nodes.ts#BudgetNodeData",
       "runtime": "server/runtime/budget-engine.ts"
+    },
+    "evals": {
+      "doc": "evals-node.md",
+      "type": "src/types/nodes.ts#EvalsNodeData",
+      "runtime": "server/evals/eval-runner.ts"
     }
   }
 }
