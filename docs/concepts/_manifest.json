@@ -91,6 +91,11 @@
       "doc": "evals-node.md",
       "type": "src/types/nodes.ts#EvalsNodeData",
       "runtime": "server/evals/eval-runner.ts"
+    },
+    "reflection": {
+      "doc": "reflection-node.md",
+      "type": "src/types/nodes.ts#ReflectionNodeData",
+      "runtime": "server/runtime/reflection-engine.ts"
     }
   }
 }

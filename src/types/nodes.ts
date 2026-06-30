@@ -22,7 +22,8 @@ export type NodeType =
   | 'telemetry'
   | 'structuredOutput'
   | 'budget'
-  | 'evals';
+  | 'evals'
+  | 'reflection';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -690,6 +691,50 @@ export interface EvalsNodeData {
   failOnRegression: boolean;
 }
 
+// --- Reflection / Self-critique Node ---
+
+/**
+ * What the runtime does when the revision budget is exhausted without the draft
+ * crossing `scoreThreshold`.
+ * - `use_best`: finalize with the highest-scored candidate seen across all
+ *   rounds (the draft and every revision). Safest default.
+ * - `use_last`: finalize with the most recent revision, even if an earlier
+ *   round scored higher.
+ * - `warn`: finalize with the last revision and emit a `reflection:below_threshold`
+ *   event so the caller knows quality was not met. Useful while tuning a rubric.
+ */
+export type ReflectionExhaustionPolicy = 'use_best' | 'use_last' | 'warn';
+
+/**
+ * Reflexion-style "draft → critique → revise" loop. After the agent produces a
+ * candidate reply, a critic pass scores it against `rubric`; if the score is
+ * below `scoreThreshold`, the critique is fed back for up to `maxRevisions`
+ * revisions. Mirrors Reflexion / Self-Refine and the critique chains in
+ * LangGraph, DSPy, and CrewAI. Pairs with the Evals node — the same rubric can
+ * grade both.
+ */
+export interface ReflectionNodeData {
+  [key: string]: unknown;
+  type: 'reflection';
+  label: string;
+  /** Master toggle. When false the node is wired but the reply is not critiqued. */
+  enabled: boolean;
+  /** Criteria the critic scores the draft against, in plain language. */
+  rubric: string;
+  /** Minimum acceptable critic score (0..1). At or above this, the draft is accepted. */
+  scoreThreshold: number;
+  /** Max revise rounds after the initial draft. 0 critiques once but never revises. */
+  maxRevisions: number;
+  /** Model used for the critique pass. Empty falls back to the agent's own model. */
+  criticModelId: string;
+  /** Extra guidance appended to the critic's scoring instruction. */
+  critiquePrompt: string;
+  /** Behaviour when revisions are exhausted without crossing the threshold. */
+  onExhaustion: ReflectionExhaustionPolicy;
+  /** Inject the rubric into the agent's system prompt so the first draft already targets it. */
+  injectRubricIntoPrompt: boolean;
+}
+
 // --- Sub-Agent Node ---
 
 export interface SubAgentNodeData {
@@ -729,6 +774,7 @@ export type FlowNodeData =
   | TelemetryNodeData
   | StructuredOutputNodeData
   | BudgetNodeData
-  | EvalsNodeData;
+  | EvalsNodeData
+  | ReflectionNodeData;
 
 export type AppNode = Node<FlowNodeData>;

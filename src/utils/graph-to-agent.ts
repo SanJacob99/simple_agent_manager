@@ -1,6 +1,6 @@
 import type { AppNode } from '../types/nodes';
 import type { Edge } from '@xyflow/react';
-import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides, ResolvedGuardrailConfig, ResolvedTelemetryConfig, ResolvedStructuredOutputConfig, ResolvedBudgetConfig, ResolvedEvalsConfig, EvalGraderType } from '../../shared/agent-config';
+import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides, ResolvedGuardrailConfig, ResolvedTelemetryConfig, ResolvedStructuredOutputConfig, ResolvedBudgetConfig, ResolvedEvalsConfig, EvalGraderType, ResolvedReflectionConfig } from '../../shared/agent-config';
 import { resolveToolNames, IMPLEMENTED_TOOL_NAMES } from '../../shared/resolve-tool-names';
 import { buildSystemPrompt } from '../../shared/system-prompt-builder';
 import { eligibleBundledSkills } from '../../shared/default-tool-skills';
@@ -520,6 +520,29 @@ export function resolveAgentConfig(
       };
     });
 
+  // --- Reflection / Self-critique ---
+  // At most one reflection node binds to an agent; it wraps the single finalize
+  // step, so the first connected node wins and resolves to a single optional
+  // value (or null) rather than a list, mirroring structured output.
+  const reflectionNode = connectedNodes.find(
+    (n) => n.data.type === 'reflection',
+  );
+  const reflection: ResolvedReflectionConfig | null =
+    reflectionNode && reflectionNode.data.type === 'reflection'
+      ? {
+          reflectionNodeId: reflectionNode.id,
+          label: reflectionNode.data.label,
+          enabled: reflectionNode.data.enabled,
+          rubric: reflectionNode.data.rubric,
+          scoreThreshold: reflectionNode.data.scoreThreshold,
+          maxRevisions: reflectionNode.data.maxRevisions,
+          criticModelId: reflectionNode.data.criticModelId,
+          critiquePrompt: reflectionNode.data.critiquePrompt,
+          onExhaustion: reflectionNode.data.onExhaustion,
+          injectRubricIntoPrompt: reflectionNode.data.injectRubricIntoPrompt,
+        }
+      : null;
+
   // --- MCP Servers ---
   // Each MCP node resolves to a ResolvedMcpConfig. The node id is kept as
   // `mcpNodeId` so the server can push `mcp:status` events back to the UI
@@ -769,6 +792,7 @@ export function resolveAgentConfig(
     outputSchema,
     budgets,
     evals,
+    reflection,
     // Exec tool cwd overrides agent-level workingDirectory when set
     workspacePath:
       (toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.exec?.cwd)

@@ -261,6 +261,31 @@ export interface ResolvedEvalsConfig {
   failOnRegression: boolean;
 }
 
+// --- Reflection / Self-critique ---
+
+export type ReflectionExhaustionPolicy = 'use_best' | 'use_last' | 'warn';
+
+/**
+ * Resolved reflection loop. At most one reflection node binds to an agent — it
+ * wraps the single finalize step — so this resolves to a single optional value
+ * on `AgentConfig` rather than a list (like structured output). The runtime
+ * critiques the agent's candidate reply against `rubric` and re-prompts for up
+ * to `maxRevisions` revisions, mirroring Reflexion / Self-Refine loops.
+ */
+export interface ResolvedReflectionConfig {
+  reflectionNodeId: string;
+  label: string;
+  enabled: boolean;
+  rubric: string;
+  scoreThreshold: number;
+  maxRevisions: number;
+  /** Model used for the critique pass. Empty falls back to the agent's model. */
+  criticModelId: string;
+  critiquePrompt: string;
+  onExhaustion: ReflectionExhaustionPolicy;
+  injectRubricIntoPrompt: boolean;
+}
+
 // --- Agent Config interfaces ---
 
 export interface ResolvedCronConfig {
@@ -354,6 +379,13 @@ export interface AgentConfig {
    * fixtures and serialized graphs remain compatible without a backfill.
    */
   evals?: ResolvedEvalsConfig[];
+  /**
+   * Optional reflection loop. When omitted or `null`, the runtime finalizes the
+   * agent's reply without a critique/revise pass. At most one reflection node
+   * binds to an agent. Optional so existing AgentConfig fixtures and serialized
+   * graphs remain compatible without a backfill.
+   */
+  reflection?: ResolvedReflectionConfig | null;
 
   /** Working directory for shell commands (exec tool). Independent of storage path. */
   workspacePath: string | null;

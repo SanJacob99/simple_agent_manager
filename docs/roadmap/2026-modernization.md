@@ -107,15 +107,25 @@ tools. An `a2a` node would expose this agent as an A2A server (publish an agent
 card, accept remote tasks) and/or register remote A2A agents as callable
 delegates — resolved into `AgentConfig.a2a`, served from `server/a2a/`.
 
-## 9. Reflection / Self-critique node — *proposed*
+## 9. Reflection / Self-critique node — *scaffolded*
 
 Reflexion-style "draft → critique → revise" loops measurably lift answer quality
-on hard tasks. A `reflection` node would wrap the finalize step: after the agent
+on hard tasks. The `reflection` node wraps the finalize step: after the agent
 produces a candidate reply, a critic pass (same model or a cheaper one) scores it
 against a rubric and, below a threshold, feeds the critique back for up to *N*
-revisions. Resolved into `AgentConfig.reflection`; enforced in the run-coordinator
-finalize step alongside Structured Output and Guardrails. Pairs with the Evals
-node — the same rubric grades both.
+revisions. Pairs with the Evals node — the same rubric grades both.
+
+- Node: `reflection` (`src/types/nodes.ts#ReflectionNodeData`)
+- Resolved: `AgentConfig.reflection` (`shared/agent-config.ts#ResolvedReflectionConfig`)
+- Engine: `server/runtime/reflection-engine.ts` (dependency-free prompt builders,
+  critic-reply parsing, the revise decision, and the exhaustion policy; reuses
+  `extractJson` from the structured-output engine)
+- Doc: `docs/concepts/reflection-node.md`
+- **Remaining:** run the critique/revise loop around `runtime.prompt()` in
+  `server/agents/run-coordinator.ts`'s finalize step, resolve `criticModelId`
+  through `server/runtime/model-resolver.ts`, and emit `reflection:revised` /
+  `reflection:below_threshold` events. Pairs with the Evals node (#2), which can
+  share the rubric.
 
 ## 10. Sandbox / Compute node — *proposed*
 
@@ -138,5 +148,7 @@ Budget node (cost safety) and Guardrails (content safety) with execution safety.
    with **Reflection** (#9), which can share its rubric.
 4. **Triggers** (#4) and **Knowledge** (#6) are larger; schedule after the above.
 5. **Prompt-cache** (#7) is an incremental agent-node enhancement, land opportunistically.
-6. **A2A** (#8), **Reflection** (#9), and **Sandbox** (#10) are the next design wave —
-   A2A for interop, Reflection for quality, Sandbox for execution safety.
+6. **Reflection** (#9) is scaffolded — next is wiring the critique/revise loop
+   into the run-coordinator finalize step; it shares a rubric with **Evals** (#2).
+7. **A2A** (#8) and **Sandbox** (#10) are the next design wave — A2A for
+   cross-framework interop, Sandbox for execution safety.
