@@ -179,9 +179,14 @@ export class StorageEngine {
       await this.writeStore({});
       return current;
     });
-    await Promise.all(
-      Object.values(store).map((entry) => this.deleteTranscriptFile(entry)),
-    );
+    // ⚡ Bolt Optimization: Process transcript file deletions in chunks concurrently
+    // to avoid EMFILE (too many open files) limits when deleting a massive number of sessions.
+    const entries = Object.values(store);
+    const CHUNK_SIZE = 50;
+    for (let i = 0; i < entries.length; i += CHUNK_SIZE) {
+      const chunk = entries.slice(i, i + CHUNK_SIZE);
+      await Promise.all(chunk.map((entry) => this.deleteTranscriptFile(entry)));
+    }
   }
 
   async deleteAgentData(): Promise<void> {
