@@ -47,7 +47,17 @@ function summarizePayload(payload: any): string {
   const model: string = payload.model ?? 'unknown';
   const messages: any[] = payload.messages ?? [];
   const tools: any[] = payload.tools ?? [];
-  const lastUser = [...messages].reverse().find((m: any) => m.role === 'user');
+
+  // ⚡ Bolt Optimization: Use a decrementing loop instead of [...messages].reverse().find()
+  // to avoid O(N) array allocation and copying.
+  let lastUser: any = undefined;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'user') {
+      lastUser = messages[i];
+      break;
+    }
+  }
+
   let lastUserText = '';
   if (lastUser) {
     const content = lastUser.content;
