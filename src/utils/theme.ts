@@ -19,6 +19,7 @@ export const NODE_COLORS: Record<NodeType, string> = {
   structuredOutput: 'var(--c-node-structured-output)',
   budget: 'var(--c-node-budget)',
   evals: 'var(--c-node-evals)',
+  reflection: 'var(--c-node-reflection)',
 };
 
 export const NODE_PASTEL: Record<NodeType, { bg: string; fg: string }> = {
@@ -40,6 +41,7 @@ export const NODE_PASTEL: Record<NodeType, { bg: string; fg: string }> = {
   structuredOutput: { bg: '#DCE7F0', fg: '#3B6E8F' },
   budget:         { bg: '#D7F0E4', fg: '#1F9D6B' },
   evals:          { bg: '#EADCF7', fg: '#7C3AED' },
+  reflection:     { bg: '#FBE6D6', fg: '#D97A3D' },
 };
 
 export const NODE_LABELS: Record<NodeType, string> = {
@@ -61,4 +63,5 @@ export const NODE_LABELS: Record<NodeType, string> = {
   structuredOutput: 'Structured Output',
   budget: 'Budget',
   evals: 'Evals',
+  reflection: 'Reflection',
 };
