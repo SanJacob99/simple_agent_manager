@@ -3,7 +3,7 @@
 > Manages token budgets, compaction, and transcript-aware context assembly so conversations stay inside the model's context window.
 
 <!-- source: src/types/nodes.ts#ContextEngineNodeData -->
-<!-- last-verified: 2026-05-29 -->
+<!-- last-verified: 2026-07-01 -->
 <!-- token-budget-inheritance, compaction-trigger-modes, tooltips -->
 
 ## Overview
@@ -23,11 +23,11 @@ In the current implementation, compaction is no longer only an in-memory concern
 | `summaryModelId` | `string` | `""` | Model id used to produce summaries (only for `summary`). Empty means inherit the agent's model |
 | `compactionTrigger` | `string` | `"auto"` | When proactive compaction fires from `afterTurn`. `auto` → at 80% of the post-reservation budget; `threshold` → at `compactionThreshold` (ratio) of the budget; `manual` → never auto-fires (only via the Compact Now button). `assemble()`'s overflow check stays on as a safety net for all modes. |
 | `compactionThreshold` | `number` | `0.8` | In `threshold` mode, the 0–1 ratio of the post-reservation budget at which compaction fires. In `manual` mode, an absolute token count surfaced in the panel preview. Ignored in `auto` mode. |
-| `postCompactionTokenTarget` | `number` | `50000` | Token ceiling the assembled context should land at after compaction runs. Clamped to `tokenBudget - reservedForResponse`. |
-| `autoFlushBeforeCompact` | `boolean` | `true` | Flush pending buffers before compaction |
-| `ragEnabled` | `boolean` | `false` | Whether to enable RAG retrieval |
-| `ragTopK` | `number` | `5` | Number of RAG results to retrieve |
-| `ragMinScore` | `number` | `0.7` | Minimum similarity threshold for RAG results |
+| `postCompactionTokenTarget` | `number` | `50000` | Token ceiling the assembled context should land at after compaction runs. Clamped to `Math.min(tokenBudget - reservedForResponse, ...)` with a 512-token floor. |
+| `autoFlushBeforeCompact` | `boolean` | `true` | Schema field only — not read anywhere in `server/runtime/context-engine.ts` today. Present on the type/defaults but has no runtime effect. |
+| `ragEnabled` | `boolean` | `false` | Schema field only — not consumed by the context engine or agent runtime today. No RAG retrieval is wired up regardless of this value; see the caveat below. |
+| `ragTopK` | `number` | `5` | Schema field only, same caveat as `ragEnabled`. |
+| `ragMinScore` | `number` | `0.7` | Schema field only, same caveat as `ragEnabled`. |
 
 ## Runtime Behavior
 
@@ -42,12 +42,14 @@ Manual compaction: the Context Engine property panel shows a **Compact Now** but
 
 Current compaction behavior:
 
-- `trim-oldest` and `sliding-window` keep the newest messages that fit
+- `trim-oldest` and `sliding-window` keep the newest messages that fit — the two strategies are functionally identical in `server/runtime/context-engine.ts` today (both trim from the oldest end until under the post-compaction target); the distinct name exists for future divergence, not current behavior
 - `summary` keeps the newest slice of conversation and replaces older context with a generated summary message
 - when a live transcript is bound, summary compaction appends a persisted `compaction` entry via `SessionManager.appendCompaction(...)`
 - the runtime emits a `memory_compaction` event when one of these persisted summaries is written, so the UI can show compacting state
 
 The context engine no longer owns system prompt additions. Prompt construction is handled by the agent runtime's assembled system prompt.
+
+**RAG fields are not yet wired.** `ragEnabled`, `ragTopK`, and `ragMinScore` are defined on `ResolvedContextEngineConfig` (`shared/agent-config.ts`) and exposed in the property panel, but nothing in `server/runtime/context-engine.ts` or `server/runtime/agent-runtime.ts` reads them. There is no connection between the context engine and the `vectorDatabase` node's `VectorDatabaseEngine` — vector search stays a self-contained tool surface (see `docs/concepts/vector-database-node.md`), not a shared retrieval backend the context engine draws from. Setting `ragEnabled: true` has no observable effect today. Similarly, `autoFlushBeforeCompact` is schema-only and has no runtime effect.
 
 ## Connections
 

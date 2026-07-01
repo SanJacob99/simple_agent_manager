@@ -3,7 +3,7 @@
 > Time-triggered agent runs on a configurable schedule.
 
 <!-- source: src/types/nodes.ts#CronNodeData -->
-<!-- last-verified: 2026-05-15 -->
+<!-- last-verified: 2026-07-01 -->
 
 ## Overview
 
@@ -18,9 +18,15 @@ weekday`) and is parsed by `node-cron`. Each cron node attached to an
 agent runs independently, so an agent can have several schedules with
 different prompts.
 
-Crons are real but kept off the default sidebar palette in some earlier
-builds because the runtime was being verified end-to-end. The scheduler,
-the queueing path, and tests are now in place — see Runtime Behavior.
+The [`CronScheduler`](../../server/scheduling/cron-scheduler.ts) itself
+is implemented and unit-tested, but it is **not yet instantiated
+anywhere in the running server** — there is no reference to it from
+`server/index.ts`, `server/startup.ts`, `server/agents/agent-manager.ts`,
+or `run-coordinator.ts`. Resolving `cron` nodes into `ResolvedCronConfig[]`
+works end-to-end (see Configuration), but no schedule will actually fire
+in a deployed instance until the scheduler is wired into server startup.
+Treat this node as schema-complete but not yet product-wired, per
+CLAUDE.md's guidance on `cron`.
 
 ## Configuration
 
@@ -58,10 +64,14 @@ conversation. `sessionMode: 'ephemeral'` allocates a fresh session per
 tick — useful when each run should be independent (cron-driven ingest,
 report generation).
 
-`retentionDays` is read by the maintenance scheduler when present. The
-storage engine's pruning behavior is partial today (see
-[`docs/audit-2026-05-09.md`](../audit-2026-05-09.md) §2.5), so verify
-end-to-end retention if your deployment depends on it.
+`retentionDays` is written into `ResolvedCronConfig` but nothing reads
+it back today — `server/scheduling/maintenance-scheduler.ts` has no
+knowledge of cron or this field. Don't rely on it for actual transcript
+pruning until a maintenance path is wired up.
+
+Everything above describes the `CronScheduler`'s internal logic when it
+runs, not confirmed production behavior — see the wiring gap noted in
+Overview.
 
 ## Connections
 
