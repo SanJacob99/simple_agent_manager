@@ -22,7 +22,8 @@ export type NodeType =
   | 'telemetry'
   | 'structuredOutput'
   | 'budget'
-  | 'evals';
+  | 'evals'
+  | 'reflection';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -690,6 +691,45 @@ export interface EvalsNodeData {
   failOnRegression: boolean;
 }
 
+// --- Reflection / Self-Critique Node ---
+
+/**
+ * What the reflection loop returns when no attempt reaches `scoreThreshold`
+ * within `maxRevisions` passes.
+ * - `accept_best`: return the highest-scoring attempt seen.
+ * - `accept_last`: return the most recent (final) revision.
+ * - `warn`: return the highest-scoring attempt but flag that the threshold was
+ *   never met (the runtime emits a `reflection:below_threshold` event).
+ */
+export type ReflectionExhaustionPolicy = 'accept_best' | 'accept_last' | 'warn';
+
+/**
+ * A reflection node wraps the finalize step in a Reflexion-style
+ * draft → critique → revise loop: after the agent produces a candidate reply, a
+ * critic pass scores it against `rubric` and, below `scoreThreshold`, feeds the
+ * critique back for up to `maxRevisions` revisions. Pairs with the Evals node —
+ * the same rubric can grade both.
+ */
+export interface ReflectionNodeData {
+  [key: string]: unknown;
+  type: 'reflection';
+  label: string;
+  /** Master toggle. When false the node is wired but the finalize step is unchanged. */
+  enabled: boolean;
+  /** Criteria the critic scores the reply against. Empty means "general quality". */
+  rubric: string;
+  /** Max revise passes after the initial draft. 0 makes the loop critique-only. */
+  maxRevisions: number;
+  /** Accept once an attempt's score (0..1) reaches this. 1 forces every revision. */
+  scoreThreshold: number;
+  /** Model used for the critic/revise passes. Empty falls back to the agent's model. */
+  criticModelId: string;
+  /** What to return when `maxRevisions` is exhausted without meeting the threshold. */
+  onMaxRevisions: ReflectionExhaustionPolicy;
+  /** When true, the critique text is kept in the transcript instead of being dropped. */
+  includeCritiqueInTranscript: boolean;
+}
+
 // --- Sub-Agent Node ---
 
 export interface SubAgentNodeData {
@@ -729,6 +769,7 @@ export type FlowNodeData =
   | TelemetryNodeData
   | StructuredOutputNodeData
   | BudgetNodeData
-  | EvalsNodeData;
+  | EvalsNodeData
+  | ReflectionNodeData;
 
 export type AppNode = Node<FlowNodeData>;

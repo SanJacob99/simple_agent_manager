@@ -261,6 +261,30 @@ export interface ResolvedEvalsConfig {
   failOnRegression: boolean;
 }
 
+// --- Reflection / Self-Critique ---
+
+export type ReflectionExhaustionPolicy = 'accept_best' | 'accept_last' | 'warn';
+
+/**
+ * Resolved reflection loop. At most one reflection node binds to an agent; it
+ * wraps the finalize step in a draft → critique → revise cycle. The critic
+ * scores the candidate reply against `rubric`; below `scoreThreshold` the
+ * critique is fed back for up to `maxRevisions` revisions. Mirrors the
+ * single-binding shape of `outputSchema` so the runtime treats quality
+ * enforcement, schema enforcement, and content safety uniformly in finalize.
+ */
+export interface ResolvedReflectionConfig {
+  reflectionNodeId: string;
+  label: string;
+  enabled: boolean;
+  rubric: string;
+  maxRevisions: number;
+  scoreThreshold: number;
+  criticModelId: string;
+  onMaxRevisions: ReflectionExhaustionPolicy;
+  includeCritiqueInTranscript: boolean;
+}
+
 // --- Agent Config interfaces ---
 
 export interface ResolvedCronConfig {
@@ -354,6 +378,13 @@ export interface AgentConfig {
    * fixtures and serialized graphs remain compatible without a backfill.
    */
   evals?: ResolvedEvalsConfig[];
+  /**
+   * Optional reflection loop. When omitted or null, the finalize step is
+   * unchanged. At most one reflection node binds to an agent. Optional so
+   * existing AgentConfig fixtures and serialized graphs remain compatible
+   * without a backfill.
+   */
+  reflection?: ResolvedReflectionConfig | null;
 
   /** Working directory for shell commands (exec tool). Independent of storage path. */
   workspacePath: string | null;

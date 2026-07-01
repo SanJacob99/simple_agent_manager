@@ -323,6 +323,19 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         maxConcurrency: 4,
         failOnRegression: false,
       };
+    case 'reflection':
+      return {
+        type: 'reflection',
+        label: 'Reflection',
+        enabled: true,
+        rubric:
+          'Is the answer correct, complete, and directly responsive to the request? Flag unsupported claims and missing steps.',
+        maxRevisions: 1,
+        scoreThreshold: 0.7,
+        criticModelId: '',
+        onMaxRevisions: 'accept_best',
+        includeCritiqueInTranscript: false,
+      };
     case 'subAgent':
       return {
         type: 'subAgent',

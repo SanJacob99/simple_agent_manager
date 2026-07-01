@@ -42,10 +42,11 @@ The default sidebar currently exposes these draggable nodes:
 | `telemetry` | Observability instrumentation: per-run/turn/tool spans (tokens, cost, latency) exported to console, file, or an OTLP collector |
 | `structuredOutput` | Constrains the agent's final reply to a JSON Schema, with native provider enforcement, prompt injection, and a repair/warn/block policy on validation failure |
 | `budget` | Spend and rate governance: USD per run/day, tokens and tool calls per run, runs per minute, with a warn / downshift / block degrade policy |
+| `reflection` | Wraps the finalize step in a draft → critique → revise loop: a critic scores the reply against a rubric and, below a threshold, feeds the critique back for up to N revisions |
 
 The codebase also contains a `cron` node type and editor, but it is not part of the default palette and should be treated as in-progress unless you verify the full execution path.
 
-> **Scaffolding note:** `telemetry`, `structuredOutput`, and `budget` ship with node UI, resolved config, and a unit-tested engine, but the run-coordinator wiring is still pending — treat them as extension surfaces until that path is verified end-to-end. See `docs/roadmap/2026-modernization.md`.
+> **Scaffolding note:** `telemetry`, `structuredOutput`, `budget`, `evals`, and `reflection` ship with node UI, resolved config, and a unit-tested engine, but the run-coordinator wiring is still pending — treat them as extension surfaces until that path is verified end-to-end. See `docs/roadmap/2026-modernization.md`.
 
 ## Architecture
 
