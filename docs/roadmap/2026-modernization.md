@@ -107,15 +107,27 @@ tools. An `a2a` node would expose this agent as an A2A server (publish an agent
 card, accept remote tasks) and/or register remote A2A agents as callable
 delegates — resolved into `AgentConfig.a2a`, served from `server/a2a/`.
 
-## 9. Reflection / Self-critique node — *proposed*
+## 9. Reflection / Self-critique node — *scaffolded*
 
 Reflexion-style "draft → critique → revise" loops measurably lift answer quality
-on hard tasks. A `reflection` node would wrap the finalize step: after the agent
+on hard tasks. The `reflection` node wraps the finalize step: after the agent
 produces a candidate reply, a critic pass (same model or a cheaper one) scores it
 against a rubric and, below a threshold, feeds the critique back for up to *N*
 revisions. Resolved into `AgentConfig.reflection`; enforced in the run-coordinator
 finalize step alongside Structured Output and Guardrails. Pairs with the Evals
 node — the same rubric grades both.
+
+- Node: `reflection` (`src/types/nodes.ts#ReflectionNodeData`)
+- Resolved: `AgentConfig.reflection` (`shared/agent-config.ts#ResolvedReflectionConfig`)
+- Engine: `server/runtime/reflection-engine.ts` (dependency-free `runReflection`
+  loop with injected critic/revise passes, plus `buildCritiquePrompt` /
+  `buildRevisePrompt` prompt builders and a `parseCritique` judge-reply reader)
+- Doc: `docs/concepts/reflection-node.md`
+- **Remaining:** call `runReflection` in `server/agents/run-coordinator.ts`'s
+  finalize step (before Structured Output / Guardrails), supply real
+  model-backed `critic`/`revise` functions built from the prompt helpers,
+  replace the reply with `result.finalReply`, and emit
+  `reflection:below_threshold` when `selection` is `warn`.
 
 ## 10. Sandbox / Compute node — *proposed*
 
@@ -125,6 +137,39 @@ resource ceiling (CPU/mem/wall-clock), a network egress policy, and a filesystem
 mount scope — resolved into `AgentConfig.sandbox` and consumed by the `exec` /
 `code_execution` tools instead of today's raw `workspacePath`. Complements the
 Budget node (cost safety) and Guardrails (content safety) with execution safety.
+
+## 11. Router / Model-fallback node — *proposed*
+
+Production agents rarely pin a single model. A `router` node would hold an
+ordered policy — a primary model plus fallbacks — with rules on *when* to switch:
+provider outage / 5xx, rate-limit (429), context-window overflow, or a
+cost/latency budget breach (pairs with the Budget node). It could also do
+capability-based routing (send tool-heavy turns to a strong model, cheap
+summarization to a small one). Resolved into `AgentConfig.router` and consumed in
+`server/runtime/model-resolver.ts`, this brings the builder in line with
+OpenRouter, LiteLLM, and Portkey-style gateways. A dependency-free
+`pickModel(policy, signal)` engine keeps the routing decision unit-testable.
+
+## 12. Memory / Long-term store node — *proposed*
+
+The `memory` node today is per-session working memory. Modern agents also want
+*durable* memory that survives across sessions: user preferences, learned facts,
+and prior task outcomes, written and recalled by explicit tools (the pattern
+behind Mem0, Letta/MemGPT, and LangGraph's store). A `longTermMemory` node would
+own the store backend, a write policy (manual tool call vs. auto-extract on turn
+end), a recall strategy (semantic over the vector DB, or recency), and a
+retention/forget policy. Resolves into `AgentConfig.longTermMemory`; pairs with
+the Knowledge (#6) and Vector DB nodes for the recall path.
+
+## 13. Human-in-the-loop / Approval node — *proposed*
+
+High-stakes tool calls (spend money, send email, delete data, deploy) should
+pause for human approval. The server already has a `server/hitl/hitl-registry.ts`
+substrate; a `humanApproval` node would surface it in the graph: a list of
+tool-name / pattern rules that require sign-off, a timeout with a default
+(approve / deny / escalate) action, and an approver channel. Resolved into
+`AgentConfig.humanApproval` and enforced in the tool-adapter path — the emerging
+"interrupt before tool" pattern from LangGraph and OpenAI's Agents SDK.
 
 ---
 
@@ -136,7 +181,12 @@ Budget node (cost safety) and Guardrails (content safety) with execution safety.
 3. **Evals** (#2) is scaffolded — wire `EvalRunner` into a headless replay path and
    add the `sam eval` subcommand; it pairs with Telemetry for cost-aware scoring and
    with **Reflection** (#9), which can share its rubric.
-4. **Triggers** (#4) and **Knowledge** (#6) are larger; schedule after the above.
-5. **Prompt-cache** (#7) is an incremental agent-node enhancement, land opportunistically.
-6. **A2A** (#8), **Reflection** (#9), and **Sandbox** (#10) are the next design wave —
-   A2A for interop, Reflection for quality, Sandbox for execution safety.
+4. **Reflection** (#9) is scaffolded — wire `runReflection` into the finalize step
+   with real model-backed critic/revise passes; it shares the Evals rubric.
+5. **Triggers** (#4) and **Knowledge** (#6) are larger; schedule after the above.
+6. **Prompt-cache** (#7) is an incremental agent-node enhancement, land opportunistically.
+7. **A2A** (#8) and **Sandbox** (#10) are the remaining design-wave items —
+   A2A for interop, Sandbox for execution safety.
+8. Newer proposals — **Router** (#11), **Long-term Memory** (#12), and
+   **Human-in-the-loop** (#13) — are design-only; #13 already has a server-side
+   `hitl` substrate to build on, so it is the cheapest to scaffold next.

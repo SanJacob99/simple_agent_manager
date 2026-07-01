@@ -19,6 +19,7 @@ import TelemetryProperties from './property-editors/TelemetryProperties';
 import StructuredOutputProperties from './property-editors/StructuredOutputProperties';
 import BudgetProperties from './property-editors/BudgetProperties';
 import EvalsProperties from './property-editors/EvalsProperties';
+import ReflectionProperties from './property-editors/ReflectionProperties';
 import type { FlowNodeData } from '../types/nodes';
 import { useUILayoutStore } from '../store/ui-layout-store';
 import { useRightAnchoredResize } from './useRightAnchoredResize';
@@ -62,6 +63,8 @@ function PropertyEditorForType({ nodeId, data }: { nodeId: string; data: FlowNod
       return <BudgetProperties nodeId={nodeId} data={data} />;
     case 'evals':
       return <EvalsProperties nodeId={nodeId} data={data} />;
+    case 'reflection':
+      return <ReflectionProperties nodeId={nodeId} data={data} />;
   }
 }
 
