@@ -23,7 +23,8 @@ export type NodeType =
   | 'structuredOutput'
   | 'budget'
   | 'evals'
-  | 'reflection';
+  | 'reflection'
+  | 'sandbox';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -735,6 +736,58 @@ export interface ReflectionNodeData {
   injectRubricIntoPrompt: boolean;
 }
 
+// --- Sandbox / Compute Node ---
+
+/** Execution backend the sandbox runs code in. */
+export type SandboxRuntime = 'local' | 'container' | 'microvm' | 'gvisor';
+
+/** Network egress posture for code running in the sandbox. */
+export type SandboxEgressPolicy = 'none' | 'allowlist' | 'all';
+
+/** What the runtime does when a sandbox policy is violated. */
+export type SandboxViolationPolicy = 'block' | 'warn' | 'terminate';
+
+/**
+ * Defines the isolated execution environment the `exec` / `code_execution`
+ * tools run inside: an isolation backend, resource ceilings (CPU / memory /
+ * wall-clock / processes), a network egress policy, and a filesystem scope.
+ * Completes the safety trilogy alongside Guardrails (content safety) and Budget
+ * (cost safety) with execution safety, mirroring E2B / Modal / Daytona /
+ * Firecracker-microVM sandboxes and the OpenAI/Anthropic code-execution tools.
+ * Supersedes the ad-hoc `workspacePath` / `sandboxWorkdir` fields.
+ */
+export interface SandboxNodeData {
+  [key: string]: unknown;
+  type: 'sandbox';
+  label: string;
+  /** Master toggle. When false the node is wired but no isolation/policy is enforced. */
+  enabled: boolean;
+  /** Isolation backend. `local` is a constrained host workdir; the rest isolate harder. */
+  runtime: SandboxRuntime;
+  /** Container image / microVM template. Ignored when `runtime` is `local`. */
+  image: string;
+  /** Filesystem scope, absolute or relative to the workspace. Empty = agent's workspacePath. */
+  workdir: string;
+  /** When true, filesystem access may not escape `workdir`. */
+  confineToWorkdir: boolean;
+  /** When true, the mounted filesystem is read-only (writes are violations). */
+  readOnlyFilesystem: boolean;
+  /** Outbound network posture. */
+  egressPolicy: SandboxEgressPolicy;
+  /** Host patterns permitted when `egressPolicy` is `allowlist` (e.g. `*.pypi.org`). */
+  egressAllowlist: string[];
+  /** CPU core ceiling. 0 = unlimited. */
+  maxCpuCores: number;
+  /** Memory ceiling in MB. 0 = unlimited. */
+  maxMemoryMB: number;
+  /** Wall-clock ceiling per execution in seconds. 0 = unlimited. */
+  maxWallClockSec: number;
+  /** Process/thread ceiling. 0 = unlimited. */
+  maxProcesses: number;
+  /** Behaviour when an egress, resource, or path policy is violated. */
+  onViolation: SandboxViolationPolicy;
+}
+
 // --- Sub-Agent Node ---
 
 export interface SubAgentNodeData {
@@ -775,6 +828,7 @@ export type FlowNodeData =
   | StructuredOutputNodeData
   | BudgetNodeData
   | EvalsNodeData
-  | ReflectionNodeData;
+  | ReflectionNodeData
+  | SandboxNodeData;
 
 export type AppNode = Node<FlowNodeData>;

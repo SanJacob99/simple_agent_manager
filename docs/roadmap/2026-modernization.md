@@ -127,14 +127,26 @@ revisions. Pairs with the Evals node — the same rubric grades both.
   `reflection:below_threshold` events. Pairs with the Evals node (#2), which can
   share the rubric.
 
-## 10. Sandbox / Compute node — *proposed*
+## 10. Sandbox / Compute node — *scaffolded*
 
-Agents that run code need isolation. A `sandbox` node would define an execution
-environment (container/microVM/firecracker or a constrained local workdir), a
-resource ceiling (CPU/mem/wall-clock), a network egress policy, and a filesystem
-mount scope — resolved into `AgentConfig.sandbox` and consumed by the `exec` /
-`code_execution` tools instead of today's raw `workspacePath`. Complements the
-Budget node (cost safety) and Guardrails (content safety) with execution safety.
+Agents that run code need isolation. The `sandbox` node defines an execution
+environment (`local` constrained workdir, `container`, `microvm`, or `gvisor`),
+per-execution resource ceilings (CPU/mem/wall-clock/processes), a network egress
+policy (`none` / `allowlist` / `all`), and a filesystem mount scope — resolved
+into `AgentConfig.sandbox` and consumed by the `exec` / `code_execution` tools
+instead of today's raw `workspacePath`. Completes the safety trilogy alongside
+Budget (cost safety) and Guardrails (content safety) with execution safety.
+
+- Node: `sandbox` (`src/types/nodes.ts#SandboxNodeData`)
+- Resolved: `AgentConfig.sandbox` (`shared/agent-config.ts#ResolvedSandboxConfig`)
+- Engine: `server/runtime/sandbox-engine.ts` (dependency-free `checkEgress` /
+  `checkResourceRequest` / `checkPath` decisions with pure host-pattern and
+  path-containment helpers; each `SandboxDecision.action` folds in `onViolation`)
+- Doc: `docs/concepts/sandbox-node.md`
+- **Remaining:** gate the `exec` tool with the three checks in
+  `server/tools/tool-factory.ts`, provision the runtime and emit
+  `sandbox:violation` events (tear down on `terminate`) in
+  `server/agents/run-coordinator.ts`, and enforce the ceilings at the OS level.
 
 ---
 
@@ -150,5 +162,8 @@ Budget node (cost safety) and Guardrails (content safety) with execution safety.
 5. **Prompt-cache** (#7) is an incremental agent-node enhancement, land opportunistically.
 6. **Reflection** (#9) is scaffolded — next is wiring the critique/revise loop
    into the run-coordinator finalize step; it shares a rubric with **Evals** (#2).
-7. **A2A** (#8) and **Sandbox** (#10) are the next design wave — A2A for
-   cross-framework interop, Sandbox for execution safety.
+7. **Sandbox** (#10) is scaffolded — next is gating the `exec` tool with the
+   engine's egress/resource/path checks and provisioning the isolation backend
+   from the run-coordinator; it rounds out the safety trilogy with Budget (#5)
+   and Guardrails.
+8. **A2A** (#8) is the next design wave — cross-framework agent interop.

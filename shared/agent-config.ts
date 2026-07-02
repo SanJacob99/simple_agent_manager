@@ -286,6 +286,74 @@ export interface ResolvedReflectionConfig {
   injectRubricIntoPrompt: boolean;
 }
 
+// --- Sandbox / Compute ---
+
+/**
+ * Execution backend a sandbox runs code in.
+ * - `local`: a constrained local working directory on the host (today's raw
+ *   `workspacePath`, now with policy). Weakest isolation.
+ * - `container`: an OCI container from `image` (Docker/Podman-style).
+ * - `microvm`: a lightweight VM (Firecracker / Cloud Hypervisor style).
+ * - `gvisor`: a userspace kernel sandbox (gVisor `runsc`).
+ */
+export type SandboxRuntime = 'local' | 'container' | 'microvm' | 'gvisor';
+
+/**
+ * Network egress posture for code running in the sandbox.
+ * - `none`: no outbound network at all (safest default).
+ * - `allowlist`: only hosts matching `egressAllowlist` are reachable.
+ * - `all`: unrestricted egress.
+ */
+export type SandboxEgressPolicy = 'none' | 'allowlist' | 'all';
+
+/**
+ * What the runtime does when a sandbox policy (egress, resource ceiling, or
+ * path scope) is violated.
+ * - `block`: refuse the individual operation, let the run continue.
+ * - `warn`: allow the operation but emit a `sandbox:violation` event so the
+ *   caller can observe it (useful while tuning a policy).
+ * - `terminate`: kill the sandbox and fail the run.
+ */
+export type SandboxViolationPolicy = 'block' | 'warn' | 'terminate';
+
+/**
+ * Resolved execution sandbox. At most one sandbox node binds to an agent — it
+ * defines the single execution environment the `exec` / `code_execution` tools
+ * run inside — so this resolves to a single optional value on `AgentConfig`
+ * rather than a list (like structured output and reflection). It supersedes the
+ * ad-hoc `workspacePath` / `sandboxWorkdir` fields by making the isolation
+ * backend, resource ceilings, egress policy, and filesystem scope first-class.
+ */
+export interface ResolvedSandboxConfig {
+  sandboxNodeId: string;
+  label: string;
+  enabled: boolean;
+  runtime: SandboxRuntime;
+  /** Container image / microVM template. Ignored when `runtime` is `local`. */
+  image: string;
+  /**
+   * Filesystem scope the sandbox may touch, absolute or relative to the agent
+   * workspace. Empty falls back to the agent's `workspacePath`.
+   */
+  workdir: string;
+  /** When true, filesystem access may not escape `workdir` (path containment). */
+  confineToWorkdir: boolean;
+  /** When true, the mounted filesystem is read-only (writes are violations). */
+  readOnlyFilesystem: boolean;
+  egressPolicy: SandboxEgressPolicy;
+  /** Host patterns permitted when `egressPolicy` is `allowlist` (e.g. `*.pypi.org`). */
+  egressAllowlist: string[];
+  /** CPU core ceiling. `0` means unlimited. */
+  maxCpuCores: number;
+  /** Memory ceiling in MB. `0` means unlimited. */
+  maxMemoryMB: number;
+  /** Wall-clock ceiling per execution in seconds. `0` means unlimited. */
+  maxWallClockSec: number;
+  /** Process/thread ceiling. `0` means unlimited. */
+  maxProcesses: number;
+  onViolation: SandboxViolationPolicy;
+}
+
 // --- Agent Config interfaces ---
 
 export interface ResolvedCronConfig {
@@ -386,6 +454,14 @@ export interface AgentConfig {
    * graphs remain compatible without a backfill.
    */
   reflection?: ResolvedReflectionConfig | null;
+  /**
+   * Optional execution sandbox. When omitted or `null`, the `exec` /
+   * `code_execution` tools run against the raw `workspacePath` with no
+   * isolation, resource, or egress policy — today's behaviour. At most one
+   * sandbox node binds to an agent. Optional so existing AgentConfig fixtures
+   * and serialized graphs remain compatible without a backfill.
+   */
+  sandbox?: ResolvedSandboxConfig | null;
 
   /** Working directory for shell commands (exec tool). Independent of storage path. */
   workspacePath: string | null;

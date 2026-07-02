@@ -96,6 +96,11 @@
       "doc": "reflection-node.md",
       "type": "src/types/nodes.ts#ReflectionNodeData",
       "runtime": "server/runtime/reflection-engine.ts"
+    },
+    "sandbox": {
+      "doc": "sandbox-node.md",
+      "type": "src/types/nodes.ts#SandboxNodeData",
+      "runtime": "server/runtime/sandbox-engine.ts"
     }
   }
 }
