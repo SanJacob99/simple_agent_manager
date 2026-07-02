@@ -230,14 +230,21 @@ describe('StorageEngine', () => {
       expect(result).toContain(path.join('sessions', 'abc-123.jsonl'));
     });
 
-    it('uses sessionFile when explicitly set', () => {
-      const result = engine.resolveTranscriptPath(makeEntry({ sessionFile: '/custom/path/transcript.jsonl' }));
-      expect(result).toBe('/custom/path/transcript.jsonl');
+    it('uses sessionFile when explicitly set and within agent directory', () => {
+      const validAbsPath = path.join(engine.getAgentDir(), 'custom', 'transcript.jsonl');
+      const result = engine.resolveTranscriptPath(makeEntry({ sessionFile: validAbsPath }));
+      expect(result).toBe(validAbsPath);
     });
 
     it('throws error when sessionFile explicitly set to path traversing out', () => {
       expect(() => {
         engine.resolveTranscriptPath(makeEntry({ sessionFile: '../../../etc/passwd' }));
+      }).toThrow('Path traversal detected');
+    });
+
+    it('throws error when sessionFile is an absolute path traversing out', () => {
+      expect(() => {
+        engine.resolveTranscriptPath(makeEntry({ sessionFile: '/etc/passwd' }));
       }).toThrow('Path traversal detected');
     });
 
