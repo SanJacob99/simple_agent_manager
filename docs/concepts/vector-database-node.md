@@ -3,7 +3,7 @@
 > Attaches a vector store to an agent and auto-enables the four industry-standard vector tools (`vector_search`, `vector_upsert`, `vector_delete`, `vector_get`). Default backend is `sqlite-vec`; default embedder is OpenRouter.
 
 <!-- source: src/types/nodes.ts#VectorDatabaseNodeData -->
-<!-- last-verified: 2026-05-15 -->
+<!-- last-verified: 2026-07-02 -->
 
 ## Overview
 
@@ -34,14 +34,14 @@ The agent's embedding model lives **on the same node**. Insert-time and query-ti
 
 ## Runtime Behaviour
 
-Resolved by `src/utils/graph-to-agent.ts` into `AgentConfig.vectorDatabases: ResolvedVectorDatabaseConfig[]`. The `AgentRuntime` constructor (`server/runtime/agent-runtime.ts`) wires a lazy `getVectorEngine(label?)` accessor into `RuntimeHints` — the four vector tool modules under `server/tools/builtins/vector/` use it to resolve a shared `VectorDatabaseEngine` instance per collection.
+Resolved by `src/utils/graph-to-agent.ts` into `AgentConfig.vectorDatabases: ResolvedVectorDatabaseConfig[]`. The four vector tool modules under `server/runtime/vector-tools/` (`vector-search`, `vector-upsert`, `vector-delete`, `vector-get`) are built by `createVectorTools(config, runtime)`, which closes over a lazy `getEngine(label?)` accessor on a `VectorToolContext`; that accessor wraps `getOrCreateVectorEngine()` in `server/runtime/vector-engine-registry.ts` to resolve a shared `VectorDatabaseEngine` instance per collection.
 
 Engine lifecycle (`server/runtime/vector-database-engine.ts`):
 
 1. On first use, `init()` opens a SQLite file under `<storagePath>/<sanitized-collectionName>.db`, loads the `sqlite-vec` extension, and creates a metadata table plus a documents table.
 2. The first `upsert` call embeds the document(s), reads the vector dimension, and creates the `vec_<collection>` virtual table sized for that dimension. The dimension is persisted in the metadata table.
 3. Subsequent inserts and queries assert dimension parity — switching embedding models on a populated collection raises `DimensionMismatchError`.
-4. Searches issue `SELECT … WHERE embedding MATCH ? ORDER BY distance LIMIT ?` against the virtual table and join the result back to the documents table for text + metadata.
+4. Searches issue `SELECT … WHERE embedding MATCH ? ORDER BY distance LIMIT ?` against the virtual table, then look each hit's id up in the documents table for text + metadata (a per-id lookup, not a SQL join).
 5. `destroyAsync()` on the runtime closes all open sqlite handles.
 
 Selecting a non-`sqlite-vec` provider raises `UnsupportedProviderError` the first time the engine initialises. Missing OpenRouter keys or unreachable Ollama servers raise wrapped errors that the tool's `execute` returns as plain text (the agent sees a clean message and can recover).

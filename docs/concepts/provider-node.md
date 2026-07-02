@@ -1,5 +1,5 @@
 <!-- source: src/types/nodes.ts#ProviderNodeData -->
-<!-- last-verified: 2026-05-24 -->
+<!-- last-verified: 2026-07-02 -->
 
 # Provider Node
 
@@ -35,8 +35,8 @@ The available provider choices come from the backend provider registry (`GET /ap
    - one Provider Node is required
    - multiple Provider Nodes are invalid
    - `pluginId` cannot be empty
-3. The server provider registry loads enabled plugins from `providers.json` and exposes client-safe summaries through `/api/providers`.
-4. Provider catalogs are cached per provider instance using `pluginId + normalizedBaseUrl`, not just the provider id.
+3. `server/providers/provider-loader.ts` loads enabled plugins from `providers.json` into the in-memory `server/providers/plugin-registry.ts` store (falling back to registering every `PLUGIN_MAP` entry when the file is missing), which `/api/providers` reads to expose client-safe summaries.
+4. `server/providers/catalog-cache.ts` caches provider catalogs per provider instance using `pluginId + normalizedBaseUrl`, not just the provider id.
 5. At runtime the server resolves the actual base URL and API key from saved keys and/or the configured env var name.
 
 ## Connections
