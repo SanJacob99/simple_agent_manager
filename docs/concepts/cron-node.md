@@ -3,7 +3,7 @@
 > Time-triggered agent runs on a configurable schedule.
 
 <!-- source: src/types/nodes.ts#CronNodeData -->
-<!-- last-verified: 2026-05-15 -->
+<!-- last-verified: 2026-07-02 -->
 
 ## Overview
 
@@ -52,16 +52,20 @@ changes:
   with the cron's `prompt` and `sessionMode`, and a per-run timeout
   derived from `maxRunDurationMs`.
 
-`sessionMode: 'persistent'` keeps the cron's session-key stable across
-ticks, so the agent's context engine and memory see one continuous
-conversation. `sessionMode: 'ephemeral'` allocates a fresh session per
-tick — useful when each run should be independent (cron-driven ingest,
-report generation).
+`sessionMode` is resolved onto `ResolvedCronConfig` but is not yet read by the
+scheduler: `CronScheduler.executeCronTick()` always dispatches with the fixed
+session key `cron:${cronNodeId}`, so every tick of a given cron node shares
+one continuous session today regardless of whether `sessionMode` is set to
+`persistent` or `ephemeral`. Branching on `sessionMode` to allocate a fresh
+session per tick for `ephemeral` crons is not implemented yet.
 
-`retentionDays` is read by the maintenance scheduler when present. The
-storage engine's pruning behavior is partial today (see
-[`docs/audit-2026-05-09.md`](../audit-2026-05-09.md) §2.5), so verify
-end-to-end retention if your deployment depends on it.
+`retentionDays` is likewise resolved and stored but not currently consumed —
+no maintenance or pruning code reads it. `StorageEngine`'s pruning
+(`pruneStaleEntries`) is driven only by the Storage node's `pruneAfterDays`,
+not by a cron's `retentionDays`. Treat `retentionDays` as reserved for future
+per-cron retention until that wiring lands; see
+[`docs/audit-2026-05-09.md`](../audit-2026-05-09.md) §2.5 for background on
+the storage engine's pruning gaps.
 
 ## Connections
 
