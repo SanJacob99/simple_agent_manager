@@ -3,7 +3,7 @@
 > Durable manager-led workflow coordination for canvas agents.
 
 <!-- source: server/coordination/coordination-service.ts -->
-<!-- last-verified: 2026-05-12 -->
+<!-- last-verified: 2026-07-03 -->
 
 ## Overview
 
@@ -28,8 +28,12 @@ Agent roles live on `AgentNodeData.coordination` and resolve into `AgentConfig.c
 3. Manager-role runs receive workflow lifecycle tools such as `coordination_create_workflow`, `coordination_assign_task`, `coordination_stop_workflow`, and trace/report tools.
 4. Lead and Specialist runs receive only task tools: `coordination_task_update`, `coordination_task_blocked`, and `coordination_task_complete`.
 5. Assigned tasks dispatch through `AgentManager.dispatch()` using session keys shaped like `agent:<agentId>:workflow:<workflowId>:task:<taskId>`.
-6. `CoordinationService` subscribes to the assigned run's coordinator events and appends trace events for run start/end, model calls, tool calls, task completion/failure, budget warnings, and reports.
-7. Stop marks the workflow `stop_requested`, aborts active assigned runs through `RunCoordinator.abort()`, cancels open tasks, writes a stop report, and marks the workflow `stopped_by_user`.
+6. `CoordinationService` subscribes to the assigned run's coordinator events and appends trace events for run start/end, model calls, tool calls, task completion/failure, budget warnings, and reports. Model/tool call counts are also enforced live: exceeding a workflow's `maxAgentTurns` or `maxToolCalls` budget pauses the workflow and aborts the in-flight run via `AgentManager.abortRun()`, requiring a manager to call `coordination_resume_workflow` (or `POST .../resume`) to continue.
+7. Stop marks the workflow `stop_requested`, aborts active assigned runs through `RunCoordinator.abort()`, cancels open tasks, writes a stop report, and marks the workflow `stopped_by_user`. A workflow armed with `startWorkflow`/`resumeWorkflow` also runs a watchdog timer keyed to `budget.maxRuntimeSeconds` (default 3600s); if it fires before the workflow reaches a terminal state, the watchdog aborts active runs, cancels open tasks, and marks the workflow `stopped_by_watchdog`.
+8. `coordination_task_blocked` marks the task `blocked` and also sets the whole workflow to `needs_human_input`, halting dispatch of other ready tasks until a manager calls `coordination_resume_workflow`.
+9. A workflow reaches a terminal state once every task is `completed`, `failed`, or `cancelled`; the workflow itself is marked `failed` unless every task completed successfully — this is distinct from the user- and watchdog-triggered stop paths above.
+
+> **V1 trust note:** the coordination REST surface trusts the caller-supplied `callerAgentId` with no request authentication yet — any HTTP caller can act as any synced agent, including a manager.
 
 ## Persistence
 

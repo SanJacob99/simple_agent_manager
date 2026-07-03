@@ -41,7 +41,7 @@ The Sub-Agent Node attaches to an Agent Node as a peripheral. Each declared sub-
 5. `RunCoordinator` builds a fresh child `AgentRuntime` through its injected runtime factory, persists the child's user/assistant/tool transcript events, and destroys the child runtime on completion, error, or abort.
 6. The child runtime receives `subAgents: []` and has `sessions_spawn`, `sessions_yield`, and `subagents` stripped from its resolved tool list in v1, so recursive fan-out is disabled even if the node's recursive flag is set.
 7. The registry and durable sub-session metadata mark the sub-session `sealed` when the child run completes, errors, or is killed. `sessions_send` to any sub-session returns a one-shot error and no further work is dispatched.
-8. Kill (REST `/api/subagents/:id/kill` or agent-facing `subagents({action: 'kill'})`) marks the registry record as `killed` *before* aborting the run, so the abort path doesn't downgrade the terminal state to `error`.
+8. Kill (REST `/api/subagents/:subAgentId/kill` or agent-facing `subagents({action: 'kill'})`) marks the registry record as `killed` *before* aborting the run, so the abort path doesn't downgrade the terminal state to `error`.
 
 ## Inheritance
 
@@ -54,6 +54,8 @@ The Sub-Agent Node attaches to an Agent Node as a peripheral. Each declared sub-
 | Context Engine | None — sub-agents are one-shot |
 | Skills | Parent ∪ dedicated; dedicated wins on `id` collision |
 | MCP | Parent ∪ dedicated; dedicated wins on `mcpNodeId` collision |
+| Guardrails | Inherited from parent (always) |
+| Telemetry / Budget / Structured Output / Evals / Reflection | Not set on the synthetic config; these peripherals do not apply to sub-agent runs |
 | Connectors / Vector DB / AgentComm / Cron | Never apply |
 
 ## Example

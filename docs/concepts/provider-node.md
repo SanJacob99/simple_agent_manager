@@ -1,5 +1,5 @@
 <!-- source: src/types/nodes.ts#ProviderNodeData -->
-<!-- last-verified: 2026-05-24 -->
+<!-- last-verified: 2026-07-03 -->
 
 # Provider Node
 
@@ -41,9 +41,9 @@ The available provider choices come from the backend provider registry (`GET /ap
 
 ## Connections
 
-- Sends to: Agent Node
+- Sends to: Agent Node, Sub-Agent Node (optional dedicated provider)
 - Receives from: None
-- Provider Nodes connect only to Agent Nodes, not to other peripheral nodes
+- Provider Nodes connect to Agent Nodes and, optionally, to Sub-Agent Nodes; they do not connect to other peripheral nodes
 - An agent must have exactly one connected Provider Node to run
 
 ## Example

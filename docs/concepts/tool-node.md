@@ -14,7 +14,7 @@ The Tool Node defines the capabilities available to an agent at runtime. Rather 
 - individual tools opt specific names in
 - tool plugins add extra tools and skills
 
-Skills stored on the Tool Node are merged into system prompt content during graph resolution. The resolved tool names are then instantiated by `createAgentTools()` in `server/runtime/tool-factory.ts`.
+Skills stored on the Tool Node are merged into system prompt content during graph resolution. The resolved tool names are then instantiated by `createAgentTools()` in `server/tools/tool-factory.ts`.
 
 ## Configuration
 
@@ -80,7 +80,7 @@ Skills stored on the Tool Node are merged into system prompt content during grap
 | `toolSettings.browser.cdpEndpoint` | `string` | `""` | CDP URL (e.g. `http://127.0.0.1:9222`). When set, attaches to a user-launched Chrome instead of spawning one |
 | `toolSettings.browser.skill` | `string` | `""` | Optional inline markdown override for the browser skill. See [browser-tool.md](browser-tool.md) for the full reference |
 
-> **Deprecated.** `subAgentSpawning` and `maxSubAgents` are no longer used by the runtime. Sub-agent capability is now declared via the [Sub-Agent Node](sub-agent-node.md). Existing graphs continue to load, but these fields have no effect.
+> **Deprecated.** Sub-agent capability is now declared via the [Sub-Agent Node](sub-agent-node.md). `maxSubAgents` is no longer used by the runtime. `subAgentSpawning` still has a narrow effect: `server/sessions/session-tools.ts` reads it as a back-compat gate that re-enables the `sessions_spawn`/`sessions_yield`/`subagents` tools on older graphs that toggled the checkbox on but never declared a Sub-Agent Node. Existing graphs continue to load either way.
 
 ## Runtime Behavior
 
@@ -92,7 +92,7 @@ Tool name resolution happens in `shared/resolve-tool-names.ts` in this order:
 4. Add tools contributed by enabled tool plugins
 5. Deduplicate via a Set (canonical names only; aliases never survive into the final list)
 
-`server/runtime/tool-factory.ts` then instantiates concrete `AgentTool` objects:
+`server/tools/tool-factory.ts` then instantiates concrete `AgentTool` objects:
 
 - memory tools are skipped there because `MemoryEngine` provides them separately
 - session tools are skipped because they are injected later by the run coordinator
@@ -101,7 +101,7 @@ Tool name resolution happens in `shared/resolve-tool-names.ts` in this order:
 - `text_to_speech` synthesizes audio via ElevenLabs, Google Gemini, Microsoft Azure, MiniMax, OpenAI, or OpenRouter (audio-capable chat model, e.g. `openai/gpt-4o-audio-preview`) and writes the resulting file into `<cwd>/audio/`
 - `music_generate` generates music or ambient audio via Google Lyria or MiniMax Music and writes the resulting file into `<cwd>/music/`. The Gemini API key is reused from the image settings, and the MiniMax API key and group id are reused from text_to_speech
 - `code_interpreter` is treated as a legacy alias and canonicalized to `code_execution` during tool-name resolution, so older saved configs still enable the same runtime tool
-- if the resolved tool list already includes `web_search` or `web_fetch` and the active provider plugin supplies replacements, `createAgentTools()` swaps in the provider-backed implementation instead of auto-adding new tools
+- `createAgentTools()` supports swapping `web_search`/`web_fetch` for a provider-backed implementation when the active provider plugin supplies one, but `server/runtime/agent-runtime.ts` (the only production caller) always passes an empty provider-web context, so this swap is currently unreachable outside unit tests
 
 Skill handling happens in `resolveAgentConfig()` and feeds the `## Skills` section of the system prompt via `buildSystemPrompt()`. There are three buckets:
 
