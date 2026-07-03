@@ -3,7 +3,7 @@
 > Enforces spend and rate ceilings on an agent — USD per run/day, tokens and tool calls per run, runs per minute — with a warn / downshift / block degrade policy.
 
 <!-- source: src/types/nodes.ts#BudgetNodeData -->
-<!-- last-verified: 2026-06-28 -->
+<!-- last-verified: 2026-07-03 -->
 
 ## Overview
 
@@ -32,7 +32,7 @@ Properties are derived from `src/types/nodes.ts#BudgetNodeData` and defaults fro
 
 ## Runtime Behavior
 
-`src/utils/graph-to-agent.ts` resolves each connected Budget node into a `ResolvedBudgetConfig` entry on `AgentConfig.budgets` (`shared/agent-config.ts`). The list is optional — agents without a Budget node have `budgets === undefined` and the runtime enforces no ceilings.
+`src/utils/graph-to-agent.ts` resolves each connected Budget node into a `ResolvedBudgetConfig` entry on `AgentConfig.budgets` (`shared/agent-config.ts`). The list is optional — agents without a Budget node have an empty `budgets` array (`[]`, never `undefined`) and the runtime enforces no ceilings.
 
 `server/runtime/budget-engine.ts` provides the `BudgetLedger` class. The runtime owns one ledger per agent (long-lived, so the per-day and per-minute rolling windows persist across runs):
 

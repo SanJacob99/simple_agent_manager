@@ -3,7 +3,7 @@
 > Wraps the agent's finalize step in a Reflexion-style "draft → critique → revise" loop: a critic scores each draft against a rubric and feeds the critique back for revision until the score crosses a threshold or the revision budget is spent.
 
 <!-- source: src/types/nodes.ts#ReflectionNodeData -->
-<!-- last-verified: 2026-06-30 -->
+<!-- last-verified: 2026-07-03 -->
 
 ## Overview
 
@@ -57,7 +57,7 @@ Peripheral → Agent. At most one Reflection node binds to a single Agent; the f
   "rubric": "The answer is factually correct, cites concrete evidence, and directly resolves the user's question without hedging.",
   "scoreThreshold": 0.85,
   "maxRevisions": 2,
-  "criticModelId": "anthropic/claude-haiku-4-5",
+  "criticModelId": "anthropic/claude-haiku-4-5-20251001",
   "critiquePrompt": "Weight factual accuracy above style. Penalize unsupported claims heavily.",
   "onExhaustion": "use_best",
   "injectRubricIntoPrompt": true
