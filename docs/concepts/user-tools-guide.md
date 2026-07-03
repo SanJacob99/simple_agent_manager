@@ -1,6 +1,6 @@
 # User-Installed Tools
 
-<!-- last-verified: 2026-04-23 -->
+<!-- last-verified: 2026-07-03 -->
 
 SAM lets you add tools to your own install without forking the main
 codebase. Drop a `*.module.ts` file under `server/tools/user/`,
@@ -59,12 +59,32 @@ like, same convention as built-ins under
 At boot the server prints how many user tools it loaded:
 
 ```
-[Tools] 22 built-in + 1 user tool(s) loaded (default /…/server/tools/user).
+[Tools] N built-in + 1 user tool(s) loaded (default /…/server/tools/user).
 ```
 
 If your count didn't tick up by one, check the server log for a
 `[tool-registry]` line — broken user tools are logged and skipped,
 never crash the server.
+
+---
+
+## SAM CLI
+
+The `sam` CLI (`bin/sam.js`) manages installed user tools without
+touching the filesystem by hand:
+
+| Command | What it does |
+|---------|--------------|
+| `sam install tool <github-url>` | Fetches a tarball from the repo, extracts it, validates/synthesizes `sam.json`, and installs it into the resolved user-tools dir. |
+| `sam uninstall tool <name>` | Deletes the tool's directory after a type-to-confirm prompt. |
+| `sam list tools` | Prints a NAME/VERSION/SOURCE/STATE table sourced from each tool's `sam.json`. |
+| `sam enable tool <name>` / `sam disable tool <name>` | Flips the `disabled` flag in `sam.json`. |
+| `sam restart` | Stops and respawns the detached backend, then polls `/api/health`. |
+| `sam diagnose` | Read-only probe of `/api/health`, `/api/tools`, and the resolved user-tools directory. |
+
+Each command's implementation lives under `bin/commands/`. The `disabled`
+flag in `sam.json` is read server-side by `filterDisabledByManifest()` in
+[server/tools/tool-registry.ts](../../server/tools/tool-registry.ts).
 
 ---
 
@@ -294,9 +314,9 @@ becomes "compile your tool to `.js` first" — not a concern today.
   model as VS Code extensions or Vim plugins: the operator owns the
   machine and vets what they install.
 - **Failure mode.** A broken user tool logs an error and is skipped.
-  It must not crash the server (enforced by the registry's fail-soft
-  load path — `loadModulesFromFiles` with `failSoft: true` for the
-  extra source).
+  It must not crash the server (enforced by `loadModulesFromFiles`'s
+  `source === 'extra'` branch, which logs and skips instead of
+  throwing — built-ins throw and abort startup on the same failure).
 - **Logging.** Every successfully loaded user tool is announced at
   startup so the operator can audit what ran.
 - **Kill switch.** `SAM_DISABLE_USER_TOOLS=1` skips the scan entirely.
@@ -353,7 +373,9 @@ project source file.
 - scans the directories recursively for `*.module.ts` / `*.module.js`,
 - dynamically `import()`s each file,
 - validates the default export looks like a `ToolModule`,
-- skips broken files with a logged error rather than crashing,
+- skips broken **user-tool** files with a logged error rather than
+  crashing (a broken built-in still throws and aborts server startup —
+  that's a programmer bug, not an operator-recoverable state),
 - rejects user tools whose `name` collides with a built-in (built-ins
   win; the user's collision is logged and ignored).
 
@@ -418,9 +440,10 @@ which gives us room to evolve without churning user code.
   frontend: render a form from the TypeBox schema into the Tools
   node's per-tool editor area. Until then, users rely on
   `AgentConfig` ad-hoc fields + env vars.
-- **Aliases.** Built-ins can declare aliases (`bash` → `exec`). Should
-  user tools? **Lean: no — forces a unique top-level name and avoids
-  confusing collisions.**
+- **Aliases.** Built-ins can declare aliases (`bash` → `exec`,
+  `code_interpreter` → `code_execution`). Should user tools? **Lean:
+  no — forces a unique top-level name and avoids confusing
+  collisions.**
 - **Stable API for shared utilities.** Tools that want to call the
   storage engine, or read other agent state, need an exported API.
   **Lean: don't expose anything beyond `RuntimeHints` + `AgentConfig`
