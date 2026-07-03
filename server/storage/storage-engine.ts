@@ -153,7 +153,7 @@ export class StorageEngine {
     });
   }
 
-  async deleteSession(sessionKey: string): Promise<void> {
+  async deleteSession(sessionKey: string): Promise<number> {
     const existing = await this.storeLock.run(async () => {
       const store = await this.readStore();
       const found = store[sessionKey];
@@ -169,8 +169,9 @@ export class StorageEngine {
     // Transcript file removal is independent of the store lock — keep the
     // critical section limited to the index mutation.
     if (existing) {
-      await this.deleteTranscriptFile(existing);
+      return await this.deleteTranscriptFile(existing);
     }
+    return 0;
   }
 
   async deleteAllSessions(): Promise<void> {
@@ -408,9 +409,23 @@ export class StorageEngine {
         const session = sessions[i];
         evicted.push(session.sessionKey);
         if (!dryRun) {
-          await this.deleteSession(session.sessionKey);
+          const freedBytes = await this.deleteSession(session.sessionKey);
+          currentUsage -= freedBytes;
+        } else {
+          // Dry run: simulate freed space by checking transcript file size
+          const transcriptPath = this.resolveTranscriptPath(session);
+          const isWithinSessionsDir = transcriptPath.startsWith(this.sessionsDir + path.sep) || transcriptPath === this.sessionsDir;
+          if (isWithinSessionsDir) {
+            try {
+              const stat = await fs.stat(transcriptPath);
+              if (stat.isFile()) {
+                currentUsage -= stat.size;
+              }
+            } catch {
+              // ignore
+            }
+          }
         }
-        currentUsage = await this.getDiskUsage();
       }
     }
 
@@ -530,13 +545,29 @@ export class StorageEngine {
     }
   }
 
-  private async deleteTranscriptFile(entry: Pick<SessionStoreEntry, 'sessionId' | 'sessionFile'>): Promise<void> {
+  private async deleteTranscriptFile(entry: Pick<SessionStoreEntry, 'sessionId' | 'sessionFile'>): Promise<number> {
     const transcriptPath = this.resolveTranscriptPath(entry);
+
+    // Only count bytes freed if the file is within sessionsDir
+    const isWithinSessionsDir = transcriptPath.startsWith(this.sessionsDir + path.sep) || transcriptPath === this.sessionsDir;
+
+    let size = 0;
+    if (isWithinSessionsDir) {
+      try {
+        const stat = await fs.stat(transcriptPath);
+        size = stat.isFile() ? stat.size : 0;
+      } catch {
+        // File may be missing or inaccessible
+        size = 0;
+      }
+    }
 
     try {
       await fs.unlink(transcriptPath);
+      return size;
     } catch {
       // Ignore missing files so metadata cleanup stays idempotent.
+      return 0;
     }
   }
 }
