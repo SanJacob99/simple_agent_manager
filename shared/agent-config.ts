@@ -286,6 +286,49 @@ export interface ResolvedReflectionConfig {
   injectRubricIntoPrompt: boolean;
 }
 
+// --- Agent-to-Agent (A2A) Interop ---
+
+export type A2ARole = 'server' | 'client' | 'both';
+export type A2ATransport = 'jsonrpc' | 'grpc' | 'rest';
+export type A2AAuthScheme = 'none' | 'apiKey' | 'bearer' | 'oauth2';
+
+/** A resolved remote A2A agent this agent can delegate tasks to. */
+export interface ResolvedA2ARemoteAgent {
+  id: string;
+  name: string;
+  cardUrl: string;
+  authScheme: A2AAuthScheme;
+  credentialEnvVar: string;
+}
+
+/**
+ * Resolved A2A interop surface. At most one A2A node binds to an agent — a
+ * single served card and a single delegate registry — so this resolves to one
+ * optional value on `AgentConfig` rather than a list (like structured output
+ * and reflection). Consumed by `server/a2a/` to serve the Agent Card and to
+ * dispatch delegated tasks to remotes.
+ */
+export interface ResolvedA2AConfig {
+  a2aNodeId: string;
+  label: string;
+  enabled: boolean;
+  role: A2ARole;
+  // Server side
+  agentName: string;
+  agentDescription: string;
+  publishSkills: boolean;
+  transport: A2ATransport;
+  streaming: boolean;
+  pushNotifications: boolean;
+  serverAuth: A2AAuthScheme;
+  /** Normalized mount path (leading slash, no trailing slash). */
+  basePath: string;
+  // Client side
+  remotes: ResolvedA2ARemoteAgent[];
+  taskTimeoutMs: number;
+  maxConcurrentTasks: number;
+}
+
 // --- Agent Config interfaces ---
 
 export interface ResolvedCronConfig {
@@ -386,6 +429,13 @@ export interface AgentConfig {
    * graphs remain compatible without a backfill.
    */
   reflection?: ResolvedReflectionConfig | null;
+  /**
+   * Optional Agent-to-Agent interop surface. When omitted or `null`, the agent
+   * neither serves an Agent Card nor delegates to remote A2A agents. At most one
+   * A2A node binds to an agent. Optional so existing AgentConfig fixtures and
+   * serialized graphs remain compatible without a backfill.
+   */
+  a2a?: ResolvedA2AConfig | null;
 
   /** Working directory for shell commands (exec tool). Independent of storage path. */
   workspacePath: string | null;

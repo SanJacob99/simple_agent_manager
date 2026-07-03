@@ -1,6 +1,6 @@
 import type { AppNode } from '../types/nodes';
 import type { Edge } from '@xyflow/react';
-import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides, ResolvedGuardrailConfig, ResolvedTelemetryConfig, ResolvedStructuredOutputConfig, ResolvedBudgetConfig, ResolvedEvalsConfig, EvalGraderType, ResolvedReflectionConfig } from '../../shared/agent-config';
+import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides, ResolvedGuardrailConfig, ResolvedTelemetryConfig, ResolvedStructuredOutputConfig, ResolvedBudgetConfig, ResolvedEvalsConfig, EvalGraderType, ResolvedReflectionConfig, ResolvedA2AConfig, ResolvedA2ARemoteAgent } from '../../shared/agent-config';
 import { resolveToolNames, IMPLEMENTED_TOOL_NAMES } from '../../shared/resolve-tool-names';
 import { buildSystemPrompt } from '../../shared/system-prompt-builder';
 import { eligibleBundledSkills } from '../../shared/default-tool-skills';
@@ -10,6 +10,20 @@ import { SUB_AGENT_NAME_REGEX } from '../../shared/sub-agent-types';
 import { CONNECTOR_CATALOG } from '../../shared/connectors/catalog';
 import { DEFAULT_COORDINATION_CONFIG } from '../../shared/coordination-types';
 import * as posixPath from 'path';
+
+/**
+ * Normalize an A2A mount path: ensure a single leading slash, drop any trailing
+ * slash, and fall back to `/a2a` when empty. Kept in sync with
+ * `normalizeBasePath` in `server/a2a/a2a-engine.ts` (browser code can't import
+ * server modules); the runtime re-normalizes on its side as the source of truth.
+ */
+function normalizeA2ABasePath(raw: string): string {
+  const trimmed = (raw ?? '').trim();
+  if (!trimmed) return '/a2a';
+  const withLead = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+  const noTrail = withLead.replace(/\/+$/, '');
+  return noTrail || '/a2a';
+}
 
 function resolveSubAgent(
   subAgentNode: AppNode & { data: SubAgentNodeData },
@@ -543,6 +557,40 @@ export function resolveAgentConfig(
         }
       : null;
 
+  // --- Agent-to-Agent (A2A) interop ---
+  // At most one A2A node binds to an agent — a single served card and a single
+  // delegate registry — so the first connected node wins and resolves to a
+  // single optional value (or null), mirroring structured output and reflection.
+  const a2aNode = connectedNodes.find((n) => n.data.type === 'a2a');
+  const a2a: ResolvedA2AConfig | null =
+    a2aNode && a2aNode.data.type === 'a2a'
+      ? {
+          a2aNodeId: a2aNode.id,
+          label: a2aNode.data.label,
+          enabled: a2aNode.data.enabled,
+          role: a2aNode.data.role,
+          agentName: a2aNode.data.agentName,
+          agentDescription: a2aNode.data.agentDescription,
+          publishSkills: a2aNode.data.publishSkills,
+          transport: a2aNode.data.transport,
+          streaming: a2aNode.data.streaming,
+          pushNotifications: a2aNode.data.pushNotifications,
+          serverAuth: a2aNode.data.serverAuth,
+          basePath: normalizeA2ABasePath(a2aNode.data.basePath),
+          remotes: a2aNode.data.remotes.map(
+            (r): ResolvedA2ARemoteAgent => ({
+              id: r.id,
+              name: r.name,
+              cardUrl: r.cardUrl,
+              authScheme: r.authScheme,
+              credentialEnvVar: r.credentialEnvVar,
+            }),
+          ),
+          taskTimeoutMs: a2aNode.data.taskTimeoutMs,
+          maxConcurrentTasks: a2aNode.data.maxConcurrentTasks,
+        }
+      : null;
+
   // --- MCP Servers ---
   // Each MCP node resolves to a ResolvedMcpConfig. The node id is kept as
   // `mcpNodeId` so the server can push `mcp:status` events back to the UI
@@ -793,6 +841,7 @@ export function resolveAgentConfig(
     budgets,
     evals,
     reflection,
+    a2a,
     // Exec tool cwd overrides agent-level workingDirectory when set
     workspacePath:
       (toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.exec?.cwd)
