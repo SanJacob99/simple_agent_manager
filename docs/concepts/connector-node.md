@@ -1,9 +1,9 @@
 # Connector Node
 
-> Attaches a curated external integration to an agent — a named entry from the connector catalog that resolves into an MCP server under the hood.
+> Attaches a curated external integration to an agent — a named entry from the connector catalog that resolves into `AgentConfig.mcps[]` config. No runtime currently spawns that config into a live MCP server (see Runtime Behavior).
 
 <!-- source: src/types/nodes.ts#ConnectorsNodeData -->
-<!-- last-verified: 2026-05-24 -->
+<!-- last-verified: 2026-07-03 -->
 
 ## Overview
 
@@ -11,7 +11,7 @@ The Connector Node is a curated MCP preset. Each connector is a named entry in t
 
 This is distinct from the MCP node, which lets power users wire arbitrary MCP servers directly. Both kinds of nodes coexist and end up in the same `mcps[]` collection at runtime.
 
-Multiple Connector Nodes can connect to a single agent — each one launches its own MCP server.
+Multiple Connector Nodes can connect to a single agent — each one contributes its own entry to `AgentConfig.mcps[]`, though today none of them are actually launched (see Runtime Behavior).
 
 ## Configuration
 
@@ -35,7 +35,14 @@ During config resolution (`src/utils/graph-to-agent.ts`), each connector node co
    - `toolPrefix` = the catalog entry's `toolPrefix` (e.g. `github_`).
    - `allowedTools` = `[]` (no whitelist).
    - `autoConnect` = `true`.
-3. Appended to the same `mcps[]` the MCP node populates. The MCP runtime under `server/runtime/...` handles spawn, tool registration, and `mcp:status` events.
+3. Appended to the same `mcps[]` the MCP node populates.
+
+> **Status:** no runtime currently consumes `AgentConfig.mcps[]`. No MCP
+> server is spawned, no tools are registered, and no `mcp:status` events
+> are emitted — `server/agents/sub-agent-executor.ts` only forwards the
+> array into a synthetic sub-agent config without reading it. Wiring a
+> Connector Node today produces config data but has no live effect on
+> the agent. This is the same gap documented in [mcp-node.md](mcp-node.md).
 
 The connector node has no live connection-status indicator yet.
 

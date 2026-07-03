@@ -3,7 +3,7 @@
 > Provides filesystem-based persistence for agent sessions, routed transcripts, and memory files.
 
 <!-- source: src/types/nodes.ts#StorageNodeData -->
-<!-- last-verified: 2026-05-29 -->
+<!-- last-verified: 2026-07-03 -->
 
 ## Overview
 
@@ -17,7 +17,7 @@ The filesystem backend keeps metadata and transcript history separate:
 - transcript `.jsonl` files store the append-only conversation tree for each routed session
 - Markdown files under `memory/` store evergreen and daily memory content
 
-Only one Storage Node can be connected per agent. For embedding or semantic retrieval storage, use a Vector Database Node instead.
+Only one Storage Node is expected per agent — this is a resolver convention (the first connected Storage Node is used), not an enforced validation like the Provider Node's duplicate check. Wiring two Storage Nodes silently picks one rather than erroring. For embedding or semantic retrieval storage, use a Vector Database Node instead.
 
 ## Configuration
 
@@ -41,7 +41,7 @@ Only one Storage Node can be connected per agent. For embedding or semantic retr
 | `resetArchiveRetentionDays` | `number` | `30` | How long archived `sessions.json` snapshots are kept before deletion |
 | `maxDiskBytes` | `number` | `0` | Total disk budget for the agent's storage directory in bytes. `0` = unlimited |
 | `highWaterPercent` | `number` | `80` | When `maxDiskBytes` is set, maintenance evicts sessions until usage drops below this percentage of the budget |
-| `maintenanceIntervalMinutes` | `number` | `60` | How often the background maintenance task runs, in minutes |
+| `maintenanceIntervalMinutes` | `number` | `60` | Interval consumed by `MaintenanceScheduler` (`server/scheduling/maintenance-scheduler.ts`), but that class is not currently instantiated by the running server — this field has no live effect. Maintenance today only runs when a user clicks "Run maintenance" in Settings, or via a direct call to the REST endpoint |
 
 ## Runtime Behavior
 
@@ -52,6 +52,8 @@ At runtime, three pieces work together:
 - `StorageEngine` manages `sessions.json`, transcript path resolution, retention, and memory-file I/O.
 - `SessionRouter` maps inbound chat traffic onto stable `sessionKey` values such as `agent:<agent-id>:main`, applies daily/idle reset rules, and updates token/cost metadata.
 - `SessionTranscriptStore` provisions transcript files immediately and snapshots `SessionManager` state so empty or user-only sessions still exist on disk.
+
+`MaintenanceScheduler` is a complete, unit-tested class that would run `runMaintenance()` on the `maintenanceIntervalMinutes` interval, but it is not wired into the running server. In production, maintenance only runs when a user clicks "Run maintenance" in Settings → Data Maintenance, or when `POST /api/storage/maintenance` (or its `/dry-run` variant) is called directly — there is no automatic background schedule today.
 
 Session-store writes are hardened against concurrency and partial-write corruption:
 

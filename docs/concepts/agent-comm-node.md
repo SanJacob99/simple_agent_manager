@@ -27,7 +27,7 @@ For one-shot child dispatch from a parent agent, see [Sub-Agent Node](./sub-agen
 
 Pair-symmetric controls take the **minimum** of the two endpoints' values.
 
-Workspace-level defaults can be overridden in `Settings → Agent Comm Defaults`; new comm nodes inherit those overrides at creation time.
+Workspace-level defaults can be overridden in `Settings → Defaults → Agent Comm`; new comm nodes inherit those overrides at creation time.
 
 ## Runtime Behavior
 
