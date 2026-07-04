@@ -3,7 +3,7 @@
 > Configures which tools an agent can use through profiles, groups, direct enables, skills, and plugins.
 
 <!-- source: src/types/nodes.ts#ToolsNodeData -->
-<!-- last-verified: 2026-05-29 -->
+<!-- last-verified: 2026-07-04 -->
 
 ## Overview
 
@@ -80,7 +80,7 @@ Skills stored on the Tool Node are merged into system prompt content during grap
 | `toolSettings.browser.cdpEndpoint` | `string` | `""` | CDP URL (e.g. `http://127.0.0.1:9222`). When set, attaches to a user-launched Chrome instead of spawning one |
 | `toolSettings.browser.skill` | `string` | `""` | Optional inline markdown override for the browser skill. See [browser-tool.md](browser-tool.md) for the full reference |
 
-> **Deprecated.** `subAgentSpawning` and `maxSubAgents` are no longer used by the runtime. Sub-agent capability is now declared via the [Sub-Agent Node](sub-agent-node.md). Existing graphs continue to load, but these fields have no effect.
+> **Deprecated.** Sub-agent capability is now declared via the [Sub-Agent Node](sub-agent-node.md), which is the source of truth. `maxSubAgents` is no longer read by the runtime. `subAgentSpawning` is still consulted as a back-compat shim in `server/sessions/session-tools.ts` — for graphs with no SubAgentNodes attached, setting it `true` still exposes the `sessions_yield`/`subagents` tools (though not `sessions_spawn`, which requires actual SubAgentNode declarations). Newly authored graphs should rely on the Sub-Agent Node instead of this flag.
 
 ## Runtime Behavior
 
@@ -96,7 +96,7 @@ Tool name resolution happens in `shared/resolve-tool-names.ts` in this order:
 
 - memory tools are skipped there because `MemoryEngine` provides them separately
 - session tools are skipped because they are injected later by the run coordinator
-- `calculator` and the built-in `web_fetch` have real implementations
+- `calculator` and `web_fetch` are both served from the `ToolModule` registry (`server/tools/builtins/calculator/calculator.module.ts`, `server/tools/builtins/web/web-fetch.module.ts`); the legacy `TOOL_CREATORS` stub map in `tool-factory.ts` only lists `calculator` but is unreachable since the registry is checked first
 - `canva` writes HTML/CSS/JS into `<cwd>/.canva/<name>/` and serves each canvas from its own static HTTP server on a port auto-picked from the configured range
 - `text_to_speech` synthesizes audio via ElevenLabs, Google Gemini, Microsoft Azure, MiniMax, OpenAI, or OpenRouter (audio-capable chat model, e.g. `openai/gpt-4o-audio-preview`) and writes the resulting file into `<cwd>/audio/`
 - `music_generate` generates music or ambient audio via Google Lyria or MiniMax Music and writes the resulting file into `<cwd>/music/`. The Gemini API key is reused from the image settings, and the MiniMax API key and group id are reused from text_to_speech
