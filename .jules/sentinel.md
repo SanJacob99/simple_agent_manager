@@ -35,3 +35,8 @@
 **Vulnerability:** The `music_generate` tool used `path.resolve` to combine `ctx.cwd` and the user-provided filename input (via the parameter `filename`) to derive the target output path for writing the generated audio files, but did not perform bounds-checking, thereby allowing agents to write arbitrary files onto the system outside the designated workspace.
 **Learning:** `path.resolve` normalizes paths containing relative sequences (like `../`), allowing users to break out of base directories unless explicitly restricted.
 **Prevention:** Always ensure that resolved file paths intended for sandboxed environments are verified to be within boundaries, e.g., by checking if `!resolved.startsWith(ctx.cwd + path.sep) && resolved !== ctx.cwd`.
+
+## 2024-07-04 - Path Traversal bypass via `path.isAbsolute` in StorageEngine
+**Vulnerability:** The `StorageEngine.resolveTranscriptPath` method bypassed `_safeJoin` validation entirely when `path.isAbsolute(entry.sessionFile)` was true, allowing an attacker to specify an arbitrary absolute path (e.g., `/etc/passwd`) as their session file to escape the agent workspace.
+**Learning:** `path.resolve` handles absolute target paths by ignoring the base directory. Because of this, it can be safely used inside a generic safe-join utility alongside a prefix check (`startsWith(base + path.sep)`), without needing to pre-check if the path is absolute.
+**Prevention:** Never conditionally bypass validation checks for absolute paths. Pass all paths (absolute or relative) through the established `_safeJoin` validation that strictly checks if the final resolved path falls within the intended base directory.
