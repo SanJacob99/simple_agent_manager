@@ -286,6 +286,58 @@ export interface ResolvedReflectionConfig {
   injectRubricIntoPrompt: boolean;
 }
 
+// --- Agent-to-Agent (A2A) Interop ---
+
+export type A2ARole = 'server' | 'client' | 'both';
+export type A2ATransport = 'jsonrpc' | 'grpc' | 'rest';
+export type A2AAuthScheme = 'none' | 'apiKey' | 'bearer' | 'oauth2';
+
+export interface ResolvedA2ASkill {
+  id: string;
+  name: string;
+  description: string;
+  tags: string[];
+}
+
+export interface ResolvedA2ARemoteAgent {
+  id: string;
+  name: string;
+  cardUrl: string;
+  endpoint: string;
+  authScheme: A2AAuthScheme;
+  credentialEnvVar: string;
+  enabled: boolean;
+}
+
+/**
+ * Resolved A2A interop config. At most one A2A node binds to an agent, so this
+ * resolves to a single optional value on `AgentConfig.a2a` (like structured
+ * output and reflection) rather than a list. The server side publishes an agent
+ * card and accepts remote tasks; the client side registers remote agents as
+ * callable delegate tools. Served from `server/a2a/`.
+ */
+export interface ResolvedA2AConfig {
+  a2aNodeId: string;
+  label: string;
+  role: A2ARole;
+
+  serverEnabled: boolean;
+  agentName: string;
+  agentDescription: string;
+  agentVersion: string;
+  publicUrl: string;
+  cardPath: string;
+  transport: A2ATransport;
+  streaming: boolean;
+  pushNotifications: boolean;
+  serverAuthScheme: A2AAuthScheme;
+  serverCredentialEnvVar: string;
+  skills: ResolvedA2ASkill[];
+
+  remoteAgents: ResolvedA2ARemoteAgent[];
+  taskTimeoutMs: number;
+}
+
 // --- Agent Config interfaces ---
 
 export interface ResolvedCronConfig {
@@ -386,6 +438,13 @@ export interface AgentConfig {
    * graphs remain compatible without a backfill.
    */
   reflection?: ResolvedReflectionConfig | null;
+  /**
+   * Optional Agent-to-Agent (A2A) interop surface. When omitted or `null`, this
+   * agent neither publishes an A2A card nor calls remote A2A agents. At most one
+   * A2A node binds to an agent. Optional so existing AgentConfig fixtures and
+   * serialized graphs remain compatible without a backfill.
+   */
+  a2a?: ResolvedA2AConfig | null;
 
   /** Working directory for shell commands (exec tool). Independent of storage path. */
   workspacePath: string | null;
