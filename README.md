@@ -43,10 +43,11 @@ The default sidebar currently exposes these draggable nodes:
 | `structuredOutput` | Constrains the agent's final reply to a JSON Schema, with native provider enforcement, prompt injection, and a repair/warn/block policy on validation failure |
 | `budget` | Spend and rate governance: USD per run/day, tokens and tool calls per run, runs per minute, with a warn / downshift / block degrade policy |
 | `reflection` | Reflexion-style draft → critique → revise loop: a critic scores each draft against a rubric and feeds the critique back for up to *N* revisions, with a use-best / use-last / warn exhaustion policy |
+| `a2a` | Agent-to-Agent interop: publish an agent card (`/.well-known/agent-card.json`) and/or register remote A2A agents as callable delegates, with per-run delegation limits and inbound/outbound auth schemes |
 
 The codebase also contains a `cron` node type and editor, but it is not part of the default palette and should be treated as in-progress unless you verify the full execution path.
 
-> **Scaffolding note:** `telemetry`, `structuredOutput`, `budget`, and `reflection` ship with node UI, resolved config, and a unit-tested engine, but the run-coordinator wiring is still pending — treat them as extension surfaces until that path is verified end-to-end. See `docs/roadmap/2026-modernization.md`.
+> **Scaffolding note:** `telemetry`, `structuredOutput`, `budget`, `reflection`, and `a2a` ship with node UI, resolved config, and a unit-tested engine, but the run-coordinator wiring (and, for `a2a`, the server route) is still pending — treat them as extension surfaces until that path is verified end-to-end. See `docs/roadmap/2026-modernization.md`.
 
 ## Architecture
 
