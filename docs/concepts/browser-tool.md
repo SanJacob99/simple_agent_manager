@@ -3,7 +3,7 @@
 > Drive a Chromium browser via Playwright for user-directed web research and actions.
 
 <!-- source: src/types/nodes.ts#BrowserToolSettings -->
-<!-- last-verified: 2026-05-07 -->
+<!-- last-verified: 2026-07-05 -->
 
 ## Overview
 
@@ -121,9 +121,9 @@ Selector syntax is standard Playwright: CSS (`.cls`, `#id`, `a[href*="foo"]`), t
 
 ### Screenshot streaming
 
-With `autoScreenshot: true`, every state-changing action (`navigate`, `click`, `type`, `key`, `select`, `check`, `scroll`, `back`, `forward`, `reload`, `new_tab`, `switch_tab`, `close_tab`) returns an `{ type: 'image', mimeType, data }` content block in addition to the usual text summary. The existing tool-result path in the chat (`src/store/session-store.ts#extractImageContent` -> `msg.images` -> `MessageBubble`) renders them inline without any new WebSocket event types.
+With `autoScreenshot: true`, every state-changing action (`navigate`, `click`, `type`, `key`, `select`, `check`, `scroll`, `back`, `forward`, `reload`, `new_tab`, `switch_tab`, `close_tab`, `search`) returns an `{ type: 'image', mimeType, data }` content block in addition to the usual text summary. The existing tool-result path in the chat (`src/store/session-store.ts#extractImageContent` -> `msg.images` -> `MessageBubble`) renders them inline without any new WebSocket event types.
 
-Read-only actions (`observe`, `text`, `evaluate`, `snapshot`, `wait`, `list_tabs`, `status`, `close`) never auto-attach. The explicit `screenshot` action always attaches regardless of the toggle.
+Actions that leave `attach: 'none'` — `observe`, `text`, `snapshot`, `wait`, `list_tabs`, `status` — never auto-attach. `evaluate` and `close` also leave `attach: 'none'` so they don't auto-attach either, but they are **not** read-only — both are HITL-gated (see the Confirmation gating table above) because they mutate page/browser state. The explicit `screenshot` action always attaches regardless of the toggle.
 
 Images cost tokens in the agent's context window. JPEG at quality 60 keeps a single 1280x800 shot at roughly 30-60 KB base64-encoded. Turn `autoScreenshot` off when using a text-only model or when cost matters more than visibility.
 

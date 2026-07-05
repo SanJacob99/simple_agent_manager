@@ -21,7 +21,7 @@ The project is built with React 19, TypeScript, `@xyflow/react`, and `@mariozech
 
 - Interactive chat is blocked unless an agent has both a connected `Context Engine` node and a connected `Storage` node.
 - OpenRouter model discovery is live; the other providers currently use curated static model lists in the UI.
-- Several node types and tool names are still extension surfaces rather than fully wired product features. In particular, `connectors`, `vectorDatabase`, and `cron` need runtime inspection before you treat them as end-to-end features. Peer-to-peer agent comms (`agentComm`) is wired in v1 with safety and loop controls (turn/depth/token limits, rate limiting, channel-session isolation).
+- Several node types and tool names are still extension surfaces rather than fully wired product features. In particular, `connectors`, `mcp`, and `cron` need runtime inspection before you treat them as end-to-end features — none of them has a server-side runtime today (`connectors`/`mcp` resolve into `AgentConfig.mcps[]` but nothing spawns an MCP server or reads that array; `cron`'s scheduler class exists and is unit-tested but is never instantiated by the running server). `vectorDatabase`, by contrast, is genuinely wired end-to-end — connecting one auto-attaches four working vector tools backed by a real sqlite-vec engine. Peer-to-peer agent comms (`agentComm`) is wired in v1 with safety and loop controls (turn/depth/token limits, rate limiting, channel-session isolation).
 - The current built-in tool surface includes real implementations for `calculator`, `web_fetch`, memory tools, and session tools. Many other named tools are placeholders/stubs.
 
 ## Node palette
@@ -38,15 +38,19 @@ The default sidebar currently exposes these draggable nodes:
 | `agentComm` | Configuration surface for agent-to-agent communication |
 | `connectors` | Configuration surface for external connector metadata |
 | `storage` | Session persistence, retention, maintenance, and memory file settings |
-| `vectorDatabase` | Configuration surface for vector-store metadata |
+| `vectorDatabase` | Vector-store config — genuinely wired end-to-end today, backed by a real sqlite-vec engine (unlike `connectors`/`mcp`/`cron` below) |
+| `cron` | Time-triggered agent runs on a schedule. Config resolves fully, and `CronScheduler` is a real, unit-tested class, but nothing in the running server instantiates it yet — treat as in-progress until you verify the full execution path |
+| `provider` | Selects the LLM provider plugin, base URL/auth method, and env var the agent's model calls resolve against |
+| `mcp` | Attaches an agent to an arbitrary Model Context Protocol server (stdio/http/sse) — schema-only today, no server-side MCP client exists yet |
+| `subAgent` | Spawns bounded, one-shot child agent runs that inherit a selected subset of the parent's config (tools required and dedicated; storage inherited; provider/skills/MCP merge with parent) |
+| `guardrails` | Configurable input/output safety checks (length limits, blocked terms, PII rules) that block or warn before/after a model turn |
 | `telemetry` | Observability instrumentation: per-run/turn/tool spans (tokens, cost, latency) exported to console, file, or an OTLP collector |
 | `structuredOutput` | Constrains the agent's final reply to a JSON Schema, with native provider enforcement, prompt injection, and a repair/warn/block policy on validation failure |
 | `budget` | Spend and rate governance: USD per run/day, tokens and tool calls per run, runs per minute, with a warn / downshift / block degrade policy |
+| `evals` | Suite of `input`/`expected` cases plus a grader (exact match, contains, regex, JSON Schema, or LLM judge) for offline-scored regression testing of the agent |
 | `reflection` | Reflexion-style draft → critique → revise loop: a critic scores each draft against a rubric and feeds the critique back for up to *N* revisions, with a use-best / use-last / warn exhaustion policy |
 
-The codebase also contains a `cron` node type and editor, but it is not part of the default palette and should be treated as in-progress unless you verify the full execution path.
-
-> **Scaffolding note:** `telemetry`, `structuredOutput`, `budget`, and `reflection` ship with node UI, resolved config, and a unit-tested engine, but the run-coordinator wiring is still pending — treat them as extension surfaces until that path is verified end-to-end. See `docs/roadmap/2026-modernization.md`.
+> **Scaffolding note:** `telemetry`, `structuredOutput`, `budget`, `evals`, and `reflection` ship with node UI, resolved config, and a unit-tested engine, but the run-coordinator wiring is still pending — treat them as extension surfaces until that path is verified end-to-end. See `docs/roadmap/2026-modernization.md`.
 
 ## Architecture
 
@@ -151,7 +155,7 @@ npm run build
 Opt-in live OpenRouter tests:
 
 ```bash
-# Copy .env.example to .env and add a real key
+# Create a .env file with a real key (no .env.example is checked in)
 OPENROUTER_API_KEY=your_key_here
 # Optional: defaults to openai/gpt-4o-mini in the test
 OPENROUTER_MODEL=openai/gpt-4o-mini

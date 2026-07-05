@@ -3,7 +3,7 @@
 > A peripheral that declares a named, one-shot sub-agent the parent agent can dispatch via `sessions_spawn`.
 
 <!-- source: src/types/nodes.ts#SubAgentNodeData -->
-<!-- last-verified: 2026-05-29 -->
+<!-- last-verified: 2026-07-05 -->
 
 ## Overview
 
@@ -54,7 +54,8 @@ The Sub-Agent Node attaches to an Agent Node as a peripheral. Each declared sub-
 | Context Engine | None — sub-agents are one-shot |
 | Skills | Parent ∪ dedicated; dedicated wins on `id` collision |
 | MCP | Parent ∪ dedicated; dedicated wins on `mcpNodeId` collision |
-| Connectors / Vector DB / AgentComm / Cron | Never apply |
+| Connectors | Folded into the same MCP inheritance rule above — a Connector attached to the parent agent contributes an entry to `parent.mcps` (`graph-to-agent.ts` merges `mcpsFromMcpNodes` and `mcpsFromConnectors` into one array), so it *does* propagate to sub-agents like any other inherited MCP server |
+| Vector DB / AgentComm / Cron | Never apply — `sub-agent-executor.ts` hardcodes `vectorDatabases: []`, `agentComm: []`, `crons: []` on the synthetic child config |
 
 ## Example
 

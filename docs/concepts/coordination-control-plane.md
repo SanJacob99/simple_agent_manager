@@ -3,7 +3,7 @@
 > Durable manager-led workflow coordination for canvas agents.
 
 <!-- source: server/coordination/coordination-service.ts -->
-<!-- last-verified: 2026-05-12 -->
+<!-- last-verified: 2026-07-05 -->
 
 ## Overview
 
@@ -19,7 +19,7 @@ Agent roles live on `AgentNodeData.coordination` and resolve into `AgentConfig.c
 |----------|------|---------|-------------|
 | `role` | `'none' \| 'manager' \| 'lead' \| 'specialist'` | `'none'` | Control-plane authority for this agent |
 | `capabilities` | `string[]` | `[]` | Freeform capability tags used by managers and the workflow console |
-| `maxConcurrentTasks` | `number` | `1` | Declared task concurrency limit for future scheduling policy |
+| `maxConcurrentTasks` | `number` | `1` | Task concurrency limit, enforced today — `dispatchReadyTasksLocked` skips assigning a ready task to this agent once its running-task count reaches this value |
 
 ## Runtime Behavior
 
@@ -30,6 +30,7 @@ Agent roles live on `AgentNodeData.coordination` and resolve into `AgentConfig.c
 5. Assigned tasks dispatch through `AgentManager.dispatch()` using session keys shaped like `agent:<agentId>:workflow:<workflowId>:task:<taskId>`.
 6. `CoordinationService` subscribes to the assigned run's coordinator events and appends trace events for run start/end, model calls, tool calls, task completion/failure, budget warnings, and reports.
 7. Stop marks the workflow `stop_requested`, aborts active assigned runs through `RunCoordinator.abort()`, cancels open tasks, writes a stop report, and marks the workflow `stopped_by_user`.
+8. A runtime watchdog is armed (or re-armed) every time a workflow starts or resumes, keyed off `workflow.budget.maxRuntimeSeconds` (default 3600s). If the deadline passes while the workflow is still running, the watchdog aborts active assigned runs, cancels open tasks, appends a `workflow_stopped` trace event with the timeout reason, and moves the workflow to a distinct terminal status — `stopped_by_watchdog` — separate from user-initiated `stopped_by_user`. This is an automatic runaway-workflow guard, not something the Manager or user has to trigger.
 
 ## Persistence
 

@@ -65,8 +65,12 @@ finalize step.
 `cron` covers time. Modern agents also fire on webhooks, file changes, inbound
 email, and queue messages. A `trigger` node would generalize the scheduler into
 an event source registry (`webhook`, `fileWatch`, `queue`, `manual`), feeding the
-same headless-run path the cron scheduler already uses
-(`server/scheduling/`).
+same headless-run path `server/scheduling/cron-scheduler.ts` is built to use.
+Note that `cron` itself is not yet on that path in production — `CronScheduler`
+is a real, unit-tested class, but nothing in `server/index.ts` or
+`agent-manager.ts` instantiates it, so the scheduler currently never fires
+against a live agent. This trigger item and cron's own server-side wiring are
+effectively the same remaining piece of work.
 
 ## 5. Budget / Rate-Governance node — *scaffolded*
 

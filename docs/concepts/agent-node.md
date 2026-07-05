@@ -3,7 +3,7 @@
 > The central hub node that stores model and prompt settings while connected peripheral nodes supply runtime services.
 
 <!-- source: src/types/nodes.ts#AgentNodeData -->
-<!-- last-verified: 2026-06-30 -->
+<!-- last-verified: 2026-07-05 -->
 
 ## Overview
 
@@ -25,7 +25,7 @@ The Agent Node still owns `modelId`, `thinkingLevel`, and `modelCapabilities`. T
 | `description` | `string` | `""` | Optional purpose/summary for the agent |
 | `tags` | `string[]` | `[]` | Freeform tags used by the UI |
 | `modelCapabilities` | `ModelCapabilityOverrides` | `{}` | Snapshotted model metadata plus any user overrides |
-| `systemPromptMode` | `SystemPromptMode` | `"append"` | Prompt assembly mode. `append` emits SAM sections then adds the user's `systemPrompt` as a final `## User Instructions` section; `manual` discards SAM sections and uses only the user's text. **`auto` is defined in the type but is currently treated as `append`** by `resolveAgentConfig()` in `src/utils/graph-to-agent.ts` (line 444 converts every non-`manual` value to `'append'`). The system prompt builder does handle `auto` distinctly (user instructions are not appended), but that path is unreachable until the graph resolver is updated. |
+| `systemPromptMode` | `SystemPromptMode` | `"append"` | Prompt assembly mode. `append` emits SAM sections then adds the user's `systemPrompt` as a final `## User Instructions` section; `manual` discards SAM sections and uses only the user's text. **`auto` is defined in the type but is currently treated as `append`** by `resolveAgentConfig()` in `src/utils/graph-to-agent.ts` (line 604 converts every non-`manual` value to `'append'`). The system prompt builder does handle `auto` distinctly (user instructions are not appended), but that path is unreachable until the graph resolver is updated. |
 | `showReasoning` | `boolean` | `false` | Whether to expose reasoning output in the UI when supported |
 | `verbose` | `boolean` | `false` | Whether to prefer more verbose runtime output |
 | `coordination` | `AgentCoordinationConfig` | `{ role: "none", capabilities: [], maxConcurrentTasks: 1 }` | Optional control-plane role metadata. Manager agents can coordinate workflows; lead and specialist agents can receive assigned tasks |
@@ -51,7 +51,7 @@ The Agent Node still owns `modelId`, `thinkingLevel`, and `modelCapabilities`. T
 
 1. `resolveAgentConfig()` collects incoming peripheral nodes and creates a serializable `AgentConfig`.
 2. The connected Provider Node is resolved into `AgentConfig.provider`. If no Provider Node is connected, config resolution still succeeds, but runtime validation reports the graph as unrunnable.
-3. `buildSystemPrompt()` assembles the final system prompt based on `systemPromptMode`, tool summaries, skills, workspace path, and runtime metadata. The Runtime section emits `Runtime: host=… | os=… | model=…` with **no** `thinking=<level>` field or prose reasoning line — the thinking level is communicated to the provider via the API `reasoning.effort` parameter, and plain-text thinking directives in the system prompt can cause Gemini 3 to switch to a "think silently" mode (documented by Google's Gemini 3 prompting guide). See [system-prompt.md](system-prompt.md) for the full mode/section reference.
+3. `buildSystemPrompt()` assembles the final system prompt based on `systemPromptMode`, tool summaries, skills, workspace path, and runtime metadata. The `## Runtime` section itself emits only `Runtime: host=… | os=… | model=…` with **no** `thinking=<level>` field, since plain-text thinking directives in that line can cause Gemini 3 to switch to a "think silently" mode (documented by Google's Gemini 3 prompting guide) — the thinking level is instead communicated to the provider via the API `reasoning.effort` parameter. A separate `## Reasoning` section is still appended later in the prompt with a prose line, `Thinking effort (provider-side): <level>.`, alongside the reasoning-visibility setting (`shared/system-prompt-builder.ts` `buildReasoningContent()`). See [system-prompt.md](system-prompt.md) for the full mode/section reference.
 4. `server/runtime/agent-runtime.ts` creates the runtime agent, and `server/runtime/model-resolver.ts` resolves the final runtime model using:
    - the provider plugin's runtime provider id
    - the stored `modelId`
@@ -66,7 +66,7 @@ The Agent Node still owns `modelId`, `thinkingLevel`, and `modelCapabilities`. T
 
 ## Connections
 
-- Receives from: Provider, Memory, Tools, Skills, Context Engine, Agent Comm, Connectors, Storage, Vector Database, Cron, MCP, Sub-Agent, Guardrails, Telemetry, Structured Output, and Budget nodes
+- Receives from: Provider, Memory, Tools, Skills, Context Engine, Agent Comm, Connectors, Storage, Vector Database, Cron, MCP, Sub-Agent, Guardrails, Telemetry, Structured Output, Budget, Evals, and Reflection nodes
 - Sends to: None
 - Only peripheral-to-agent connections are supported
 - Runtime validation requires exactly one connected Provider Node
