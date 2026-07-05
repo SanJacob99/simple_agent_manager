@@ -3,7 +3,7 @@
 > Observability instrumentation that records per-run, per-turn, and per-tool spans — token usage, cost, and latency — and exports them to a console, file, or OpenTelemetry collector.
 
 <!-- source: src/types/nodes.ts#TelemetryNodeData -->
-<!-- last-verified: 2026-06-23 -->
+<!-- last-verified: 2026-07-05 -->
 
 ## Overview
 
@@ -37,7 +37,7 @@ Properties are derived from `src/types/nodes.ts#TelemetryNodeData` and defaults 
 
 ## Runtime Behavior
 
-`src/utils/graph-to-agent.ts` resolves each connected Telemetry node into a `ResolvedTelemetryConfig` entry on `AgentConfig.telemetry` (`shared/agent-config.ts`). The list is optional — agents without a Telemetry node have `telemetry === undefined` and the runtime emits nothing.
+`src/utils/graph-to-agent.ts` resolves each connected Telemetry node into a `ResolvedTelemetryConfig` entry on `AgentConfig.telemetry` (`shared/agent-config.ts`). The field is typed optional for other `AgentConfig` producers, but graph resolution always assigns an array — agents without a Telemetry node get `telemetry === []`, not `undefined`. Either way there's nothing for the runtime to export.
 
 `server/runtime/telemetry-engine.ts` provides the instrumentation API:
 

@@ -1,6 +1,6 @@
 # Authoring a Tool
 
-<!-- last-verified: 2026-04-23 -->
+<!-- last-verified: 2026-07-05 -->
 
 This guide walks through adding a new tool to SAM end-to-end using a hypothetical `weather` tool as the running example. If `weather` sounds too generic, mentally substitute whichever tool you're actually building.
 
@@ -185,7 +185,7 @@ If the tool only needs environment-variable config, skip this step entirely — 
 The optional `classification` field on `ToolModule` tells the HITL system whether a tool needs `confirm_action` by default:
 
 - `read-only` — `web_search`, `calculator`, `read_file`, `list_directory`. No state change on the user's system or remote services.
-- `state-mutating` — `write_file`, `edit_file`, `image_generate` (writes a file to disk), `send_message`. Reversible or scoped side effects.
+- `state-mutating` — `write_file`, `edit_file`, `image_generate` (writes a file to disk). Reversible or scoped side effects. (`send_message` is listed in `shared/resolve-tool-names.ts`'s tool groups but has no `ToolModule` implementation yet, so it isn't a real example of this classification today.)
 - `destructive` — `exec`, `bash`, `apply_patch`, operations with `rm`/`DELETE` semantics. Hard or impossible to undo.
 
 The confirmation policy is class-aware. `read-only` tools may be called without prior confirmation; `state-mutating` tools require a `confirm_action` in a dedicated turn; `destructive` tools require a `confirm_action` whose question names the specific target. The policy template lives in [server/storage/settings-file-store.ts](../../server/storage/settings-file-store.ts) and is filled per-agent at prompt-build time using the resolved tool list (see `groupToolsByClassification` in [tool-registry.ts](../../server/tools/tool-registry.ts)).
@@ -220,13 +220,13 @@ Kill switch: `SAM_DISABLE_USER_TOOLS=1` skips the scan entirely. Use in CI or pr
 - **`create` returns null so the tool is invisible at runtime.** Intentional when config is missing, but easy to trip over. Log at construction time (`console.warn('[weather] skipped: no API key')`) if you want a boot-time hint.
 - **Gemini rejects the tool's schema.** The adapter ([server/tools/tool-adapter.ts](../../server/tools/tool-adapter.ts)) strips unsupported JSON Schema features (`anyOf`, `format`, etc.) for Gemini models. If a new feature is rejected, add it to `cleanSchemaForGemini`.
 - **Tool timeout is too short.** Tools that rely on external APIs should respect the agent's abort signal; otherwise a run abort leaks a pending request. Pass `{ signal }` to `fetch`.
-- **Aliases.** `bash` → `exec` is the only alias today. New tools should pick a unique top-level name rather than declaring an alias.
+- **Aliases.** Two exist today: `bash` → `exec` and `code_interpreter` → `code_execution` (`TOOL_ALIASES` in `tool-registry.ts`, mirrored by `TOOL_NAME_ALIASES` in `shared/resolve-tool-names.ts`). New tools should pick a unique top-level name rather than declaring an alias.
 
 ---
 
 ## Legacy path (historical)
 
-Before the `ToolModule` migration, adding a tool touched 5–9 files: the implementation plus edits to `TOOL_GROUPS`, `ALL_TOOL_NAMES`, and `IMPLEMENTED_TOOL_NAMES` in [shared/resolve-tool-names.ts](../../shared/resolve-tool-names.ts), a branch in `createAgentTools()` in [server/tools/tool-factory.ts](../../server/tools/tool-factory.ts), a field on `ToolFactoryContext`, a field on `AgentConfig`, plus the UI wiring. All built-in tools now live in `ToolModule`s; the legacy fallback path in the factory still exists but only serves `calculator` (which has a real implementation but no module yet). Do not add new tools through the legacy path — the effort is the same as writing a module, the ergonomics are worse, and the factory branch is on its way out.
+Before the `ToolModule` migration, adding a tool touched 5–9 files: the implementation plus edits to `TOOL_GROUPS`, `ALL_TOOL_NAMES`, and `IMPLEMENTED_TOOL_NAMES` in [shared/resolve-tool-names.ts](../../shared/resolve-tool-names.ts), a branch in `createAgentTools()` in [server/tools/tool-factory.ts](../../server/tools/tool-factory.ts), a field on `ToolFactoryContext`, a field on `AgentConfig`, plus the UI wiring. All built-in tools have since migrated to `ToolModule`s — including `calculator`, which now has both a real module ([calculator.module.ts](../../server/tools/builtins/calculator/calculator.module.ts)) and its original implementation ([calculator.ts](../../server/tools/builtins/calculator/calculator.ts)). Because the registry check runs first in `createAgentTools()`, the legacy `TOOL_CREATORS` fallback is currently unreachable dead code — there is no tool left that only exists in the legacy path. Do not add new tools through the legacy path — the effort is the same as writing a module, the ergonomics are worse, and the factory branch is on its way out.
 
 ---
 

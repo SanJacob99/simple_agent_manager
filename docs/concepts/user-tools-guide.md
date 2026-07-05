@@ -1,6 +1,6 @@
 # User-Installed Tools
 
-<!-- last-verified: 2026-04-23 -->
+<!-- last-verified: 2026-07-05 -->
 
 SAM lets you add tools to your own install without forking the main
 codebase. Drop a `*.module.ts` file under `server/tools/user/`,
@@ -294,9 +294,11 @@ becomes "compile your tool to `.js` first" — not a concern today.
   model as VS Code extensions or Vim plugins: the operator owns the
   machine and vets what they install.
 - **Failure mode.** A broken user tool logs an error and is skipped.
-  It must not crash the server (enforced by the registry's fail-soft
-  load path — `loadModulesFromFiles` with `failSoft: true` for the
-  extra source).
+  It must not crash the server: `loadModulesFromFiles(files, source)`
+  logs and continues instead of throwing when `source === 'extra'`
+  (built-in load failures still throw). `walkModuleFiles`'s separate
+  `failSoft` option only governs tolerance for missing/unreadable
+  directories during the scan, not per-file load errors.
 - **Logging.** Every successfully loaded user tool is announced at
   startup so the operator can audit what ran.
 - **Kill switch.** `SAM_DISABLE_USER_TOOLS=1` skips the scan entirely.

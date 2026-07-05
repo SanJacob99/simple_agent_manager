@@ -3,13 +3,13 @@
 > Attaches an agent to a Model Context Protocol server — either a local subprocess or a remote HTTP/SSE endpoint — so the agent can call its tools.
 
 <!-- source: src/types/nodes.ts#MCPNodeData -->
-<!-- last-verified: 2026-05-24 -->
+<!-- last-verified: 2026-07-05 -->
 
 ## Overview
 
 The MCP node bridges an agent to an external MCP server. It abstracts over the transport: a `stdio` MCP server is spawned locally from a command + args (e.g. `npx @modelcontextprotocol/server-filesystem /tmp`), while `http` and `sse` transports speak to a remote endpoint over HTTP. Multiple MCP nodes may be connected to the same agent — each contributes its tools, optionally prefixed to avoid name collisions.
 
-The node surfaces a live connection hint on the canvas. The runtime publishes `mcp:status` events (see `shared/protocol.ts#McpStatusEvent`), and the node displays a colored status dot — gray (unknown), amber pulsing (connecting), green (connected), or red (error) — next to a transport marker (`L` for local, `R` for remote).
+The node surfaces a live connection hint on the canvas: a colored status dot — gray (unknown), amber pulsing (connecting), green (connected), or red (error) — next to a transport marker (`L` for local, `R` for remote). The protocol defines an `mcp:status` event for this (`shared/protocol.ts#McpStatusEvent`) and the UI is fully wired to consume it, but **no runtime currently emits it** — see Runtime Behavior — so today the dot stays at its default/unknown state.
 
 ## Configuration
 

@@ -3,7 +3,7 @@
 > A standalone node for defining named skills that are injected into an agent's system prompt.
 
 <!-- source: src/types/nodes.ts#SkillsNodeData -->
-<!-- last-verified: 2026-06-30 -->
+<!-- last-verified: 2026-07-05 -->
 
 ## Overview
 
@@ -29,7 +29,10 @@ The Skill Node has no dedicated runtime class. Instead, its configuration is pro
    { id: skillName, name: skillName, content: '', injectAs: 'system-prompt' }
    ```
 2. These definitions are merged with any skills from the connected Tools Node, then deduplicated by `id` keeping the first occurrence (so the same skill name enabled by two Skill Nodes — or by a Skill Node and the Tools Node's `skills` array — is rendered only once). The order of first occurrences is preserved.
-3. Skills with empty content render as a bullet list of names in the `## Skills` system prompt section; skills with authored content (typically from the Tools Node's `toolSettings.*.skill` fields) render as full markdown guidance blocks below the bullet list
+3. The `## Skills` system prompt section is composed of up to three buckets, in this order:
+   - **`### Available`** — a compact list of bundled `SKILL.md` files the agent can `read_file` on demand, derived from whichever tools are enabled (unrelated to this node's config; skipped for any tool with an inline skill override).
+   - **`### Tags`** — the bare-name entries contributed by Skill Node(s), i.e. skills with empty content.
+   - One section per skill with authored content (typically from the Tools Node's `toolSettings.*.skill` fields), each rendered as a full markdown guidance block titled with the skill's name.
 
 The resulting system prompt tells the LLM it has certain capabilities, guiding its behavior and response style. Skill Node entries are intentionally declarative tags — to give the agent detailed usage guidance for a capability, configure it as a `SkillDefinition` on the Tools Node or use one of the per-tool `skill` fields in `toolSettings`.
 
