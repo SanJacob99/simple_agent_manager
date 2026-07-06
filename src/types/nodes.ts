@@ -23,7 +23,8 @@ export type NodeType =
   | 'structuredOutput'
   | 'budget'
   | 'evals'
-  | 'reflection';
+  | 'reflection'
+  | 'a2a';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -735,6 +736,104 @@ export interface ReflectionNodeData {
   injectRubricIntoPrompt: boolean;
 }
 
+// --- Agent-to-Agent (A2A) Interop Node ---
+
+/**
+ * Inbound auth advertised on this agent's A2A card `securitySchemes`.
+ * - `none`: the A2A server accepts unauthenticated task requests.
+ * - `apiKey`: a shared key expected in a header (name in `authHeaderName`).
+ * - `bearer`: an HTTP bearer token (OAuth2 / JWT bearer flavour).
+ */
+export type A2AAuthScheme = 'none' | 'apiKey' | 'bearer';
+
+/**
+ * What the runtime does when a call to a remote A2A agent fails (transport
+ * error, non-2xx, JSON-RPC error, or timeout).
+ * - `fail`: propagate the error and abort the delegating tool call.
+ * - `warn`: return the error text to the model as the tool result and emit an
+ *   `a2a:remote_error` event, letting the agent recover or route around it.
+ * - `ignore`: swallow the error and return an empty result.
+ */
+export type A2ARemoteErrorPolicy = 'fail' | 'warn' | 'ignore';
+
+/**
+ * One skill advertised on this agent's A2A card. Mirrors the A2A `AgentSkill`
+ * object so remote callers can discover what this agent can do.
+ */
+export interface A2ASkillDescriptor {
+  id: string;
+  name: string;
+  description: string;
+  /** Free-form tags used by A2A registries/routers to match skills to tasks. */
+  tags: string[];
+  /** Optional example prompts that exercise the skill, shown on the card. */
+  examples: string[];
+}
+
+/**
+ * A remote A2A agent this agent can delegate to. When `exposeAsTool` is set, the
+ * tool factory registers a callable delegate (`a2a__<id>`) that sends the model's
+ * request to the remote agent's `message/send` endpoint and returns its reply.
+ */
+export interface A2ARemoteAgent {
+  id: string;
+  /** Display name; falls back to the fetched agent card's `name` when empty. */
+  name: string;
+  /** URL of the remote agent's card (`/.well-known/agent-card.json`) or endpoint. */
+  cardUrl: string;
+  enabled: boolean;
+  /** Register this remote agent as a callable delegate tool for the model. */
+  exposeAsTool: boolean;
+  /** Per-agent request timeout in ms. 0 falls back to `defaultTimeoutMs`. */
+  timeoutMs: number;
+  /** Auth scheme to use when calling this remote agent. */
+  authScheme: A2AAuthScheme;
+}
+
+/**
+ * Agent-to-Agent (A2A) interop. Exposes this agent as an A2A server (publishes an
+ * agent card and accepts remote task/message envelopes) and/or registers remote
+ * A2A agents as callable delegates. The emerging A2A protocol (agent cards,
+ * task/message envelopes, streaming updates) is becoming the lingua franca for
+ * cross-framework agent interop, much as MCP standardized tools. Complements
+ * `agentComm` (in-process bus) and `subAgent` (in-tree) with cross-framework reach.
+ */
+export interface A2ANodeData {
+  [key: string]: unknown;
+  type: 'a2a';
+  label: string;
+  /** Master toggle. When false the node is wired but neither served nor called. */
+  enabled: boolean;
+
+  // --- Server side: expose this agent over A2A ---
+  /** Publish an agent card and accept inbound A2A task/message requests. */
+  exposeAsServer: boolean;
+  /** Name advertised on the agent card. Empty falls back to the agent's name. */
+  agentName: string;
+  /** Human-readable description advertised on the agent card. */
+  agentDescription: string;
+  /** Path prefix the A2A server mounts under (e.g. `/a2a`). */
+  serverPath: string;
+  /** Skills advertised on the card so remote callers can discover capabilities. */
+  skills: A2ASkillDescriptor[];
+  /** Advertise streaming task updates (SSE `message/stream`) on the card. */
+  streaming: boolean;
+  /** Advertise push-notification (webhook) task updates on the card. */
+  pushNotifications: boolean;
+  /** Inbound auth scheme advertised in the card's `securitySchemes`. */
+  authScheme: A2AAuthScheme;
+  /** Header name carrying the key/token when `authScheme` is not `none`. */
+  authHeaderName: string;
+
+  // --- Client side: call remote A2A agents ---
+  /** Remote A2A agents this agent can delegate to. */
+  remoteAgents: A2ARemoteAgent[];
+  /** Default per-request timeout in ms for remote agents that don't set one. */
+  defaultTimeoutMs: number;
+  /** Behaviour when a remote agent call fails. */
+  onRemoteError: A2ARemoteErrorPolicy;
+}
+
 // --- Sub-Agent Node ---
 
 export interface SubAgentNodeData {
@@ -775,6 +874,7 @@ export type FlowNodeData =
   | StructuredOutputNodeData
   | BudgetNodeData
   | EvalsNodeData
-  | ReflectionNodeData;
+  | ReflectionNodeData
+  | A2ANodeData;
 
 export type AppNode = Node<FlowNodeData>;
