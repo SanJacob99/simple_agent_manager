@@ -21,8 +21,8 @@ The project is built with React 19, TypeScript, `@xyflow/react`, and `@mariozech
 
 - Interactive chat is blocked unless an agent has both a connected `Context Engine` node and a connected `Storage` node.
 - OpenRouter model discovery is live; the other providers currently use curated static model lists in the UI.
-- Several node types and tool names are still extension surfaces rather than fully wired product features. In particular, `connectors`, `vectorDatabase`, and `cron` need runtime inspection before you treat them as end-to-end features. Peer-to-peer agent comms (`agentComm`) is wired in v1 with safety and loop controls (turn/depth/token limits, rate limiting, channel-session isolation).
-- The current built-in tool surface includes real implementations for `calculator`, `web_fetch`, memory tools, and session tools. Many other named tools are placeholders/stubs.
+- Several node types and tool names are still extension surfaces rather than fully wired product features. `vectorDatabase` is fully wired (its tools auto-attach in `server/runtime/agent-runtime.ts`), but `connectors`, `mcp`, and `cron` are not: there is no MCP client implementation anywhere at runtime (so `connectors`/`mcp` resolve config but never spawn or connect to anything), and `CronScheduler` is fully implemented and tested but never instantiated outside its own test file — no production code wires it up yet. Peer-to-peer agent comms (`agentComm`) is wired in v1 with safety and loop controls (turn/depth/token limits, rate limiting, channel-session isolation).
+- The current built-in tool surface has real implementations for nearly every named tool (exec, code execution, file tools, web search/fetch, browser, calculator, canva, image, TTS, music, memory and session tools). `send_message` remains a placeholder with no backing implementation.
 
 ## Node palette
 
@@ -42,9 +42,15 @@ The default sidebar currently exposes these draggable nodes:
 | `telemetry` | Observability instrumentation: per-run/turn/tool spans (tokens, cost, latency) exported to console, file, or an OTLP collector |
 | `structuredOutput` | Constrains the agent's final reply to a JSON Schema, with native provider enforcement, prompt injection, and a repair/warn/block policy on validation failure |
 | `budget` | Spend and rate governance: USD per run/day, tokens and tool calls per run, runs per minute, with a warn / downshift / block degrade policy |
+| `evals` | Attaches an input → expected case suite scored by deterministic graders or an LLM judge, for eval-driven development and regression gating |
 | `reflection` | Reflexion-style draft → critique → revise loop: a critic scores each draft against a rubric and feeds the critique back for up to *N* revisions, with a use-best / use-last / warn exhaustion policy |
+| `mcp` | Configuration surface for arbitrary MCP servers (stdio or URL-based) |
+| `provider` | Provider identity and credentials the agent runs against |
+| `subAgent` | Declares a sub-agent the parent agent can spawn, with its own prompt/model/tools |
+| `guardrails` | Input/output safety rules: length caps, blocked terms, PII redaction |
+| `cron` | Time-triggered agent runs on a configurable schedule |
 
-The codebase also contains a `cron` node type and editor, but it is not part of the default palette and should be treated as in-progress unless you verify the full execution path.
+`cron` is part of the default palette, but treat it as in-progress: `CronScheduler` (`server/scheduling/cron-scheduler.ts`) is implemented and unit-tested, but nothing instantiates it outside its own test file, so cron nodes currently have no production execution path.
 
 > **Scaffolding note:** `telemetry`, `structuredOutput`, `budget`, and `reflection` ship with node UI, resolved config, and a unit-tested engine, but the run-coordinator wiring is still pending — treat them as extension surfaces until that path is verified end-to-end. See `docs/roadmap/2026-modernization.md`.
 

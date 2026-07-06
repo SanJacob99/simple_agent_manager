@@ -3,7 +3,7 @@
 > Attaches a vector store to an agent and auto-enables the four industry-standard vector tools (`vector_search`, `vector_upsert`, `vector_delete`, `vector_get`). Default backend is `sqlite-vec`; default embedder is OpenRouter.
 
 <!-- source: src/types/nodes.ts#VectorDatabaseNodeData -->
-<!-- last-verified: 2026-05-15 -->
+<!-- last-verified: 2026-07-06 -->
 
 ## Overview
 
@@ -16,7 +16,7 @@ Wiring a `vectorDatabase` node to an agent **automatically enables** four tools 
 - `vector_delete` — remove documents by id (destructive)
 - `vector_get` — fetch a single document by id (read-only)
 
-The agent's embedding model lives **on the same node**. Insert-time and query-time embeddings always go through the same client, so cosine distance is comparable.
+The agent's embedding model lives **on the same node**. Insert-time and query-time embeddings always go through the same client, so distances are comparable across inserts and queries. Note: the `vec0` virtual table is created without an explicit `distance_metric` option, so sqlite-vec uses its default L2 (squared Euclidean) distance, not cosine, despite tool/doc text elsewhere referring to "cosine distance."
 
 ## Configuration
 
@@ -34,7 +34,7 @@ The agent's embedding model lives **on the same node**. Insert-time and query-ti
 
 ## Runtime Behaviour
 
-Resolved by `src/utils/graph-to-agent.ts` into `AgentConfig.vectorDatabases: ResolvedVectorDatabaseConfig[]`. The `AgentRuntime` constructor (`server/runtime/agent-runtime.ts`) wires a lazy `getVectorEngine(label?)` accessor into `RuntimeHints` — the four vector tool modules under `server/tools/builtins/vector/` use it to resolve a shared `VectorDatabaseEngine` instance per collection.
+Resolved by `src/utils/graph-to-agent.ts` into `AgentConfig.vectorDatabases: ResolvedVectorDatabaseConfig[]`. The four vector tool modules live under `server/runtime/vector-tools/` (not `server/tools/builtins/`). `createVectorTools()` builds a `VectorToolContext` whose `getEngine()` accessor calls `getOrCreateVectorEngine()` in `server/runtime/vector-engine-registry.ts`, which owns the per-collection cache of `VectorDatabaseEngine` instances and is what `destroyAsync()` calls into via `closeVectorEngines()`.
 
 Engine lifecycle (`server/runtime/vector-database-engine.ts`):
 
