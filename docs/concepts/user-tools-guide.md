@@ -1,6 +1,6 @@
 # User-Installed Tools
 
-<!-- last-verified: 2026-04-23 -->
+<!-- last-verified: 2026-07-06 -->
 
 SAM lets you add tools to your own install without forking the main
 codebase. Drop a `*.module.ts` file under `server/tools/user/`,
@@ -409,15 +409,19 @@ which gives us room to evolve without churning user code.
 ## Open questions
 
 - **Per-tool config UI.** The Tools node has hand-written editors for
-  built-in tools (image, TTS, music, exec, code-execution). User tools
-  need either (a) a generic schema-driven editor, (b) freeform JSON,
-  or (c) skip per-agent config and rely entirely on env. **Lean: (a).**
-  The `ToolModule.config` field (schema + defaults) already exists on
-  the interface but is not yet consumed by the UI — the registry
-  endpoint exposes the schema, so the remaining work is on the
-  frontend: render a form from the TypeBox schema into the Tools
-  node's per-tool editor area. Until then, users rely on
-  `AgentConfig` ad-hoc fields + env vars.
+  built-in tools (image, TTS, music, exec, code-execution, canva,
+  browser, web-search). User tools need either (a) a generic
+  schema-driven editor, (b) freeform JSON, or (c) skip per-agent
+  config and rely entirely on env. **Lean: (a).** A generic
+  schema-driven form renderer already ships
+  (`src/panels/property-editors/schema-form/SchemaForm.tsx`), fed by
+  client-side schema declarations in
+  `src/panels/property-editors/tool-config-schemas.ts`. What's not
+  wired yet is the server-authored half: the `ToolModule.config` field
+  (schema + defaults) exists on the interface, but nothing exposes it
+  through a registry API endpoint for `SchemaForm` to consume, so
+  user-installed tools still fall back to `AgentConfig` ad-hoc fields
+  + env vars until that endpoint lands.
 - **Aliases.** Built-ins can declare aliases (`bash` → `exec`). Should
   user tools? **Lean: no — forces a unique top-level name and avoids
   confusing collisions.**
