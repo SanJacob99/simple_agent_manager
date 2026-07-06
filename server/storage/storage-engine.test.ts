@@ -231,8 +231,20 @@ describe('StorageEngine', () => {
     });
 
     it('uses sessionFile when explicitly set', () => {
-      const result = engine.resolveTranscriptPath(makeEntry({ sessionFile: '/custom/path/transcript.jsonl' }));
-      expect(result).toBe('/custom/path/transcript.jsonl');
+      const result = engine.resolveTranscriptPath(makeEntry({ sessionFile: 'custom/transcript.jsonl' }));
+      expect(result).toBe(path.join(engine.getAgentDir(), 'custom/transcript.jsonl'));
+    });
+
+    it('allows absolute paths if they resolve within the agent directory', () => {
+      const absolutePath = path.join(engine.getAgentDir(), 'absolute/transcript.jsonl');
+      const result = engine.resolveTranscriptPath(makeEntry({ sessionFile: absolutePath }));
+      expect(result).toBe(absolutePath);
+    });
+
+    it('throws error when absolute sessionFile explicitly set outside agent directory', () => {
+      expect(() => {
+        engine.resolveTranscriptPath(makeEntry({ sessionFile: '/custom/path/transcript.jsonl' }));
+      }).toThrow('Path traversal detected');
     });
 
     it('throws error when sessionFile explicitly set to path traversing out', () => {
