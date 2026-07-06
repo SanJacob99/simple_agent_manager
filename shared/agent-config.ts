@@ -286,6 +286,59 @@ export interface ResolvedReflectionConfig {
   injectRubricIntoPrompt: boolean;
 }
 
+// --- Agent-to-Agent (A2A) Interop ---
+
+export type A2AAuthScheme = 'none' | 'apiKey' | 'bearer';
+export type A2ARemoteErrorPolicy = 'fail' | 'warn' | 'ignore';
+
+export interface A2ASkillDescriptor {
+  id: string;
+  name: string;
+  description: string;
+  tags: string[];
+  examples: string[];
+}
+
+export interface A2ARemoteAgent {
+  id: string;
+  name: string;
+  cardUrl: string;
+  enabled: boolean;
+  exposeAsTool: boolean;
+  timeoutMs: number;
+  authScheme: A2AAuthScheme;
+}
+
+/**
+ * Resolved Agent-to-Agent interop config. At most one A2A node binds to an agent,
+ * so this resolves to a single optional value on `AgentConfig` rather than a list
+ * (like structured output and reflection). It carries both the server surface
+ * (expose this agent as an A2A card) and the client surface (remote agents this
+ * agent can delegate to). The A2A engine turns this into a spec-shaped agent card
+ * and message/task envelopes.
+ */
+export interface ResolvedA2AConfig {
+  a2aNodeId: string;
+  label: string;
+  enabled: boolean;
+
+  // Server side
+  exposeAsServer: boolean;
+  agentName: string;
+  agentDescription: string;
+  serverPath: string;
+  skills: A2ASkillDescriptor[];
+  streaming: boolean;
+  pushNotifications: boolean;
+  authScheme: A2AAuthScheme;
+  authHeaderName: string;
+
+  // Client side
+  remoteAgents: A2ARemoteAgent[];
+  defaultTimeoutMs: number;
+  onRemoteError: A2ARemoteErrorPolicy;
+}
+
 // --- Agent Config interfaces ---
 
 export interface ResolvedCronConfig {
@@ -386,6 +439,13 @@ export interface AgentConfig {
    * graphs remain compatible without a backfill.
    */
   reflection?: ResolvedReflectionConfig | null;
+  /**
+   * Optional Agent-to-Agent interop config. When omitted or `null`, the agent is
+   * neither served over A2A nor able to delegate to remote A2A agents. At most one
+   * A2A node binds to an agent. Optional so existing AgentConfig fixtures and
+   * serialized graphs remain compatible without a backfill.
+   */
+  a2a?: ResolvedA2AConfig | null;
 
   /** Working directory for shell commands (exec tool). Independent of storage path. */
   workspacePath: string | null;
