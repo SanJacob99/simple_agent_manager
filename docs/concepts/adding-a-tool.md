@@ -1,6 +1,6 @@
 # Authoring a Tool
 
-<!-- last-verified: 2026-04-23 -->
+<!-- last-verified: 2026-07-07 -->
 
 This guide walks through adding a new tool to SAM end-to-end using a hypothetical `weather` tool as the running example. If `weather` sounds too generic, mentally substitute whichever tool you're actually building.
 
@@ -220,7 +220,7 @@ Kill switch: `SAM_DISABLE_USER_TOOLS=1` skips the scan entirely. Use in CI or pr
 - **`create` returns null so the tool is invisible at runtime.** Intentional when config is missing, but easy to trip over. Log at construction time (`console.warn('[weather] skipped: no API key')`) if you want a boot-time hint.
 - **Gemini rejects the tool's schema.** The adapter ([server/tools/tool-adapter.ts](../../server/tools/tool-adapter.ts)) strips unsupported JSON Schema features (`anyOf`, `format`, etc.) for Gemini models. If a new feature is rejected, add it to `cleanSchemaForGemini`.
 - **Tool timeout is too short.** Tools that rely on external APIs should respect the agent's abort signal; otherwise a run abort leaks a pending request. Pass `{ signal }` to `fetch`.
-- **Aliases.** `bash` → `exec` is the only alias today. New tools should pick a unique top-level name rather than declaring an alias.
+- **Aliases.** `TOOL_ALIASES` in [server/tools/tool-registry.ts](../../server/tools/tool-registry.ts) currently has two entries: `bash` → `exec` and `code_interpreter` → `code_execution`. New tools should pick a unique top-level name rather than declaring an alias.
 
 ---
 

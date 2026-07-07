@@ -3,7 +3,7 @@
 > How SAM assembles the system prompt that every agent run receives.
 
 <!-- source: shared/system-prompt-builder.ts, server/runtime/resolve-system-prompt.ts -->
-<!-- last-verified: 2026-05-25 -->
+<!-- last-verified: 2026-07-07 -->
 
 ## Overview
 
@@ -60,9 +60,9 @@ When `mode === 'append'` and the user's `systemPrompt` is non-empty, a final `us
 
 ## Server-side Resolution
 
-After the client builds the prompt, `resolveOutboundSystemPrompt()` in `server/runtime/resolve-system-prompt.ts` takes the `ResolvedSystemPrompt` from `AgentConfig` and applies three runtime transformations:
+After the client builds the prompt, `resolveOutboundSystemPrompt()` in `server/runtime/resolve-system-prompt.ts` takes the `ResolvedSystemPrompt` from `AgentConfig` and applies four runtime transformations:
 
-1. **Bundled-skills-root substitution.** Any `{{BUNDLED_SKILLS_ROOT}}` placeholder in sections or the assembled string is replaced with the real server-side path. Token estimates are recomputed for any section whose content changed.
+1. **Bundled-skills-root substitution, including an `os=` rewrite.** Any `{{BUNDLED_SKILLS_ROOT}}` placeholder in sections or the assembled string is replaced with the real server-side path. In the same pass, `rewriteRuntimeOs()` rewrites the `os=` field in the `runtime` section from whatever the browser's `navigator.platform` produced to the actual backend `process.platform`, since the agent executes server-side — this keeps exec/shell guidance in the prompt aligned with the OS the agent's tools actually run on, not the OS of whoever has the tab open. Token estimates are recomputed for any section whose content changed.
 2. **Workspace fallback.** If the client-built prompt has no workspace section and the caller passed a `workspaceCwd`, a `workspace-runtime` section is appended with `## Workspace\n\nWorking directory: <cwd>`.
 3. **Confirmation policy (HITL).** When either `ask_user` or `confirm_action` is in the resolved tool list, the configured safety `confirmationPolicy` is appended as a `confirmationPolicy` section. Placeholders are filled from the enabled tool set:
    - `{{READ_ONLY_TOOLS}}` → read-classified tools

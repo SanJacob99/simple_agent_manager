@@ -3,7 +3,7 @@
 > Attaches an agent to a Model Context Protocol server — either a local subprocess or a remote HTTP/SSE endpoint — so the agent can call its tools.
 
 <!-- source: src/types/nodes.ts#MCPNodeData -->
-<!-- last-verified: 2026-05-24 -->
+<!-- last-verified: 2026-07-07 -->
 
 ## Overview
 
@@ -31,7 +31,7 @@ Properties are derived from the TypeScript interface in `src/types/nodes.ts` and
 
 ## Runtime Behavior
 
-`resolveAgentConfig()` in `src/utils/graph-to-agent.ts` collects every connected MCP node into `AgentConfig.mcps: ResolvedMcpConfig[]`, preserving the node id as `mcpNodeId` so the server can route `mcp:status` events back to the correct node on the canvas.
+`resolveAgentConfig()` in `src/utils/graph-to-agent.ts` collects every connected MCP node into `AgentConfig.mcps: ResolvedMcpConfig[]`, preserving the node id as `mcpNodeId` so the server can route `mcp:status` events back to the correct node on the canvas. `AgentConfig.mcps` is not populated exclusively by MCP nodes: connected [Connector](connector-node.md) nodes are also folded into this same array as curated `ResolvedMcpConfig` presets, merged alongside the true MCP-node-derived entries.
 
 The actual MCP client (subprocess spawn for stdio, HTTP/SSE client for remote) is **not yet implemented at runtime**. When the server-side MCP manager is added, it should:
 

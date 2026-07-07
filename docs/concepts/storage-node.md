@@ -3,7 +3,7 @@
 > Provides filesystem-based persistence for agent sessions, routed transcripts, and memory files.
 
 <!-- source: src/types/nodes.ts#StorageNodeData -->
-<!-- last-verified: 2026-05-29 -->
+<!-- last-verified: 2026-07-07 -->
 
 ## Overview
 
@@ -41,7 +41,7 @@ Only one Storage Node can be connected per agent. For embedding or semantic retr
 | `resetArchiveRetentionDays` | `number` | `30` | How long archived `sessions.json` snapshots are kept before deletion |
 | `maxDiskBytes` | `number` | `0` | Total disk budget for the agent's storage directory in bytes. `0` = unlimited |
 | `highWaterPercent` | `number` | `80` | When `maxDiskBytes` is set, maintenance evicts sessions until usage drops below this percentage of the budget |
-| `maintenanceIntervalMinutes` | `number` | `60` | How often the background maintenance task runs, in minutes |
+| `maintenanceIntervalMinutes` | `number` | `60` | Intended interval for an automatic background maintenance task, in minutes. **Not wired today** — see Runtime Behavior |
 
 ## Runtime Behavior
 
@@ -70,6 +70,8 @@ The resulting directory layout is:
 The frontend session store caches metadata and transcript messages by `sessionKey`. It keeps optimistic messages locally during streaming, then refreshes transcript state from the backend when a run settles. When a user switches sessions, the store hydrates transcripts for sessions that have not been loaded yet, but reuses already-cached messages for previously opened sessions so switching back does not require another full transcript fetch.
 
 When a user deletes an agent from the canvas and confirms "delete agent and data", the frontend now calls a dedicated backend endpoint that removes the entire `<storagePath>/<agent-name>/` directory, including `sessions/`, transcript files, and any `memory/` documents. The server also clears cached `StorageEngine`, `SessionTranscriptStore`, and `SessionRouter` instances for that agent so a future agent with the same name starts from a clean filesystem state.
+
+Maintenance (pruning by `pruneAfterDays`, quota eviction against `maxDiskBytes`/`highWaterPercent`, archive cleanup by `resetArchiveRetentionDays`) is **manual-only today**: it runs when a user triggers it from the settings workspace's Data Maintenance section, which calls `POST /api/storage/maintenance` (or `/api/storage/maintenance/dry-run`). `MaintenanceScheduler` (`server/scheduling/maintenance-scheduler.ts`) implements the recurring version of this loop driven by `maintenanceIntervalMinutes`, but nothing in the running server constructs a `MaintenanceScheduler` instance, so no automatic background maintenance currently happens.
 
 ## Connections
 

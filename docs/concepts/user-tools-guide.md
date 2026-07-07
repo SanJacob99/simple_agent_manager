@@ -1,6 +1,6 @@
 # User-Installed Tools
 
-<!-- last-verified: 2026-04-23 -->
+<!-- last-verified: 2026-07-07 -->
 
 SAM lets you add tools to your own install without forking the main
 codebase. Drop a `*.module.ts` file under `server/tools/user/`,
