@@ -23,7 +23,8 @@ export type NodeType =
   | 'structuredOutput'
   | 'budget'
   | 'evals'
-  | 'reflection';
+  | 'reflection'
+  | 'a2a';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -735,6 +736,91 @@ export interface ReflectionNodeData {
   injectRubricIntoPrompt: boolean;
 }
 
+// --- Agent-to-Agent (A2A) Interop Node ---
+
+/**
+ * How this agent participates in the Agent-to-Agent (A2A) protocol.
+ * - `server`: publish an agent card and accept inbound tasks from remote A2A
+ *   clients (this agent is callable by others).
+ * - `client`: register remote A2A agents as callable delegates (this agent can
+ *   dispatch tasks to others).
+ * - `both`: do both — expose a server surface *and* consume remote agents.
+ */
+export type A2ARole = 'server' | 'client' | 'both';
+
+/**
+ * A remote A2A agent this agent can delegate tasks to. Mirrors the discovery
+ * side of the A2A protocol: the agent card is fetched from `cardUrl`, and the
+ * resolved `name`/`skills` become a callable delegate tool.
+ */
+export interface A2ARemoteAgent {
+  /** Stable identifier so per-remote wiring survives edits. */
+  id: string;
+  /** Display name; also the base for the generated delegate tool name. */
+  name: string;
+  /**
+   * URL of the remote agent card, conventionally
+   * `https://host/.well-known/agent-card.json`. The client fetches and parses
+   * this to learn the remote's endpoint, capabilities, and skills.
+   */
+  cardUrl: string;
+  /**
+   * Name of the environment variable holding the bearer token for this remote.
+   * Empty means the remote is called unauthenticated.
+   */
+  authTokenEnv: string;
+  /** When false, the remote is kept in config but not registered as a delegate. */
+  enabled: boolean;
+}
+
+/**
+ * Exposes this agent over the emerging Agent-to-Agent (A2A) protocol and/or
+ * registers remote A2A agents as callable delegates. Where `agentComm` is an
+ * in-process bus and `subAgent` is in-tree, A2A is the cross-framework wire
+ * protocol (agent cards, task/message envelopes, streaming updates) — the
+ * lingua franca for agents built on *other* stacks, much as MCP standardized
+ * tools. Resolves into `AgentConfig.a2a`, served from `server/a2a/`.
+ */
+export interface A2ANodeData {
+  [key: string]: unknown;
+  type: 'a2a';
+  label: string;
+  /** Master toggle. When false, the node is wired but neither server nor client is active. */
+  enabled: boolean;
+  /** Whether this agent acts as an A2A server, client, or both. */
+  role: A2ARole;
+  // --- Server surface (published agent card) ---
+  /** `name` field of the published agent card. Empty falls back to the agent's own name. */
+  agentName: string;
+  /** `description` field of the published agent card. */
+  agentDescription: string;
+  /** Semantic version string advertised in the agent card. */
+  agentVersion: string;
+  /** HTTP path the A2A server mounts at, e.g. `/a2a`. */
+  serverPath: string;
+  /**
+   * Skill tags advertised in the agent card's `skills` array so remote clients
+   * can discover what this agent can do. Stored as strings to stay serializable.
+   */
+  advertisedSkills: string[];
+  /** Advertise the `streaming` capability (SSE task updates) in the agent card. */
+  streaming: boolean;
+  /** Advertise the `pushNotifications` capability (webhook task updates). */
+  pushNotifications: boolean;
+  /** Require a bearer token on inbound tasks. When false, the server is open. */
+  requireAuth: boolean;
+  /** Name of the env var holding the accepted inbound bearer token(s). */
+  inboundTokenEnv: string;
+  // --- Client surface (remote delegates) ---
+  /** Remote A2A agents registered as callable delegates. */
+  remotes: A2ARemoteAgent[];
+  // --- Safety / loop controls (mirroring agentComm) ---
+  /** Max concurrent inbound + outbound tasks. 0 disables the ceiling. */
+  maxConcurrentTasks: number;
+  /** Per-task wall-clock timeout in milliseconds. 0 disables the ceiling. */
+  taskTimeoutMs: number;
+}
+
 // --- Sub-Agent Node ---
 
 export interface SubAgentNodeData {
@@ -775,6 +861,7 @@ export type FlowNodeData =
   | StructuredOutputNodeData
   | BudgetNodeData
   | EvalsNodeData
-  | ReflectionNodeData;
+  | ReflectionNodeData
+  | A2ANodeData;
 
 export type AppNode = Node<FlowNodeData>;
