@@ -3,7 +3,7 @@
 > Time-triggered agent runs on a configurable schedule.
 
 <!-- source: src/types/nodes.ts#CronNodeData -->
-<!-- last-verified: 2026-05-15 -->
+<!-- last-verified: 2026-07-07 -->
 
 ## Overview
 
@@ -18,9 +18,14 @@ weekday`) and is parsed by `node-cron`. Each cron node attached to an
 agent runs independently, so an agent can have several schedules with
 different prompts.
 
-Crons are real but kept off the default sidebar palette in some earlier
-builds because the runtime was being verified end-to-end. The scheduler,
-the queueing path, and tests are now in place — see Runtime Behavior.
+`cron` is on the default sidebar palette and resolves into `AgentConfig`
+like any other peripheral node. [`CronScheduler`](../../server/scheduling/cron-scheduler.ts)
+itself is implemented and unit-tested, but nothing in the running server
+constructs one or calls `reconcile()` — schedules are parsed and stored
+in `AgentConfig.crons` and never actually fire. Treat this node as
+scaffolded, not operational, until a `CronScheduler` instance is wired
+into server startup; see Runtime Behavior for what is and isn't
+connected today.
 
 ## Configuration
 
@@ -41,27 +46,36 @@ Properties are derived from the TypeScript interface in
 ## Runtime Behavior
 
 `graph-to-agent.ts` resolves connected `cron` nodes into
-`ResolvedCronConfig[]` on the `AgentConfig`. The
-[`CronScheduler`](../../server/scheduling/cron-scheduler.ts) reconciles
-the current schedule list against running jobs whenever the agent config
-changes:
+`ResolvedCronConfig[]` on the `AgentConfig`. That is as far as the wiring
+goes today.
 
-- New crons get a `node-cron` job registered.
-- Removed or disabled crons get their job stopped.
-- Each tick calls into the [`RunCoordinator`](../../server/agents/run-coordinator.ts)
-  with the cron's `prompt` and `sessionMode`, and a per-run timeout
-  derived from `maxRunDurationMs`.
+[`CronScheduler`](../../server/scheduling/cron-scheduler.ts) implements
+the intended reconciliation loop — `reconcile(agentId, crons)` diffs the
+desired schedule list against running `node-cron` jobs, starting new
+ones, stopping removed/disabled ones, and dispatching each tick through
+the [`RunCoordinator`](../../server/agents/run-coordinator.ts) with the
+cron's `prompt` and a per-run timeout derived from `maxRunDurationMs` —
+but **nothing in the running server constructs a `CronScheduler` or
+calls `reconcile()`**. Outside its own test file, the class is never
+instantiated. A configured `cron` node is therefore inert in production:
+the schedule is stored in `AgentConfig.crons` but never fires.
 
-`sessionMode: 'persistent'` keeps the cron's session-key stable across
-ticks, so the agent's context engine and memory see one continuous
-conversation. `sessionMode: 'ephemeral'` allocates a fresh session per
-tick — useful when each run should be independent (cron-driven ingest,
-report generation).
+Two configuration fields also have no runtime effect yet, independent of
+the wiring gap above:
 
-`retentionDays` is read by the maintenance scheduler when present. The
-storage engine's pruning behavior is partial today (see
-[`docs/audit-2026-05-09.md`](../audit-2026-05-09.md) §2.5), so verify
-end-to-end retention if your deployment depends on it.
+- `sessionMode` is resolved onto `ResolvedCronConfig` but every tick in
+  `executeCronTick()` dispatches with the same fixed session key
+  (`cron:<cronNodeId>`) regardless of its value — there is no branch for
+  `ephemeral` allocating a fresh session.
+- `retentionDays` is passed through to `ResolvedCronConfig` and otherwise
+  unused. No maintenance code reads it; the only runtime retention field
+  actually consumed by `StorageEngine.cleanResetArchives()` is the
+  **storage** node's `resetArchiveRetentionDays` (a distinct field —
+  see [storage-node.md](storage-node.md)).
+
+Building the loop that instantiates `CronScheduler` at startup, wiring
+`sessionMode`/`retentionDays` into that loop, and reconciling on agent
+config changes is the remaining integration work.
 
 ## Connections
 

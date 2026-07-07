@@ -3,14 +3,16 @@
 > Manages token budgets, compaction, and transcript-aware context assembly so conversations stay inside the model's context window.
 
 <!-- source: src/types/nodes.ts#ContextEngineNodeData -->
-<!-- last-verified: 2026-05-29 -->
+<!-- last-verified: 2026-07-07 -->
 <!-- token-budget-inheritance, compaction-trigger-modes, tooltips -->
 
 ## Overview
 
 The Context Engine Node controls how an agent assembles prompt context, when it compacts older conversation state, and whether RAG content is allowed into that budget. It plugs into `pi-agent-core` through `transformContext`, so the agent can trim or summarize history before each model call.
 
-In the current implementation, compaction is no longer only an in-memory concern. When the runtime binds an active session transcript, summary-style compaction writes a real `compaction` entry into the session file through `SessionManager`. That allows resumed sessions to rebuild context from persisted compaction summaries instead of depending on a still-live process.
+In the current implementation, compaction is no longer only an in-memory concern. When the runtime binds an active session transcript, every compaction strategy — `trim-oldest`, `sliding-window`, and `summary` — writes a real `compaction` entry into the session file through `SessionManager`. That allows resumed sessions to rebuild context from persisted compaction summaries instead of depending on a still-live process.
+
+`ragEnabled`, `ragTopK`, and `ragMinScore` are schema-only today: they resolve onto `AgentConfig` and appear in the property editor, but nothing under `server/` reads them — there is no RAG retrieval code path yet.
 
 ## Configuration
 
@@ -21,13 +23,13 @@ In the current implementation, compaction is no longer only an in-memory concern
 | `reservedForResponse` | `number` | `4096` | Tokens reserved for the model response |
 | `compactionStrategy` | `CompactionStrategy` | `"summary"` | `summary`, `sliding-window`, or `trim-oldest` |
 | `summaryModelId` | `string` | `""` | Model id used to produce summaries (only for `summary`). Empty means inherit the agent's model |
-| `compactionTrigger` | `string` | `"auto"` | When proactive compaction fires from `afterTurn`. `auto` → at 80% of the post-reservation budget; `threshold` → at `compactionThreshold` (ratio) of the budget; `manual` → never auto-fires (only via the Compact Now button). `assemble()`'s overflow check stays on as a safety net for all modes. |
+| `compactionTrigger` | `'auto' \| 'manual' \| 'threshold'` | `"auto"` | When proactive compaction fires from `afterTurn`. `auto` → at 80% of the post-reservation budget; `threshold` → at `compactionThreshold` (ratio) of the budget; `manual` → never auto-fires (only via the Compact Now button). `assemble()`'s overflow check stays on as a safety net for all modes. |
 | `compactionThreshold` | `number` | `0.8` | In `threshold` mode, the 0–1 ratio of the post-reservation budget at which compaction fires. In `manual` mode, an absolute token count surfaced in the panel preview. Ignored in `auto` mode. |
-| `postCompactionTokenTarget` | `number` | `50000` | Token ceiling the assembled context should land at after compaction runs. Clamped to `tokenBudget - reservedForResponse`. |
+| `postCompactionTokenTarget` | `number` | `50000` | Token ceiling the assembled context should land at after compaction runs. Clamped to `Math.max(512, Math.min(postCompactionTokenTarget, tokenBudget))` — a 512-token floor as well as the budget ceiling. |
 | `autoFlushBeforeCompact` | `boolean` | `true` | Flush pending buffers before compaction |
-| `ragEnabled` | `boolean` | `false` | Whether to enable RAG retrieval |
-| `ragTopK` | `number` | `5` | Number of RAG results to retrieve |
-| `ragMinScore` | `number` | `0.7` | Minimum similarity threshold for RAG results |
+| `ragEnabled` | `boolean` | `false` | Whether to enable RAG retrieval. **Inert today** — no runtime code reads this field; see Overview. |
+| `ragTopK` | `number` | `5` | Number of RAG results to retrieve. **Inert today.** |
+| `ragMinScore` | `number` | `0.7` | Minimum similarity threshold for RAG results. **Inert today.** |
 
 ## Runtime Behavior
 
@@ -44,8 +46,8 @@ Current compaction behavior:
 
 - `trim-oldest` and `sliding-window` keep the newest messages that fit
 - `summary` keeps the newest slice of conversation and replaces older context with a generated summary message
-- when a live transcript is bound, summary compaction appends a persisted `compaction` entry via `SessionManager.appendCompaction(...)`
-- the runtime emits a `memory_compaction` event when one of these persisted summaries is written, so the UI can show compacting state
+- when a live transcript is bound, all three strategies append a persisted `compaction` entry via `SessionManager.appendCompaction(...)` — this is not summary-exclusive
+- the runtime emits a `memory_compaction` event whenever one of these persisted entries is written, regardless of strategy, so the UI can show compacting state
 
 The context engine no longer owns system prompt additions. Prompt construction is handled by the agent runtime's assembled system prompt.
 

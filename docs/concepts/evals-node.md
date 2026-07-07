@@ -3,7 +3,7 @@
 > Attaches a dataset of input → expected cases to an agent and scores its replies with deterministic graders or an LLM judge, for eval-driven development and regression gating.
 
 <!-- source: src/types/nodes.ts#EvalsNodeData -->
-<!-- last-verified: 2026-06-29 -->
+<!-- last-verified: 2026-07-07 -->
 
 ## Overview
 
@@ -35,13 +35,14 @@ Properties are derived from `src/types/nodes.ts#EvalsNodeData` and defaults from
 
 ## Runtime Behavior
 
-`src/utils/graph-to-agent.ts` resolves each connected Evals node into a `ResolvedEvalsConfig` entry on `AgentConfig.evals` (`shared/agent-config.ts`), folding each case's grader down to a concrete value (`grader ?? defaultGrader`). The list is optional — agents without an Evals node have `evals === undefined`.
+`src/utils/graph-to-agent.ts` resolves each connected Evals node into a `ResolvedEvalsConfig` entry on `AgentConfig.evals` (`shared/agent-config.ts`), folding each case's grader down to a concrete value (`grader ?? defaultGrader`). `evals` is typed optional for backward compatibility, but `resolveAgentConfig()` always assigns it — agents without an Evals node get `evals === []`, not `undefined`.
 
 `server/evals/eval-runner.ts` provides the scoring substrate:
 
 - **`gradeDeterministic(grader, expected, actual)`** — scores a reply for every grader except `llm_judge` (which returns `null`, signalling an async judge is required). `json_schema` reuses `parseSchema` / `extractJson` / `validateAgainstSchema` from the structured-output engine.
+- **`gradeCase(config, evalCase, actual, judge?)`** — the actual per-case dispatch `EvalRunner.runOne` calls: routes to `gradeDeterministic`, or to the injected `judge` for `llm_judge` cases.
 - **`scoreSuite(results, passThreshold)`** — aggregates per-case results into a weighted mean score, an unweighted pass rate, and a pass verdict.
-- **`EvalRunner.run(previousBest?)`** — replays every case through an injected `CaseExecutor`, grading each reply (using an injected `JudgeFn` for `llm_judge` cases), bounded by `maxConcurrency`, and returns an `EvalReport`. When `failOnRegression` is set and a `previousBest` is supplied, the report carries `regressed`/`previousBest`.
+- **`EvalRunner.run(previousBest?)`** — replays every case through an injected `CaseExecutor`, grading each reply via `gradeCase` (using an injected `JudgeFn` for `llm_judge` cases), bounded by `maxConcurrency`, and returns an `EvalReport`. When `failOnRegression` is set and a `previousBest` is supplied, the report carries `regressed`/`previousBest`.
 
 Model execution and the judge are **injected**, not imported, so the runner stays free of runtime/React/network dependencies and is unit-testable without touching a model.
 

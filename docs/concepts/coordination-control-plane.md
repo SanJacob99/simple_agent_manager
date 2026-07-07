@@ -3,7 +3,7 @@
 > Durable manager-led workflow coordination for canvas agents.
 
 <!-- source: server/coordination/coordination-service.ts -->
-<!-- last-verified: 2026-05-12 -->
+<!-- last-verified: 2026-07-07 -->
 
 ## Overview
 
@@ -19,7 +19,7 @@ Agent roles live on `AgentNodeData.coordination` and resolve into `AgentConfig.c
 |----------|------|---------|-------------|
 | `role` | `'none' \| 'manager' \| 'lead' \| 'specialist'` | `'none'` | Control-plane authority for this agent |
 | `capabilities` | `string[]` | `[]` | Freeform capability tags used by managers and the workflow console |
-| `maxConcurrentTasks` | `number` | `1` | Declared task concurrency limit for future scheduling policy |
+| `maxConcurrentTasks` | `number` | `1` | Per-agent task concurrency limit, enforced by `CoordinationService`'s dispatch loop — an agent already running `maxConcurrentTasks` tasks is skipped when the next ready task is dispatched |
 
 ## Runtime Behavior
 
@@ -30,6 +30,7 @@ Agent roles live on `AgentNodeData.coordination` and resolve into `AgentConfig.c
 5. Assigned tasks dispatch through `AgentManager.dispatch()` using session keys shaped like `agent:<agentId>:workflow:<workflowId>:task:<taskId>`.
 6. `CoordinationService` subscribes to the assigned run's coordinator events and appends trace events for run start/end, model calls, tool calls, task completion/failure, budget warnings, and reports.
 7. Stop marks the workflow `stop_requested`, aborts active assigned runs through `RunCoordinator.abort()`, cancels open tasks, writes a stop report, and marks the workflow `stopped_by_user`.
+8. When a Lead/Specialist run calls `coordination_task_blocked`, the workflow transitions to a `needs_human_input` status. `resumeWorkflow` explicitly accepts resuming from that status once a human unblocks it — this is the control plane's own HITL mechanism, distinct from the tool-level `ask_user`/`confirm_action` HITL gate on individual tool calls.
 
 ## Persistence
 
