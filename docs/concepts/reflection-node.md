@@ -3,7 +3,7 @@
 > Wraps the agent's finalize step in a Reflexion-style "draft → critique → revise" loop: a critic scores each draft against a rubric and feeds the critique back for revision until the score crosses a threshold or the revision budget is spent.
 
 <!-- source: src/types/nodes.ts#ReflectionNodeData -->
-<!-- last-verified: 2026-06-30 -->
+<!-- last-verified: 2026-07-08 -->
 
 ## Overview
 

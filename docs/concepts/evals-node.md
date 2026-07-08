@@ -3,7 +3,7 @@
 > Attaches a dataset of input → expected cases to an agent and scores its replies with deterministic graders or an LLM judge, for eval-driven development and regression gating.
 
 <!-- source: src/types/nodes.ts#EvalsNodeData -->
-<!-- last-verified: 2026-06-29 -->
+<!-- last-verified: 2026-07-08 -->
 
 ## Overview
 

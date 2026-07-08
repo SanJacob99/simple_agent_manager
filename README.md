@@ -21,8 +21,8 @@ The project is built with React 19, TypeScript, `@xyflow/react`, and `@mariozech
 
 - Interactive chat is blocked unless an agent has both a connected `Context Engine` node and a connected `Storage` node.
 - OpenRouter model discovery is live; the other providers currently use curated static model lists in the UI.
-- Several node types and tool names are still extension surfaces rather than fully wired product features. In particular, `connectors`, `vectorDatabase`, and `cron` need runtime inspection before you treat them as end-to-end features. Peer-to-peer agent comms (`agentComm`) is wired in v1 with safety and loop controls (turn/depth/token limits, rate limiting, channel-session isolation).
-- The current built-in tool surface includes real implementations for `calculator`, `web_fetch`, memory tools, and session tools. Many other named tools are placeholders/stubs.
+- Several node types and tool names are still extension surfaces rather than fully wired product features. In particular, `connectors`, `vectorDatabase`, `cron`, and `mcp` need runtime inspection before you treat them as end-to-end features — see their concept docs in `docs/concepts/` for exactly what is and isn't wired. Peer-to-peer agent comms (`agentComm`) is wired in v1 with safety and loop controls (turn/depth/token limits, rate limiting, channel-session isolation).
+- Nearly every tool listed in `shared/resolve-tool-names.ts`'s `ALL_TOOL_NAMES` has a real implementation under `server/tools/builtins/` (exec, code execution, calculator, web search/fetch, browser, filesystem tools, image, canva, text-to-speech, music generation, human-in-the-loop prompts, memory tools, session tools). Verify `send_message` (`agentComm`) before treating it as fully wired end-to-end.
 
 ## Node palette
 
@@ -39,12 +39,16 @@ The default sidebar currently exposes these draggable nodes:
 | `connectors` | Configuration surface for external connector metadata |
 | `storage` | Session persistence, retention, maintenance, and memory file settings |
 | `vectorDatabase` | Configuration surface for vector-store metadata |
+| `mcp` | Configuration surface for arbitrary MCP servers (schema-only — no MCP client runs server-side yet) |
+| `provider` | Attaches a model provider plugin (e.g. OpenRouter) with its auth method and credentials |
+| `subAgent` | Delegates a scoped sub-task to a synthetic child agent with an overridable config subset |
+| `guardrails` | Input/output content rules (max length, blocked terms, PII patterns) with a warn/block action |
 | `telemetry` | Observability instrumentation: per-run/turn/tool spans (tokens, cost, latency) exported to console, file, or an OTLP collector |
 | `structuredOutput` | Constrains the agent's final reply to a JSON Schema, with native provider enforcement, prompt injection, and a repair/warn/block policy on validation failure |
 | `budget` | Spend and rate governance: USD per run/day, tokens and tool calls per run, runs per minute, with a warn / downshift / block degrade policy |
+| `evals` | Test-case suite (contains/regex/json_schema/llm_judge/custom graders) scored against a pass threshold |
 | `reflection` | Reflexion-style draft → critique → revise loop: a critic scores each draft against a rubric and feeds the critique back for up to *N* revisions, with a use-best / use-last / warn exhaustion policy |
-
-The codebase also contains a `cron` node type and editor, but it is not part of the default palette and should be treated as in-progress unless you verify the full execution path.
+| `cron` | Time-triggered agent runs on a configurable schedule; the scheduler and dispatch path are wired, though `sessionMode`/`retentionDays` are not yet (see `docs/concepts/cron-node.md`) |
 
 > **Scaffolding note:** `telemetry`, `structuredOutput`, `budget`, and `reflection` ship with node UI, resolved config, and a unit-tested engine, but the run-coordinator wiring is still pending — treat them as extension surfaces until that path is verified end-to-end. See `docs/roadmap/2026-modernization.md`.
 

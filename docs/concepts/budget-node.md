@@ -3,7 +3,7 @@
 > Enforces spend and rate ceilings on an agent — USD per run/day, tokens and tool calls per run, runs per minute — with a warn / downshift / block degrade policy.
 
 <!-- source: src/types/nodes.ts#BudgetNodeData -->
-<!-- last-verified: 2026-06-28 -->
+<!-- last-verified: 2026-07-08 -->
 
 ## Overview
 

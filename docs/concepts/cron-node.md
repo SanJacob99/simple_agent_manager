@@ -3,7 +3,7 @@
 > Time-triggered agent runs on a configurable schedule.
 
 <!-- source: src/types/nodes.ts#CronNodeData -->
-<!-- last-verified: 2026-05-15 -->
+<!-- last-verified: 2026-07-08 -->
 
 ## Overview
 
@@ -18,9 +18,9 @@ weekday`) and is parsed by `node-cron`. Each cron node attached to an
 agent runs independently, so an agent can have several schedules with
 different prompts.
 
-Crons are real but kept off the default sidebar palette in some earlier
-builds because the runtime was being verified end-to-end. The scheduler,
-the queueing path, and tests are now in place — see Runtime Behavior.
+The cron node is part of the default sidebar palette (`src/panels/Sidebar.tsx`).
+The scheduler and queueing path are wired end-to-end; two of its fields
+(`sessionMode`, `retentionDays`) are not — see Runtime Behavior below.
 
 ## Configuration
 
@@ -30,10 +30,10 @@ the queueing path, and tests are now in place — see Runtime Behavior.
 | `schedule` | `string` | `"0 9 * * *"` | Standard 5-field cron expression. |
 | `prompt` | `string` | `""` | The prompt the agent receives when the schedule fires. |
 | `enabled` | `boolean` | `true` | When false, the schedule is parsed but never dispatched. |
-| `sessionMode` | `"persistent" \| "ephemeral"` | `"persistent"` | `persistent` reuses a single session per cron node so context carries across ticks. `ephemeral` starts a fresh session every fire. |
+| `sessionMode` | `"persistent" \| "ephemeral"` | `"persistent"` | Intended to control whether ticks share a session or each gets a fresh one — see "Not yet wired" note below; today every tick uses the same fixed session key regardless of this value. |
 | `timezone` | `string` | `"local"` | IANA timezone (e.g. `Europe/Berlin`) or `local` to use the server's timezone. |
 | `maxRunDurationMs` | `number` | `300000` | Per-tick timeout. The run is aborted if it exceeds this. |
-| `retentionDays` | `number` | `7` | How long the cron's transcripts are retained when storage maintenance runs. |
+| `retentionDays` | `number` | `7` | Schema-only today — see "Not yet wired" note below; no maintenance code currently prunes cron transcripts by this value. |
 
 Properties are derived from the TypeScript interface in
 `src/types/nodes.ts` and defaults from `src/utils/default-nodes.ts`.
@@ -52,16 +52,18 @@ changes:
   with the cron's `prompt` and `sessionMode`, and a per-run timeout
   derived from `maxRunDurationMs`.
 
-`sessionMode: 'persistent'` keeps the cron's session-key stable across
-ticks, so the agent's context engine and memory see one continuous
-conversation. `sessionMode: 'ephemeral'` allocates a fresh session per
-tick — useful when each run should be independent (cron-driven ingest,
-report generation).
+**Not yet wired:** `sessionMode` is resolved onto `ResolvedCronConfig`, but
+`CronScheduler` doesn't read it — every tick dispatches with the same
+fixed session key (`cron:<cronNodeId>`) regardless of `persistent` vs
+`ephemeral`, and `session-router.ts`'s `buildSessionKey` only branches on
+whether a `cronJobId` is present, not on this field. So `ephemeral` is not
+yet functionally distinct from `persistent`; both currently behave like
+`persistent`.
 
-`retentionDays` is read by the maintenance scheduler when present. The
-storage engine's pruning behavior is partial today (see
-[`docs/audit-2026-05-09.md`](../audit-2026-05-09.md) §2.5), so verify
-end-to-end retention if your deployment depends on it.
+`retentionDays` is schema-only today. It's threaded through as a type
+passthrough in `cron-scheduler.ts` but nothing prunes cron transcripts by
+it — no maintenance/pruning code reads this field. Don't rely on it for
+retention until it's wired to the storage engine's maintenance path.
 
 ## Connections
 

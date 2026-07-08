@@ -3,7 +3,7 @@
 > Observability instrumentation that records per-run, per-turn, and per-tool spans — token usage, cost, and latency — and exports them to a console, file, or OpenTelemetry collector.
 
 <!-- source: src/types/nodes.ts#TelemetryNodeData -->
-<!-- last-verified: 2026-06-23 -->
+<!-- last-verified: 2026-07-08 -->
 
 ## Overview
 
