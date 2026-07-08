@@ -3,7 +3,7 @@
 > Attaches an agent to a Model Context Protocol server — either a local subprocess or a remote HTTP/SSE endpoint — so the agent can call its tools.
 
 <!-- source: src/types/nodes.ts#MCPNodeData -->
-<!-- last-verified: 2026-05-24 -->
+<!-- last-verified: 2026-07-08 -->
 
 ## Overview
 
@@ -25,7 +25,7 @@ The node surfaces a live connection hint on the canvas. The runtime publishes `m
 | `headers` | `Record<string, string>` | `{}` | **http/sse only.** Extra HTTP headers (e.g. auth) |
 | `toolPrefix` | `string` | `""` | Prefix applied to every exported tool name |
 | `allowedTools` | `string[]` | `[]` | Whitelist of tool names to expose. Empty = all |
-| `autoConnect` | `boolean` | `true` | Connect when the agent starts |
+| `autoConnect` | `boolean` | `true` | Connect when the agent starts. When `false`, a tool call is intended to trigger lazy connect (not yet implemented — see Runtime Behavior) |
 
 Properties are derived from the TypeScript interface in `src/types/nodes.ts` and defaults from `src/utils/default-nodes.ts`.
 

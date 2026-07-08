@@ -3,7 +3,7 @@
 > Constrains an agent's final reply to a JSON Schema, with native provider enforcement, prompt injection, and a repair/warn/block policy on validation failure.
 
 <!-- source: src/types/nodes.ts#StructuredOutputNodeData -->
-<!-- last-verified: 2026-06-28 -->
+<!-- last-verified: 2026-07-08 -->
 
 ## Overview
 

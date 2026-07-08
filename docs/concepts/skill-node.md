@@ -3,7 +3,7 @@
 > A standalone node for defining named skills that are injected into an agent's system prompt.
 
 <!-- source: src/types/nodes.ts#SkillsNodeData -->
-<!-- last-verified: 2026-06-30 -->
+<!-- last-verified: 2026-07-08 -->
 
 ## Overview
 

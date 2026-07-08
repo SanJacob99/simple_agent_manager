@@ -3,7 +3,7 @@
 > Wakes a peer agent on send. Bounded by per-pair turn/depth/token limits and per-sender rate limits.
 
 <!-- source: src/types/nodes.ts#AgentCommNodeData -->
-<!-- last-verified: 2026-05-29 -->
+<!-- last-verified: 2026-07-08 -->
 
 ## Overview
 
