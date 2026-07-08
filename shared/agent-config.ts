@@ -286,6 +286,47 @@ export interface ResolvedReflectionConfig {
   injectRubricIntoPrompt: boolean;
 }
 
+// --- Agent-to-Agent (A2A) Interop ---
+
+export type A2AAuthScheme = 'none' | 'bearer' | 'apiKey';
+
+/** A remote A2A agent registered as a delegate. */
+export interface ResolvedA2ARemoteAgent {
+  id: string;
+  name: string;
+  cardUrl: string;
+  authScheme: A2AAuthScheme;
+  /** Env var name holding the token/key. Empty when `authScheme` is `none`. */
+  authToken: string;
+}
+
+/**
+ * Resolved A2A interop config. At most one A2A node binds to an agent — it
+ * configures both the exposed server and the set of remote delegates — so this
+ * resolves to a single optional value on `AgentConfig` rather than a list. The
+ * server role publishes an agent card and accepts remote tasks; the client role
+ * registers `remoteAgents` as callable delegates over the A2A `message/send`
+ * JSON-RPC method.
+ */
+export interface ResolvedA2AConfig {
+  a2aNodeId: string;
+  label: string;
+  enabled: boolean;
+  // Server role
+  exposeServer: boolean;
+  agentName: string;
+  agentDescription: string;
+  serverPath: string;
+  advertiseStreaming: boolean;
+  advertisePushNotifications: boolean;
+  serverAuthScheme: A2AAuthScheme;
+  // Client role
+  remoteAgents: ResolvedA2ARemoteAgent[];
+  exposeDelegateTool: boolean;
+  maxDelegationDepth: number;
+  taskTimeoutMs: number;
+}
+
 // --- Agent Config interfaces ---
 
 export interface ResolvedCronConfig {
@@ -386,6 +427,13 @@ export interface AgentConfig {
    * graphs remain compatible without a backfill.
    */
   reflection?: ResolvedReflectionConfig | null;
+  /**
+   * Optional Agent-to-Agent interop config. When omitted or `null`, the agent
+   * neither exposes an A2A server nor registers remote delegates. At most one
+   * A2A node binds to an agent. Optional so existing AgentConfig fixtures and
+   * serialized graphs remain compatible without a backfill.
+   */
+  a2a?: ResolvedA2AConfig | null;
 
   /** Working directory for shell commands (exec tool). Independent of storage path. */
   workspacePath: string | null;
