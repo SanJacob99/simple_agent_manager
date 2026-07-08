@@ -194,10 +194,8 @@ export class StorageEngine {
       return this._safeJoin(this.sessionsDir, `${entry.sessionId}.jsonl`);
     }
 
-    if (path.isAbsolute(entry.sessionFile)) {
-      return entry.sessionFile;
-    }
-
+    // 🛡️ Sentinel: Removed absolute path bypass. Absolute paths will now be safely
+    // validated by _safeJoin to ensure they do not escape agentDir.
     return this._safeJoin(this.agentDir, entry.sessionFile);
   }
 
