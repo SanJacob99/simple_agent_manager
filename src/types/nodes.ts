@@ -23,7 +23,8 @@ export type NodeType =
   | 'structuredOutput'
   | 'budget'
   | 'evals'
-  | 'reflection';
+  | 'reflection'
+  | 'a2a';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -735,6 +736,82 @@ export interface ReflectionNodeData {
   injectRubricIntoPrompt: boolean;
 }
 
+// --- Agent-to-Agent (A2A) Interop Node ---
+
+/**
+ * How a party authenticates on an A2A connection.
+ * - `none`: no auth (local/dev, or a network-level gateway handles it).
+ * - `bearer`: an `Authorization: Bearer <token>` header.
+ * - `apiKey`: an `X-API-Key: <token>` header.
+ * For remote agents, `authToken` is treated as an environment-variable name so
+ * secrets never live in the serialized graph; for the exposed server the token
+ * is validated against the same env var the runtime reads at request time.
+ */
+export type A2AAuthScheme = 'none' | 'bearer' | 'apiKey';
+
+/**
+ * A remote A2A agent this agent can delegate tasks to. Discovered from its
+ * published agent card and invoked over the A2A `message/send` JSON-RPC method.
+ */
+export interface A2ARemoteAgent {
+  /** Stable local id used in the `delegate_to_agent` tool's target enum. */
+  id: string;
+  /** Display name for the remote agent. */
+  name: string;
+  /** URL of the remote agent card (typically `/.well-known/agent-card.json`). */
+  cardUrl: string;
+  /** How to authenticate to this remote. */
+  authScheme: A2AAuthScheme;
+  /** Env var name holding the token/key. Empty when `authScheme` is `none`. */
+  authToken: string;
+}
+
+/**
+ * Exposes this agent over the emerging Agent-to-Agent (A2A) protocol and/or
+ * registers remote A2A agents as callable delegates. A2A is becoming the
+ * lingua franca for cross-framework agent interop — agent cards, task/message
+ * envelopes, and streaming updates — much as MCP standardized tools. Unlike
+ * `agentComm` (an in-process bus) and `subAgent` (in-tree), A2A reaches agents
+ * built on *other* frameworks.
+ *
+ * Two roles, independently toggleable:
+ *   - Server: publish an agent card and accept remote tasks (`exposeServer`).
+ *   - Client: call registered `remoteAgents` as delegates (`exposeDelegateTool`).
+ */
+export interface A2ANodeData {
+  [key: string]: unknown;
+  type: 'a2a';
+  label: string;
+  /** Master toggle. When false the node is wired but neither role is active. */
+  enabled: boolean;
+
+  // --- Server role: expose this agent over A2A ---
+  /** Publish an agent card and accept inbound A2A tasks. */
+  exposeServer: boolean;
+  /** Name advertised in this agent's published card. Empty falls back to the agent's name. */
+  agentName: string;
+  /** Description advertised in the card. Empty falls back to the agent's description. */
+  agentDescription: string;
+  /** Mount path for the A2A endpoint on the local server, e.g. `/a2a`. */
+  serverPath: string;
+  /** Advertise `capabilities.streaming` (SSE `message/stream`) in the card. */
+  advertiseStreaming: boolean;
+  /** Advertise `capabilities.pushNotifications` in the card. */
+  advertisePushNotifications: boolean;
+  /** Auth scheme remote clients must satisfy to reach the exposed server. */
+  serverAuthScheme: A2AAuthScheme;
+
+  // --- Client role: call remote A2A agents as delegates ---
+  /** Remote agents registered as delegates. */
+  remoteAgents: A2ARemoteAgent[];
+  /** Expose a `delegate_to_agent` tool enumerating the registered remotes. */
+  exposeDelegateTool: boolean;
+  /** Max nested delegation hops before a delegate call is refused. Loop control. */
+  maxDelegationDepth: number;
+  /** Per-remote-task timeout in milliseconds. */
+  taskTimeoutMs: number;
+}
+
 // --- Sub-Agent Node ---
 
 export interface SubAgentNodeData {
@@ -775,6 +852,7 @@ export type FlowNodeData =
   | StructuredOutputNodeData
   | BudgetNodeData
   | EvalsNodeData
-  | ReflectionNodeData;
+  | ReflectionNodeData
+  | A2ANodeData;
 
 export type AppNode = Node<FlowNodeData>;
