@@ -17,6 +17,7 @@ import StructuredOutputNode from './StructuredOutputNode';
 import BudgetNode from './BudgetNode';
 import EvalsNode from './EvalsNode';
 import ReflectionNode from './ReflectionNode';
+import A2ANode from './A2ANode';
 
 export const nodeTypes = {
   agent: AgentNode,
@@ -38,4 +39,5 @@ export const nodeTypes = {
   budget: BudgetNode,
   evals: EvalsNode,
   reflection: ReflectionNode,
+  a2a: A2ANode,
 } as const;

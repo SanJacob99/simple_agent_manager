@@ -286,6 +286,42 @@ export interface ResolvedReflectionConfig {
   injectRubricIntoPrompt: boolean;
 }
 
+// --- Agent-to-Agent (A2A) Interop ---
+
+export type A2ARole = 'server' | 'client' | 'both';
+export type A2AAuthScheme = 'none' | 'apiKey' | 'bearer';
+
+export interface ResolvedRemoteA2AAgent {
+  id: string;
+  name: string;
+  url: string;
+  description: string;
+}
+
+/**
+ * Resolved A2A interop surface. At most one A2A node binds to an agent — it owns
+ * the single server mount and the delegate registry — so this resolves to a
+ * single optional value on `AgentConfig.a2a` rather than a list (like reflection
+ * and structured output). Publishes an agent card and/or registers remote A2A
+ * agents as callable delegates, mirroring the Agent-to-Agent protocol.
+ */
+export interface ResolvedA2AConfig {
+  a2aNodeId: string;
+  label: string;
+  enabled: boolean;
+  role: A2ARole;
+  /** Name for the published agent card. Empty falls back to the agent's name. */
+  agentName: string;
+  agentDescription: string;
+  serverPath: string;
+  streaming: boolean;
+  publishSkills: boolean;
+  authScheme: A2AAuthScheme;
+  remoteAgents: ResolvedRemoteA2AAgent[];
+  defaultTimeoutMs: number;
+  maxConcurrentTasks: number;
+}
+
 // --- Agent Config interfaces ---
 
 export interface ResolvedCronConfig {
@@ -386,6 +422,13 @@ export interface AgentConfig {
    * graphs remain compatible without a backfill.
    */
   reflection?: ResolvedReflectionConfig | null;
+  /**
+   * Optional Agent-to-Agent interop surface. When omitted or `null`, the agent
+   * neither publishes an A2A card nor registers remote delegates. At most one
+   * A2A node binds to an agent. Optional so existing AgentConfig fixtures and
+   * serialized graphs remain compatible without a backfill.
+   */
+  a2a?: ResolvedA2AConfig | null;
 
   /** Working directory for shell commands (exec tool). Independent of storage path. */
   workspacePath: string | null;

@@ -96,6 +96,11 @@
       "doc": "reflection-node.md",
       "type": "src/types/nodes.ts#ReflectionNodeData",
       "runtime": "server/runtime/reflection-engine.ts"
+    },
+    "a2a": {
+      "doc": "a2a-node.md",
+      "type": "src/types/nodes.ts#A2ANodeData",
+      "runtime": "server/runtime/a2a-engine.ts"
     }
   }
 }
