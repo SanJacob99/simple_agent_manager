@@ -3,7 +3,7 @@
 > Manages token budgets, compaction, and transcript-aware context assembly so conversations stay inside the model's context window.
 
 <!-- source: src/types/nodes.ts#ContextEngineNodeData -->
-<!-- last-verified: 2026-05-29 -->
+<!-- last-verified: 2026-07-09 -->
 <!-- token-budget-inheritance, compaction-trigger-modes, tooltips -->
 
 ## Overview
@@ -34,7 +34,7 @@ In the current implementation, compaction is no longer only an in-memory concern
 The runtime creates a `ContextEngine` that exposes:
 
 - `buildTransformContext()` to plug into `pi-agent-core`
-- `assemble(messages)` to estimate tokens and call compaction when the budget would overflow (safety net)
+- `assemble(messages)` to estimate tokens and call compaction when the budget would overflow (safety net). Before estimating, `assemble()` calls `stripStaleToolResultImages()`, which walks tool-result messages newest-to-oldest and replaces image blocks with a short text placeholder (e.g. `[screenshot removed from context; reachable at <path>]`) on all but the 2 most recent tool results that carry images. User-attached images on user/assistant messages are never touched. This runs before token estimation, so it changes both the budget calculation and what compaction actually operates on.
 - `compact(messages)` to apply the configured reduction strategy
 - `afterTurn(messages)` to fire proactive compaction when the just-finished turn pushed usage past the trigger configured by `compactionTrigger` (see the table above). `afterTurn` applies the compacted result back onto the live message array in place, so proactive/`auto`/`threshold` compaction genuinely reduces the in-memory history rather than recomputing and discarding it (which previously left history unchanged and re-fired every turn once over threshold). The `assemble()` overflow trim remains the safety net.
 
