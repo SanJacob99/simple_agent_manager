@@ -286,6 +286,72 @@ export interface ResolvedReflectionConfig {
   injectRubricIntoPrompt: boolean;
 }
 
+// --- Agent-to-Agent (A2A) interop ---
+
+export type A2AAuthScheme = 'none' | 'apiKey' | 'bearer' | 'oauth2';
+export type A2ATransport = 'jsonrpc' | 'grpc' | 'rest';
+
+/**
+ * A remote A2A agent this agent may call as a delegate. Points at the remote's
+ * agent card (the `/.well-known/agent-card.json` document); the runtime fetches
+ * the card, then sends A2A `message/send` (or `message/stream`) tasks to the
+ * URL it advertises.
+ */
+export interface ResolvedA2ARemoteAgent {
+  /** Stable id used to reference this delegate from the graph. */
+  id: string;
+  /** Human-readable name (falls back to the fetched card's `name`). */
+  name: string;
+  /** URL of the remote agent card, e.g. https://host/.well-known/agent-card.json */
+  cardUrl: string;
+  /** When false the delegate is wired but not offered to the agent. */
+  enabled: boolean;
+}
+
+/**
+ * Resolved Agent-to-Agent (A2A) interop surface. At most one A2A node binds to
+ * an agent — it defines the single cross-framework boundary — so this resolves
+ * to a single optional value on `AgentConfig` rather than a list (like
+ * structured output and reflection). It has two independent halves that can be
+ * enabled together or separately:
+ *
+ * - **Server**: expose this agent as an A2A server by publishing an agent card
+ *   and accepting remote task envelopes, mirroring the emerging A2A protocol
+ *   (agent cards, `message/send` + `tasks/*`, streaming updates) that
+ *   standardizes cross-framework agent interop the way MCP standardized tools.
+ * - **Client**: register remote A2A agents as callable delegates.
+ */
+export interface ResolvedA2AConfig {
+  a2aNodeId: string;
+  label: string;
+  enabled: boolean;
+  // --- Server exposure ---
+  /** Publish an agent card and accept inbound A2A tasks. */
+  exposeAsServer: boolean;
+  /** Card `name`. Empty falls back to the agent's own name. */
+  agentName: string;
+  /** Card `description`. */
+  agentDescription: string;
+  /** Card `version` (the agent's own version, not the protocol version). */
+  version: string;
+  /** Base URL the card advertises for the A2A endpoint. */
+  serverUrl: string;
+  /** Wire transport the endpoint speaks. */
+  transport: A2ATransport;
+  /** Advertise SSE streaming (`message/stream`, `tasks/resubscribe`). */
+  streaming: boolean;
+  /** Advertise push-notification (webhook) task updates. */
+  pushNotifications: boolean;
+  /** Security scheme the card advertises for inbound calls. */
+  authScheme: A2AAuthScheme;
+  /** Accepted inbound content types (card `defaultInputModes`). */
+  defaultInputModes: string[];
+  /** Produced outbound content types (card `defaultOutputModes`). */
+  defaultOutputModes: string[];
+  // --- Client delegation ---
+  remoteAgents: ResolvedA2ARemoteAgent[];
+}
+
 // --- Agent Config interfaces ---
 
 export interface ResolvedCronConfig {
@@ -386,6 +452,13 @@ export interface AgentConfig {
    * graphs remain compatible without a backfill.
    */
   reflection?: ResolvedReflectionConfig | null;
+  /**
+   * Optional Agent-to-Agent (A2A) interop surface. When omitted or `null`, the
+   * agent neither exposes an A2A server nor calls remote A2A delegates. At most
+   * one A2A node binds to an agent. Optional so existing AgentConfig fixtures
+   * and serialized graphs remain compatible without a backfill.
+   */
+  a2a?: ResolvedA2AConfig | null;
 
   /** Working directory for shell commands (exec tool). Independent of storage path. */
   workspacePath: string | null;
