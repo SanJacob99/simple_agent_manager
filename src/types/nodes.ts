@@ -23,7 +23,8 @@ export type NodeType =
   | 'structuredOutput'
   | 'budget'
   | 'evals'
-  | 'reflection';
+  | 'reflection'
+  | 'a2a';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -735,6 +736,68 @@ export interface ReflectionNodeData {
   injectRubricIntoPrompt: boolean;
 }
 
+// --- Agent-to-Agent (A2A) Node ---
+
+/** Security scheme the published agent card advertises for inbound calls. */
+export type A2AAuthScheme = 'none' | 'apiKey' | 'bearer' | 'oauth2';
+
+/** Wire transport the A2A endpoint speaks. */
+export type A2ATransport = 'jsonrpc' | 'grpc' | 'rest';
+
+/** A remote A2A agent this agent may call as a delegate. */
+export interface A2ARemoteAgent {
+  /** Stable id used to reference this delegate from the graph. */
+  id: string;
+  /** Human-readable name (falls back to the fetched card's `name`). */
+  name: string;
+  /** URL of the remote agent card, e.g. https://host/.well-known/agent-card.json */
+  cardUrl: string;
+  /** When false the delegate is wired but not offered to the agent. */
+  enabled: boolean;
+}
+
+/**
+ * Agent-to-Agent (A2A) interop. Exposes this agent to — and lets it call —
+ * agents built on *other* frameworks over the emerging A2A protocol (agent
+ * cards, `message/send` + `tasks/*`, streaming updates), the cross-framework
+ * lingua franca much as MCP standardized tools. Two independent halves:
+ * a **server** side (publish an agent card, accept remote tasks) and a
+ * **client** side (register remote A2A agents as callable delegates).
+ */
+export interface A2ANodeData {
+  [key: string]: unknown;
+  type: 'a2a';
+  label: string;
+  /** Master toggle. When false the node is wired but neither half is active. */
+  enabled: boolean;
+  // --- Server exposure ---
+  /** Publish an agent card and accept inbound A2A tasks. */
+  exposeAsServer: boolean;
+  /** Card `name`. Empty falls back to the agent's own name. */
+  agentName: string;
+  /** Card `description`, shown to remote callers discovering this agent. */
+  agentDescription: string;
+  /** Card `version` (the agent's own version, not the protocol version). */
+  version: string;
+  /** Base URL the card advertises for the A2A endpoint. */
+  serverUrl: string;
+  /** Wire transport the endpoint speaks. */
+  transport: A2ATransport;
+  /** Advertise SSE streaming (`message/stream`, `tasks/resubscribe`). */
+  streaming: boolean;
+  /** Advertise push-notification (webhook) task updates. */
+  pushNotifications: boolean;
+  /** Security scheme the card advertises for inbound calls. */
+  authScheme: A2AAuthScheme;
+  /** Accepted inbound content types (card `defaultInputModes`). */
+  defaultInputModes: string[];
+  /** Produced outbound content types (card `defaultOutputModes`). */
+  defaultOutputModes: string[];
+  // --- Client delegation ---
+  /** Remote A2A agents this agent can delegate tasks to. */
+  remoteAgents: A2ARemoteAgent[];
+}
+
 // --- Sub-Agent Node ---
 
 export interface SubAgentNodeData {
@@ -775,6 +838,7 @@ export type FlowNodeData =
   | StructuredOutputNodeData
   | BudgetNodeData
   | EvalsNodeData
-  | ReflectionNodeData;
+  | ReflectionNodeData
+  | A2ANodeData;
 
 export type AppNode = Node<FlowNodeData>;
