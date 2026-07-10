@@ -3,7 +3,7 @@
 > Manages token budgets, compaction, and transcript-aware context assembly so conversations stay inside the model's context window.
 
 <!-- source: src/types/nodes.ts#ContextEngineNodeData -->
-<!-- last-verified: 2026-05-29 -->
+<!-- last-verified: 2026-07-10 -->
 <!-- token-budget-inheritance, compaction-trigger-modes, tooltips -->
 
 ## Overview
@@ -20,7 +20,7 @@ In the current implementation, compaction is no longer only an in-memory concern
 | `tokenBudget` | `number` | `128000` | Max tokens for assembled context |
 | `reservedForResponse` | `number` | `4096` | Tokens reserved for the model response |
 | `compactionStrategy` | `CompactionStrategy` | `"summary"` | `summary`, `sliding-window`, or `trim-oldest` |
-| `summaryModelId` | `string` | `""` | Model id used to produce summaries (only for `summary`). Empty means inherit the agent's model |
+| `summaryModelId` | `string` | `""` | **Not wired to the runtime.** Resolved into `ResolvedContextEngineConfig.summaryModelId` but never read by `ContextEngine` — the `summary` strategy always builds its summary with a plain string-truncation heuristic (`server/runtime/context-engine.ts`), never a model call. Schema-ahead-of-wiring; see CLAUDE.md. |
 | `compactionTrigger` | `string` | `"auto"` | When proactive compaction fires from `afterTurn`. `auto` → at 80% of the post-reservation budget; `threshold` → at `compactionThreshold` (ratio) of the budget; `manual` → never auto-fires (only via the Compact Now button). `assemble()`'s overflow check stays on as a safety net for all modes. |
 | `compactionThreshold` | `number` | `0.8` | In `threshold` mode, the 0–1 ratio of the post-reservation budget at which compaction fires. In `manual` mode, an absolute token count surfaced in the panel preview. Ignored in `auto` mode. |
 | `postCompactionTokenTarget` | `number` | `50000` | Token ceiling the assembled context should land at after compaction runs. Clamped to `tokenBudget - reservedForResponse`. |
@@ -43,9 +43,9 @@ Manual compaction: the Context Engine property panel shows a **Compact Now** but
 Current compaction behavior:
 
 - `trim-oldest` and `sliding-window` keep the newest messages that fit
-- `summary` keeps the newest slice of conversation and replaces older context with a generated summary message
-- when a live transcript is bound, summary compaction appends a persisted `compaction` entry via `SessionManager.appendCompaction(...)`
-- the runtime emits a `memory_compaction` event when one of these persisted summaries is written, so the UI can show compacting state
+- `summary` keeps the newest slice of conversation and replaces older context with a truncation-based summary message (not a model-generated one — see `summaryModelId` above)
+- when a live transcript is bound, **all three** strategies append a persisted `compaction` entry via `SessionManager.appendCompaction(...)`, not just `summary`
+- the runtime emits a `memory_compaction` event whenever one of these persisted compaction entries is written, so the UI can show compacting state
 
 The context engine no longer owns system prompt additions. Prompt construction is handled by the agent runtime's assembled system prompt.
 

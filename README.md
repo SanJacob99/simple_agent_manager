@@ -31,6 +31,7 @@ The default sidebar currently exposes these draggable nodes:
 | Node | Purpose |
 | --- | --- |
 | `agent` | Core agent identity, model, prompt, and reasoning settings |
+| `provider` | Provider identity and model catalog binding for the agent |
 | `memory` | Memory backend, compaction, and memory tool toggles |
 | `tools` | Tool profiles, custom tool names, inline skills, and plugin bindings |
 | `skills` | Lightweight named skills that are folded into the resolved system prompt |
@@ -39,14 +40,19 @@ The default sidebar currently exposes these draggable nodes:
 | `connectors` | Configuration surface for external connector metadata |
 | `storage` | Session persistence, retention, maintenance, and memory file settings |
 | `vectorDatabase` | Configuration surface for vector-store metadata |
+| `cron` | Scheduled trigger metadata for running an agent on a recurring cadence |
+| `mcp` | Attaches a Model Context Protocol server (stdio or HTTP/SSE) to the agent |
+| `subAgent` | Declares a named, one-shot sub-agent the parent can dispatch via `sessions_spawn` |
+| `guardrails` | Input/output safety rules: max length, blocked terms, PII detection |
 | `telemetry` | Observability instrumentation: per-run/turn/tool spans (tokens, cost, latency) exported to console, file, or an OTLP collector |
 | `structuredOutput` | Constrains the agent's final reply to a JSON Schema, with native provider enforcement, prompt injection, and a repair/warn/block policy on validation failure |
 | `budget` | Spend and rate governance: USD per run/day, tokens and tool calls per run, runs per minute, with a warn / downshift / block degrade policy |
+| `evals` | Scaffolded eval runner surface for scoring agent output against test cases |
 | `reflection` | Reflexion-style draft → critique → revise loop: a critic scores each draft against a rubric and feeds the critique back for up to *N* revisions, with a use-best / use-last / warn exhaustion policy |
 
-The codebase also contains a `cron` node type and editor, but it is not part of the default palette and should be treated as in-progress unless you verify the full execution path.
+`cron` ships in the default sidebar palette but should still be treated as in-progress — verify the full execution path (see `docs/concepts/cron-node.md`) before relying on it end-to-end.
 
-> **Scaffolding note:** `telemetry`, `structuredOutput`, `budget`, and `reflection` ship with node UI, resolved config, and a unit-tested engine, but the run-coordinator wiring is still pending — treat them as extension surfaces until that path is verified end-to-end. See `docs/roadmap/2026-modernization.md`.
+> **Scaffolding note:** `telemetry`, `structuredOutput`, `budget`, `evals`, and `reflection` ship with node UI and a unit-tested engine, but the resolved-config and node-UI layers are not covered by tests, and run-coordinator wiring is still pending — treat them as extension surfaces until that path is verified end-to-end. See `docs/roadmap/2026-modernization.md`.
 
 ## Architecture
 

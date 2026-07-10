@@ -3,7 +3,7 @@
 > Enforces spend and rate ceilings on an agent — USD per run/day, tokens and tool calls per run, runs per minute — with a warn / downshift / block degrade policy.
 
 <!-- source: src/types/nodes.ts#BudgetNodeData -->
-<!-- last-verified: 2026-06-28 -->
+<!-- last-verified: 2026-07-10 -->
 
 ## Overview
 
@@ -11,7 +11,7 @@ The Budget node adds cost safety to an agent, complementing the Guardrails node'
 
 You can attach more than one Budget node to a single agent — for example a per-run token cap plus a per-day USD cap. Each resolves to its own envelope; the runtime enforces all of them and the strictest reached ceiling wins. Cost is estimated from the same `PriceTable` (per-1M-token USD prices keyed by `modelId`) the Telemetry node consumes, so a single price source feeds both.
 
-> **Status:** the node, resolved config, and engine are scaffolded and unit-tested. Wiring the `BudgetLedger` into `server/agents/run-coordinator.ts` (call `beginRun` on start, `recordUsage` after each turn, `recordToolCall` per tool, then apply the `BudgetDecision` — downshift the model, abort with a `budget_exceeded` error, or emit a `budget:exceeded` event) is the remaining integration step. Treat this as an extension surface until that path is verified end-to-end.
+> **Status:** the node and engine are scaffolded; only the engine (`server/runtime/budget-engine.test.ts`) is unit-tested — `src/utils/graph-to-agent.test.ts` has no coverage for budget resolution, and there is no test for the `BudgetNode` UI component. Wiring the `BudgetLedger` into `server/agents/run-coordinator.ts` (call `beginRun` on start, `recordUsage` after each turn, `recordToolCall` per tool, then apply the `BudgetDecision` — downshift the model, abort with a `budget_exceeded` error, or emit a `budget:exceeded` event) is the remaining integration step. Treat this as an extension surface until that path is verified end-to-end.
 
 ## Configuration
 
@@ -32,7 +32,7 @@ Properties are derived from `src/types/nodes.ts#BudgetNodeData` and defaults fro
 
 ## Runtime Behavior
 
-`src/utils/graph-to-agent.ts` resolves each connected Budget node into a `ResolvedBudgetConfig` entry on `AgentConfig.budgets` (`shared/agent-config.ts`). The list is optional — agents without a Budget node have `budgets === undefined` and the runtime enforces no ceilings.
+`src/utils/graph-to-agent.ts` resolves each connected Budget node into a `ResolvedBudgetConfig` entry on `AgentConfig.budgets` (`shared/agent-config.ts`). `resolveAgentConfig()` always assigns an array — agents without a Budget node get `budgets: []`, not `undefined`, and the runtime enforces no ceilings. (`AgentConfig.budgets` is typed optional only for backward compatibility with configs serialized before this field existed.)
 
 `server/runtime/budget-engine.ts` provides the `BudgetLedger` class. The runtime owns one ledger per agent (long-lived, so the per-day and per-minute rolling windows persist across runs):
 

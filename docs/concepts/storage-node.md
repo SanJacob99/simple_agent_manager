@@ -3,7 +3,7 @@
 > Provides filesystem-based persistence for agent sessions, routed transcripts, and memory files.
 
 <!-- source: src/types/nodes.ts#StorageNodeData -->
-<!-- last-verified: 2026-05-29 -->
+<!-- last-verified: 2026-07-10 -->
 
 ## Overview
 
@@ -17,7 +17,7 @@ The filesystem backend keeps metadata and transcript history separate:
 - transcript `.jsonl` files store the append-only conversation tree for each routed session
 - Markdown files under `memory/` store evergreen and daily memory content
 
-Only one Storage Node can be connected per agent. For embedding or semantic retrieval storage, use a Vector Database Node instead.
+Only one Storage Node is meant to be connected per agent, but this is **not enforced**: unlike Provider nodes (which raise a `duplicate_provider` validation error), `resolveAgentConfig()` just takes the first connected Storage node it finds and silently ignores any others. Treat "one per agent" as a convention, not a guarded rule. For embedding or semantic retrieval storage, use a Vector Database Node instead.
 
 ## Configuration
 

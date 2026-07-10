@@ -3,7 +3,7 @@
 > A peripheral that declares a named, one-shot sub-agent the parent agent can dispatch via `sessions_spawn`.
 
 <!-- source: src/types/nodes.ts#SubAgentNodeData -->
-<!-- last-verified: 2026-05-29 -->
+<!-- last-verified: 2026-07-10 -->
 
 ## Overview
 
@@ -30,7 +30,7 @@ The Sub-Agent Node attaches to an Agent Node as a peripheral. Each declared sub-
 
 - Receives from: Provider (optional), Tools (REQUIRED), Skills (any), MCP (any)
 - Sends to: Agent Node only (peripheral→agent edge)
-- Multiple Sub-Agent Nodes may attach to one agent; names must be unique per agent
+- Multiple Sub-Agent Nodes may attach to one agent; names must be unique per agent. This is not surfaced as a validation error — `resolveAgentConfig()` detects name collisions and silently drops **every** sub-agent node sharing a conflicted name (including the first) from the resolved `subAgents` array, so a duplicate name results in the sub-agent quietly disappearing rather than an error.
 
 ## Runtime Behavior
 

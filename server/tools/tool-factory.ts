@@ -24,10 +24,11 @@ export { resolveToolNames } from '../../shared/resolve-tool-names';
 // there directly.
 export { IMPLEMENTED_TOOL_NAMES } from '../../shared/resolve-tool-names';
 
-// Stub creators for tools that have neither been migrated to a
-// `ToolModule` nor wired to a real implementation yet. Today this is
-// just `calculator`, which has a real implementation but no module —
-// every other tool is served exclusively from the registry.
+// Legacy fallback for tools not served by the `ToolModule` registry.
+// `calculator` now has a `calculator.module.ts` and is resolved via
+// `REGISTERED_TOOL_NAMES` before this map is ever consulted, so this
+// fallback is currently dead — every built-in tool has been migrated.
+// Kept as the escape hatch for the next tool that hasn't been migrated yet.
 const TOOL_CREATORS: Record<string, () => AgentTool<TSchema>> = {
   calculator: createCalculatorTool,
 };

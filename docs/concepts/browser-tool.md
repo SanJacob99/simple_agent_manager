@@ -3,7 +3,7 @@
 > Drive a Chromium browser via Playwright for user-directed web research and actions.
 
 <!-- source: src/types/nodes.ts#BrowserToolSettings -->
-<!-- last-verified: 2026-05-07 -->
+<!-- last-verified: 2026-07-10 -->
 
 ## Overview
 
