@@ -1,5 +1,5 @@
 <!-- source: src/types/nodes.ts#ProviderNodeData -->
-<!-- last-verified: 2026-05-24 -->
+<!-- last-verified: 2026-07-10 -->
 
 # Provider Node
 

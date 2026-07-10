@@ -4,7 +4,7 @@
 > shape of user-installed provider plugins before an implementation
 > chunk is opened.
 
-<!-- last-verified: 2026-04-28 -->
+<!-- last-verified: 2026-07-10 -->
 
 ## Why this doc
 

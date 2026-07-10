@@ -3,7 +3,7 @@
 > Observability instrumentation that records per-run, per-turn, and per-tool spans — token usage, cost, and latency — and exports them to a console, file, or OpenTelemetry collector.
 
 <!-- source: src/types/nodes.ts#TelemetryNodeData -->
-<!-- last-verified: 2026-06-23 -->
+<!-- last-verified: 2026-07-10 -->
 
 ## Overview
 
@@ -13,7 +13,7 @@ Each run produces a root span. Within it, the runtime can open a child span per 
 
 You can attach more than one Telemetry node to a single agent — for example a `console` instrument for local debugging and an `otlp` instrument shipping to a collector. Each resolves to its own entry and exports independently.
 
-> **Status:** the node, resolved config, and engine are scaffolded and unit-tested. Wiring the recorder into `server/agents/run-coordinator.ts` (open a turn span around `runtime.prompt()`, record tool spans, export on finalize) is the remaining integration step. Treat this as an extension surface until that path is verified end-to-end.
+> **Status:** the node and engine are scaffolded; only the engine (`server/runtime/telemetry-engine.test.ts`) is unit-tested — `src/utils/graph-to-agent.test.ts` has no coverage for telemetry resolution, and there is no test for the `TelemetryNode` UI component. Wiring the recorder into `server/agents/run-coordinator.ts` (open a turn span around `runtime.prompt()`, record tool spans, export on finalize) is the remaining integration step. Treat this as an extension surface until that path is verified end-to-end.
 
 ## Configuration
 
@@ -37,7 +37,7 @@ Properties are derived from `src/types/nodes.ts#TelemetryNodeData` and defaults 
 
 ## Runtime Behavior
 
-`src/utils/graph-to-agent.ts` resolves each connected Telemetry node into a `ResolvedTelemetryConfig` entry on `AgentConfig.telemetry` (`shared/agent-config.ts`). The list is optional — agents without a Telemetry node have `telemetry === undefined` and the runtime emits nothing.
+`src/utils/graph-to-agent.ts` resolves each connected Telemetry node into a `ResolvedTelemetryConfig` entry on `AgentConfig.telemetry` (`shared/agent-config.ts`). `resolveAgentConfig()` always assigns an array — agents without a Telemetry node get `telemetry: []`, not `undefined`, and the runtime emits nothing. (`AgentConfig.telemetry` is typed optional only for backward compatibility with configs serialized before this field existed.)
 
 `server/runtime/telemetry-engine.ts` provides the instrumentation API:
 

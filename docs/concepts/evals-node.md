@@ -3,17 +3,17 @@
 > Attaches a dataset of input → expected cases to an agent and scores its replies with deterministic graders or an LLM judge, for eval-driven development and regression gating.
 
 <!-- source: src/types/nodes.ts#EvalsNodeData -->
-<!-- last-verified: 2026-06-29 -->
+<!-- last-verified: 2026-07-10 -->
 
 ## Overview
 
 The Evals node turns an agent into something you can measure. It holds a suite of cases — each an `input` prompt paired with an `expected` reference — plus a grader that decides whether a reply is correct. Eval-driven agent development is now table stakes: this brings the builder in line with OpenAI Evals, Braintrust, Promptfoo, and LangSmith datasets.
 
-A suite is run offline by the `sam eval` runner (and a Settings evals panel), not on the live chat path. The runner replays each case through the resolved agent headlessly, scores the reply, and produces a weighted suite score with a pass/fail verdict. Five graders are supported: `exact_match`, `contains`, `regex`, `json_schema` (the reply must satisfy a JSON Schema — reusing the same dependency-free validator as the Structured Output node), and `llm_judge` (a judge model scores the reply against a rubric).
+A suite is meant to run offline via `EvalRunner`, not on the live chat path: it replays each case through the resolved agent headlessly, scores the reply, and produces a weighted suite score with a pass/fail verdict. There is no `sam eval` CLI subcommand or Settings evals panel yet — see Status below. Five graders are supported: `exact_match`, `contains`, `regex`, `json_schema` (the reply must satisfy a JSON Schema — reusing the same dependency-free validator as the Structured Output node), and `llm_judge` (a judge model scores the reply against a rubric).
 
 You can attach more than one Evals node to a single agent — for example a fast smoke suite plus a fuller regression suite. Each resolves to its own entry and is executed independently. With `failOnRegression` set, the runner compares a suite's score against the previously recorded best and flags a regression if it drops, enabling eval gating in CI.
 
-> **Status:** the node, resolved config, and runner are scaffolded and unit-tested. Wiring `EvalRunner` into `server/agents/run-coordinator.ts` (replay each case as a headless ephemeral run, supply a real `JudgeFn`) and exposing a `sam eval` subcommand plus a Settings panel are the remaining integration steps. Treat this as an extension surface until that path is verified end-to-end.
+> **Status:** the node and runner are scaffolded; only the runner (`server/evals/eval-runner.test.ts`) is unit-tested — `src/utils/graph-to-agent.test.ts` has no coverage for evals resolution, and there is no test for the `EvalsNode` UI component. Wiring `EvalRunner` into `server/agents/run-coordinator.ts` (replay each case as a headless ephemeral run, supply a real `JudgeFn`) and exposing a `sam eval` subcommand plus a Settings panel are the remaining integration steps. Treat this as an extension surface until that path is verified end-to-end.
 
 ## Configuration
 
@@ -35,7 +35,7 @@ Properties are derived from `src/types/nodes.ts#EvalsNodeData` and defaults from
 
 ## Runtime Behavior
 
-`src/utils/graph-to-agent.ts` resolves each connected Evals node into a `ResolvedEvalsConfig` entry on `AgentConfig.evals` (`shared/agent-config.ts`), folding each case's grader down to a concrete value (`grader ?? defaultGrader`). The list is optional — agents without an Evals node have `evals === undefined`.
+`src/utils/graph-to-agent.ts` resolves each connected Evals node into a `ResolvedEvalsConfig` entry on `AgentConfig.evals` (`shared/agent-config.ts`), folding each case's grader down to a concrete value (`grader ?? defaultGrader`). `resolveAgentConfig()` always assigns an array — agents without an Evals node get `evals: []`, not `undefined`. (`AgentConfig.evals` is typed optional only for backward compatibility with configs serialized before this field existed.)
 
 `server/evals/eval-runner.ts` provides the scoring substrate:
 

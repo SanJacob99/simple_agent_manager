@@ -3,7 +3,7 @@
 > Constrains an agent's final reply to a JSON Schema, with native provider enforcement, prompt injection, and a repair/warn/block policy on validation failure.
 
 <!-- source: src/types/nodes.ts#StructuredOutputNodeData -->
-<!-- last-verified: 2026-06-28 -->
+<!-- last-verified: 2026-07-10 -->
 
 ## Overview
 
@@ -11,7 +11,7 @@ The Structured Output node makes an agent's final answer machine-readable. Inste
 
 At most one Structured Output node binds to an agent — there can only be one shape for the final reply — so it resolves to a single optional value on `AgentConfig.outputSchema` rather than a list (unlike Guardrails or Telemetry). When `strict` is set, the schema is forwarded to providers that support native enforcement; regardless, the runtime validates the reply after the fact and applies the configured `onValidationError` policy.
 
-> **Status:** the node, resolved config, and engine are scaffolded and unit-tested. Wiring `evaluateReply` into `server/agents/run-coordinator.ts`'s finalize step (validate the streamed reply, then repair/warn/block) and the native `response_format` path in `server/runtime/model-resolver.ts` are the remaining integration steps. Treat this as an extension surface until that path is verified end-to-end.
+> **Status:** the node and engine are scaffolded; only the engine (`server/runtime/structured-output-engine.test.ts`) is unit-tested — `src/utils/graph-to-agent.test.ts` has no coverage for structured-output resolution, and there is no test for the `StructuredOutputNode` UI component. Wiring `evaluateReply` into `server/agents/run-coordinator.ts`'s finalize step (validate the streamed reply, then repair/warn/block) and the native `response_format` path in `server/runtime/model-resolver.ts` are the remaining integration steps. Treat this as an extension surface until that path is verified end-to-end.
 
 ## Configuration
 

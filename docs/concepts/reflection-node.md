@@ -3,7 +3,7 @@
 > Wraps the agent's finalize step in a Reflexion-style "draft → critique → revise" loop: a critic scores each draft against a rubric and feeds the critique back for revision until the score crosses a threshold or the revision budget is spent.
 
 <!-- source: src/types/nodes.ts#ReflectionNodeData -->
-<!-- last-verified: 2026-06-30 -->
+<!-- last-verified: 2026-07-10 -->
 
 ## Overview
 
@@ -11,7 +11,7 @@ The Reflection node raises answer quality on hard tasks by having the agent revi
 
 At most one Reflection node binds to an agent — it wraps the single finalize step — so it resolves to a single optional value on `AgentConfig.reflection` rather than a list (like Structured Output). It pairs naturally with the [Evals node](evals-node.md): the same rubric that grades a suite can drive the in-run critique.
 
-> **Status:** the node, resolved config, and engine are scaffolded and unit-tested. Wiring the loop into `server/agents/run-coordinator.ts`'s finalize step (run the critique/revise rounds around `runtime.prompt()`, resolve `criticModelId` through the model resolver, emit `reflection:revised` / `reflection:below_threshold` events) is the remaining integration step. Treat this as an extension surface until that path is verified end-to-end.
+> **Status:** the node and engine are scaffolded; only the engine (`server/runtime/reflection-engine.test.ts`) is unit-tested — `src/utils/graph-to-agent.test.ts` has no coverage for reflection resolution, and there is no test for the `ReflectionNode` UI component. Wiring the loop into `server/agents/run-coordinator.ts`'s finalize step (run the critique/revise rounds around `runtime.prompt()`, resolve `criticModelId` through the model resolver, emit `reflection:revised` / `reflection:below_threshold` events) is the remaining integration step. Treat this as an extension surface until that path is verified end-to-end.
 
 ## Configuration
 
