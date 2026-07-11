@@ -23,7 +23,8 @@ export type NodeType =
   | 'structuredOutput'
   | 'budget'
   | 'evals'
-  | 'reflection';
+  | 'reflection'
+  | 'a2a';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -735,6 +736,108 @@ export interface ReflectionNodeData {
   injectRubricIntoPrompt: boolean;
 }
 
+// --- A2A / Agent-to-Agent Interop Node ---
+
+/**
+ * How this agent participates in the A2A network.
+ * - `server`: publish an Agent Card and accept remote tasks, but do not call out.
+ * - `client`: register remote A2A agents as callable delegates, but do not expose this one.
+ * - `both`: do both — expose a card *and* delegate to remotes.
+ */
+export type A2AMode = 'server' | 'client' | 'both';
+
+/**
+ * Authentication scheme advertised on the published card (server) or used when
+ * calling a remote (client). `apiKey`/`bearer` reference a credential by env-var
+ * name — the secret itself is never stored in the graph.
+ */
+export type A2AAuthScheme = 'none' | 'bearer' | 'apiKey';
+
+/**
+ * What the runtime does when a delegated remote task fails or times out.
+ * - `fail`: surface the error and abort the delegating turn.
+ * - `warn`: emit an `a2a:remote_error` event and continue without the result.
+ * - `ignore`: silently continue as if the remote returned nothing.
+ */
+export type A2ARemoteErrorPolicy = 'fail' | 'warn' | 'ignore';
+
+/**
+ * One capability advertised on this agent's published Agent Card. Mirrors the
+ * A2A `AgentSkill` object (id + human-readable name/description + discovery tags).
+ */
+export interface A2ASkillEntry {
+  id: string;
+  name: string;
+  description: string;
+  /** Discovery tags advertised on the card (comma-separated in the editor). */
+  tags: string[];
+}
+
+/**
+ * A remote A2A agent registered as a callable delegate. The runtime fetches the
+ * card from `cardUrl` (`…/.well-known/agent-card.json`) to discover the remote's
+ * skills, then can dispatch A2A tasks to it.
+ */
+export interface A2ARemoteEntry {
+  id: string;
+  name: string;
+  /** URL of the remote agent's published Agent Card. */
+  cardUrl: string;
+  authScheme: A2AAuthScheme;
+  /** Env-var name holding the credential for the remote; never the secret itself. */
+  authTokenRef: string;
+}
+
+/**
+ * Exposes this agent over the emerging Agent-to-Agent (A2A) protocol — the
+ * cross-framework interop layer (agent cards, task/message envelopes, streaming
+ * status updates) that standardizes agent-to-agent calls much as MCP
+ * standardized tools. The node can publish an Agent Card so *other* frameworks
+ * can task this agent, register remote A2A agents as callable delegates, or both.
+ *
+ * Unlike `agentComm` (an in-process bus) and `subAgent` (in-tree children), A2A
+ * reaches agents built on other stacks over HTTP. At most one A2A node binds to
+ * an agent — it owns the single published card — so it resolves to a single
+ * optional value on `AgentConfig.a2a`, like Structured Output and Reflection.
+ */
+export interface A2ANodeData {
+  [key: string]: unknown;
+  type: 'a2a';
+  label: string;
+  /** Master toggle. When false the node is wired but no card is served and no remote is called. */
+  enabled: boolean;
+  /** Whether this agent exposes a card, consumes remotes, or both. */
+  mode: A2AMode;
+
+  // --- Server side: the Agent Card this agent publishes ---
+  /** Card `name` — how this agent identifies itself to remote callers. */
+  agentName: string;
+  /** Card `description` — one line on what this agent does. */
+  agentDescription: string;
+  /** Base URL this agent is served from (the card's `url`). */
+  agentUrl: string;
+  /** Card `version` — semantic version of this agent's published interface. */
+  version: string;
+  /** Advertise streaming task updates (`capabilities.streaming`). */
+  streaming: boolean;
+  /** Advertise push-notification task updates (`capabilities.pushNotifications`). */
+  pushNotifications: boolean;
+  /** Security scheme advertised on the card. */
+  authScheme: A2AAuthScheme;
+  /** Skills advertised on the card. */
+  skills: A2ASkillEntry[];
+
+  // --- Client side: remote agents registered as delegates ---
+  /** Remote A2A agents this agent can delegate tasks to. */
+  remotes: A2ARemoteEntry[];
+  /** Per-task timeout (ms) when awaiting a remote's terminal state. */
+  taskTimeoutMs: number;
+  /** Cap on concurrently in-flight delegated tasks. */
+  maxConcurrentTasks: number;
+  /** Behaviour when a delegated remote task fails or times out. */
+  onRemoteError: A2ARemoteErrorPolicy;
+}
+
 // --- Sub-Agent Node ---
 
 export interface SubAgentNodeData {
@@ -775,6 +878,7 @@ export type FlowNodeData =
   | StructuredOutputNodeData
   | BudgetNodeData
   | EvalsNodeData
-  | ReflectionNodeData;
+  | ReflectionNodeData
+  | A2ANodeData;
 
 export type AppNode = Node<FlowNodeData>;
