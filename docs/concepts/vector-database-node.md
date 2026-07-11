@@ -3,7 +3,7 @@
 > Attaches a vector store to an agent and auto-enables the four industry-standard vector tools (`vector_search`, `vector_upsert`, `vector_delete`, `vector_get`). Default backend is `sqlite-vec`; default embedder is OpenRouter.
 
 <!-- source: src/types/nodes.ts#VectorDatabaseNodeData -->
-<!-- last-verified: 2026-05-15 -->
+<!-- last-verified: 2026-07-11 -->
 
 ## Overview
 
@@ -34,7 +34,7 @@ The agent's embedding model lives **on the same node**. Insert-time and query-ti
 
 ## Runtime Behaviour
 
-Resolved by `src/utils/graph-to-agent.ts` into `AgentConfig.vectorDatabases: ResolvedVectorDatabaseConfig[]`. The `AgentRuntime` constructor (`server/runtime/agent-runtime.ts`) wires a lazy `getVectorEngine(label?)` accessor into `RuntimeHints` — the four vector tool modules under `server/tools/builtins/vector/` use it to resolve a shared `VectorDatabaseEngine` instance per collection.
+Resolved by `src/utils/graph-to-agent.ts` into `AgentConfig.vectorDatabases: ResolvedVectorDatabaseConfig[]`. The `AgentRuntime` constructor (`server/runtime/agent-runtime.ts`) calls `createVectorTools(config, runtime)` directly — the four vector tool modules under `server/runtime/vector-tools/` resolve a shared `VectorDatabaseEngine` instance per collection through `getOrCreateVectorEngine` in `server/runtime/vector-engine-registry.ts`. (`RuntimeHints` no longer carries a `getVectorEngine` accessor; that indirection was removed when vector tools were switched to auto-attach from the node instead of the Tools registry.)
 
 Engine lifecycle (`server/runtime/vector-database-engine.ts`):
 
