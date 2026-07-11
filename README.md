@@ -21,8 +21,8 @@ The project is built with React 19, TypeScript, `@xyflow/react`, and `@mariozech
 
 - Interactive chat is blocked unless an agent has both a connected `Context Engine` node and a connected `Storage` node.
 - OpenRouter model discovery is live; the other providers currently use curated static model lists in the UI.
-- Several node types and tool names are still extension surfaces rather than fully wired product features. In particular, `connectors`, `vectorDatabase`, and `cron` need runtime inspection before you treat them as end-to-end features. Peer-to-peer agent comms (`agentComm`) is wired in v1 with safety and loop controls (turn/depth/token limits, rate limiting, channel-session isolation).
-- The current built-in tool surface includes real implementations for `calculator`, `web_fetch`, memory tools, and session tools. Many other named tools are placeholders/stubs.
+- Several node types and tool names are still extension surfaces rather than fully wired product features. In particular, `connectors`, `mcp`, and `cron` need runtime inspection before you treat them as end-to-end features — `cron`'s schema and config resolution are implemented, but the backend `CronScheduler` that would dispatch runs on a timer is never instantiated by the running server. `vectorDatabase` is fully wired: connecting the node auto-attaches real vector tools backed by a `sqlite-vec` engine. Peer-to-peer agent comms (`agentComm`) is wired in v1 with safety and loop controls (turn/depth/token limits, rate limiting, channel-session isolation).
+- Most of the built-in tool surface has real implementations today — `calculator`, `web_fetch`/`web_search`, `browser`, `exec`, `code_execution`, `canva`, image/music/TTS tools, the `fs` and `human` groups, memory tools, and session tools. `send_message` is the one named tool with no implementation behind it yet.
 
 ## Node palette
 
@@ -38,15 +38,19 @@ The default sidebar currently exposes these draggable nodes:
 | `agentComm` | Configuration surface for agent-to-agent communication |
 | `connectors` | Configuration surface for external connector metadata |
 | `storage` | Session persistence, retention, maintenance, and memory file settings |
-| `vectorDatabase` | Configuration surface for vector-store metadata |
+| `vectorDatabase` | Vector-store configuration; auto-attaches real vector search/upsert/delete/get tools backed by `sqlite-vec` |
+| `mcp` | Configuration surface for external MCP server connections (schema only — no runtime client yet) |
+| `provider` | Model provider/plugin selection, auth method, and base URL overrides |
+| `subAgent` | Declares sub-agent spawning capability and default overridable fields for child agents |
+| `guardrails` | Input guardrail rules (length caps, blocked terms, PII detection) enforced before a run starts |
 | `telemetry` | Observability instrumentation: per-run/turn/tool spans (tokens, cost, latency) exported to console, file, or an OTLP collector |
 | `structuredOutput` | Constrains the agent's final reply to a JSON Schema, with native provider enforcement, prompt injection, and a repair/warn/block policy on validation failure |
 | `budget` | Spend and rate governance: USD per run/day, tokens and tool calls per run, runs per minute, with a warn / downshift / block degrade policy |
+| `evals` | Declarative eval suites (deterministic + LLM-graded cases) run offline against an agent, with optional regression checks against a prior best score |
 | `reflection` | Reflexion-style draft → critique → revise loop: a critic scores each draft against a rubric and feeds the critique back for up to *N* revisions, with a use-best / use-last / warn exhaustion policy |
+| `cron` | Recurring schedule + prompt for an agent; config resolution is implemented, but the backend scheduler is not yet wired into the running server (see `docs/concepts/cron-node.md`) |
 
-The codebase also contains a `cron` node type and editor, but it is not part of the default palette and should be treated as in-progress unless you verify the full execution path.
-
-> **Scaffolding note:** `telemetry`, `structuredOutput`, `budget`, and `reflection` ship with node UI, resolved config, and a unit-tested engine, but the run-coordinator wiring is still pending — treat them as extension surfaces until that path is verified end-to-end. See `docs/roadmap/2026-modernization.md`.
+> **Scaffolding note:** `telemetry`, `structuredOutput`, `budget`, `evals`, and `reflection` ship with node UI, resolved config, and a unit-tested engine, but the run-coordinator wiring is still pending — treat them as extension surfaces until that path is verified end-to-end. See `docs/roadmap/2026-modernization.md`.
 
 ## Architecture
 

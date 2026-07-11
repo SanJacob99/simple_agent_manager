@@ -3,7 +3,7 @@
 > Manages token budgets, compaction, and transcript-aware context assembly so conversations stay inside the model's context window.
 
 <!-- source: src/types/nodes.ts#ContextEngineNodeData -->
-<!-- last-verified: 2026-05-29 -->
+<!-- last-verified: 2026-07-11 -->
 <!-- token-budget-inheritance, compaction-trigger-modes, tooltips -->
 
 ## Overview
@@ -44,7 +44,7 @@ Current compaction behavior:
 
 - `trim-oldest` and `sliding-window` keep the newest messages that fit
 - `summary` keeps the newest slice of conversation and replaces older context with a generated summary message
-- when a live transcript is bound, summary compaction appends a persisted `compaction` entry via `SessionManager.appendCompaction(...)`
+- when a live transcript is bound, every strategy (`trim-oldest`, `sliding-window`, and `summary`) appends a persisted `compaction` entry via `SessionManager.appendCompaction(...)`, not just `summary`
 - the runtime emits a `memory_compaction` event when one of these persisted summaries is written, so the UI can show compacting state
 
 The context engine no longer owns system prompt additions. Prompt construction is handled by the agent runtime's assembled system prompt.
