@@ -286,6 +286,75 @@ export interface ResolvedReflectionConfig {
   injectRubricIntoPrompt: boolean;
 }
 
+// --- A2A (Agent-to-Agent) interop ---
+
+/**
+ * How this agent participates in the Agent-to-Agent (A2A) protocol.
+ * - `server`: publish an agent card and accept remote task envelopes.
+ * - `client`: register remote A2A agents as callable delegates.
+ * - `both`: do both.
+ */
+export type A2ARole = 'server' | 'client' | 'both';
+
+/** Authentication scheme advertised on the agent card / used to call a remote. */
+export type A2AAuthScheme = 'none' | 'apiKey' | 'bearer' | 'oauth2';
+
+/** One skill advertised on this agent's published A2A agent card. */
+export interface A2ASkillAdvert {
+  /** Stable skill id (slug). */
+  id: string;
+  /** Human-readable skill name. */
+  name: string;
+  /** What the skill does, shown to remote callers discovering this agent. */
+  description: string;
+}
+
+/** A remote A2A agent this agent can delegate tasks to. */
+export interface A2ARemoteAgent {
+  /** Stable local id used to name the generated delegate tool (`a2a_<id>`). */
+  id: string;
+  /** Display name. */
+  name: string;
+  /** Base URL of the remote A2A server (its card lives at `<url>/.well-known/agent-card.json`). */
+  url: string;
+  /** Auth scheme used when calling the remote. */
+  authScheme: A2AAuthScheme;
+  /** Per-remote toggle. When false the delegate is not registered. */
+  enabled: boolean;
+}
+
+/**
+ * Resolved A2A interop config. At most one A2A node binds to an agent — it owns
+ * the single published agent card and the remote-delegate registry — so this
+ * resolves to a single optional value on `AgentConfig` rather than a list (like
+ * reflection / structured output). The A2A protocol (agent cards, JSON-RPC
+ * task/message envelopes, streaming updates) is the emerging cross-framework
+ * standard for agent interop, complementing MCP (tools) and the in-process
+ * `agentComm` bus.
+ */
+export interface ResolvedA2AConfig {
+  a2aNodeId: string;
+  label: string;
+  enabled: boolean;
+  role: A2ARole;
+  /** Name advertised on the published agent card. Empty falls back to `label`. */
+  agentName: string;
+  agentDescription: string;
+  agentVersion: string;
+  advertisedSkills: A2ASkillAdvert[];
+  /** Advertise SSE streaming (`message/stream`) support on the card. */
+  streaming: boolean;
+  /** Advertise push-notification (webhook) support on the card. */
+  pushNotifications: boolean;
+  /** Auth scheme advertised for inbound calls. */
+  serverAuthScheme: A2AAuthScheme;
+  remotes: A2ARemoteAgent[];
+  /** Timeout (ms) for a delegated remote task before it is abandoned. */
+  taskTimeoutMs: number;
+  /** Max remote tasks to run concurrently across all delegates. */
+  maxConcurrentTasks: number;
+}
+
 // --- Agent Config interfaces ---
 
 export interface ResolvedCronConfig {
@@ -386,6 +455,13 @@ export interface AgentConfig {
    * graphs remain compatible without a backfill.
    */
   reflection?: ResolvedReflectionConfig | null;
+  /**
+   * Optional A2A (Agent-to-Agent) interop config. When omitted or `null`, the
+   * agent neither publishes an agent card nor registers remote delegates. At
+   * most one A2A node binds to an agent. Optional so existing AgentConfig
+   * fixtures and serialized graphs remain compatible without a backfill.
+   */
+  a2a?: ResolvedA2AConfig | null;
 
   /** Working directory for shell commands (exec tool). Independent of storage path. */
   workspacePath: string | null;

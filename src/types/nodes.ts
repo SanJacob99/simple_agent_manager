@@ -1,6 +1,12 @@
 import type { Node } from '@xyflow/react';
 import type { ModelCapabilityOverrides } from './model-metadata';
-import type { SystemPromptMode } from '../../shared/agent-config';
+import type {
+  SystemPromptMode,
+  A2ARole,
+  A2AAuthScheme,
+  A2ASkillAdvert,
+  A2ARemoteAgent,
+} from '../../shared/agent-config';
 import type { SubAgentOverridableField } from '../../shared/sub-agent-types';
 import type { AgentCoordinationConfig } from '../../shared/coordination-types';
 
@@ -23,7 +29,8 @@ export type NodeType =
   | 'structuredOutput'
   | 'budget'
   | 'evals'
-  | 'reflection';
+  | 'reflection'
+  | 'a2a';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -735,6 +742,51 @@ export interface ReflectionNodeData {
   injectRubricIntoPrompt: boolean;
 }
 
+// --- A2A (Agent-to-Agent) Interop Node ---
+
+// Re-export the shared A2A sub-types so node/editor code can import them from
+// the node module alongside the node data interface.
+export type { A2ARole, A2AAuthScheme, A2ASkillAdvert, A2ARemoteAgent };
+
+/**
+ * Agent-to-Agent (A2A) interop. Exposes this agent as an A2A server (publishing
+ * an agent card and accepting remote task envelopes) and/or registers remote A2A
+ * agents as callable delegates. A2A is the emerging cross-framework protocol for
+ * agent interop (agent cards, JSON-RPC task/message envelopes, streaming
+ * updates), complementing MCP (tools) and the in-process `agentComm` bus.
+ */
+export interface A2ANodeData {
+  [key: string]: unknown;
+  type: 'a2a';
+  label: string;
+  /** Master toggle. When false the node is wired but no card is served and no delegate registered. */
+  enabled: boolean;
+  /** Whether this agent acts as an A2A server, client, or both. */
+  role: A2ARole;
+  // --- Server (publishing this agent) ---
+  /** Name advertised on the published agent card. Empty falls back to `label`. */
+  agentName: string;
+  /** Description advertised on the card. */
+  agentDescription: string;
+  /** Version string for the card (semver-ish). */
+  agentVersion: string;
+  /** Skills advertised on the card. */
+  advertisedSkills: A2ASkillAdvert[];
+  /** Advertise SSE streaming (`message/stream`) support on the card. */
+  streaming: boolean;
+  /** Advertise push-notification (webhook) support on the card. */
+  pushNotifications: boolean;
+  /** Auth scheme advertised for inbound calls. */
+  serverAuthScheme: A2AAuthScheme;
+  // --- Client (delegating to remotes) ---
+  /** Remote A2A agents registered as callable delegates. */
+  remotes: A2ARemoteAgent[];
+  /** Timeout (ms) for a delegated remote task before it is abandoned. */
+  taskTimeoutMs: number;
+  /** Max remote tasks to run concurrently across all delegates. */
+  maxConcurrentTasks: number;
+}
+
 // --- Sub-Agent Node ---
 
 export interface SubAgentNodeData {
@@ -775,6 +827,7 @@ export type FlowNodeData =
   | StructuredOutputNodeData
   | BudgetNodeData
   | EvalsNodeData
-  | ReflectionNodeData;
+  | ReflectionNodeData
+  | A2ANodeData;
 
 export type AppNode = Node<FlowNodeData>;
