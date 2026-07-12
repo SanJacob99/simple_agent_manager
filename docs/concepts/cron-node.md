@@ -3,7 +3,7 @@
 > Time-triggered agent runs on a configurable schedule.
 
 <!-- source: src/types/nodes.ts#CronNodeData -->
-<!-- last-verified: 2026-05-15 -->
+<!-- last-verified: 2026-07-12 -->
 
 ## Overview
 
@@ -18,9 +18,13 @@ weekday`) and is parsed by `node-cron`. Each cron node attached to an
 agent runs independently, so an agent can have several schedules with
 different prompts.
 
-Crons are real but kept off the default sidebar palette in some earlier
-builds because the runtime was being verified end-to-end. The scheduler,
-the queueing path, and tests are now in place — see Runtime Behavior.
+> **Status:** the node, schema resolution, and the standalone
+> [`CronScheduler`](../../server/scheduling/cron-scheduler.ts) class are
+> implemented and unit-tested, but nothing in `server/index.ts` or
+> `AgentManager` constructs a `CronScheduler` or calls `.reconcile()` — a
+> configured cron node does not currently register a job or fire in the
+> running server. Treat this node as schema-ahead-of-wiring (see
+> `CLAUDE.md`) until that integration lands.
 
 ## Configuration
 
@@ -41,27 +45,31 @@ Properties are derived from the TypeScript interface in
 ## Runtime Behavior
 
 `graph-to-agent.ts` resolves connected `cron` nodes into
-`ResolvedCronConfig[]` on the `AgentConfig`. The
-[`CronScheduler`](../../server/scheduling/cron-scheduler.ts) reconciles
-the current schedule list against running jobs whenever the agent config
-changes:
+`ResolvedCronConfig[]` on the `AgentConfig`. Nothing currently consumes
+that list at runtime — see the Status note above.
+
+If/when a `CronScheduler` is constructed and wired to an agent's
+coordinator, `reconcile(agentId, crons)` would keep `node-cron` jobs in
+sync with the resolved config:
 
 - New crons get a `node-cron` job registered.
 - Removed or disabled crons get their job stopped.
 - Each tick calls into the [`RunCoordinator`](../../server/agents/run-coordinator.ts)
-  with the cron's `prompt` and `sessionMode`, and a per-run timeout
-  derived from `maxRunDurationMs`.
+  with the cron's `prompt` on session key `cron:<cronNodeId>`, and sets a
+  `setTimeout` to `coordinator.abort()` the run after `maxRunDurationMs`.
 
-`sessionMode: 'persistent'` keeps the cron's session-key stable across
-ticks, so the agent's context engine and memory see one continuous
-conversation. `sessionMode: 'ephemeral'` allocates a fresh session per
-tick — useful when each run should be independent (cron-driven ingest,
-report generation).
+Two fields on the resolved config are not yet read by
+`CronScheduler.executeCronTick`, despite being present on
+`ResolvedCronConfig` and settable from the node's property editor:
 
-`retentionDays` is read by the maintenance scheduler when present. The
-storage engine's pruning behavior is partial today (see
-[`docs/audit-2026-05-09.md`](../audit-2026-05-09.md) §2.5), so verify
-end-to-end retention if your deployment depends on it.
+- `sessionMode` — the scheduler always dispatches on the same
+  `cron:<cronNodeId>` session key; there is no branch for `'ephemeral'`
+  that would allocate a fresh session per tick.
+- `retentionDays` — no maintenance path currently reads this field. The
+  storage engine has a separate, unrelated `cleanResetArchives(retentionDays, dryRun)`
+  method for reset-archive pruning (see
+  [`docs/audit-2026-05-09.md`](../audit-2026-05-09.md) §2.5); it is not
+  cron-transcript-specific.
 
 ## Connections
 

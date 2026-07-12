@@ -3,7 +3,7 @@
 > Attaches a curated external integration to an agent — a named entry from the connector catalog that resolves into an MCP server under the hood.
 
 <!-- source: src/types/nodes.ts#ConnectorsNodeData -->
-<!-- last-verified: 2026-05-24 -->
+<!-- last-verified: 2026-07-12 -->
 
 ## Overview
 
@@ -11,7 +11,9 @@ The Connector Node is a curated MCP preset. Each connector is a named entry in t
 
 This is distinct from the MCP node, which lets power users wire arbitrary MCP servers directly. Both kinds of nodes coexist and end up in the same `mcps[]` collection at runtime.
 
-Multiple Connector Nodes can connect to a single agent — each one launches its own MCP server.
+Multiple Connector Nodes can connect to a single agent — each one resolves to its own `ResolvedMcpConfig` entry.
+
+> **Status:** like the [MCP node](mcp-node.md), the connector node's schema and config resolution are implemented, but there is no MCP client runtime yet (no `server/runtime/**mcp**` module) — nothing under `server/` actually spawns a connector's MCP server, registers its tools, or emits `mcp:status`. Resolving to `mcps[]` is as far as the pipeline currently goes.
 
 ## Configuration
 
@@ -35,7 +37,7 @@ During config resolution (`src/utils/graph-to-agent.ts`), each connector node co
    - `toolPrefix` = the catalog entry's `toolPrefix` (e.g. `github_`).
    - `allowedTools` = `[]` (no whitelist).
    - `autoConnect` = `true`.
-3. Appended to the same `mcps[]` the MCP node populates. The MCP runtime under `server/runtime/...` handles spawn, tool registration, and `mcp:status` events.
+3. Appended to the same `mcps[]` the MCP node populates. Nothing currently consumes that list at runtime — see the Status note above.
 
 The connector node has no live connection-status indicator yet.
 
