@@ -3,7 +3,7 @@
 > Provides filesystem-based persistence for agent sessions, routed transcripts, and memory files.
 
 <!-- source: src/types/nodes.ts#StorageNodeData -->
-<!-- last-verified: 2026-05-29 -->
+<!-- last-verified: 2026-07-13 -->
 
 ## Overview
 
@@ -38,7 +38,7 @@ Only one Storage Node can be connected per agent. For embedding or semantic retr
 | `pruneAfterDays` | `number` | `30` | Sessions last updated more than this many days ago are pruned during maintenance |
 | `maxEntries` | `number` | `500` | Max session entries to retain; oldest are removed when exceeded. `0` = unlimited |
 | `rotateBytes` | `number` | `10485760` | `sessions.json` is rotated (archived and replaced) when it exceeds this size in bytes |
-| `resetArchiveRetentionDays` | `number` | `30` | How long archived `sessions.json` snapshots are kept before deletion |
+| `resetArchiveRetentionDays` | `number` | `30` | Intended to control how long archived `sessions.json` snapshots are kept before deletion. Currently has no effect: `cleanResetArchives()` only deletes files matching a `.reset.` name pattern, but rotation (`rotateStoreFile()`) writes archives as `sessions.<timestamp>.json.bak`, which never matches — rotated archives accumulate with no cleanup path. |
 | `maxDiskBytes` | `number` | `0` | Total disk budget for the agent's storage directory in bytes. `0` = unlimited |
 | `highWaterPercent` | `number` | `80` | When `maxDiskBytes` is set, maintenance evicts sessions until usage drops below this percentage of the budget |
 | `maintenanceIntervalMinutes` | `number` | `60` | How often the background maintenance task runs, in minutes |
