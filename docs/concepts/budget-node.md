@@ -3,7 +3,7 @@
 > Enforces spend and rate ceilings on an agent — USD per run/day, tokens and tool calls per run, runs per minute — with a warn / downshift / block degrade policy.
 
 <!-- source: src/types/nodes.ts#BudgetNodeData -->
-<!-- last-verified: 2026-06-28 -->
+<!-- last-verified: 2026-07-13 -->
 
 ## Overview
 
@@ -38,7 +38,7 @@ Properties are derived from `src/types/nodes.ts#BudgetNodeData` and defaults fro
 
 - **`beginRun(runId, now)`** — registers a run start and enforces `maxRunsPerMinute`.
 - **`recordUsage(runId, modelId, usage, now)`** — accrues tokens and USD cost for a turn, then re-checks the run ceilings.
-- **`recordToolCall(runId)`** — accrues one tool call and re-checks `maxToolCallsPerRun`.
+- **`recordToolCall(runId)`** — accrues one tool call, then re-checks all four run-scoped ceilings (`maxUsdPerRun`, `maxUsdPerDay`, `maxTokensPerRun`, `maxToolCallsPerRun`) via the same private `checkRun()` used by `recordUsage`, not just `maxToolCallsPerRun`.
 - **`endRun(runId)`** — drops per-run accounting; the rolling windows are retained.
 
 Each call returns a `BudgetDecision` — `{ ok, action, violations, downshiftModelId }`. The `action` is the strictest implied by the violations (`block` > `downshift` > `warn`); a `downshift` policy with no configured model degrades to `warn`. Rolling windows are computed from caller-supplied timestamps, so the ledger is deterministic and testable without touching the clock.
