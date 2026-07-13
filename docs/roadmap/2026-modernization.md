@@ -97,15 +97,27 @@ with large stable system prompts. Add cache-breakpoint controls to the Agent and
 Context Engine nodes (mark system prompt / tool catalog / memory as cacheable),
 resolved into the model request in `server/runtime/model-resolver.ts`.
 
-## 8. Agent-to-Agent (A2A) interop node — *proposed*
+## 8. Agent-to-Agent (A2A) interop node — *scaffolded*
 
 `agentComm` is an in-process bus; `subAgent` is in-tree. Neither lets this agent
 talk to agents built on *other* frameworks. The emerging Agent-to-Agent (A2A)
 protocol (agent cards, task/message envelopes, streaming updates) is becoming
 the lingua franca for cross-framework agent interop, much as MCP standardized
-tools. An `a2a` node would expose this agent as an A2A server (publish an agent
-card, accept remote tasks) and/or register remote A2A agents as callable
-delegates — resolved into `AgentConfig.a2a`, served from `server/a2a/`.
+tools. The `a2a` node exposes this agent as an A2A server (publish an agent
+card, accept remote tasks) and/or registers remote A2A agents as callable
+delegates.
+
+- Node: `a2a` (`src/types/nodes.ts#A2ANodeData`)
+- Resolved: `AgentConfig.a2a` (`shared/agent-config.ts#ResolvedA2AConfig`)
+- Engine: `server/a2a/a2a-engine.ts` (dependency-free agent-card build/validate,
+  message-envelope parsing, task lifecycle, delegate resolution, and outbound
+  auth-header assembly)
+- Doc: `docs/concepts/a2a-node.md`
+- **Remaining:** mount the A2A HTTP/SSE surface under `serverPath` (serve the
+  card at `/.well-known/agent-card.json`, accept `message/send`, stream task
+  status), fetch + `validateAgentCard` remote cards, and expose a delegate tool
+  that calls `selectRemote` / `authHeaders` — all wired through
+  `server/agents/run-coordinator.ts`.
 
 ## 9. Reflection / Self-critique node — *scaffolded*
 
@@ -150,5 +162,6 @@ Budget node (cost safety) and Guardrails (content safety) with execution safety.
 5. **Prompt-cache** (#7) is an incremental agent-node enhancement, land opportunistically.
 6. **Reflection** (#9) is scaffolded — next is wiring the critique/revise loop
    into the run-coordinator finalize step; it shares a rubric with **Evals** (#2).
-7. **A2A** (#8) and **Sandbox** (#10) are the next design wave — A2A for
-   cross-framework interop, Sandbox for execution safety.
+7. **A2A** (#8) is scaffolded — next is mounting the HTTP/SSE server surface
+   and the delegate tool into the run-coordinator (see its *Remaining*).
+   **Sandbox** (#10) remains the next design wave for execution safety.
