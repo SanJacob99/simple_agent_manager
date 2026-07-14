@@ -3,7 +3,7 @@
 > Time-triggered agent runs on a configurable schedule.
 
 <!-- source: src/types/nodes.ts#CronNodeData -->
-<!-- last-verified: 2026-05-15 -->
+<!-- last-verified: 2026-07-14 -->
 
 ## Overview
 
@@ -30,10 +30,10 @@ the queueing path, and tests are now in place — see Runtime Behavior.
 | `schedule` | `string` | `"0 9 * * *"` | Standard 5-field cron expression. |
 | `prompt` | `string` | `""` | The prompt the agent receives when the schedule fires. |
 | `enabled` | `boolean` | `true` | When false, the schedule is parsed but never dispatched. |
-| `sessionMode` | `"persistent" \| "ephemeral"` | `"persistent"` | `persistent` reuses a single session per cron node so context carries across ticks. `ephemeral` starts a fresh session every fire. |
+| `sessionMode` | `"persistent" \| "ephemeral"` | `"persistent"` | Schema/UI only today — `CronScheduler.executeCronTick()` never reads this field; every tick dispatches with the fixed session key `cron:<cronNodeId>` regardless of the configured mode. See Runtime Behavior. |
 | `timezone` | `string` | `"local"` | IANA timezone (e.g. `Europe/Berlin`) or `local` to use the server's timezone. |
 | `maxRunDurationMs` | `number` | `300000` | Per-tick timeout. The run is aborted if it exceeds this. |
-| `retentionDays` | `number` | `7` | How long the cron's transcripts are retained when storage maintenance runs. |
+| `retentionDays` | `number` | `7` | Schema/UI only today — resolved onto `AgentConfig.crons`, but no server code reads it. See Runtime Behavior. |
 
 Properties are derived from the TypeScript interface in
 `src/types/nodes.ts` and defaults from `src/utils/default-nodes.ts`.
@@ -49,19 +49,25 @@ changes:
 - New crons get a `node-cron` job registered.
 - Removed or disabled crons get their job stopped.
 - Each tick calls into the [`RunCoordinator`](../../server/agents/run-coordinator.ts)
-  with the cron's `prompt` and `sessionMode`, and a per-run timeout
-  derived from `maxRunDurationMs`.
+  with the cron's `prompt` and a per-run timeout derived from
+  `maxRunDurationMs`.
 
-`sessionMode: 'persistent'` keeps the cron's session-key stable across
-ticks, so the agent's context engine and memory see one continuous
-conversation. `sessionMode: 'ephemeral'` allocates a fresh session per
-tick — useful when each run should be independent (cron-driven ingest,
-report generation).
+**`sessionMode` is not implemented at runtime.** `CronScheduler.executeCronTick()`
+always dispatches with the fixed session key `cron:<cronNodeId>` — it never
+branches on `config.sessionMode`. Every tick reuses the same session
+regardless of whether the node is set to `persistent` or `ephemeral`; the
+field is carried through resolution (`ResolvedCronConfig.sessionMode`) and
+exposed in the property editor, but nothing downstream reads it. Treat
+`sessionMode` as a schema/UI placeholder for now.
 
-`retentionDays` is read by the maintenance scheduler when present. The
-storage engine's pruning behavior is partial today (see
-[`docs/audit-2026-05-09.md`](../audit-2026-05-09.md) §2.5), so verify
-end-to-end retention if your deployment depends on it.
+**`retentionDays` is not read anywhere.** The maintenance scheduler
+(`server/scheduling/maintenance-scheduler.ts`) only calls
+`StorageEngine.runMaintenance()`, which prunes using the **Storage node's**
+`pruneAfterDays` / `resetArchiveRetentionDays` — not the cron node's
+`retentionDays`. `ResolvedCronConfig.retentionDays` is resolved onto
+`AgentConfig.crons` but has no reader outside test fixtures. Configuring it
+today has no effect; retention for cron-driven runs is governed entirely by
+the connected Storage node.
 
 ## Connections
 

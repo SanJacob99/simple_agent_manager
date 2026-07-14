@@ -3,12 +3,12 @@
 > Manages token budgets, compaction, and transcript-aware context assembly so conversations stay inside the model's context window.
 
 <!-- source: src/types/nodes.ts#ContextEngineNodeData -->
-<!-- last-verified: 2026-05-29 -->
+<!-- last-verified: 2026-07-14 -->
 <!-- token-budget-inheritance, compaction-trigger-modes, tooltips -->
 
 ## Overview
 
-The Context Engine Node controls how an agent assembles prompt context, when it compacts older conversation state, and whether RAG content is allowed into that budget. It plugs into `pi-agent-core` through `transformContext`, so the agent can trim or summarize history before each model call.
+The Context Engine Node controls how an agent assembles prompt context and when it compacts older conversation state. It plugs into `pi-agent-core` through `transformContext`, so the agent can trim or summarize history before each model call.
 
 In the current implementation, compaction is no longer only an in-memory concern. When the runtime binds an active session transcript, summary-style compaction writes a real `compaction` entry into the session file through `SessionManager`. That allows resumed sessions to rebuild context from persisted compaction summaries instead of depending on a still-live process.
 
@@ -25,9 +25,11 @@ In the current implementation, compaction is no longer only an in-memory concern
 | `compactionThreshold` | `number` | `0.8` | In `threshold` mode, the 0–1 ratio of the post-reservation budget at which compaction fires. In `manual` mode, an absolute token count surfaced in the panel preview. Ignored in `auto` mode. |
 | `postCompactionTokenTarget` | `number` | `50000` | Token ceiling the assembled context should land at after compaction runs. Clamped to `tokenBudget - reservedForResponse`. |
 | `autoFlushBeforeCompact` | `boolean` | `true` | Flush pending buffers before compaction |
-| `ragEnabled` | `boolean` | `false` | Whether to enable RAG retrieval |
-| `ragTopK` | `number` | `5` | Number of RAG results to retrieve |
-| `ragMinScore` | `number` | `0.7` | Minimum similarity threshold for RAG results |
+| `ragEnabled` | `boolean` | `false` | Schema/UI only today — see note below |
+| `ragTopK` | `number` | `5` | Schema/UI only today — see note below |
+| `ragMinScore` | `number` | `0.7` | Schema/UI only today — see note below |
+
+> **RAG fields are not wired into the runtime.** `ragEnabled`/`ragTopK`/`ragMinScore` round-trip through `ResolvedContextEngineConfig`, and the property panel even hints at a required Vector Database connection, but `ContextEngine` (`server/runtime/context-engine.ts`) never reads any of the three fields — there is no retrieval call and no link to a connected Vector Database node's search. Configuring them today has no runtime effect.
 
 ## Runtime Behavior
 

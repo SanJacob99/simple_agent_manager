@@ -3,7 +3,7 @@
 > Configurable input/output safety checks that block or warn before a turn reaches the model and after the assistant replies.
 
 <!-- source: src/types/nodes.ts#GuardrailsNodeData -->
-<!-- last-verified: 2026-05-15 -->
+<!-- last-verified: 2026-07-14 -->
 
 ## Overview
 
@@ -31,7 +31,7 @@ Properties are derived from `src/types/nodes.ts#GuardrailsNodeData` and defaults
 
 ## Runtime Behavior
 
-`src/utils/graph-to-agent.ts` resolves each connected Guardrails node into a `ResolvedGuardrailConfig` entry on `AgentConfig.guardrails` (`shared/agent-config.ts`). The list is optional — agents without a Guardrails node have `guardrails === undefined` and the runtime short-circuits.
+`src/utils/graph-to-agent.ts` resolves each connected Guardrails node into a `ResolvedGuardrailConfig` entry on `AgentConfig.guardrails` (`shared/agent-config.ts`). The resolver always produces an array — agents without a Guardrails node get `guardrails === []`, not `undefined` — and the runtime's `evaluateGuardrails` short-circuits whenever that array is missing or empty.
 
 `server/runtime/guardrails-engine.ts` evaluates the rules:
 
@@ -45,7 +45,7 @@ Every violation (block or warn) is logged via `log('guardrails', …)` and emitt
 
 ## Connections
 
-Peripheral → Agent. Multiple Guardrails nodes may connect to a single Agent. Sub-Agent nodes inherit their parent's resolved guardrails when the run-coordinator builds the child config.
+Peripheral → Agent. Multiple Guardrails nodes may connect to a single Agent. Sub-Agent nodes inherit their parent's resolved guardrails via `buildSyntheticAgentConfig` in `server/agents/sub-agent-executor.ts`, invoked from the `sessions_spawn` tool implementation (`server/sessions/session-tools.ts`) — the run-coordinator only wires the `SessionToolContext` that makes this possible.
 
 ## Example
 
