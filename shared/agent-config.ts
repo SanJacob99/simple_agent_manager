@@ -286,6 +286,48 @@ export interface ResolvedReflectionConfig {
   injectRubricIntoPrompt: boolean;
 }
 
+// --- Agent-to-Agent (A2A) Interop ---
+
+export type A2AAuthScheme = 'none' | 'bearer' | 'apiKey';
+
+/** A remote A2A agent this agent can discover and delegate tasks to. */
+export interface ResolvedA2ARemoteAgent {
+  name: string;
+  cardUrl: string;
+  description: string;
+}
+
+/**
+ * Resolved A2A interop surface. At most one A2A node binds to an agent — it
+ * configures the single inbound server surface and the set of outbound remote
+ * delegates — so this resolves to a single optional value on `AgentConfig`
+ * (like structured output and reflection) rather than a list.
+ *
+ * The engine (`server/a2a/a2a-engine.ts`) turns this into an Agent Card and
+ * owns envelope validation and the task-state machine; the run-coordinator /
+ * an Express route own the actual HTTP surface.
+ */
+export interface ResolvedA2AConfig {
+  a2aNodeId: string;
+  label: string;
+  enabled: boolean;
+  // Server surface
+  exposeAsServer: boolean;
+  agentName: string;
+  agentDescription: string;
+  serverPath: string;
+  version: string;
+  streaming: boolean;
+  pushNotifications: boolean;
+  stateTransitionHistory: boolean;
+  defaultInputModes: string[];
+  defaultOutputModes: string[];
+  publishSkills: boolean;
+  authScheme: A2AAuthScheme;
+  // Client surface
+  remoteAgents: ResolvedA2ARemoteAgent[];
+}
+
 // --- Agent Config interfaces ---
 
 export interface ResolvedCronConfig {
@@ -386,6 +428,13 @@ export interface AgentConfig {
    * graphs remain compatible without a backfill.
    */
   reflection?: ResolvedReflectionConfig | null;
+  /**
+   * Optional Agent-to-Agent (A2A) interop surface. When omitted or `null`, the
+   * agent neither publishes an Agent Card nor registers remote A2A delegates. At
+   * most one A2A node binds to an agent. Optional so existing AgentConfig
+   * fixtures and serialized graphs remain compatible without a backfill.
+   */
+  a2a?: ResolvedA2AConfig | null;
 
   /** Working directory for shell commands (exec tool). Independent of storage path. */
   workspacePath: string | null;
