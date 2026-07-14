@@ -3,7 +3,7 @@
 > Attaches a curated external integration to an agent — a named entry from the connector catalog that resolves into an MCP server under the hood.
 
 <!-- source: src/types/nodes.ts#ConnectorsNodeData -->
-<!-- last-verified: 2026-05-24 -->
+<!-- last-verified: 2026-07-14 -->
 
 ## Overview
 
@@ -27,7 +27,7 @@ Defaults come from `src/utils/default-nodes.ts`.
 
 During config resolution (`src/utils/graph-to-agent.ts`), each connector node connected to the agent is:
 
-1. Looked up in `CONNECTOR_CATALOG` by `connectorId`. Unknown / empty IDs are skipped here and surfaced separately by `validateAgentRuntimeGraph` as `unknown_connector` / `unselected_connector` errors.
+1. Looked up in `CONNECTOR_CATALOG` by `connectorId`. Unknown / empty IDs are skipped here. A separate helper, `validateAgentRuntimeGraph`, does classify these as `unknown_connector` / `unselected_connector` errors, but that function is only called from its own test file today (`src/utils/graph-to-agent.test.ts`) — no UI component or store invokes it, so an unselected or unknown connector is silently skipped in the running app with no visible error, badge, or toast yet.
 2. Materialized into a `ResolvedMcpConfig`:
    - `mcpNodeId` = the connector node's id.
    - `transport`, `command`, `args`, `url` = the catalog entry's `mcp` template.

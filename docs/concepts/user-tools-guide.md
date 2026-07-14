@@ -1,6 +1,6 @@
 # User-Installed Tools
 
-<!-- last-verified: 2026-04-23 -->
+<!-- last-verified: 2026-07-14 -->
 
 SAM lets you add tools to your own install without forking the main
 codebase. Drop a `*.module.ts` file under `server/tools/user/`,
@@ -418,9 +418,9 @@ which gives us room to evolve without churning user code.
   frontend: render a form from the TypeBox schema into the Tools
   node's per-tool editor area. Until then, users rely on
   `AgentConfig` ad-hoc fields + env vars.
-- **Aliases.** Built-ins can declare aliases (`bash` → `exec`). Should
-  user tools? **Lean: no — forces a unique top-level name and avoids
-  confusing collisions.**
+- **Aliases.** Built-ins can declare aliases (`bash` → `exec`,
+  `code_interpreter` → `code_execution`). Should user tools? **Lean: no
+  — forces a unique top-level name and avoids confusing collisions.**
 - **Stable API for shared utilities.** Tools that want to call the
   storage engine, or read other agent state, need an exported API.
   **Lean: don't expose anything beyond `RuntimeHints` + `AgentConfig`

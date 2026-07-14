@@ -67,7 +67,7 @@ Concept docs live in `docs/concepts/` with one file per documented node type. Th
 1. Read `docs/concepts/_manifest.json` to find the concept doc for the changed node type
 2. Update the relevant sections (Configuration table, Defaults, Runtime Behavior, or Examples)
 3. Update the `<!-- last-verified: YYYY-MM-DD -->` comment with today's date
-4. If you change `cron`, create `docs/concepts/cron-node.md` from `docs/concepts/_template.md` and add it to the manifest first. The schema includes `cron`, but the manifest does not yet.
+4. `cron`'s concept doc (`docs/concepts/cron-node.md`) and manifest entry already exist — update them like any other node type when `cron` changes.
 
 ## Conventions
 

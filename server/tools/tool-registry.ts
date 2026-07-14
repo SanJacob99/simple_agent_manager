@@ -55,9 +55,8 @@ export const TOOL_MODULES: ReadonlyArray<ToolModule<any>> = _TOOL_MODULES;
 
 /**
  * Aliases — different user-facing names that map to the same registered
- * module. `bash` is the only alias today (historical: `bash` and `exec`
- * have always been the same underlying tool). Aliases are static; they
- * are registered without a filesystem scan.
+ * module (`bash` → `exec`, `code_interpreter` → `code_execution`).
+ * Aliases are static; they are registered without a filesystem scan.
  */
 export const TOOL_ALIASES: Readonly<Record<string, string>> = {
   bash: 'exec',
