@@ -3,13 +3,13 @@
 > Attaches a dataset of input → expected cases to an agent and scores its replies with deterministic graders or an LLM judge, for eval-driven development and regression gating.
 
 <!-- source: src/types/nodes.ts#EvalsNodeData -->
-<!-- last-verified: 2026-06-29 -->
+<!-- last-verified: 2026-07-15 -->
 
 ## Overview
 
 The Evals node turns an agent into something you can measure. It holds a suite of cases — each an `input` prompt paired with an `expected` reference — plus a grader that decides whether a reply is correct. Eval-driven agent development is now table stakes: this brings the builder in line with OpenAI Evals, Braintrust, Promptfoo, and LangSmith datasets.
 
-A suite is run offline by the `sam eval` runner (and a Settings evals panel), not on the live chat path. The runner replays each case through the resolved agent headlessly, scores the reply, and produces a weighted suite score with a pass/fail verdict. Five graders are supported: `exact_match`, `contains`, `regex`, `json_schema` (the reply must satisfy a JSON Schema — reusing the same dependency-free validator as the Structured Output node), and `llm_judge` (a judge model scores the reply against a rubric).
+A suite is intended to be run offline by a `sam eval` runner (and a Settings evals panel), not on the live chat path, but neither of those entry points exists yet — see the Status note below. Once wired, the runner would replay each case through the resolved agent headlessly, score the reply, and produce a weighted suite score with a pass/fail verdict. Five graders are supported: `exact_match`, `contains`, `regex`, `json_schema` (the reply must satisfy a JSON Schema — reusing the same dependency-free validator as the Structured Output node), and `llm_judge` (a judge model scores the reply against a rubric).
 
 You can attach more than one Evals node to a single agent — for example a fast smoke suite plus a fuller regression suite. Each resolves to its own entry and is executed independently. With `failOnRegression` set, the runner compares a suite's score against the previously recorded best and flags a regression if it drops, enabling eval gating in CI.
 

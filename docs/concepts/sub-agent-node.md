@@ -3,7 +3,7 @@
 > A peripheral that declares a named, one-shot sub-agent the parent agent can dispatch via `sessions_spawn`.
 
 <!-- source: src/types/nodes.ts#SubAgentNodeData -->
-<!-- last-verified: 2026-05-29 -->
+<!-- last-verified: 2026-07-15 -->
 
 ## Overview
 
@@ -54,6 +54,7 @@ The Sub-Agent Node attaches to an Agent Node as a peripheral. Each declared sub-
 | Context Engine | None — sub-agents are one-shot |
 | Skills | Parent ∪ dedicated; dedicated wins on `id` collision |
 | MCP | Parent ∪ dedicated; dedicated wins on `mcpNodeId` collision |
+| Guardrails | Inherited from parent (`guardrails: parent.guardrails` in `server/agents/sub-agent-executor.ts`) |
 | Connectors / Vector DB / AgentComm / Cron | Never apply |
 
 ## Example
