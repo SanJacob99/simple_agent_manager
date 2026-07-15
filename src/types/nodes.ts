@@ -23,7 +23,8 @@ export type NodeType =
   | 'structuredOutput'
   | 'budget'
   | 'evals'
-  | 'reflection';
+  | 'reflection'
+  | 'a2a';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -735,6 +736,84 @@ export interface ReflectionNodeData {
   injectRubricIntoPrompt: boolean;
 }
 
+// --- A2A (Agent-to-Agent Interop) Node ---
+
+/**
+ * How this node participates in the Agent-to-Agent (A2A) protocol.
+ * - `server`: publish this agent as an A2A server (serve an agent card and
+ *   accept remote tasks). Makes the agent callable by other frameworks.
+ * - `client`: register remote A2A agents as callable delegates only.
+ * - `both`: do both — expose this agent and call remote ones.
+ */
+export type A2ARole = 'server' | 'client' | 'both';
+
+/**
+ * Auth scheme advertised on the agent card (server role) or used when calling a
+ * remote agent (client role). `bearer`/`apiKey` carry a header value or the name
+ * of an env var to read it from; `oauth2` is a placeholder for the flow config.
+ */
+export type A2AAuthScheme = 'none' | 'bearer' | 'apiKey' | 'oauth2';
+
+/** A remote A2A agent this node can delegate tasks to. */
+export interface A2ARemoteAgent {
+  /** Stable local id (for React keys and delegate attribution). */
+  id: string;
+  /** Friendly alias; also the basis for the generated delegate tool name. */
+  name: string;
+  /** URL of the remote agent card or its base origin (the `.well-known` path is derived). */
+  cardUrl: string;
+  /** Auth scheme used when calling this remote agent. */
+  authScheme: A2AAuthScheme;
+  /** Header value or env-var name carrying the credential. Empty for `none`. */
+  authValue: string;
+}
+
+/**
+ * Agent-to-Agent (A2A) interop. `agentComm` is an in-process bus and `subAgent`
+ * is in-tree; neither lets this agent talk to agents built on *other*
+ * frameworks. The A2A protocol (agent cards, task/message envelopes, streaming
+ * updates) is the emerging lingua franca for cross-framework interop, much as
+ * MCP standardized tools. This node exposes the agent as an A2A server and/or
+ * registers remote A2A agents as callable delegates.
+ */
+export interface A2ANodeData {
+  [key: string]: unknown;
+  type: 'a2a';
+  label: string;
+  /** Master toggle. When false the node is wired but neither served nor called. */
+  enabled: boolean;
+  /** Whether this node serves this agent, calls remote agents, or both. */
+  role: A2ARole;
+  // --- Server role (expose this agent) ---
+  /** `name` on the published agent card. Empty falls back to the agent's name. */
+  serverName: string;
+  /** `description` on the published agent card. */
+  serverDescription: string;
+  /** Path the agent card is served from (e.g. `/.well-known/agent.json`). */
+  discoveryPath: string;
+  /** `version` string on the agent card. */
+  version: string;
+  /** Advertise incremental streaming (`capabilities.streaming`). */
+  streaming: boolean;
+  /** Advertise push notifications (`capabilities.pushNotifications`). */
+  pushNotifications: boolean;
+  /** Auth scheme remote callers must satisfy to reach this server. */
+  serverAuthScheme: A2AAuthScheme;
+  /** MIME types the agent accepts as input (e.g. `text/plain`). */
+  defaultInputModes: string[];
+  /** MIME types the agent can produce as output. */
+  defaultOutputModes: string[];
+  // --- Client role (call remote agents) ---
+  /** Remote A2A agents registered as delegates. */
+  remoteAgents: A2ARemoteAgent[];
+  /** Expose each remote agent to the model as an `a2a_send_*` delegate tool. */
+  exposeAsTools: boolean;
+  /** Max remote tasks in flight at once across all delegates. */
+  maxConcurrentTasks: number;
+  /** Per-task wall-clock ceiling before a remote delegate call is abandoned. */
+  taskTimeoutMs: number;
+}
+
 // --- Sub-Agent Node ---
 
 export interface SubAgentNodeData {
@@ -775,6 +854,7 @@ export type FlowNodeData =
   | StructuredOutputNodeData
   | BudgetNodeData
   | EvalsNodeData
-  | ReflectionNodeData;
+  | ReflectionNodeData
+  | A2ANodeData;
 
 export type AppNode = Node<FlowNodeData>;
