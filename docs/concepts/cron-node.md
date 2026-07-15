@@ -3,7 +3,7 @@
 > Time-triggered agent runs on a configurable schedule.
 
 <!-- source: src/types/nodes.ts#CronNodeData -->
-<!-- last-verified: 2026-05-15 -->
+<!-- last-verified: 2026-07-15 -->
 
 ## Overview
 
@@ -52,16 +52,11 @@ changes:
   with the cron's `prompt` and `sessionMode`, and a per-run timeout
   derived from `maxRunDurationMs`.
 
-`sessionMode: 'persistent'` keeps the cron's session-key stable across
-ticks, so the agent's context engine and memory see one continuous
-conversation. `sessionMode: 'ephemeral'` allocates a fresh session per
-tick — useful when each run should be independent (cron-driven ingest,
-report generation).
+> **Not yet wired.** `sessionMode` and `retentionDays` are resolved onto `ResolvedCronConfig` but are not read by `CronScheduler.executeCronTick` (`server/scheduling/cron-scheduler.ts`), which always dispatches with a fixed `sessionKey: \`cron:${config.cronNodeId}\``. Every tick is effectively `persistent` regardless of the configured `sessionMode`, and no maintenance scheduler consumes the cron's `retentionDays` — the only retention pruning that exists (`StorageEngine.cleanResetArchives()`) is driven by an unrelated global `resetArchiveRetentionDays` storage setting. Treat both fields as schema-only until this is wired.
 
-`retentionDays` is read by the maintenance scheduler when present. The
-storage engine's pruning behavior is partial today (see
-[`docs/audit-2026-05-09.md`](../audit-2026-05-09.md) §2.5), so verify
-end-to-end retention if your deployment depends on it.
+`sessionMode: 'persistent'` is intended to keep the cron's session-key stable across ticks, so the agent's context engine and memory see one continuous conversation, and `sessionMode: 'ephemeral'` is intended to allocate a fresh session per tick — useful when each run should be independent (cron-driven ingest, report generation). Neither behavior is implemented yet (see the callout above).
+
+`retentionDays` is intended to bound how long the cron's transcripts are retained when storage maintenance runs, but nothing currently reads it (see the callout above).
 
 ## Connections
 
