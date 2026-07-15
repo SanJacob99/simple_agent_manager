@@ -1,6 +1,6 @@
 import type { AppNode } from '../types/nodes';
 import type { Edge } from '@xyflow/react';
-import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides, ResolvedGuardrailConfig, ResolvedTelemetryConfig, ResolvedStructuredOutputConfig, ResolvedBudgetConfig, ResolvedEvalsConfig, EvalGraderType, ResolvedReflectionConfig } from '../../shared/agent-config';
+import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides, ResolvedGuardrailConfig, ResolvedTelemetryConfig, ResolvedStructuredOutputConfig, ResolvedBudgetConfig, ResolvedEvalsConfig, EvalGraderType, ResolvedReflectionConfig, ResolvedA2AConfig } from '../../shared/agent-config';
 import { resolveToolNames, IMPLEMENTED_TOOL_NAMES } from '../../shared/resolve-tool-names';
 import { buildSystemPrompt } from '../../shared/system-prompt-builder';
 import { eligibleBundledSkills } from '../../shared/default-tool-skills';
@@ -543,6 +543,42 @@ export function resolveAgentConfig(
         }
       : null;
 
+  // --- A2A (Agent-to-Agent Interop) ---
+  // Each connected A2A node resolves to its own entry; a graph can carry a
+  // server node and several client nodes at once (like telemetry / guardrails).
+  // The node id is kept as `a2aNodeId` so served cards and delegate calls can be
+  // attributed back to a specific node.
+  const a2a: ResolvedA2AConfig[] = connectedNodes
+    .filter((n) => n.data.type === 'a2a')
+    .map((n) => {
+      if (n.data.type !== 'a2a') throw new Error('unreachable');
+      return {
+        a2aNodeId: n.id,
+        label: n.data.label,
+        enabled: n.data.enabled,
+        role: n.data.role,
+        serverName: n.data.serverName,
+        serverDescription: n.data.serverDescription,
+        discoveryPath: n.data.discoveryPath,
+        version: n.data.version,
+        streaming: n.data.streaming,
+        pushNotifications: n.data.pushNotifications,
+        serverAuthScheme: n.data.serverAuthScheme,
+        defaultInputModes: [...n.data.defaultInputModes],
+        defaultOutputModes: [...n.data.defaultOutputModes],
+        remoteAgents: n.data.remoteAgents.map((r) => ({
+          id: r.id,
+          name: r.name,
+          cardUrl: r.cardUrl,
+          authScheme: r.authScheme,
+          authValue: r.authValue,
+        })),
+        exposeAsTools: n.data.exposeAsTools,
+        maxConcurrentTasks: n.data.maxConcurrentTasks,
+        taskTimeoutMs: n.data.taskTimeoutMs,
+      };
+    });
+
   // --- MCP Servers ---
   // Each MCP node resolves to a ResolvedMcpConfig. The node id is kept as
   // `mcpNodeId` so the server can push `mcp:status` events back to the UI
@@ -793,6 +829,7 @@ export function resolveAgentConfig(
     budgets,
     evals,
     reflection,
+    a2a,
     // Exec tool cwd overrides agent-level workingDirectory when set
     workspacePath:
       (toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.exec?.cwd)

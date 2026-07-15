@@ -337,6 +337,26 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         onExhaustion: 'use_best',
         injectRubricIntoPrompt: false,
       };
+    case 'a2a':
+      return {
+        type: 'a2a',
+        label: 'A2A',
+        enabled: true,
+        role: 'both',
+        serverName: '',
+        serverDescription: '',
+        discoveryPath: '/.well-known/agent.json',
+        version: '0.1.0',
+        streaming: true,
+        pushNotifications: false,
+        serverAuthScheme: 'none',
+        defaultInputModes: ['text/plain'],
+        defaultOutputModes: ['text/plain'],
+        remoteAgents: [],
+        exposeAsTools: true,
+        maxConcurrentTasks: 4,
+        taskTimeoutMs: 60000,
+      };
     case 'subAgent':
       return {
         type: 'subAgent',
