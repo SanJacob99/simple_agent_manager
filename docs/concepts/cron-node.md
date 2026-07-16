@@ -3,7 +3,7 @@
 > Time-triggered agent runs on a configurable schedule.
 
 <!-- source: src/types/nodes.ts#CronNodeData -->
-<!-- last-verified: 2026-05-15 -->
+<!-- last-verified: 2026-07-16 -->
 
 ## Overview
 
@@ -18,9 +18,21 @@ weekday`) and is parsed by `node-cron`. Each cron node attached to an
 agent runs independently, so an agent can have several schedules with
 different prompts.
 
-Crons are real but kept off the default sidebar palette in some earlier
-builds because the runtime was being verified end-to-end. The scheduler,
-the queueing path, and tests are now in place — see Runtime Behavior.
+> **Status:** the node, its config resolution, and the `CronScheduler` engine
+> are implemented and unit-tested, but the engine is never instantiated by
+> the running server — see Runtime Behavior. A configured cron does not fire
+> today. Treat this as an extension surface, not a working feature.
+
+The `cron` node is in the default sidebar palette (`src/panels/Sidebar.tsx`)
+and resolves correctly into `AgentConfig.crons`. **However, the node is not
+yet wired into the live backend.** `CronScheduler`
+(`server/scheduling/cron-scheduler.ts`) is fully implemented and unit-tested,
+but nothing in `server/index.ts`, `server/agents/agent-manager.ts`, or
+`server/agents/run-coordinator.ts` ever constructs a `CronScheduler` or calls
+its `reconcile()` method — the class is only exercised by its own test file.
+Concretely: a configured, enabled cron node will never fire today. Treat this
+as a scaffolded extension surface (see `CLAUDE.md`'s note that `cron` is
+"ahead of product wiring") and verify wiring in code before relying on it.
 
 ## Configuration
 
@@ -41,25 +53,33 @@ Properties are derived from the TypeScript interface in
 ## Runtime Behavior
 
 `graph-to-agent.ts` resolves connected `cron` nodes into
-`ResolvedCronConfig[]` on the `AgentConfig`. The
-[`CronScheduler`](../../server/scheduling/cron-scheduler.ts) reconciles
-the current schedule list against running jobs whenever the agent config
-changes:
+`ResolvedCronConfig[]` on the `AgentConfig`. That resolution is the extent of
+what runs today — nothing downstream currently reads `AgentConfig.crons` to
+schedule anything.
 
-- New crons get a `node-cron` job registered.
-- Removed or disabled crons get their job stopped.
-- Each tick calls into the [`RunCoordinator`](../../server/agents/run-coordinator.ts)
+[`CronScheduler`](../../server/scheduling/cron-scheduler.ts) is the engine
+that *would* reconcile the schedule list against running jobs, and its
+implementation shows the intended design:
+
+- `reconcile(agentId, crons)` would register a `node-cron` job for new/enabled
+  crons and stop jobs for removed or disabled ones.
+- Each tick would call into [`RunCoordinator`](../../server/agents/run-coordinator.ts)
   with the cron's `prompt` and `sessionMode`, and a per-run timeout
   derived from `maxRunDurationMs`.
+- `sessionMode: 'persistent'` would keep the cron's session-key stable across
+  ticks, so the agent's context engine and memory see one continuous
+  conversation. `sessionMode: 'ephemeral'` would allocate a fresh session per
+  tick — useful when each run should be independent (cron-driven ingest,
+  report generation).
 
-`sessionMode: 'persistent'` keeps the cron's session-key stable across
-ticks, so the agent's context engine and memory see one continuous
-conversation. `sessionMode: 'ephemeral'` allocates a fresh session per
-tick — useful when each run should be independent (cron-driven ingest,
-report generation).
+**None of this is currently invoked.** No code outside
+`cron-scheduler.test.ts` imports or instantiates `CronScheduler`, and
+`reconcile()` is never called from `server/index.ts`, `agent-manager.ts`, or
+`run-coordinator.ts`. Enabling a cron node on an agent today has no observable
+effect — the schedule is stored in the resolved config and nothing else.
 
-`retentionDays` is read by the maintenance scheduler when present. The
-storage engine's pruning behavior is partial today (see
+`retentionDays` is intended to be read by the maintenance scheduler once
+wired. The storage engine's pruning behavior is partial today (see
 [`docs/audit-2026-05-09.md`](../audit-2026-05-09.md) §2.5), so verify
 end-to-end retention if your deployment depends on it.
 
