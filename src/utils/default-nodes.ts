@@ -337,6 +337,35 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         onExhaustion: 'use_best',
         injectRubricIntoPrompt: false,
       };
+    case 'a2a':
+      return {
+        type: 'a2a',
+        label: 'A2A Interop',
+        enabled: true,
+        role: 'server',
+        protocolVersion: '0.3.0',
+        transport: 'jsonrpc',
+        exposeAgentCard: true,
+        cardName: '',
+        cardDescription: 'An agent built with Simple Agent Manager.',
+        serverUrl: 'http://localhost:8787',
+        wellKnownPath: '/.well-known/agent-card.json',
+        streaming: true,
+        pushNotifications: false,
+        authScheme: 'none',
+        inputModes: ['text/plain'],
+        outputModes: ['text/plain'],
+        advertisedSkills: [
+          {
+            id: 'chat',
+            name: 'Chat',
+            description: 'General-purpose conversational task handling.',
+            tags: ['chat', 'general'],
+          },
+        ],
+        remoteAgents: [],
+        taskTimeoutSec: 120,
+      };
     case 'subAgent':
       return {
         type: 'subAgent',
