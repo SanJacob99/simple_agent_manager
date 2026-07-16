@@ -3,7 +3,7 @@
 > Wakes a peer agent on send. Bounded by per-pair turn/depth/token limits and per-sender rate limits.
 
 <!-- source: src/types/nodes.ts#AgentCommNodeData -->
-<!-- last-verified: 2026-05-29 -->
+<!-- last-verified: 2026-07-16 -->
 
 ## Overview
 
@@ -25,7 +25,7 @@ For one-shot child dispatch from a parent agent, see [Sub-Agent Node](./sub-agen
 | `rateLimitPerMinute` | `number` | `30` | Sender-side outbound count across all peers (rolling 60s) |
 | `messageSizeCap` | `number` | `16_000` | Max message length in characters |
 
-Pair-symmetric controls take the **minimum** of the two endpoints' values.
+`maxTurns`, `maxDepth`, `tokenBudget`, and `rateLimitPerMinute` are pair-symmetric: the runtime takes the **minimum** of the two endpoints' values (`pairMin()` in `server/comms/agent-comm-bus.ts`). `messageSizeCap` is **not** pair-symmetric — a send is checked only against the **sender's own** `messageSizeCap`; the receiver's value is never consulted.
 
 Workspace-level defaults can be overridden in `Settings → Agent Comm Defaults`; new comm nodes inherit those overrides at creation time.
 

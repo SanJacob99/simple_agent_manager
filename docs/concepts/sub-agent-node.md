@@ -3,7 +3,7 @@
 > A peripheral that declares a named, one-shot sub-agent the parent agent can dispatch via `sessions_spawn`.
 
 <!-- source: src/types/nodes.ts#SubAgentNodeData -->
-<!-- last-verified: 2026-05-29 -->
+<!-- last-verified: 2026-07-16 -->
 
 ## Overview
 
@@ -39,7 +39,7 @@ The Sub-Agent Node attaches to an Agent Node as a peripheral. Each declared sub-
 3. When the parent calls `sessions_spawn({ subAgent: "<name>", message, overrides })`, the runtime validates `overrides` against `subAgent.overridableFields`, builds a synthetic `AgentConfig`, and dispatches via `SubAgentExecutor` — bypassing the parent's run-concurrency slot so the sub runs alongside the parent's tool call.
 4. Each sub-session uses a key of shape `sub:<parentSessionKey>:<subAgentName>:<shortUuid>` and gets a durable `SessionStoreEntry` under the parent's `StorageEngine` before child dispatch starts.
 5. `RunCoordinator` builds a fresh child `AgentRuntime` through its injected runtime factory, persists the child's user/assistant/tool transcript events, and destroys the child runtime on completion, error, or abort.
-6. The child runtime receives `subAgents: []` and has `sessions_spawn`, `sessions_yield`, and `subagents` stripped from its resolved tool list in v1, so recursive fan-out is disabled even if the node's recursive flag is set.
+6. `sessions_spawn`, `sessions_yield`, and `subagents` are unconditionally stripped from the child's resolved tool list in v1 (`RunCoordinator.buildChildRuntimeConfig()`), so recursive fan-out is disabled even if the node's recursive flag is set. (The child's `subAgents` array itself is only `[]` when `recursiveSubAgentsEnabled` is false — when true, it inherits the parent's `subAgents` list, but the tool-stripping above still prevents the child from actually spawning anything.)
 7. The registry and durable sub-session metadata mark the sub-session `sealed` when the child run completes, errors, or is killed. `sessions_send` to any sub-session returns a one-shot error and no further work is dispatched.
 8. Kill (REST `/api/subagents/:id/kill` or agent-facing `subagents({action: 'kill'})`) marks the registry record as `killed` *before* aborting the run, so the abort path doesn't downgrade the terminal state to `error`.
 

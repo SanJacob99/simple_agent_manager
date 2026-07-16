@@ -3,7 +3,7 @@
 > Provides filesystem-based persistence for agent sessions, routed transcripts, and memory files.
 
 <!-- source: src/types/nodes.ts#StorageNodeData -->
-<!-- last-verified: 2026-05-29 -->
+<!-- last-verified: 2026-07-16 -->
 
 ## Overview
 
@@ -41,7 +41,7 @@ Only one Storage Node can be connected per agent. For embedding or semantic retr
 | `resetArchiveRetentionDays` | `number` | `30` | How long archived `sessions.json` snapshots are kept before deletion |
 | `maxDiskBytes` | `number` | `0` | Total disk budget for the agent's storage directory in bytes. `0` = unlimited |
 | `highWaterPercent` | `number` | `80` | When `maxDiskBytes` is set, maintenance evicts sessions until usage drops below this percentage of the budget |
-| `maintenanceIntervalMinutes` | `number` | `60` | How often the background maintenance task runs, in minutes |
+| `maintenanceIntervalMinutes` | `number` | `60` | Intended interval for an automatic background maintenance task, in minutes. **Not currently wired**: `MaintenanceScheduler` (`server/scheduling/maintenance-scheduler.ts`), which would read this value and run maintenance on a `setInterval`, is never instantiated by the running server — only by its own test. In practice, maintenance only runs when explicitly triggered from the Settings → Data & Maintenance UI, which POSTs to `/api/storage/maintenance` / `/api/storage/maintenance/dry-run` (`server/index.ts`). This field currently has no runtime effect. |
 
 ## Runtime Behavior
 
