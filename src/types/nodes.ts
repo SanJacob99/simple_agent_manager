@@ -23,7 +23,8 @@ export type NodeType =
   | 'structuredOutput'
   | 'budget'
   | 'evals'
-  | 'reflection';
+  | 'reflection'
+  | 'a2a';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -735,6 +736,114 @@ export interface ReflectionNodeData {
   injectRubricIntoPrompt: boolean;
 }
 
+// --- A2A (Agent-to-Agent) Interop Node ---
+
+/**
+ * How this agent participates in the Agent-to-Agent protocol.
+ * - `server`: expose *this* agent to the outside world — publish an Agent Card
+ *   and accept remote tasks over the A2A transport.
+ * - `client`: consume *other* A2A agents — register remote agent cards as
+ *   callable delegates this agent can hand tasks to.
+ * - `both`: do both at once (a hub agent that is itself reachable and can also
+ *   delegate to peers).
+ */
+export type A2ARole = 'server' | 'client' | 'both';
+
+/**
+ * Transport binding advertised / used for A2A traffic. The base spec is
+ * JSON-RPC 2.0 over HTTP(S); the 0.3+ spec adds gRPC and REST bindings.
+ */
+export type A2ATransport = 'jsonrpc' | 'grpc' | 'rest';
+
+/** Security scheme advertised on the published Agent Card. */
+export type A2AAuthScheme = 'none' | 'apiKey' | 'bearer' | 'oauth2';
+
+/**
+ * A skill advertised on this agent's published Agent Card so remote clients can
+ * discover what it can do. Mirrors the A2A `AgentSkill` object.
+ */
+export interface A2AAdvertisedSkill {
+  /** Stable skill identifier used by callers. */
+  id: string;
+  /** Human-readable skill name. */
+  name: string;
+  /** What the skill does, for discovery. */
+  description: string;
+  /** Free-form tags used to filter/route skills. */
+  tags: string[];
+}
+
+/**
+ * A remote A2A agent registered as a callable delegate. When `enabledAsTool` is
+ * set, the runtime turns it into a tool the local agent can invoke, forwarding
+ * the sub-task over the agent's declared transport.
+ */
+export interface A2ARemoteAgent {
+  /** Stable local id for this registration. */
+  id: string;
+  /** Display name (falls back to the fetched card's name at runtime). */
+  name: string;
+  /** URL of the remote agent's Agent Card (well-known JSON document). */
+  cardUrl: string;
+  /** Transport used to reach the remote agent. */
+  transport: A2ATransport;
+  /** Expose this remote agent to the local agent as a callable delegate tool. */
+  enabledAsTool: boolean;
+}
+
+/**
+ * Agent-to-Agent (A2A) interop surface. `agentComm` is an in-process bus and
+ * `subAgent` is in-tree; neither lets this agent talk to agents built on *other*
+ * frameworks. The A2A protocol (agent cards, task/message envelopes, streaming
+ * updates over JSON-RPC/gRPC/REST) is becoming the cross-framework lingua franca
+ * for agent interop, much as MCP standardized tools. This node exposes the agent
+ * as an A2A server (publish a card, accept remote tasks) and/or registers remote
+ * A2A agents as callable delegates.
+ */
+export interface A2ANodeData {
+  [key: string]: unknown;
+  type: 'a2a';
+  label: string;
+  /** Master toggle. When false the node is wired but no A2A surface is served. */
+  enabled: boolean;
+  /** Whether this agent acts as an A2A server, client, or both. */
+  role: A2ARole;
+  /** A2A protocol version advertised / negotiated. */
+  protocolVersion: string;
+  /** Default transport binding for A2A traffic. */
+  transport: A2ATransport;
+
+  // --- Server side (publish an Agent Card) ---
+  /** Publish this agent's Agent Card at the well-known path. */
+  exposeAgentCard: boolean;
+  /** Name advertised on the card. Empty falls back to the agent's own name. */
+  cardName: string;
+  /** Description advertised on the card. */
+  cardDescription: string;
+  /** Public base URL the agent is reachable at (origin of the card `url`). */
+  serverUrl: string;
+  /** Path the Agent Card is served from. */
+  wellKnownPath: string;
+  /** Advertise Server-Sent-Events streaming (`message/stream`) capability. */
+  streaming: boolean;
+  /** Advertise push-notification (webhook) capability for task updates. */
+  pushNotifications: boolean;
+  /** Security scheme advertised on the card. */
+  authScheme: A2AAuthScheme;
+  /** Default input MIME modes advertised on the card. */
+  inputModes: string[];
+  /** Default output MIME modes advertised on the card. */
+  outputModes: string[];
+  /** Skills advertised on the card for remote discovery. */
+  advertisedSkills: A2AAdvertisedSkill[];
+
+  // --- Client side (register remote agents) ---
+  /** Remote A2A agents registered as callable delegates. */
+  remoteAgents: A2ARemoteAgent[];
+  /** Per-task timeout (seconds) when delegating to a remote agent. */
+  taskTimeoutSec: number;
+}
+
 // --- Sub-Agent Node ---
 
 export interface SubAgentNodeData {
@@ -775,6 +884,7 @@ export type FlowNodeData =
   | StructuredOutputNodeData
   | BudgetNodeData
   | EvalsNodeData
-  | ReflectionNodeData;
+  | ReflectionNodeData
+  | A2ANodeData;
 
 export type AppNode = Node<FlowNodeData>;
