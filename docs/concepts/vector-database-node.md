@@ -3,7 +3,7 @@
 > Attaches a vector store to an agent and auto-enables the four industry-standard vector tools (`vector_search`, `vector_upsert`, `vector_delete`, `vector_get`). Default backend is `sqlite-vec`; default embedder is OpenRouter.
 
 <!-- source: src/types/nodes.ts#VectorDatabaseNodeData -->
-<!-- last-verified: 2026-05-15 -->
+<!-- last-verified: 2026-07-17 -->
 
 ## Overview
 
@@ -34,7 +34,7 @@ The agent's embedding model lives **on the same node**. Insert-time and query-ti
 
 ## Runtime Behaviour
 
-Resolved by `src/utils/graph-to-agent.ts` into `AgentConfig.vectorDatabases: ResolvedVectorDatabaseConfig[]`. The `AgentRuntime` constructor (`server/runtime/agent-runtime.ts`) wires a lazy `getVectorEngine(label?)` accessor into `RuntimeHints` — the four vector tool modules under `server/tools/builtins/vector/` use it to resolve a shared `VectorDatabaseEngine` instance per collection.
+Resolved by `src/utils/graph-to-agent.ts` into `AgentConfig.vectorDatabases: ResolvedVectorDatabaseConfig[]`. The `AgentRuntime` constructor (`server/runtime/agent-runtime.ts`) calls `createVectorTools(config, runtime)` (`server/runtime/vector-tools/index.ts`), which builds a `ctx.getEngine(label?)` closure that the four vector tool modules use to resolve a shared `VectorDatabaseEngine` instance per collection via `getOrCreateVectorEngine()` (`server/runtime/vector-engine-registry.ts`).
 
 Engine lifecycle (`server/runtime/vector-database-engine.ts`):
 
@@ -48,7 +48,7 @@ Selecting a non-`sqlite-vec` provider raises `UnsupportedProviderError` the firs
 
 ## Tools
 
-The four tools are built by `createVectorTools(config, runtime)` in `server/runtime/vector-tools/index.ts` and appended to the agent's tool list in `AgentRuntime`'s constructor (the same path memory tools take from `MemoryEngine.createMemoryTools()`). The Tools node never sees them and the user has no checkbox to disable them — wiring the `vectorDatabase` node is the enable signal.
+The four tools are built by `createVectorTools(config, runtime)` in `server/runtime/vector-tools/index.ts` (`vector-search.ts`, `vector-upsert.ts`, `vector-delete.ts`, `vector-get.ts`) and appended to the agent's tool list in `AgentRuntime`'s constructor (the same path memory tools take from `MemoryEngine.createMemoryTools()`). The Tools node never sees them and the user has no checkbox to disable them — wiring the `vectorDatabase` node is the enable signal.
 
 When two or more `vectorDatabase` nodes are connected, every tool requires a `collection` parameter equal to one of the node labels. With a single attached node, `collection` is optional and defaults to that node.
 

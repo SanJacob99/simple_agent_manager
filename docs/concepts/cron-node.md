@@ -3,7 +3,7 @@
 > Time-triggered agent runs on a configurable schedule.
 
 <!-- source: src/types/nodes.ts#CronNodeData -->
-<!-- last-verified: 2026-05-15 -->
+<!-- last-verified: 2026-07-17 -->
 
 ## Overview
 
@@ -18,9 +18,16 @@ weekday`) and is parsed by `node-cron`. Each cron node attached to an
 agent runs independently, so an agent can have several schedules with
 different prompts.
 
-Crons are real but kept off the default sidebar palette in some earlier
-builds because the runtime was being verified end-to-end. The scheduler,
-the queueing path, and tests are now in place — see Runtime Behavior.
+Cron nodes are on the default sidebar palette. The `CronScheduler` class
+that reconciles schedules and dispatches ticks is fully implemented and
+unit-tested (`server/scheduling/cron-scheduler.ts`), but it is **not
+currently instantiated anywhere in the running server** — `grep -rn "new
+CronScheduler"` across the repo only turns up its own test file. Until
+something constructs a `CronScheduler` at startup (e.g. in
+`server/index.ts` or `agent-manager.ts`), a cron node's schedule is
+resolved into config but never actually dispatches a run. Treat cron as
+schema-complete and engine-tested, not yet wired end-to-end — verify the
+wiring in code before relying on it in a deployment.
 
 ## Configuration
 
@@ -30,10 +37,10 @@ the queueing path, and tests are now in place — see Runtime Behavior.
 | `schedule` | `string` | `"0 9 * * *"` | Standard 5-field cron expression. |
 | `prompt` | `string` | `""` | The prompt the agent receives when the schedule fires. |
 | `enabled` | `boolean` | `true` | When false, the schedule is parsed but never dispatched. |
-| `sessionMode` | `"persistent" \| "ephemeral"` | `"persistent"` | `persistent` reuses a single session per cron node so context carries across ticks. `ephemeral` starts a fresh session every fire. |
+| `sessionMode` | `"persistent" \| "ephemeral"` | `"persistent"` | **Not read by any runtime code today** — see Runtime Behavior. Resolves into `ResolvedCronConfig.sessionMode` but every tick dispatches with the same fixed session key regardless of this value. |
 | `timezone` | `string` | `"local"` | IANA timezone (e.g. `Europe/Berlin`) or `local` to use the server's timezone. |
 | `maxRunDurationMs` | `number` | `300000` | Per-tick timeout. The run is aborted if it exceeds this. |
-| `retentionDays` | `number` | `7` | How long the cron's transcripts are retained when storage maintenance runs. |
+| `retentionDays` | `number` | `7` | **Not read by any runtime code today** — see Runtime Behavior. Resolves into `ResolvedCronConfig.retentionDays` but nothing consumes it. |
 
 Properties are derived from the TypeScript interface in
 `src/types/nodes.ts` and defaults from `src/utils/default-nodes.ts`.
@@ -42,26 +49,37 @@ Properties are derived from the TypeScript interface in
 
 `graph-to-agent.ts` resolves connected `cron` nodes into
 `ResolvedCronConfig[]` on the `AgentConfig`. The
-[`CronScheduler`](../../server/scheduling/cron-scheduler.ts) reconciles
-the current schedule list against running jobs whenever the agent config
-changes:
+[`CronScheduler`](../../server/scheduling/cron-scheduler.ts) class, when
+constructed, reconciles the current schedule list against running jobs
+whenever the agent config changes:
 
 - New crons get a `node-cron` job registered.
 - Removed or disabled crons get their job stopped.
-- Each tick calls into the [`RunCoordinator`](../../server/agents/run-coordinator.ts)
-  with the cron's `prompt` and `sessionMode`, and a per-run timeout
-  derived from `maxRunDurationMs`.
+- Each tick (`executeCronTick`) calls into the
+  [`RunCoordinator`](../../server/agents/run-coordinator.ts) with the
+  cron's `prompt` and a per-run timeout derived from `maxRunDurationMs`,
+  dispatching against a fixed session key of shape `cron:<cronNodeId>`.
 
-`sessionMode: 'persistent'` keeps the cron's session-key stable across
-ticks, so the agent's context engine and memory see one continuous
-conversation. `sessionMode: 'ephemeral'` allocates a fresh session per
-tick — useful when each run should be independent (cron-driven ingest,
-report generation).
+**However, `CronScheduler` is never instantiated outside its own test
+suite** (`cron-scheduler.test.ts`) — it is not wired up in
+`server/index.ts` or `server/agents/agent-manager.ts`, so no cron
+currently fires in the running application. Verify this in code before
+depending on cron dispatch in a deployment.
 
-`retentionDays` is read by the maintenance scheduler when present. The
-storage engine's pruning behavior is partial today (see
-[`docs/audit-2026-05-09.md`](../audit-2026-05-09.md) §2.5), so verify
-end-to-end retention if your deployment depends on it.
+Two configuration fields are schema-only and have no effect even once
+the scheduler is wired up, because nothing in the current codebase reads
+them:
+
+- `sessionMode` — `executeCronTick` always dispatches with the same
+  fixed session key (`cron:<cronNodeId>`) regardless of this value.
+  There is no branch for `ephemeral` behavior anywhere in
+  `SessionRouter` or `RunCoordinator`; every tick behaves as
+  `persistent`.
+- `retentionDays` — resolved onto `ResolvedCronConfig` but never read.
+  The storage engine's `runMaintenance()` only consults the connected
+  Storage Node's own retention fields (`pruneAfterDays`,
+  `resetArchiveRetentionDays`, etc. — see
+  [storage-node.md](storage-node.md)), not a cron's `retentionDays`.
 
 ## Connections
 

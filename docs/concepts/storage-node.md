@@ -3,7 +3,7 @@
 > Provides filesystem-based persistence for agent sessions, routed transcripts, and memory files.
 
 <!-- source: src/types/nodes.ts#StorageNodeData -->
-<!-- last-verified: 2026-05-29 -->
+<!-- last-verified: 2026-07-17 -->
 
 ## Overview
 
@@ -17,7 +17,7 @@ The filesystem backend keeps metadata and transcript history separate:
 - transcript `.jsonl` files store the append-only conversation tree for each routed session
 - Markdown files under `memory/` store evergreen and daily memory content
 
-Only one Storage Node can be connected per agent. For embedding or semantic retrieval storage, use a Vector Database Node instead.
+Only one Storage Node is intended per agent. This isn't enforced with a validation error the way duplicate Provider Nodes are — `graph-to-agent.ts` just takes the first connected Storage Node it finds and silently ignores any others. For embedding or semantic retrieval storage, use a Vector Database Node instead.
 
 ## Configuration
 
@@ -41,7 +41,7 @@ Only one Storage Node can be connected per agent. For embedding or semantic retr
 | `resetArchiveRetentionDays` | `number` | `30` | How long archived `sessions.json` snapshots are kept before deletion |
 | `maxDiskBytes` | `number` | `0` | Total disk budget for the agent's storage directory in bytes. `0` = unlimited |
 | `highWaterPercent` | `number` | `80` | When `maxDiskBytes` is set, maintenance evicts sessions until usage drops below this percentage of the budget |
-| `maintenanceIntervalMinutes` | `number` | `60` | How often the background maintenance task runs, in minutes |
+| `maintenanceIntervalMinutes` | `number` | `60` | **Not currently wired to an automatic scheduler** — see Runtime Behavior. Displayed/edited in the UI and resolved onto `AgentConfig.storage`, but nothing runs maintenance on this interval today |
 
 ## Runtime Behavior
 
@@ -59,6 +59,8 @@ Session-store writes are hardened against concurrency and partial-write corrupti
 - The store and memory files are written **atomically** (temp file + rename), so a crash or disk-full mid-write can't truncate or corrupt the index.
 - A read failure is no longer silently treated as an empty store: only a genuinely missing file (`ENOENT`) yields an empty store, while a transient I/O error or a corrupt/unparseable file throws instead of letting the next write persist an empty store over real data.
 - Memory writes self-heal the `memory/` directory if it wasn't created at init.
+
+Maintenance (`runMaintenance()` in `server/storage/storage-engine.ts`, which enforces `pruneAfterDays`, `maxEntries`, `rotateBytes`, `resetArchiveRetentionDays`, `maxDiskBytes`, and `highWaterPercent`) runs only when explicitly triggered — today that means a user clicking "Run maintenance" in Settings → Data Maintenance (`src/settings/sections/DataMaintenanceSection.tsx`), which calls `POST /api/storage/maintenance`. A `MaintenanceScheduler` class exists (`server/scheduling/maintenance-scheduler.ts`) with real interval-based `start()`/`stop()` logic, but it is only ever constructed in its own test file — nothing in `server/index.ts` or `agent-manager.ts` instantiates it. `maintenanceIntervalMinutes` is stored and editable but has no effect until that scheduler is wired up.
 
 The resulting directory layout is:
 
