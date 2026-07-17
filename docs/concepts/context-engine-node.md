@@ -3,7 +3,7 @@
 > Manages token budgets, compaction, and transcript-aware context assembly so conversations stay inside the model's context window.
 
 <!-- source: src/types/nodes.ts#ContextEngineNodeData -->
-<!-- last-verified: 2026-05-29 -->
+<!-- last-verified: 2026-07-17 -->
 <!-- token-budget-inheritance, compaction-trigger-modes, tooltips -->
 
 ## Overview
@@ -37,6 +37,8 @@ The runtime creates a `ContextEngine` that exposes:
 - `assemble(messages)` to estimate tokens and call compaction when the budget would overflow (safety net)
 - `compact(messages)` to apply the configured reduction strategy
 - `afterTurn(messages)` to fire proactive compaction when the just-finished turn pushed usage past the trigger configured by `compactionTrigger` (see the table above). `afterTurn` applies the compacted result back onto the live message array in place, so proactive/`auto`/`threshold` compaction genuinely reduces the in-memory history rather than recomputing and discarding it (which previously left history unchanged and re-fired every turn once over threshold). The `assemble()` overflow trim remains the safety net.
+
+`assemble()` also unconditionally runs messages through `stripStaleToolResultImages()` before token-counting or compaction — image blocks are stripped from every tool result except the most recent 2 carrying images, replaced with a text placeholder (`[screenshot removed from context to save tokens]` or a saved-path pointer). This always-on trimming has no corresponding configuration field; it is not tied to `tokenBudget`, `ragEnabled`, or any other setting in the table above.
 
 Manual compaction: the Context Engine property panel shows a **Compact Now** button when `compactionTrigger` is `"manual"`. It calls `POST /api/sessions/:agentId/:sessionKey/compact`, which runs the configured `compactionStrategy` against the session transcript until it reaches `postCompactionTokenTarget`. The agent must be started (the chat session must have been opened at least once), and no run can be active on the target session.
 

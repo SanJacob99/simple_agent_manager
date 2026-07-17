@@ -4,12 +4,14 @@
 > shape of user-installed provider plugins before an implementation
 > chunk is opened.
 
-<!-- last-verified: 2026-04-28 -->
+<!-- last-verified: 2026-07-17 -->
 
 ## Why this doc
 
 The SAM CLI ships an end-to-end install path for user-installed
-**tools** (Chunks 1–4 of `notes/CLI-dev.md`). User-installed
+**tools** (see [user-tools-guide.md](user-tools-guide.md) for the shipped
+result; the `notes/CLI-dev.md` chunking plan that produced it is no
+longer present in the repo). User-installed
 **provider plugins** are a separate axis with overlapping primitives but
 different runtime concerns (auth, catalogs, network calls). Before
 extending `sam install` to handle plugins we need answers — or at
@@ -124,7 +126,7 @@ We are not going to ship a sandbox. The mitigation has to be (a) explicit "you'r
 
 ## Suggested next step
 
-Once each Q has a "decided / leaning / deferred" annotation, open a normal implementation chunk modeled on `notes/CLI-dev.md` with the same chunk-by-chunk shape:
+Once each Q has a "decided / leaning / deferred" annotation, open a normal implementation chunk modeled on the tools install path (see [user-tools-guide.md](user-tools-guide.md)) with the same chunk-by-chunk shape:
 
 1. Manifest schema extension (`kind` + provider sub-object) + validator parity.
 2. User-plugins directory + filesystem scan + kill switch + override env.
@@ -136,6 +138,5 @@ That ordering mirrors the tools chunking and reuses the install/manifest plumbin
 
 ## See also
 
-- [notes/CLI-dev.md](../../notes/CLI-dev.md) — chunking plan that produced this doc.
-- [docs/concepts/user-tools-guide.md](user-tools-guide.md) — the analogous flow for tools, which most decisions here should mirror until there's a reason not to.
+- [docs/concepts/user-tools-guide.md](user-tools-guide.md) — the analogous flow for tools, which most decisions here should mirror until there's a reason not to. (The `notes/CLI-dev.md` chunking plan referenced by earlier drafts of this doc no longer exists in the repo.)
 - [shared/user-tool-manifest.ts](../../shared/user-tool-manifest.ts) — current `sam.json` schema with TODO slots.
