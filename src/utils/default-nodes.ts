@@ -337,6 +337,23 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         onExhaustion: 'use_best',
         injectRubricIntoPrompt: false,
       };
+    case 'knowledge':
+      return {
+        type: 'knowledge',
+        label: 'Knowledge',
+        enabled: true,
+        collectionName: 'default',
+        sources: [],
+        chunkStrategy: 'paragraph',
+        chunkSize: 512,
+        chunkOverlap: 64,
+        embedding: {
+          provider: 'openrouter',
+          model: 'openai/text-embedding-3-small',
+        },
+        refreshSchedule: 'manual',
+        maxDocuments: 0,
+      };
     case 'subAgent':
       return {
         type: 'subAgent',

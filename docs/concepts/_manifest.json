@@ -96,6 +96,11 @@
       "doc": "reflection-node.md",
       "type": "src/types/nodes.ts#ReflectionNodeData",
       "runtime": "server/runtime/reflection-engine.ts"
+    },
+    "knowledge": {
+      "doc": "knowledge-node.md",
+      "type": "src/types/nodes.ts#KnowledgeNodeData",
+      "runtime": "server/knowledge/knowledge-engine.ts"
     }
   }
 }

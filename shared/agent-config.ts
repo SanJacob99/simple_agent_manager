@@ -286,6 +286,42 @@ export interface ResolvedReflectionConfig {
   injectRubricIntoPrompt: boolean;
 }
 
+// --- Knowledge / Ingestion ---
+
+export type KnowledgeSourceType = 'file' | 'directory' | 'url' | 'git' | 'text';
+
+export type ChunkStrategy = 'fixed' | 'sentence' | 'paragraph' | 'markdown';
+
+/** Resolved ingestion source. Globs are always present as strings (empty = none). */
+export interface ResolvedKnowledgeSource {
+  id: string;
+  type: KnowledgeSourceType;
+  location: string;
+  include: string;
+  exclude: string;
+}
+
+/**
+ * Resolved knowledge / ingestion pipeline. `vectorDatabase` provides the store;
+ * this config owns the sources, chunking, embedding, and refresh cadence that
+ * populate the store the Context Engine's RAG path reads from. Multiple
+ * knowledge nodes can bind to an agent (each targeting a collection), so this
+ * resolves to a list rather than a single value.
+ */
+export interface ResolvedKnowledgeConfig {
+  knowledgeNodeId: string;
+  label: string;
+  enabled: boolean;
+  collectionName: string;
+  sources: ResolvedKnowledgeSource[];
+  chunkStrategy: ChunkStrategy;
+  chunkSize: number;
+  chunkOverlap: number;
+  embedding: ResolvedVectorEmbeddingConfig;
+  refreshSchedule: string;
+  maxDocuments: number;
+}
+
 // --- Agent Config interfaces ---
 
 export interface ResolvedCronConfig {
@@ -386,6 +422,15 @@ export interface AgentConfig {
    * graphs remain compatible without a backfill.
    */
   reflection?: ResolvedReflectionConfig | null;
+  /**
+   * Optional knowledge / ingestion pipelines. When omitted or empty, the agent
+   * has no attached sources and relies solely on any pre-populated Vector DB.
+   * Not part of the live run path — consumed by the ingestion runner that
+   * populates the Vector DB the Context Engine reads from. Optional so existing
+   * AgentConfig fixtures and serialized graphs remain compatible without a
+   * backfill.
+   */
+  knowledge?: ResolvedKnowledgeConfig[];
 
   /** Working directory for shell commands (exec tool). Independent of storage path. */
   workspacePath: string | null;

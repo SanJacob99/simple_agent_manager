@@ -23,7 +23,8 @@ export type NodeType =
   | 'structuredOutput'
   | 'budget'
   | 'evals'
-  | 'reflection';
+  | 'reflection'
+  | 'knowledge';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -735,6 +736,73 @@ export interface ReflectionNodeData {
   injectRubricIntoPrompt: boolean;
 }
 
+// --- Knowledge / Ingestion Node ---
+
+/**
+ * Where a knowledge source comes from.
+ * - `file`: a single local file path.
+ * - `directory`: a local directory walked with the `include`/`exclude` globs.
+ * - `url`: a remote document fetched over HTTP(S).
+ * - `git`: a git remote cloned and walked with the `include`/`exclude` globs.
+ * - `text`: inline text pasted directly into `location` (no fetch step).
+ */
+export type KnowledgeSourceType = 'file' | 'directory' | 'url' | 'git' | 'text';
+
+/**
+ * How a fetched document is split into chunks before embedding.
+ * - `fixed`: pack raw text into `chunkSize`-token windows (with overlap).
+ * - `sentence`: break on sentence boundaries, then pack into windows.
+ * - `paragraph`: break on blank lines, then pack into windows.
+ * - `markdown`: break on Markdown headings, then pack into windows.
+ */
+export type ChunkStrategy = 'fixed' | 'sentence' | 'paragraph' | 'markdown';
+
+/** One ingestion source within a Knowledge node. */
+export interface KnowledgeSource {
+  /** Stable id for the source within the node (used to correlate refreshes). */
+  id: string;
+  type: KnowledgeSourceType;
+  /** Path, URL, git remote, or inline text depending on `type`. */
+  location: string;
+  /** Optional glob include filter for `directory`/`git` sources. */
+  include?: string;
+  /** Optional glob exclude filter for `directory`/`git` sources. */
+  exclude?: string;
+}
+
+/**
+ * Knowledge / ingestion pipeline. `vectorDatabase` provides the store; this node
+ * owns the *sources* — files, directories, URLs, git repos, or inline text — plus
+ * the chunking strategy, embedding config, and refresh schedule that turn raw
+ * sources into vectors the Context Engine's RAG path consumes. Mirrors the
+ * ingestion surface in LlamaIndex, LangChain document loaders, and managed RAG
+ * stacks. Pairs with the Vector DB node (the store) and the Context Engine (the
+ * consumer): `collectionName` names the Vector DB collection ingested into.
+ */
+export interface KnowledgeNodeData {
+  [key: string]: unknown;
+  type: 'knowledge';
+  label: string;
+  /** Master toggle. When false the node is wired but no ingestion runs. */
+  enabled: boolean;
+  /** Target Vector DB collection this knowledge is ingested into. */
+  collectionName: string;
+  /** Ordered ingestion sources. */
+  sources: KnowledgeSource[];
+  /** How fetched documents are split before embedding. */
+  chunkStrategy: ChunkStrategy;
+  /** Target chunk size in tokens (approximate; uses the shared token estimator). */
+  chunkSize: number;
+  /** Token overlap carried between adjacent chunks to preserve context. */
+  chunkOverlap: number;
+  /** Embedding model used at ingestion time (reuses the Vector DB embedding shape). */
+  embedding: VectorEmbeddingConfig;
+  /** Refresh cadence: `manual`, or a duration like `30m`, `6h`, `7d`. */
+  refreshSchedule: string;
+  /** Max documents to ingest per refresh. 0 means unlimited. */
+  maxDocuments: number;
+}
+
 // --- Sub-Agent Node ---
 
 export interface SubAgentNodeData {
@@ -775,6 +843,7 @@ export type FlowNodeData =
   | StructuredOutputNodeData
   | BudgetNodeData
   | EvalsNodeData
-  | ReflectionNodeData;
+  | ReflectionNodeData
+  | KnowledgeNodeData;
 
 export type AppNode = Node<FlowNodeData>;

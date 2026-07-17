@@ -43,10 +43,11 @@ The default sidebar currently exposes these draggable nodes:
 | `structuredOutput` | Constrains the agent's final reply to a JSON Schema, with native provider enforcement, prompt injection, and a repair/warn/block policy on validation failure |
 | `budget` | Spend and rate governance: USD per run/day, tokens and tool calls per run, runs per minute, with a warn / downshift / block degrade policy |
 | `reflection` | Reflexion-style draft → critique → revise loop: a critic scores each draft against a rubric and feeds the critique back for up to *N* revisions, with a use-best / use-last / warn exhaustion policy |
+| `knowledge` | Ingestion pipeline that fills the Vector DB: source definitions (files, directories, URLs, git repos, inline text), a chunking strategy (fixed / sentence / paragraph / markdown) with token-window size and overlap, an embedding model, and a refresh schedule |
 
 The codebase also contains a `cron` node type and editor, but it is not part of the default palette and should be treated as in-progress unless you verify the full execution path.
 
-> **Scaffolding note:** `telemetry`, `structuredOutput`, `budget`, and `reflection` ship with node UI, resolved config, and a unit-tested engine, but the run-coordinator wiring is still pending — treat them as extension surfaces until that path is verified end-to-end. See `docs/roadmap/2026-modernization.md`.
+> **Scaffolding note:** `telemetry`, `structuredOutput`, `budget`, `reflection`, and `knowledge` ship with node UI, resolved config, and a unit-tested engine, but the integration wiring (run-coordinator for the runtime nodes; an ingestion runner for `knowledge`) is still pending — treat them as extension surfaces until that path is verified end-to-end. See `docs/roadmap/2026-modernization.md`.
 
 ## Architecture
 

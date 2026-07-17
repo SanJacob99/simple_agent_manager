@@ -17,6 +17,7 @@ import {
   Wallet,
   ClipboardCheck,
   RefreshCw,
+  Library,
 } from 'lucide-react';
 import type { NodeType } from '../types/nodes';
 import { NODE_COLORS, NODE_LABELS, NODE_PASTEL } from '../utils/theme';
@@ -72,6 +73,7 @@ const PERIPHERAL_ITEMS: PaletteItem[] = [
   { type: 'connectors', icon: <Cable size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
   { type: 'storage', icon: <HardDrive size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
   { type: 'vectorDatabase', icon: <Blocks size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
+  { type: 'knowledge', icon: <Library size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
   { type: 'mcp', icon: <Plug size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
   { type: 'provider' as NodeType, icon: <Cloud size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
   { type: 'subAgent', icon: <Bot size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },

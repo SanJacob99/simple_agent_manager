@@ -83,12 +83,29 @@ safety) with cost safety. Consumes the same price table as the Telemetry node.
   `server/agents/run-coordinator.ts` and apply each `BudgetDecision`
   (downshift the model, abort with `budget_exceeded`, or emit `budget:exceeded`).
 
-## 6. Knowledge / Ingestion node — *proposed*
+## 6. Knowledge / Ingestion node — *scaffolded*
 
-`vectorDatabase` provides the store; there is no first-class ingestion surface.
-A `knowledge` node would own source definitions (files, URLs, git repos),
-chunking strategy, embedding config, and a refresh schedule — turning raw
-sources into vectors the context engine's RAG path already consumes.
+`vectorDatabase` provides the store; there was no first-class ingestion surface.
+The `knowledge` node owns source definitions (files, directories, URLs, git
+repos, inline text), a chunking strategy, embedding config, and a refresh
+schedule — turning raw sources into vectors the context engine's RAG path
+already consumes. Mirrors LlamaIndex / LangChain document loaders and managed
+RAG stacks.
+
+- Node: `knowledge` (`src/types/nodes.ts#KnowledgeNodeData`)
+- Resolved: `AgentConfig.knowledge` (`shared/agent-config.ts#ResolvedKnowledgeConfig`),
+  a list like `vectorDatabases` — multiple knowledge nodes can bind, each
+  targeting a collection
+- Engine: `server/knowledge/knowledge-engine.ts` (dependency-free source
+  normalization/dedup, the `fixed`/`sentence`/`paragraph`/`markdown` chunkers
+  with token-window packing + overlap, the refresh-due decision, and the
+  ingestion-plan summary; reuses `estimateTokens` from the shared token estimator)
+- Doc: `docs/concepts/knowledge-node.md`
+- **Remaining:** build an ingestion runner that fetches each source's raw text
+  (the source-type I/O), calls `chunkText`, embeds the chunks, and upserts them
+  into the Vector DB collection, driven by `isRefreshDue` for scheduled
+  refreshes. Pairs with the Vector DB node (#store) and the Context Engine's RAG
+  retrieval path.
 
 ## 7. Prompt-cache controls — *proposed (agent-node extension)*
 
@@ -146,7 +163,10 @@ Budget node (cost safety) and Guardrails (content safety) with execution safety.
 3. **Evals** (#2) is scaffolded — wire `EvalRunner` into a headless replay path and
    add the `sam eval` subcommand; it pairs with Telemetry for cost-aware scoring and
    with **Reflection** (#9), which can share its rubric.
-4. **Triggers** (#4) and **Knowledge** (#6) are larger; schedule after the above.
+4. **Knowledge** (#6) is scaffolded — next is an ingestion runner (fetch → chunk
+   → embed → upsert) driven by `isRefreshDue`; it fills the Vector DB the Context
+   Engine's RAG path retrieves from. **Triggers** (#4) is the larger remaining
+   event-source item; schedule after the above.
 5. **Prompt-cache** (#7) is an incremental agent-node enhancement, land opportunistically.
 6. **Reflection** (#9) is scaffolded — next is wiring the critique/revise loop
    into the run-coordinator finalize step; it shares a rubric with **Evals** (#2).
