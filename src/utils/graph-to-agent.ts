@@ -1,6 +1,6 @@
 import type { AppNode } from '../types/nodes';
 import type { Edge } from '@xyflow/react';
-import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides, ResolvedGuardrailConfig, ResolvedTelemetryConfig, ResolvedStructuredOutputConfig, ResolvedBudgetConfig, ResolvedEvalsConfig, EvalGraderType, ResolvedReflectionConfig } from '../../shared/agent-config';
+import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides, ResolvedGuardrailConfig, ResolvedTelemetryConfig, ResolvedStructuredOutputConfig, ResolvedBudgetConfig, ResolvedEvalsConfig, EvalGraderType, ResolvedReflectionConfig, ResolvedKnowledgeConfig } from '../../shared/agent-config';
 import { resolveToolNames, IMPLEMENTED_TOOL_NAMES } from '../../shared/resolve-tool-names';
 import { buildSystemPrompt } from '../../shared/system-prompt-builder';
 import { eligibleBundledSkills } from '../../shared/default-tool-skills';
@@ -543,6 +543,40 @@ export function resolveAgentConfig(
         }
       : null;
 
+  // --- Knowledge / Ingestion ---
+  // Multiple knowledge nodes can bind to an agent (each targeting a collection),
+  // so this resolves to a list like vector databases. Sources normalize their
+  // optional globs to empty strings so the resolved shape is uniform.
+  const knowledge: ResolvedKnowledgeConfig[] = connectedNodes
+    .filter((n) => n.data.type === 'knowledge')
+    .map((n) => {
+      if (n.data.type !== 'knowledge') throw new Error('unreachable');
+      return {
+        knowledgeNodeId: n.id,
+        label: n.data.label,
+        enabled: n.data.enabled,
+        collectionName: n.data.collectionName,
+        sources: n.data.sources.map((s) => ({
+          id: s.id,
+          type: s.type,
+          location: s.location,
+          include: s.include ?? '',
+          exclude: s.exclude ?? '',
+        })),
+        chunkStrategy: n.data.chunkStrategy,
+        chunkSize: n.data.chunkSize,
+        chunkOverlap: n.data.chunkOverlap,
+        embedding: {
+          provider: n.data.embedding.provider,
+          model: n.data.embedding.model,
+          baseUrl: n.data.embedding.baseUrl,
+          dimensions: n.data.embedding.dimensions,
+        },
+        refreshSchedule: n.data.refreshSchedule,
+        maxDocuments: n.data.maxDocuments,
+      };
+    });
+
   // --- MCP Servers ---
   // Each MCP node resolves to a ResolvedMcpConfig. The node id is kept as
   // `mcpNodeId` so the server can push `mcp:status` events back to the UI
@@ -793,6 +827,7 @@ export function resolveAgentConfig(
     budgets,
     evals,
     reflection,
+    knowledge,
     // Exec tool cwd overrides agent-level workingDirectory when set
     workspacePath:
       (toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.exec?.cwd)
