@@ -337,6 +337,24 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         onExhaustion: 'use_best',
         injectRubricIntoPrompt: false,
       };
+    case 'sandbox':
+      return {
+        type: 'sandbox',
+        label: 'Sandbox',
+        enabled: true,
+        isolation: 'workdir',
+        image: 'python:3.12-slim',
+        workdir: '',
+        readOnlyRoot: false,
+        maxCpuCores: 1,
+        maxMemoryMb: 512,
+        maxWallClockSec: 30,
+        maxProcesses: 64,
+        networkPolicy: 'none',
+        allowedHosts: [],
+        onViolation: 'block',
+        blockMessage: '',
+      };
     case 'subAgent':
       return {
         type: 'subAgent',

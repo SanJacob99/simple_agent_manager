@@ -23,7 +23,8 @@ export type NodeType =
   | 'structuredOutput'
   | 'budget'
   | 'evals'
-  | 'reflection';
+  | 'reflection'
+  | 'sandbox';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -735,6 +736,87 @@ export interface ReflectionNodeData {
   injectRubricIntoPrompt: boolean;
 }
 
+// --- Sandbox / Compute Node ---
+
+/**
+ * Where code-running tools (`exec`, `code_execution`) execute.
+ * - `none`: run in the host process working directory. No isolation — the
+ *   node still records resource/egress *intent* for review but enforces
+ *   nothing beyond the existing `sandboxWorkdir` path guard.
+ * - `workdir`: confine reads/writes to `workdir` (a hardened version of the
+ *   exec tool's `sandboxWorkdir`), no container.
+ * - `container`: run each command in an ephemeral OCI container built from
+ *   `image` (Docker/Podman-style), with the resource ceilings applied as
+ *   `--cpus` / `--memory` / `--pids-limit` and the egress policy as a network
+ *   mode. Mirrors E2B / Modal / Daytona code sandboxes.
+ * - `microvm`: run in a Firecracker/Cloud-Hypervisor microVM for
+ *   kernel-level isolation. Strongest boundary, highest startup cost.
+ */
+export type SandboxIsolation = 'none' | 'workdir' | 'container' | 'microvm';
+
+/**
+ * Network egress allowed to sandboxed commands.
+ * - `none`: no outbound network (offline sandbox). Safest default for
+ *   untrusted code.
+ * - `allowlist`: only hosts in `allowedHosts` are reachable; everything else
+ *   is refused.
+ * - `full`: unrestricted egress. Use only for trusted workloads.
+ */
+export type SandboxNetworkPolicy = 'none' | 'allowlist' | 'full';
+
+/**
+ * What the runtime does when a sandboxed command trips a resource ceiling,
+ * escapes the filesystem scope, or contacts a disallowed host.
+ * - `block`: refuse/kill the command with a structured `sandbox_violation`
+ *   error, mirroring guardrail/budget hard-stops.
+ * - `warn`: emit a `sandbox:violation` event but let the command proceed.
+ *   Useful while tuning ceilings for a new workload.
+ */
+export type SandboxViolationPolicy = 'block' | 'warn';
+
+/**
+ * Execution-safety envelope for code-running tools. Complements the Guardrails
+ * node (content safety) and the Budget node (cost safety) with a third axis:
+ * where and how the agent's shell/code commands run. Resolves into
+ * `AgentConfig.sandbox` and is consumed by the `exec` / `code_execution` tools
+ * in place of today's raw `workspacePath` + `sandboxWorkdir` pair.
+ */
+export interface SandboxNodeData {
+  [key: string]: unknown;
+  type: 'sandbox';
+  label: string;
+  /** Master toggle. When false, the node is wired but tools fall back to the raw workspace path. */
+  enabled: boolean;
+  /** Isolation backend used for code-running tools. */
+  isolation: SandboxIsolation;
+  /** OCI image or microVM rootfs, e.g. `python:3.12-slim`. Ignored for `none`/`workdir`. */
+  image: string;
+  /** Filesystem scope / working directory. Empty = the agent's resolved workspace path. */
+  workdir: string;
+  /** Mount the root filesystem read-only; writes are confined to `workdir` and `/tmp`. */
+  readOnlyRoot: boolean;
+  /** CPU ceiling in cores (fractional allowed, e.g. 0.5). 0 = unlimited. */
+  maxCpuCores: number;
+  /** Memory ceiling in megabytes. 0 = unlimited. */
+  maxMemoryMb: number;
+  /** Per-command wall-clock ceiling in seconds. 0 = unlimited. */
+  maxWallClockSec: number;
+  /** Max concurrent processes/PIDs inside the sandbox. 0 = unlimited. */
+  maxProcesses: number;
+  /** Outbound network policy for sandboxed commands. */
+  networkPolicy: SandboxNetworkPolicy;
+  /**
+   * Hosts reachable when `networkPolicy` is `allowlist`. A leading `*.`
+   * matches any subdomain (e.g. `*.pypi.org`). Stored as strings so the graph
+   * stays JSON-serializable.
+   */
+  allowedHosts: string[];
+  /** Behaviour when a ceiling, filesystem scope, or egress rule is violated. */
+  onViolation: SandboxViolationPolicy;
+  /** Message surfaced when a `block` policy stops a command. Empty = generic notice. */
+  blockMessage: string;
+}
+
 // --- Sub-Agent Node ---
 
 export interface SubAgentNodeData {
@@ -775,6 +857,7 @@ export type FlowNodeData =
   | StructuredOutputNodeData
   | BudgetNodeData
   | EvalsNodeData
-  | ReflectionNodeData;
+  | ReflectionNodeData
+  | SandboxNodeData;
 
 export type AppNode = Node<FlowNodeData>;
