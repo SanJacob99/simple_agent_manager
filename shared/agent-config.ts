@@ -286,6 +286,39 @@ export interface ResolvedReflectionConfig {
   injectRubricIntoPrompt: boolean;
 }
 
+// --- Sandbox / Compute ---
+
+export type SandboxIsolation = 'none' | 'workdir' | 'container' | 'microvm';
+export type SandboxNetworkPolicy = 'none' | 'allowlist' | 'full';
+export type SandboxViolationPolicy = 'block' | 'warn';
+
+/**
+ * Resolved execution-safety envelope for code-running tools. At most one
+ * sandbox node binds to an agent — it governs the single shared execution
+ * environment — so this resolves to a single optional value on `AgentConfig`
+ * rather than a list (like structured output and reflection). The `exec` /
+ * `code_execution` tools consume it in place of the raw `workspacePath` +
+ * `sandboxWorkdir` pair; `server/runtime/sandbox-engine.ts` owns the pure
+ * containment/egress/ceiling decisions.
+ */
+export interface ResolvedSandboxConfig {
+  sandboxNodeId: string;
+  label: string;
+  enabled: boolean;
+  isolation: SandboxIsolation;
+  image: string;
+  workdir: string;
+  readOnlyRoot: boolean;
+  maxCpuCores: number;
+  maxMemoryMb: number;
+  maxWallClockSec: number;
+  maxProcesses: number;
+  networkPolicy: SandboxNetworkPolicy;
+  allowedHosts: string[];
+  onViolation: SandboxViolationPolicy;
+  blockMessage: string;
+}
+
 // --- Agent Config interfaces ---
 
 export interface ResolvedCronConfig {
@@ -386,6 +419,14 @@ export interface AgentConfig {
    * graphs remain compatible without a backfill.
    */
   reflection?: ResolvedReflectionConfig | null;
+  /**
+   * Optional execution sandbox for code-running tools. When omitted or `null`,
+   * the `exec` / `code_execution` tools use the raw `workspacePath` +
+   * `sandboxWorkdir` guard as before. At most one sandbox node binds to an
+   * agent. Optional so existing AgentConfig fixtures and serialized graphs
+   * remain compatible without a backfill.
+   */
+  sandbox?: ResolvedSandboxConfig | null;
 
   /** Working directory for shell commands (exec tool). Independent of storage path. */
   workspacePath: string | null;
