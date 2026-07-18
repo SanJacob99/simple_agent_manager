@@ -64,9 +64,10 @@ finalize step.
 
 `cron` covers time. Modern agents also fire on webhooks, file changes, inbound
 email, and queue messages. A `trigger` node would generalize the scheduler into
-an event source registry (`webhook`, `fileWatch`, `queue`, `manual`), feeding the
-same headless-run path the cron scheduler already uses
-(`server/scheduling/`).
+an event source registry (`webhook`, `fileWatch`, `queue`, `manual`), feeding
+the same headless-run path the cron scheduler is designed to use
+(`server/scheduling/`) — note that path itself still needs a production call
+site; see `docs/concepts/cron-node.md`.
 
 ## 5. Budget / Rate-Governance node — *scaffolded*
 
