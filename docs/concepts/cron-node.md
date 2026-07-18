@@ -3,7 +3,7 @@
 > Time-triggered agent runs on a configurable schedule.
 
 <!-- source: src/types/nodes.ts#CronNodeData -->
-<!-- last-verified: 2026-05-15 -->
+<!-- last-verified: 2026-07-18 -->
 
 ## Overview
 
@@ -18,9 +18,15 @@ weekday`) and is parsed by `node-cron`. Each cron node attached to an
 agent runs independently, so an agent can have several schedules with
 different prompts.
 
-Crons are real but kept off the default sidebar palette in some earlier
-builds because the runtime was being verified end-to-end. The scheduler,
-the queueing path, and tests are now in place — see Runtime Behavior.
+> **Status:** the node type, resolution into `AgentConfig.crons`, and the
+> [`CronScheduler`](../../server/scheduling/cron-scheduler.ts) class are
+> implemented and unit-tested, but `CronScheduler` has no production call
+> site — nothing in `server/agents/agent-manager.ts` or `server/index.ts`
+> ever constructs it or calls `.reconcile()`. A cron node resolves cleanly
+> into config today, but schedules never actually fire in the running app.
+> Wiring the scheduler into agent start/restore is the remaining
+> integration step; treat this as an extension surface until that path is
+> verified end-to-end.
 
 ## Configuration
 
@@ -41,27 +47,38 @@ Properties are derived from the TypeScript interface in
 ## Runtime Behavior
 
 `graph-to-agent.ts` resolves connected `cron` nodes into
-`ResolvedCronConfig[]` on the `AgentConfig`. The
-[`CronScheduler`](../../server/scheduling/cron-scheduler.ts) reconciles
-the current schedule list against running jobs whenever the agent config
-changes:
+`ResolvedCronConfig[]` on the `AgentConfig`. That resolved list is inert
+data today: nothing in the running server reads `AgentConfig.crons` to
+schedule anything.
 
-- New crons get a `node-cron` job registered.
-- Removed or disabled crons get their job stopped.
-- Each tick calls into the [`RunCoordinator`](../../server/agents/run-coordinator.ts)
+[`CronScheduler`](../../server/scheduling/cron-scheduler.ts) implements
+the intended reconcile loop — and is fully unit-tested against that
+intent — but it is only ever constructed inside
+`cron-scheduler.test.ts`. As designed (not yet wired into the running
+app), it would:
+
+- Register a `node-cron` job for each new cron.
+- Stop the job for any cron that's removed or disabled.
+- On each tick, call into the [`RunCoordinator`](../../server/agents/run-coordinator.ts)
   with the cron's `prompt` and `sessionMode`, and a per-run timeout
   derived from `maxRunDurationMs`.
 
-`sessionMode: 'persistent'` keeps the cron's session-key stable across
-ticks, so the agent's context engine and memory see one continuous
-conversation. `sessionMode: 'ephemeral'` allocates a fresh session per
-tick — useful when each run should be independent (cron-driven ingest,
-report generation).
+`sessionMode: 'persistent'` vs. `'ephemeral'` and the `retentionDays`
+field describe the same intended behavior — one continuous session
+across ticks vs. a fresh session per tick, and how long the maintenance
+scheduler should keep the cron's transcripts. Like `CronScheduler`,
+[`MaintenanceScheduler`](../../server/scheduling/maintenance-scheduler.ts)
+is implemented and unit-tested but never constructed outside its own
+test file, and `retentionDays` itself is not read anywhere in
+production code (`grep -rn "retentionDays" server/` only matches the
+test fixture). The storage engine does prune reset archives via
+`cleanResetArchives()`, but that path is driven by the storage node's
+own `resetArchiveRetentionDays`, not by any cron node's `retentionDays`.
 
-`retentionDays` is read by the maintenance scheduler when present. The
-storage engine's pruning behavior is partial today (see
-[`docs/audit-2026-05-09.md`](../audit-2026-05-09.md) §2.5), so verify
-end-to-end retention if your deployment depends on it.
+Until agent start/restore actually constructs `CronScheduler` (and
+`MaintenanceScheduler`), treat `schedule`, `sessionMode`,
+`maxRunDurationMs`, and `retentionDays` as configuration that is saved
+and resolved correctly but not yet acted on.
 
 ## Connections
 
