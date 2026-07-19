@@ -17,6 +17,7 @@ import {
   Wallet,
   ClipboardCheck,
   RefreshCw,
+  Network,
 } from 'lucide-react';
 import type { NodeType } from '../types/nodes';
 import { NODE_COLORS, NODE_LABELS, NODE_PASTEL } from '../utils/theme';
@@ -81,6 +82,7 @@ const PERIPHERAL_ITEMS: PaletteItem[] = [
   { type: 'budget', icon: <Wallet size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
   { type: 'evals', icon: <ClipboardCheck size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
   { type: 'reflection', icon: <RefreshCw size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
+  { type: 'a2a', icon: <Network size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
   { type: 'cron', icon: <CalendarClock size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
 ];
 
