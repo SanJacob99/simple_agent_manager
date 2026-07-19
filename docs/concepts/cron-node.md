@@ -3,7 +3,7 @@
 > Time-triggered agent runs on a configurable schedule.
 
 <!-- source: src/types/nodes.ts#CronNodeData -->
-<!-- last-verified: 2026-05-15 -->
+<!-- last-verified: 2026-07-19 -->
 
 ## Overview
 
@@ -18,9 +18,14 @@ weekday`) and is parsed by `node-cron`. Each cron node attached to an
 agent runs independently, so an agent can have several schedules with
 different prompts.
 
-Crons are real but kept off the default sidebar palette in some earlier
-builds because the runtime was being verified end-to-end. The scheduler,
-the queueing path, and tests are now in place — see Runtime Behavior.
+The `cron` node is part of the default sidebar palette (`src/panels/Sidebar.tsx`).
+The schema, resolution into `AgentConfig`, and the `CronScheduler` class
+(reconciliation, `node-cron` job registration, per-tick dispatch) are
+implemented and unit-tested, but `CronScheduler` is **not yet instantiated
+anywhere the live server starts** — only its own test file constructs one.
+A configured cron node will not actually fire in a running deployment until
+that startup wiring lands. Treat this node as schema/engine-complete but
+not end-to-end wired; see Runtime Behavior.
 
 ## Configuration
 

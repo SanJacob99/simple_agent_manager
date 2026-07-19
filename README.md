@@ -36,15 +36,21 @@ The default sidebar currently exposes these draggable nodes:
 | `skills` | Lightweight named skills that are folded into the resolved system prompt |
 | `contextEngine` | Token budget, compaction strategy, and prompt bootstrap limits |
 | `agentComm` | Configuration surface for agent-to-agent communication |
-| `connectors` | Configuration surface for external connector metadata |
+| `connectors` | Curated MCP presets (e.g. GitHub) — resolves into `AgentConfig.mcps[]`, but no MCP runtime consumes it yet |
 | `storage` | Session persistence, retention, maintenance, and memory file settings |
-| `vectorDatabase` | Configuration surface for vector-store metadata |
+| `vectorDatabase` | Vector-store metadata; wired end-to-end into the agent runtime's vector tools |
+| `mcp` | Wires an arbitrary MCP server (stdio/http/sse) into `AgentConfig.mcps[]`; no MCP runtime consumes it yet |
+| `provider` | Plugin-provided model/provider registration |
+| `subAgent` | Delegates a sub-task to a nested agent definition |
+| `guardrails` | Input/output content-safety checks, wired into the run coordinator |
 | `telemetry` | Observability instrumentation: per-run/turn/tool spans (tokens, cost, latency) exported to console, file, or an OTLP collector |
 | `structuredOutput` | Constrains the agent's final reply to a JSON Schema, with native provider enforcement, prompt injection, and a repair/warn/block policy on validation failure |
 | `budget` | Spend and rate governance: USD per run/day, tokens and tool calls per run, runs per minute, with a warn / downshift / block degrade policy |
+| `evals` | Dataset of input/expected cases plus graders, for scoring the resolved agent |
 | `reflection` | Reflexion-style draft → critique → revise loop: a critic scores each draft against a rubric and feeds the critique back for up to *N* revisions, with a use-best / use-last / warn exhaustion policy |
+| `cron` | Time-triggered agent runs on a schedule; `CronScheduler` is unit-tested but not yet instantiated at server startup — treat as in-progress |
 
-The codebase also contains a `cron` node type and editor, but it is not part of the default palette and should be treated as in-progress unless you verify the full execution path.
+All of the above are part of the default sidebar palette (`src/panels/Sidebar.tsx`). `cron`, `mcp`, and `connectors` are schema/UI complete but need runtime verification before you treat them as end-to-end features — see the caveats above and each node's concept doc.
 
 > **Scaffolding note:** `telemetry`, `structuredOutput`, `budget`, and `reflection` ship with node UI, resolved config, and a unit-tested engine, but the run-coordinator wiring is still pending — treat them as extension surfaces until that path is verified end-to-end. See `docs/roadmap/2026-modernization.md`.
 
