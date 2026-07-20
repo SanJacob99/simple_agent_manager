@@ -1,6 +1,6 @@
 # User-Installed Tools
 
-<!-- last-verified: 2026-04-23 -->
+<!-- last-verified: 2026-07-20 -->
 
 SAM lets you add tools to your own install without forking the main
 codebase. Drop a `*.module.ts` file under `server/tools/user/`,
@@ -211,13 +211,20 @@ this pattern consistently.
 Defined in [shared/agent-config.ts](../../shared/agent-config.ts).
 Relevant slots for user tools:
 
-- Ad-hoc fields on the tools-node data (`config.tools` and
-  `config.toolSettings`) — the UI persists whatever the user puts on
-  the node, and the cast-and-read pattern above is the v1 story. When
-  the per-tool schema editor ships (see
-  [Open questions](#open-questions)), your tool will declare a
-  `config.schema` and the Tools node will auto-render a form.
-- `config.models` / `config.provider` — if your tool needs to call an
+- Ad-hoc top-level fields on `AgentConfig` — the Tools node persists
+  each tool's settings under `ToolsNodeData.toolSettings.<tool>`, but
+  `resolveAgentConfig()` in `src/utils/graph-to-agent.ts` flattens
+  them onto scalar top-level `AgentConfig` fields (e.g.
+  `browserUserDataDir`, `xaiApiKey`) rather than nesting them under a
+  `toolSettings` key — there is no `config.toolSettings`. `config.tools`
+  is a different, unrelated field (`ResolvedToolsConfig`: profile,
+  resolved tool names, groups, plugins) and isn't where per-tool ad-hoc
+  settings live. The cast-and-read pattern above is the v1 story for
+  fields that don't have a first-class slot yet. When the per-tool
+  schema editor ships (see [Open questions](#open-questions)), your
+  tool will declare a `config.schema` and the Tools node will
+  auto-render a form.
+- `config.provider` / `config.modelId` — if your tool needs to call an
   LLM itself, prefer the same provider the agent is already using.
 - Standard keys like `config.openaiApiKey` already exist on the config
   for built-ins; reuse them if your tool talks to the same service.
@@ -418,9 +425,10 @@ which gives us room to evolve without churning user code.
   frontend: render a form from the TypeBox schema into the Tools
   node's per-tool editor area. Until then, users rely on
   `AgentConfig` ad-hoc fields + env vars.
-- **Aliases.** Built-ins can declare aliases (`bash` → `exec`). Should
-  user tools? **Lean: no — forces a unique top-level name and avoids
-  confusing collisions.**
+- **Aliases.** Built-ins can declare aliases (`bash` → `exec`,
+  `code_interpreter` → `code_execution`). Should user tools? **Lean:
+  no — forces a unique top-level name and avoids confusing
+  collisions.**
 - **Stable API for shared utilities.** Tools that want to call the
   storage engine, or read other agent state, need an exported API.
   **Lean: don't expose anything beyond `RuntimeHints` + `AgentConfig`
