@@ -286,6 +286,60 @@ export interface ResolvedReflectionConfig {
   injectRubricIntoPrompt: boolean;
 }
 
+// --- A2A (Agent-to-Agent interop) ---
+
+export type A2AMode = 'server' | 'client' | 'both';
+export type A2AAuthScheme = 'none' | 'bearer' | 'apiKey';
+export type A2ATransport = 'jsonrpc' | 'grpc' | 'rest';
+
+/** One skill advertised in this agent's A2A agent card. */
+export interface ResolvedA2ASkillCard {
+  id: string;
+  name: string;
+  description: string;
+  tags: string[];
+}
+
+/** A remote A2A agent this agent can delegate tasks to. */
+export interface ResolvedA2ARemoteAgent {
+  id: string;
+  name: string;
+  cardUrl: string;
+  transport: A2ATransport;
+  /** Credential reference (env var / key id), never the secret value. */
+  authRef: string;
+  exposeAsTool: boolean;
+}
+
+/**
+ * Resolved Agent-to-Agent interop surface. At most one A2A node binds to an
+ * agent — it is the agent's single interop identity — so this resolves to a
+ * single optional value on `AgentConfig` rather than a list. The runtime serves
+ * an agent card + task endpoint at `serverPath` (server mode) and/or registers
+ * `remoteAgents` as callable delegates (client mode). Mirrors the emerging A2A
+ * protocol: agent cards for discovery, a JSON-RPC task/message envelope, and
+ * streamed status updates.
+ */
+export interface ResolvedA2AConfig {
+  a2aNodeId: string;
+  label: string;
+  enabled: boolean;
+  mode: A2AMode;
+  cardName: string;
+  cardDescription: string;
+  serverPath: string;
+  streaming: boolean;
+  pushNotifications: boolean;
+  stateTransitionHistory: boolean;
+  defaultInputModes: string[];
+  defaultOutputModes: string[];
+  skills: ResolvedA2ASkillCard[];
+  authScheme: A2AAuthScheme;
+  remoteAgents: ResolvedA2ARemoteAgent[];
+  taskTimeoutMs: number;
+  maxConcurrentTasks: number;
+}
+
 // --- Agent Config interfaces ---
 
 export interface ResolvedCronConfig {
@@ -386,6 +440,13 @@ export interface AgentConfig {
    * graphs remain compatible without a backfill.
    */
   reflection?: ResolvedReflectionConfig | null;
+  /**
+   * Optional Agent-to-Agent interop surface. When omitted or `null`, the agent
+   * is neither exposed as an A2A server nor bound to remote A2A delegates. At
+   * most one A2A node binds to an agent. Optional so existing AgentConfig
+   * fixtures and serialized graphs remain compatible without a backfill.
+   */
+  a2a?: ResolvedA2AConfig | null;
 
   /** Working directory for shell commands (exec tool). Independent of storage path. */
   workspacePath: string | null;

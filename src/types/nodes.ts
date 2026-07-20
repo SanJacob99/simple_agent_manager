@@ -23,7 +23,8 @@ export type NodeType =
   | 'structuredOutput'
   | 'budget'
   | 'evals'
-  | 'reflection';
+  | 'reflection'
+  | 'a2a';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -735,6 +736,99 @@ export interface ReflectionNodeData {
   injectRubricIntoPrompt: boolean;
 }
 
+// --- A2A (Agent-to-Agent interop) Node ---
+
+/**
+ * Which side(s) of the Agent-to-Agent protocol this node wires:
+ * - `server`: expose this agent as an A2A server — publish an agent card and
+ *   accept remote tasks over `serverPath`.
+ * - `client`: register remote A2A agents as callable delegates for this agent.
+ * - `both`: do both (the default), so the agent is reachable *and* can reach out.
+ */
+export type A2AMode = 'server' | 'client' | 'both';
+
+/** Auth scheme advertised on / required by this agent's A2A endpoint. */
+export type A2AAuthScheme = 'none' | 'bearer' | 'apiKey';
+
+/** Transport a remote A2A agent is reached over. */
+export type A2ATransport = 'jsonrpc' | 'grpc' | 'rest';
+
+/**
+ * One skill advertised in this agent's A2A agent card. Callers use skill cards
+ * to decide whether this agent can handle a task, so keep them task-oriented.
+ */
+export interface A2ASkillCard {
+  id: string;
+  name: string;
+  description: string;
+  /** Free-form capability tags used by callers to match tasks (e.g. `["summarize","pdf"]`). */
+  tags: string[];
+}
+
+/**
+ * A remote A2A agent this agent can delegate tasks to. The card URL points at
+ * the remote's `.../.well-known/agent-card.json`. Credentials are referenced by
+ * name (`authRef`) and resolved from the credential store at call time — the
+ * secret itself is never stored on the node or in the serialized graph.
+ */
+export interface A2ARemoteAgent {
+  id: string;
+  name: string;
+  /** URL of the remote agent card (e.g. `https://host/.well-known/agent-card.json`). */
+  cardUrl: string;
+  transport: A2ATransport;
+  /** Credential reference (env var or key id), never the secret value. */
+  authRef: string;
+  /** Expose this remote agent to the local agent as a callable delegate tool. */
+  exposeAsTool: boolean;
+}
+
+/**
+ * Agent-to-Agent (A2A) interop surface. A2A is the emerging cross-framework
+ * protocol for agents to discover and call one another — agent cards for
+ * capability discovery, a JSON-RPC task/message envelope, and streamed status
+ * updates — standardizing agent interop much as MCP standardized tools. Where
+ * `agentComm` is an in-process bus and `subAgent` is in-tree, this node lets the
+ * agent talk to agents built on *other* frameworks (and be called by them).
+ */
+export interface A2ANodeData {
+  [key: string]: unknown;
+  type: 'a2a';
+  label: string;
+  /** Master toggle. When false the node is wired but no A2A surface is served. */
+  enabled: boolean;
+  /** Expose this agent (`server`), consume remote agents (`client`), or `both`. */
+  mode: A2AMode;
+  // --- Server side (expose this agent) ---
+  /** Name published in this agent's agent card. */
+  cardName: string;
+  /** Human-readable description published in the agent card. */
+  cardDescription: string;
+  /** Mount path for the A2A server and its agent card. */
+  serverPath: string;
+  /** Advertise SSE streaming (`message/stream`) support. */
+  streaming: boolean;
+  /** Advertise push-notification (webhook) support. */
+  pushNotifications: boolean;
+  /** Advertise task state-transition history. */
+  stateTransitionHistory: boolean;
+  /** MIME types accepted as task input, advertised in the card. */
+  defaultInputModes: string[];
+  /** MIME types produced as task output, advertised in the card. */
+  defaultOutputModes: string[];
+  /** Skill cards advertised to callers. */
+  skills: A2ASkillCard[];
+  /** Auth scheme required to call this agent's A2A endpoint. */
+  authScheme: A2AAuthScheme;
+  // --- Client side (consume remote agents) ---
+  /** Remote A2A agents this agent can delegate tasks to. */
+  remoteAgents: A2ARemoteAgent[];
+  /** Per-task wall-clock ceiling in ms. 0 means no limit. */
+  taskTimeoutMs: number;
+  /** Max concurrent inbound + outbound A2A tasks. */
+  maxConcurrentTasks: number;
+}
+
 // --- Sub-Agent Node ---
 
 export interface SubAgentNodeData {
@@ -775,6 +869,7 @@ export type FlowNodeData =
   | StructuredOutputNodeData
   | BudgetNodeData
   | EvalsNodeData
-  | ReflectionNodeData;
+  | ReflectionNodeData
+  | A2ANodeData;
 
 export type AppNode = Node<FlowNodeData>;
