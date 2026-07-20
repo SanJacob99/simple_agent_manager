@@ -3,7 +3,7 @@
 > How SAM assembles the system prompt that every agent run receives.
 
 <!-- source: shared/system-prompt-builder.ts, server/runtime/resolve-system-prompt.ts -->
-<!-- last-verified: 2026-05-25 -->
+<!-- last-verified: 2026-07-20 -->
 
 ## Overview
 
@@ -62,7 +62,7 @@ When `mode === 'append'` and the user's `systemPrompt` is non-empty, a final `us
 
 After the client builds the prompt, `resolveOutboundSystemPrompt()` in `server/runtime/resolve-system-prompt.ts` takes the `ResolvedSystemPrompt` from `AgentConfig` and applies three runtime transformations:
 
-1. **Bundled-skills-root substitution.** Any `{{BUNDLED_SKILLS_ROOT}}` placeholder in sections or the assembled string is replaced with the real server-side path. Token estimates are recomputed for any section whose content changed.
+1. **Bundled-skills-root substitution.** Any `{SAM_BUNDLED_ROOT}` placeholder in sections or the assembled string is replaced with the real server-side path. Token estimates are recomputed for any section whose content changed.
 2. **Workspace fallback.** If the client-built prompt has no workspace section and the caller passed a `workspaceCwd`, a `workspace-runtime` section is appended with `## Workspace\n\nWorking directory: <cwd>`.
 3. **Confirmation policy (HITL).** When either `ask_user` or `confirm_action` is in the resolved tool list, the configured safety `confirmationPolicy` is appended as a `confirmationPolicy` section. Placeholders are filled from the enabled tool set:
    - `{{READ_ONLY_TOOLS}}` → read-classified tools
@@ -75,7 +75,7 @@ The final `assembled` string is what `AgentRuntime` passes to pi-ai as the Agent
 
 ## Per-turn Overrides
 
-`AgentRuntime.setSystemPrompt()` can swap the prompt for the next prompt call. This is used by the `before_model_resolve` hook pipeline. The `initialSystemPrompt` snapshot is kept so `buildInitialBreakdown()` can tokenize the original without reading from pi-core's per-turn Agent state.
+`AgentRuntime.setSystemPrompt()` can swap the prompt for the next prompt call. This is used by the `before_prompt_build` hook pipeline (`overrides.systemPrompt`, `overrides.prependSystemContext`, `overrides.appendSystemContext`). The `initialSystemPrompt` snapshot is kept so `buildInitialBreakdown()` can tokenize the original without reading from pi-core's per-turn Agent state.
 
 ## Data Shape
 

@@ -3,7 +3,7 @@
 > Attaches a curated external integration to an agent — a named entry from the connector catalog that resolves into an MCP server under the hood.
 
 <!-- source: src/types/nodes.ts#ConnectorsNodeData -->
-<!-- last-verified: 2026-05-24 -->
+<!-- last-verified: 2026-07-20 -->
 
 ## Overview
 
@@ -35,9 +35,11 @@ During config resolution (`src/utils/graph-to-agent.ts`), each connector node co
    - `toolPrefix` = the catalog entry's `toolPrefix` (e.g. `github_`).
    - `allowedTools` = `[]` (no whitelist).
    - `autoConnect` = `true`.
-3. Appended to the same `mcps[]` the MCP node populates. The MCP runtime under `server/runtime/...` handles spawn, tool registration, and `mcp:status` events.
+3. Appended to the same `mcps[]` the MCP node populates.
 
-The connector node has no live connection-status indicator yet.
+**Implementation status:** this is where the wiring currently stops. There is no MCP client in `server/` — `AgentConfig.mcps` is never read by `agent-runtime.ts`, so nothing spawns the connector's subprocess, registers its tools, or emits `mcp:status` events. A connector node resolves cleanly into config, but does not yet grant the agent any working tools at runtime. The [MCP Node doc](./mcp-node.md) carries the same caveat for hand-wired MCP servers.
+
+The connector node has no live connection-status indicator yet (there is no live connection to indicate).
 
 ## Catalog (v1)
 
@@ -45,7 +47,7 @@ The connector node has no live connection-status indicator yet.
 |----|-------------|-----------|
 | `github` | Read repos, search code, manage issues and PRs. | `tokenEnvVar` (default `GITHUB_PERSONAL_ACCESS_TOKEN`) |
 
-To use the GitHub connector, set the env var on the SAM server process before starting it:
+The GitHub connector's env var is resolved the same way regardless of runtime status. To have it ready for when the MCP runtime lands, set the env var on the SAM server process before starting it:
 
 ```bash
 export GITHUB_PERSONAL_ACCESS_TOKEN=ghp_...

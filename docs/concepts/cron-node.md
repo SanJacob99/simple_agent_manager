@@ -3,7 +3,7 @@
 > Time-triggered agent runs on a configurable schedule.
 
 <!-- source: src/types/nodes.ts#CronNodeData -->
-<!-- last-verified: 2026-05-15 -->
+<!-- last-verified: 2026-07-20 -->
 
 ## Overview
 
@@ -18,9 +18,12 @@ weekday`) and is parsed by `node-cron`. Each cron node attached to an
 agent runs independently, so an agent can have several schedules with
 different prompts.
 
-Crons are real but kept off the default sidebar palette in some earlier
-builds because the runtime was being verified end-to-end. The scheduler,
-the queueing path, and tests are now in place — see Runtime Behavior.
+The node, its config resolution, and the `CronScheduler` class are implemented
+and unit-tested, but `CronScheduler` is not yet instantiated anywhere in
+`server/index.ts` or the agent manager — nothing currently calls
+`reconcile()` outside of `server/scheduling/cron-scheduler.test.ts`. Wiring a
+`cron` node to an agent today has no observable runtime effect; see Runtime
+Behavior.
 
 ## Configuration
 
@@ -42,15 +45,22 @@ Properties are derived from the TypeScript interface in
 
 `graph-to-agent.ts` resolves connected `cron` nodes into
 `ResolvedCronConfig[]` on the `AgentConfig`. The
-[`CronScheduler`](../../server/scheduling/cron-scheduler.ts) reconciles
-the current schedule list against running jobs whenever the agent config
-changes:
+[`CronScheduler`](../../server/scheduling/cron-scheduler.ts) class, when
+given a list of `ResolvedCronConfig`, reconciles it against running jobs via
+`reconcile(agentId, crons)`:
 
 - New crons get a `node-cron` job registered.
 - Removed or disabled crons get their job stopped.
 - Each tick calls into the [`RunCoordinator`](../../server/agents/run-coordinator.ts)
   with the cron's `prompt` and `sessionMode`, and a per-run timeout
   derived from `maxRunDurationMs`.
+
+This logic is verified by `server/scheduling/cron-scheduler.test.ts`, but no
+production code path currently constructs a `CronScheduler` or calls
+`reconcile()` — the server does not start a scheduler on boot, and
+`AgentManager` never forwards `AgentConfig.crons` to one. Until that wiring
+lands, cron nodes are a schema-only surface: they resolve into config but do
+not actually schedule or dispatch runs.
 
 `sessionMode: 'persistent'` keeps the cron's session-key stable across
 ticks, so the agent's context engine and memory see one continuous

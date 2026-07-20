@@ -3,7 +3,7 @@
 > Attaches a dataset of input → expected cases to an agent and scores its replies with deterministic graders or an LLM judge, for eval-driven development and regression gating.
 
 <!-- source: src/types/nodes.ts#EvalsNodeData -->
-<!-- last-verified: 2026-06-29 -->
+<!-- last-verified: 2026-07-20 -->
 
 ## Overview
 
@@ -35,7 +35,7 @@ Properties are derived from `src/types/nodes.ts#EvalsNodeData` and defaults from
 
 ## Runtime Behavior
 
-`src/utils/graph-to-agent.ts` resolves each connected Evals node into a `ResolvedEvalsConfig` entry on `AgentConfig.evals` (`shared/agent-config.ts`), folding each case's grader down to a concrete value (`grader ?? defaultGrader`). The list is optional — agents without an Evals node have `evals === undefined`.
+`src/utils/graph-to-agent.ts` resolves each connected Evals node into a `ResolvedEvalsConfig` entry on `AgentConfig.evals` (`shared/agent-config.ts`), folding each case's grader down to a concrete value (`grader ?? defaultGrader`). The field is typed optional, but resolution always assigns an array — agents without an Evals node have `evals === []`.
 
 `server/evals/eval-runner.ts` provides the scoring substrate:
 
