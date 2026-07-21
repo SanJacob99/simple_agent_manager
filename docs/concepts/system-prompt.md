@@ -3,7 +3,7 @@
 > How SAM assembles the system prompt that every agent run receives.
 
 <!-- source: shared/system-prompt-builder.ts, server/runtime/resolve-system-prompt.ts -->
-<!-- last-verified: 2026-05-25 -->
+<!-- last-verified: 2026-07-21 -->
 
 ## Overview
 
@@ -18,7 +18,7 @@ The same `resolveOutboundSystemPrompt()` is used by both the runtime and the `Sy
 
 ## Modes
 
-The Agent Node's `systemPromptMode` selects which assembly strategy the builder uses. Defined in [shared/agent-config.ts:8](shared/agent-config.ts#L8) as `'auto' | 'append' | 'manual'`.
+The Agent Node's `systemPromptMode` selects which assembly strategy the builder uses. Defined in [shared/agent-config.ts:21](shared/agent-config.ts#L21) as `'auto' | 'append' | 'manual'`.
 
 | Mode | Behavior |
 |------|----------|

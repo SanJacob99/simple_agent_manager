@@ -1,6 +1,6 @@
 # User-Installed Tools
 
-<!-- last-verified: 2026-04-23 -->
+<!-- last-verified: 2026-07-21 -->
 
 SAM lets you add tools to your own install without forking the main
 codebase. Drop a `*.module.ts` file under `server/tools/user/`,
@@ -426,7 +426,7 @@ which gives us room to evolve without churning user code.
   **Lean: don't expose anything beyond `RuntimeHints` + `AgentConfig`
   for now; revisit when a real user request lands.**
 - **Tool plugins shipped as npm packages.** The current Plugin SDK
-  (`shared/plugin-sdk.ts`) is for *provider* plugins, not tool
+  (`shared/plugin-sdk/`) is for *provider* plugins, not tool
   plugins. Raw files are the delivery mechanism; reusing the
   provider plugin-SDK machinery for tools is doable when demand
   exists.

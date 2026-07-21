@@ -3,7 +3,7 @@
 > Time-triggered agent runs on a configurable schedule.
 
 <!-- source: src/types/nodes.ts#CronNodeData -->
-<!-- last-verified: 2026-05-15 -->
+<!-- last-verified: 2026-07-21 -->
 
 ## Overview
 
@@ -30,7 +30,7 @@ the queueing path, and tests are now in place — see Runtime Behavior.
 | `schedule` | `string` | `"0 9 * * *"` | Standard 5-field cron expression. |
 | `prompt` | `string` | `""` | The prompt the agent receives when the schedule fires. |
 | `enabled` | `boolean` | `true` | When false, the schedule is parsed but never dispatched. |
-| `sessionMode` | `"persistent" \| "ephemeral"` | `"persistent"` | `persistent` reuses a single session per cron node so context carries across ticks. `ephemeral` starts a fresh session every fire. |
+| `sessionMode` | `"persistent" \| "ephemeral"` | `"persistent"` | `persistent` reuses a single session per cron node so context carries across ticks. `ephemeral` is intended to start a fresh session every fire, but is not yet honored by the scheduler — see Runtime Behavior below. |
 | `timezone` | `string` | `"local"` | IANA timezone (e.g. `Europe/Berlin`) or `local` to use the server's timezone. |
 | `maxRunDurationMs` | `number` | `300000` | Per-tick timeout. The run is aborted if it exceeds this. |
 | `retentionDays` | `number` | `7` | How long the cron's transcripts are retained when storage maintenance runs. |
@@ -49,19 +49,18 @@ changes:
 - New crons get a `node-cron` job registered.
 - Removed or disabled crons get their job stopped.
 - Each tick calls into the [`RunCoordinator`](../../server/agents/run-coordinator.ts)
-  with the cron's `prompt` and `sessionMode`, and a per-run timeout
-  derived from `maxRunDurationMs`.
+  with the cron's `prompt`, dispatched against a fixed session key
+  (`cron:<cronNodeId>`), and a per-run timeout derived from `maxRunDurationMs`.
 
-`sessionMode: 'persistent'` keeps the cron's session-key stable across
-ticks, so the agent's context engine and memory see one continuous
-conversation. `sessionMode: 'ephemeral'` allocates a fresh session per
-tick — useful when each run should be independent (cron-driven ingest,
-report generation).
+`sessionMode` is accepted by the schema and resolved onto `AgentConfig`,
+but `CronScheduler` does not yet read it — every tick dispatches against
+the same fixed session key regardless of mode, so `ephemeral` currently
+behaves identically to `persistent` (context carries across ticks either
+way). Per-tick session isolation for `ephemeral` is not implemented yet.
 
-`retentionDays` is read by the maintenance scheduler when present. The
-storage engine's pruning behavior is partial today (see
-[`docs/audit-2026-05-09.md`](../audit-2026-05-09.md) §2.5), so verify
-end-to-end retention if your deployment depends on it.
+`retentionDays` is schema-only today — no server code reads it yet.
+Cron transcripts follow whatever retention the Storage node's own
+settings apply; there is no per-cron retention override in effect.
 
 ## Connections
 

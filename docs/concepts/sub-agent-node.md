@@ -3,7 +3,7 @@
 > A peripheral that declares a named, one-shot sub-agent the parent agent can dispatch via `sessions_spawn`.
 
 <!-- source: src/types/nodes.ts#SubAgentNodeData -->
-<!-- last-verified: 2026-05-29 -->
+<!-- last-verified: 2026-07-21 -->
 
 ## Overview
 
@@ -17,14 +17,14 @@ The Sub-Agent Node attaches to an Agent Node as a peripheral. Each declared sub-
 | `description` | `string` | `""` | Shown to the parent in the `sessions_spawn` schema |
 | `systemPrompt` | `string` | `"You are a focused assistant. ..."` | The sub's system prompt |
 | `modelIdMode` | `'inherit' \| 'custom'` | `'inherit'` | When `inherit`, the parent's `modelId` is used at runtime |
-| `modelId` | `string` | `""` | Honored only when `modelIdMode === 'custom'` |
-| `thinkingLevelMode` | `'inherit' \| 'custom'` | `'inherit'` | Same convention as modelId |
+| `modelId` | `string` | `""` | Honored only when `modelIdMode === 'custom'` and non-empty; an empty value falls back to the parent's `modelId` |
+| `thinkingLevelMode` | `'inherit' \| 'custom'` | `'inherit'` | Similar convention to modelId, though without modelId's empty-value fallback |
 | `thinkingLevel` | `ThinkingLevel` | `'off'` | Honored only when `thinkingLevelMode === 'custom'` |
 | `modelCapabilities` | `ModelCapabilityOverrides` | `{}` | Snapshot/overrides like the Agent Node |
 | `overridableFields` | `SubAgentOverridableField[]` | `[]` | Fields the parent may override per-call (`modelId`, `thinkingLevel`, `systemPromptAppend`, `enabledTools`) |
 | `workingDirectoryMode` | `'derived' \| 'custom'` | `'derived'` | When `derived`, cwd is `<parentCwd>/subagent/<name>` |
 | `workingDirectory` | `string` | `""` | Honored only when `workingDirectoryMode === 'custom'` |
-| `recursiveSubAgentsEnabled` | `boolean` | `false` | When true, the sub may call `sessions_spawn` itself. Marked **Unstable** in the UI |
+| `recursiveSubAgentsEnabled` | `boolean` | `false` | When true, the sub may call `sessions_spawn` itself. Off by default; the UI notes recursion is disabled until product is ready |
 
 ## Connections
 
