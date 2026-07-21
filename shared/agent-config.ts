@@ -286,6 +286,46 @@ export interface ResolvedReflectionConfig {
   injectRubricIntoPrompt: boolean;
 }
 
+// --- Agent-to-Agent (A2A) Interop ---
+
+export type A2ARole = 'server' | 'client' | 'both';
+
+export interface ResolvedA2ARemoteAgent {
+  id: string;
+  name: string;
+  cardUrl: string;
+  description: string;
+  enabled: boolean;
+}
+
+/**
+ * Resolved A2A interop. At most one A2A node binds to an agent — it owns the
+ * agent's single card identity — so this resolves to a single optional value on
+ * `AgentConfig.a2a` rather than a list (like structured output / reflection).
+ * `serverName` / `serverDescription` are empty when they should inherit the
+ * agent's own name / description. The accepted bearer token is never resolved
+ * here — only `authTokenEnvVar` is carried, and the runtime reads the secret
+ * from the environment at request time so it never lands in a serialized graph.
+ */
+export interface ResolvedA2AConfig {
+  a2aNodeId: string;
+  label: string;
+  role: A2ARole;
+  serverName: string;
+  serverDescription: string;
+  cardPath: string;
+  streaming: boolean;
+  pushNotifications: boolean;
+  stateTransitionHistory: boolean;
+  defaultInputModes: string[];
+  defaultOutputModes: string[];
+  requireAuth: boolean;
+  authTokenEnvVar: string;
+  delegates: ResolvedA2ARemoteAgent[];
+  delegateToolPrefix: string;
+  taskTimeoutMs: number;
+}
+
 // --- Agent Config interfaces ---
 
 export interface ResolvedCronConfig {
@@ -386,6 +426,13 @@ export interface AgentConfig {
    * graphs remain compatible without a backfill.
    */
   reflection?: ResolvedReflectionConfig | null;
+  /**
+   * Optional Agent-to-Agent (A2A) interop. When omitted or `null`, the agent
+   * neither publishes an A2A card nor registers remote delegates. At most one
+   * A2A node binds to an agent. Optional so existing AgentConfig fixtures and
+   * serialized graphs remain compatible without a backfill.
+   */
+  a2a?: ResolvedA2AConfig | null;
 
   /** Working directory for shell commands (exec tool). Independent of storage path. */
   workspacePath: string | null;
