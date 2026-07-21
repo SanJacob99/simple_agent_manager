@@ -3,13 +3,13 @@
 > Constrains an agent's final reply to a JSON Schema, with native provider enforcement, prompt injection, and a repair/warn/block policy on validation failure.
 
 <!-- source: src/types/nodes.ts#StructuredOutputNodeData -->
-<!-- last-verified: 2026-06-28 -->
+<!-- last-verified: 2026-07-21 -->
 
 ## Overview
 
 The Structured Output node makes an agent's final answer machine-readable. Instead of free-form prose, the reply is constrained to a JSON Schema you author on the node. It mirrors the structured-output surfaces in OpenAI (`response_format: json_schema`), Anthropic tool-call schemas, and the auto-fixing output parsers in LangChain / Instructor / BAML.
 
-At most one Structured Output node binds to an agent — there can only be one shape for the final reply — so it resolves to a single optional value on `AgentConfig.outputSchema` rather than a list (unlike Guardrails or Telemetry). When `strict` is set, the schema is forwarded to providers that support native enforcement; regardless, the runtime validates the reply after the fact and applies the configured `onValidationError` policy.
+At most one Structured Output node binds to an agent — there can only be one shape for the final reply — so it resolves to a single optional value on `AgentConfig.outputSchema` rather than a list (unlike Guardrails or Telemetry). By design, when `strict` is set the schema would be forwarded to providers that support native enforcement, and the runtime would validate the reply after the fact and apply the configured `onValidationError` policy — but see Status below: neither path is wired into the runtime yet.
 
 > **Status:** the node, resolved config, and engine are scaffolded and unit-tested. Wiring `evaluateReply` into `server/agents/run-coordinator.ts`'s finalize step (validate the streamed reply, then repair/warn/block) and the native `response_format` path in `server/runtime/model-resolver.ts` are the remaining integration steps. Treat this as an extension surface until that path is verified end-to-end.
 
@@ -39,7 +39,7 @@ Properties are derived from `src/types/nodes.ts#StructuredOutputNodeData` and de
 - **`validateAgainstSchema(value, schema)`** — checks a value against a JSON Schema subset (type, properties, required, items, enum, additionalProperties, numeric/length/array bounds, anyOf/oneOf). Unknown keywords are ignored rather than rejected.
 - **`buildSchemaPromptSection(config)`** — produces the system-prompt injection used when `injectSchemaIntoPrompt` is set.
 - **`buildRepairPrompt(config, errors)`** — produces the re-prompt text used when `onValidationError` is `repair`.
-- **`evaluateReply(config, reply)`** — the entry point the runtime calls in finalize; returns `{ status: 'ok', value }` or `{ status: 'invalid', errors, reason }`. Disabled configs and unparseable schemas yield `ok` (no enforcement).
+- **`evaluateReply(config, reply)`** — the entry point the runtime is intended to call in finalize (not yet wired — see Status); returns `{ status: 'ok', value }` or `{ status: 'invalid', errors, reason }`. Disabled configs and unparseable schemas yield `ok` (no enforcement).
 
 ## Connections
 

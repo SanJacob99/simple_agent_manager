@@ -3,13 +3,13 @@
 > Enforces spend and rate ceilings on an agent — USD per run/day, tokens and tool calls per run, runs per minute — with a warn / downshift / block degrade policy.
 
 <!-- source: src/types/nodes.ts#BudgetNodeData -->
-<!-- last-verified: 2026-06-28 -->
+<!-- last-verified: 2026-07-21 -->
 
 ## Overview
 
 The Budget node adds cost safety to an agent, complementing the Guardrails node's content safety. It sets ceilings on estimated spend and request rate, and chooses what happens when one is reached: warn and continue, downshift to a cheaper model, or stop the run. This mirrors the spend-guard and rate-limit controls in platforms like Helicone, Portkey, and LiteLLM.
 
-You can attach more than one Budget node to a single agent — for example a per-run token cap plus a per-day USD cap. Each resolves to its own envelope; the runtime enforces all of them and the strictest reached ceiling wins. Cost is estimated from the same `PriceTable` (per-1M-token USD prices keyed by `modelId`) the Telemetry node consumes, so a single price source feeds both.
+You can attach more than one Budget node to a single agent — for example a per-run token cap plus a per-day USD cap. Each is designed to resolve to its own envelope, enforced by a `BudgetLedger` where the strictest reached ceiling wins — but see Status below: this enforcement isn't wired into a live run yet. Cost is estimated from the same `PriceTable` (per-1M-token USD prices keyed by `modelId`) the Telemetry node consumes, so a single price source feeds both.
 
 > **Status:** the node, resolved config, and engine are scaffolded and unit-tested. Wiring the `BudgetLedger` into `server/agents/run-coordinator.ts` (call `beginRun` on start, `recordUsage` after each turn, `recordToolCall` per tool, then apply the `BudgetDecision` — downshift the model, abort with a `budget_exceeded` error, or emit a `budget:exceeded` event) is the remaining integration step. Treat this as an extension surface until that path is verified end-to-end.
 
