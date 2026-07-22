@@ -3,7 +3,7 @@
 > Attaches an agent to a Model Context Protocol server — either a local subprocess or a remote HTTP/SSE endpoint — so the agent can call its tools.
 
 <!-- source: src/types/nodes.ts#MCPNodeData -->
-<!-- last-verified: 2026-05-24 -->
+<!-- last-verified: 2026-07-22 -->
 
 ## Overview
 
@@ -43,7 +43,7 @@ The UI side is already wired: `src/store/agent-connection-store.ts` tracks statu
 
 ## Connections
 
-Peripheral → Agent. One edge per MCP server. An agent can attach any number of MCP nodes; tool name collisions are resolved by setting distinct `toolPrefix` values.
+Peripheral → Agent, or peripheral → Sub-Agent. An agent can attach any number of MCP nodes; tool name collisions are resolved by setting distinct `toolPrefix` values. `resolveSubAgent()` (`src/utils/graph-to-agent.ts`) also reads MCP nodes wired directly into a Sub-Agent node and merges them into that sub-agent's own `mcps[]` (deduped by `mcpNodeId`, dedicated connection wins over the parent's), so a sub-agent can have MCP servers the parent agent doesn't see.
 
 ## Example
 
