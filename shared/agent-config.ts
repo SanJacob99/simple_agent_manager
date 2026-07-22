@@ -286,6 +286,53 @@ export interface ResolvedReflectionConfig {
   injectRubricIntoPrompt: boolean;
 }
 
+// --- Triggers (event-driven, beyond cron) ---
+
+export type TriggerSource =
+  | 'webhook'
+  | 'fileWatch'
+  | 'queue'
+  | 'emailInbound'
+  | 'manual';
+
+export type TriggerFileEvent = 'create' | 'modify' | 'delete';
+
+export type TriggerWebhookMethod = 'POST' | 'GET' | 'PUT';
+
+/**
+ * Resolved event-driven trigger. Where `ResolvedCronConfig` fires on time, this
+ * fires on an external event (webhook / file change / queue message / inbound
+ * email). Multiple triggers can bind to one agent, so `AgentConfig.triggers` is
+ * a list — matching how `crons` resolves. The trigger registry
+ * (`server/scheduling/trigger-registry.ts`) renders `prompt` with the event
+ * payload and feeds the same headless-run path the cron scheduler uses.
+ */
+export interface ResolvedTriggerConfig {
+  triggerNodeId: string;
+  label: string;
+  enabled: boolean;
+  source: TriggerSource;
+  prompt: string;
+  sessionMode: 'persistent' | 'ephemeral';
+  filter: string;
+  debounceMs: number;
+  maxConcurrent: number;
+  retentionDays: number;
+
+  webhookPath: string;
+  webhookMethod: TriggerWebhookMethod;
+  webhookSecretEnvVar: string;
+
+  watchPath: string;
+  watchGlob: string;
+  watchEvents: TriggerFileEvent[];
+
+  queueTarget: string;
+  queueConnectionEnvVar: string;
+
+  emailAddress: string;
+}
+
 // --- Agent Config interfaces ---
 
 export interface ResolvedCronConfig {
@@ -386,6 +433,13 @@ export interface AgentConfig {
    * graphs remain compatible without a backfill.
    */
   reflection?: ResolvedReflectionConfig | null;
+  /**
+   * Optional event-driven triggers (webhook / file change / queue / inbound
+   * email). When omitted or empty, the agent runs only on direct chat and any
+   * `crons`. Optional so existing AgentConfig fixtures and serialized graphs
+   * remain compatible without a backfill.
+   */
+  triggers?: ResolvedTriggerConfig[];
 
   /** Working directory for shell commands (exec tool). Independent of storage path. */
   workspacePath: string | null;

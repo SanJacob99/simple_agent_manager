@@ -23,7 +23,8 @@ export type NodeType =
   | 'structuredOutput'
   | 'budget'
   | 'evals'
-  | 'reflection';
+  | 'reflection'
+  | 'trigger';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -413,6 +414,94 @@ export interface CronNodeData {
   retentionDays: number;
 }
 
+// --- Trigger Node (event-driven, beyond cron) ---
+
+/**
+ * Where the trigger's events come from.
+ * - `webhook`: an inbound HTTP request to a mounted path
+ * - `fileWatch`: a filesystem create/modify/delete under a watched path
+ * - `queue`: a message on a subscribed queue / stream / topic
+ * - `emailInbound`: mail delivered to a listened-on address
+ * - `manual`: fired by an explicit API/UI call (useful for testing a wiring)
+ */
+export type TriggerSource =
+  | 'webhook'
+  | 'fileWatch'
+  | 'queue'
+  | 'emailInbound'
+  | 'manual';
+
+/** Filesystem events a `fileWatch` trigger can react to. */
+export type TriggerFileEvent = 'create' | 'modify' | 'delete';
+
+/** HTTP methods a `webhook` trigger can accept. */
+export type TriggerWebhookMethod = 'POST' | 'GET' | 'PUT';
+
+/**
+ * Event-driven trigger. Where `cron` covers time, `trigger` generalizes the
+ * scheduler into an event-source registry: webhooks, file changes, queue
+ * messages, and inbound email all feed the same headless-run path the cron
+ * scheduler already uses. Each matching event renders `prompt` (with the event
+ * payload substituted) and starts a run, mirroring how event triggers work in
+ * n8n, Zapier, Temporal, and the LangGraph/AutoGen event loops.
+ *
+ * Multiple trigger nodes can bind to one agent, so this resolves to a list on
+ * `AgentConfig.triggers` (like `crons`) rather than a single value.
+ */
+export interface TriggerNodeData {
+  [key: string]: unknown;
+  type: 'trigger';
+  label: string;
+  /** Master toggle. When false the trigger is wired but never fires. */
+  enabled: boolean;
+  /** Which event source drives this trigger. */
+  source: TriggerSource;
+  /**
+   * Prompt template fired when the trigger matches. `{{event}}` is replaced with
+   * the whole event payload and `{{event.field}}` with a single field.
+   */
+  prompt: string;
+  /** Whether each run reuses the agent's persistent session or a fresh ephemeral one. */
+  sessionMode: 'persistent' | 'ephemeral';
+  /**
+   * Optional boolean filter over the event payload (e.g. `event.action == "opened"`).
+   * Empty fires on every event. Evaluated by the trigger registry, not `eval`.
+   */
+  filter: string;
+  /** Coalesce a burst of events within this window into one run. 0 disables debouncing. */
+  debounceMs: number;
+  /** Max runs this trigger may have in flight at once; further events queue. */
+  maxConcurrent: number;
+  /** How long to keep run records produced by this trigger. */
+  retentionDays: number;
+
+  // --- webhook source ---
+  /** URL path the webhook listener mounts at (e.g. `/hooks/deploy`). */
+  webhookPath: string;
+  /** HTTP method the webhook accepts. */
+  webhookMethod: TriggerWebhookMethod;
+  /** Env var holding the HMAC secret used to verify signatures. Empty = unauthenticated. */
+  webhookSecretEnvVar: string;
+
+  // --- fileWatch source ---
+  /** Directory or file to watch. */
+  watchPath: string;
+  /** Glob filter applied to changed paths (empty = all). */
+  watchGlob: string;
+  /** Filesystem events that fire the trigger. */
+  watchEvents: TriggerFileEvent[];
+
+  // --- queue source ---
+  /** Queue / stream / topic the trigger subscribes to (e.g. an SQS URL or Redis stream key). */
+  queueTarget: string;
+  /** Env var holding the queue connection string / credentials. */
+  queueConnectionEnvVar: string;
+
+  // --- emailInbound source ---
+  /** Inbound address or mailbox the trigger listens on. */
+  emailAddress: string;
+}
+
 // --- Provider Node ---
 
 export interface ProviderNodeData {
@@ -775,6 +864,7 @@ export type FlowNodeData =
   | StructuredOutputNodeData
   | BudgetNodeData
   | EvalsNodeData
-  | ReflectionNodeData;
+  | ReflectionNodeData
+  | TriggerNodeData;
 
 export type AppNode = Node<FlowNodeData>;

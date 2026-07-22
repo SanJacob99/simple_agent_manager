@@ -210,6 +210,28 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         maxRunDurationMs: 300000,
         retentionDays: 7,
       };
+    case 'trigger':
+      return {
+        type: 'trigger',
+        label: 'Trigger',
+        enabled: true,
+        source: 'webhook',
+        prompt: '',
+        sessionMode: 'ephemeral',
+        filter: '',
+        debounceMs: 0,
+        maxConcurrent: 1,
+        retentionDays: 7,
+        webhookPath: '/hooks/incoming',
+        webhookMethod: 'POST',
+        webhookSecretEnvVar: '',
+        watchPath: '',
+        watchGlob: '',
+        watchEvents: ['create', 'modify'],
+        queueTarget: '',
+        queueConnectionEnvVar: '',
+        emailAddress: '',
+      };
     case 'provider':
       return {
         type: 'provider',

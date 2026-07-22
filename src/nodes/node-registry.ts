@@ -17,6 +17,7 @@ import StructuredOutputNode from './StructuredOutputNode';
 import BudgetNode from './BudgetNode';
 import EvalsNode from './EvalsNode';
 import ReflectionNode from './ReflectionNode';
+import TriggerNode from './TriggerNode';
 
 export const nodeTypes = {
   agent: AgentNode,
@@ -38,4 +39,5 @@ export const nodeTypes = {
   budget: BudgetNode,
   evals: EvalsNode,
   reflection: ReflectionNode,
+  trigger: TriggerNode,
 } as const;
