@@ -3,7 +3,7 @@
 > Durable manager-led workflow coordination for canvas agents.
 
 <!-- source: server/coordination/coordination-service.ts -->
-<!-- last-verified: 2026-05-12 -->
+<!-- last-verified: 2026-07-22 -->
 
 ## Overview
 
@@ -30,6 +30,8 @@ Agent roles live on `AgentNodeData.coordination` and resolve into `AgentConfig.c
 5. Assigned tasks dispatch through `AgentManager.dispatch()` using session keys shaped like `agent:<agentId>:workflow:<workflowId>:task:<taskId>`.
 6. `CoordinationService` subscribes to the assigned run's coordinator events and appends trace events for run start/end, model calls, tool calls, task completion/failure, budget warnings, and reports.
 7. Stop marks the workflow `stop_requested`, aborts active assigned runs through `RunCoordinator.abort()`, cancels open tasks, writes a stop report, and marks the workflow `stopped_by_user`.
+8. A workflow completes once every task reaches a terminal state (`completed`, `failed`, or `cancelled`) — not only when all tasks complete. If any task ended `failed`, the workflow itself transitions to `failed` (rather than `completed`) so a run that never re-dispatches a failed task doesn't hang forever waiting for full success.
+9. Starting or resuming a workflow arms a watchdog timer keyed off `budget.maxRuntimeSeconds` (default 3600s). If the workflow is still non-terminal when the timer fires, the watchdog aborts any active assigned runs, cancels remaining open tasks, and force-transitions the workflow to a terminal `stopped_by_watchdog` status so a stuck workflow can't run forever. The timer is cleared whenever the workflow reaches any terminal state.
 
 ## Persistence
 

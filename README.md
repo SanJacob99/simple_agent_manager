@@ -39,14 +39,18 @@ The default sidebar currently exposes these draggable nodes:
 | `connectors` | Configuration surface for external connector metadata |
 | `storage` | Session persistence, retention, maintenance, and memory file settings |
 | `vectorDatabase` | Configuration surface for vector-store metadata |
+| `mcp` | Attaches an agent to a Model Context Protocol server — a local subprocess or a remote HTTP/SSE endpoint — so the agent can call its tools |
+| `provider` | Defines which provider plugin an agent uses and how the server resolves its auth reference and base URL |
+| `subAgent` | Declares a named, one-shot sub-agent the parent agent can dispatch via `sessions_spawn` |
+| `guardrails` | Configurable input/output safety checks that block or warn before a turn reaches the model and after the assistant replies |
 | `telemetry` | Observability instrumentation: per-run/turn/tool spans (tokens, cost, latency) exported to console, file, or an OTLP collector |
 | `structuredOutput` | Constrains the agent's final reply to a JSON Schema, with native provider enforcement, prompt injection, and a repair/warn/block policy on validation failure |
 | `budget` | Spend and rate governance: USD per run/day, tokens and tool calls per run, runs per minute, with a warn / downshift / block degrade policy |
+| `evals` | Attaches a dataset of input → expected cases to an agent and scores its replies with deterministic graders or an LLM judge, for eval-driven development and regression gating |
 | `reflection` | Reflexion-style draft → critique → revise loop: a critic scores each draft against a rubric and feeds the critique back for up to *N* revisions, with a use-best / use-last / warn exhaustion policy |
+| `cron` | Time-triggered agent runs on a configurable schedule |
 
-The codebase also contains a `cron` node type and editor, but it is not part of the default palette and should be treated as in-progress unless you verify the full execution path.
-
-> **Scaffolding note:** `telemetry`, `structuredOutput`, `budget`, and `reflection` ship with node UI, resolved config, and a unit-tested engine, but the run-coordinator wiring is still pending — treat them as extension surfaces until that path is verified end-to-end. See `docs/roadmap/2026-modernization.md`.
+> **Scaffolding note:** `telemetry`, `structuredOutput`, `budget`, `evals`, and `reflection` ship with node UI, resolved config, and a unit-tested engine, but the run-coordinator wiring is still pending — treat them as extension surfaces until that path is verified end-to-end. `cron`'s scheduler (`server/scheduling/cron-scheduler.ts`) is likewise not yet instantiated by the running backend outside its own tests. See `docs/roadmap/2026-modernization.md`.
 
 ## Architecture
 
