@@ -3,7 +3,7 @@
 > The central hub node that stores model and prompt settings while connected peripheral nodes supply runtime services.
 
 <!-- source: src/types/nodes.ts#AgentNodeData -->
-<!-- last-verified: 2026-06-30 -->
+<!-- last-verified: 2026-07-22 -->
 
 ## Overview
 
@@ -66,7 +66,7 @@ The Agent Node still owns `modelId`, `thinkingLevel`, and `modelCapabilities`. T
 
 ## Connections
 
-- Receives from: Provider, Memory, Tools, Skills, Context Engine, Agent Comm, Connectors, Storage, Vector Database, Cron, MCP, Sub-Agent, Guardrails, Telemetry, Structured Output, and Budget nodes
+- Receives from: Provider, Memory, Tools, Skills, Context Engine, Agent Comm, Connectors, Storage, Vector Database, Cron, MCP, Sub-Agent, Guardrails, Telemetry, Structured Output, Budget, Evals, and Reflection nodes
 - Sends to: None
 - Only peripheral-to-agent connections are supported
 - Runtime validation requires exactly one connected Provider Node
