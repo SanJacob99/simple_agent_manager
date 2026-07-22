@@ -20,6 +20,7 @@ import StructuredOutputProperties from './property-editors/StructuredOutputPrope
 import BudgetProperties from './property-editors/BudgetProperties';
 import EvalsProperties from './property-editors/EvalsProperties';
 import ReflectionProperties from './property-editors/ReflectionProperties';
+import TriggerProperties from './property-editors/TriggerProperties';
 import type { FlowNodeData } from '../types/nodes';
 import { useUILayoutStore } from '../store/ui-layout-store';
 import { useRightAnchoredResize } from './useRightAnchoredResize';
@@ -65,6 +66,8 @@ function PropertyEditorForType({ nodeId, data }: { nodeId: string; data: FlowNod
       return <EvalsProperties nodeId={nodeId} data={data} />;
     case 'reflection':
       return <ReflectionProperties nodeId={nodeId} data={data} />;
+    case 'trigger':
+      return <TriggerProperties nodeId={nodeId} data={data} />;
   }
 }
 

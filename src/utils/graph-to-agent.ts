@@ -1,6 +1,6 @@
 import type { AppNode } from '../types/nodes';
 import type { Edge } from '@xyflow/react';
-import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides, ResolvedGuardrailConfig, ResolvedTelemetryConfig, ResolvedStructuredOutputConfig, ResolvedBudgetConfig, ResolvedEvalsConfig, EvalGraderType, ResolvedReflectionConfig } from '../../shared/agent-config';
+import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides, ResolvedGuardrailConfig, ResolvedTelemetryConfig, ResolvedStructuredOutputConfig, ResolvedBudgetConfig, ResolvedEvalsConfig, EvalGraderType, ResolvedReflectionConfig, ResolvedTriggerConfig } from '../../shared/agent-config';
 import { resolveToolNames, IMPLEMENTED_TOOL_NAMES } from '../../shared/resolve-tool-names';
 import { buildSystemPrompt } from '../../shared/system-prompt-builder';
 import { eligibleBundledSkills } from '../../shared/default-tool-skills';
@@ -520,6 +520,36 @@ export function resolveAgentConfig(
       };
     });
 
+  // --- Triggers (event-driven, beyond cron) ---
+  // Each trigger node resolves to a ResolvedTriggerConfig. Multiple triggers may
+  // bind to one agent (webhook + fileWatch + …), so this stays a list like crons.
+  const triggers: ResolvedTriggerConfig[] = connectedNodes
+    .filter((n) => n.data.type === 'trigger')
+    .map((n) => {
+      if (n.data.type !== 'trigger') throw new Error('unreachable');
+      return {
+        triggerNodeId: n.id,
+        label: n.data.label,
+        enabled: n.data.enabled,
+        source: n.data.source,
+        prompt: n.data.prompt,
+        sessionMode: n.data.sessionMode,
+        filter: n.data.filter,
+        debounceMs: n.data.debounceMs,
+        maxConcurrent: n.data.maxConcurrent,
+        retentionDays: n.data.retentionDays,
+        webhookPath: n.data.webhookPath,
+        webhookMethod: n.data.webhookMethod,
+        webhookSecretEnvVar: n.data.webhookSecretEnvVar,
+        watchPath: n.data.watchPath,
+        watchGlob: n.data.watchGlob,
+        watchEvents: n.data.watchEvents,
+        queueTarget: n.data.queueTarget,
+        queueConnectionEnvVar: n.data.queueConnectionEnvVar,
+        emailAddress: n.data.emailAddress,
+      };
+    });
+
   // --- Reflection / Self-critique ---
   // At most one reflection node binds to an agent; it wraps the single finalize
   // step, so the first connected node wins and resolves to a single optional
@@ -793,6 +823,7 @@ export function resolveAgentConfig(
     budgets,
     evals,
     reflection,
+    triggers,
     // Exec tool cwd overrides agent-level workingDirectory when set
     workspacePath:
       (toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.exec?.cwd)
