@@ -3,7 +3,7 @@
 > How SAM assembles the system prompt that every agent run receives.
 
 <!-- source: shared/system-prompt-builder.ts, server/runtime/resolve-system-prompt.ts -->
-<!-- last-verified: 2026-05-25 -->
+<!-- last-verified: 2026-07-23 -->
 
 ## Overview
 
@@ -18,7 +18,7 @@ The same `resolveOutboundSystemPrompt()` is used by both the runtime and the `Sy
 
 ## Modes
 
-The Agent Node's `systemPromptMode` selects which assembly strategy the builder uses. Defined in [shared/agent-config.ts:8](shared/agent-config.ts#L8) as `'auto' | 'append' | 'manual'`.
+The Agent Node's `systemPromptMode` selects which assembly strategy the builder uses. Defined in [shared/agent-config.ts:21](../../shared/agent-config.ts#L21) as `'auto' | 'append' | 'manual'`.
 
 | Mode | Behavior |
 |------|----------|
@@ -31,6 +31,8 @@ Use `append` when you want SAM's guardrails and runtime context plus your own in
 ## Auto-assembled Sections
 
 In `auto` and `append` modes, the builder emits these sections in order. Optional sections are skipped when their input is absent.
+
+> **Status:** `selfUpdate`, `documentation`, `sandbox`, `replyTags`, and `heartbeats` (rows 7, 9, 10, 12, 13) are implemented in the builder but currently dead in product wiring — neither production caller (`src/utils/graph-to-agent.ts` or `server/agents/sub-agent-executor.ts`) passes `selfUpdate`, `docsPath`, `sandbox`, `replyTags`, or `heartbeats` into `buildSystemPrompt()`, so these sections never emit today.
 
 | Order | Section key | Emitted when | Contents |
 |-------|-------------|--------------|----------|
@@ -60,11 +62,12 @@ When `mode === 'append'` and the user's `systemPrompt` is non-empty, a final `us
 
 ## Server-side Resolution
 
-After the client builds the prompt, `resolveOutboundSystemPrompt()` in `server/runtime/resolve-system-prompt.ts` takes the `ResolvedSystemPrompt` from `AgentConfig` and applies three runtime transformations:
+After the client builds the prompt, `resolveOutboundSystemPrompt()` in `server/runtime/resolve-system-prompt.ts` takes the `ResolvedSystemPrompt` from `AgentConfig` and applies four runtime transformations:
 
 1. **Bundled-skills-root substitution.** Any `{{BUNDLED_SKILLS_ROOT}}` placeholder in sections or the assembled string is replaced with the real server-side path. Token estimates are recomputed for any section whose content changed.
-2. **Workspace fallback.** If the client-built prompt has no workspace section and the caller passed a `workspaceCwd`, a `workspace-runtime` section is appended with `## Workspace\n\nWorking directory: <cwd>`.
-3. **Confirmation policy (HITL).** When either `ask_user` or `confirm_action` is in the resolved tool list, the configured safety `confirmationPolicy` is appended as a `confirmationPolicy` section. Placeholders are filled from the enabled tool set:
+2. **Runtime `os=` rewrite.** The `runtime` section's `os=` field is rewritten from the client-supplied value (the builder fills it from `navigator.platform`, the browser host) to the backend's actual `process.platform`, since the agent executes on the server, not in the browser.
+3. **Workspace fallback.** If the client-built prompt has no workspace section and the caller passed a `workspaceCwd`, a `workspace-runtime` section is appended with `## Workspace\n\nWorking directory: <cwd>`.
+4. **Confirmation policy (HITL).** When either `ask_user` or `confirm_action` is in the resolved tool list, the configured safety `confirmationPolicy` is appended as a `confirmationPolicy` section. Placeholders are filled from the enabled tool set:
    - `{{READ_ONLY_TOOLS}}` → read-classified tools
    - `{{STATE_MUTATING_TOOLS}}` → state-mutating tools + any unclassified tools (safe default)
    - `{{DESTRUCTIVE_TOOLS}}` → destructive tools

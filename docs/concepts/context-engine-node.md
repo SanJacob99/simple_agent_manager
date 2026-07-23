@@ -3,7 +3,7 @@
 > Manages token budgets, compaction, and transcript-aware context assembly so conversations stay inside the model's context window.
 
 <!-- source: src/types/nodes.ts#ContextEngineNodeData -->
-<!-- last-verified: 2026-05-29 -->
+<!-- last-verified: 2026-07-23 -->
 <!-- token-budget-inheritance, compaction-trigger-modes, tooltips -->
 
 ## Overview
@@ -20,7 +20,7 @@ In the current implementation, compaction is no longer only an in-memory concern
 | `tokenBudget` | `number` | `128000` | Max tokens for assembled context |
 | `reservedForResponse` | `number` | `4096` | Tokens reserved for the model response |
 | `compactionStrategy` | `CompactionStrategy` | `"summary"` | `summary`, `sliding-window`, or `trim-oldest` |
-| `summaryModelId` | `string` | `""` | Model id used to produce summaries (only for `summary`). Empty means inherit the agent's model |
+| `summaryModelId` | `string` | `""` | Stored but **not currently read at runtime** — `compact()`'s `summary` strategy builds the summary by truncating each older message's text (no model call), so this field has no effect yet. See Runtime Behavior. |
 | `compactionTrigger` | `string` | `"auto"` | When proactive compaction fires from `afterTurn`. `auto` → at 80% of the post-reservation budget; `threshold` → at `compactionThreshold` (ratio) of the budget; `manual` → never auto-fires (only via the Compact Now button). `assemble()`'s overflow check stays on as a safety net for all modes. |
 | `compactionThreshold` | `number` | `0.8` | In `threshold` mode, the 0–1 ratio of the post-reservation budget at which compaction fires. In `manual` mode, an absolute token count surfaced in the panel preview. Ignored in `auto` mode. |
 | `postCompactionTokenTarget` | `number` | `50000` | Token ceiling the assembled context should land at after compaction runs. Clamped to `tokenBudget - reservedForResponse`. |
@@ -43,7 +43,7 @@ Manual compaction: the Context Engine property panel shows a **Compact Now** but
 Current compaction behavior:
 
 - `trim-oldest` and `sliding-window` keep the newest messages that fit
-- `summary` keeps the newest slice of conversation and replaces older context with a generated summary message
+- `summary` keeps the newest slice of conversation and replaces older messages with a summary built by truncating each dropped message to its first 150 characters and joining them — a text-based reduction, not an LLM call. `summaryModelId` is not read by this path today.
 - when a live transcript is bound, summary compaction appends a persisted `compaction` entry via `SessionManager.appendCompaction(...)`
 - the runtime emits a `memory_compaction` event when one of these persisted summaries is written, so the UI can show compacting state
 
