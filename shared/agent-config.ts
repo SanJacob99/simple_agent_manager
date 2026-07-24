@@ -286,6 +286,50 @@ export interface ResolvedReflectionConfig {
   injectRubricIntoPrompt: boolean;
 }
 
+// --- Sandbox / Compute ---
+
+export type SandboxIsolationLevel = 'none' | 'workdir' | 'container' | 'microvm';
+export type SandboxNetworkPolicy = 'none' | 'allowlist' | 'unrestricted';
+export type SandboxFilesystemPolicy = 'read_only' | 'scoped' | 'unrestricted';
+export type SandboxViolationPolicy = 'warn' | 'block';
+
+/**
+ * Resolved execution environment for an agent's code-running tools (`exec`,
+ * `code_execution`). At most one sandbox node binds to an agent — it defines the
+ * single boundary those tools run inside — so this resolves to a single optional
+ * value on `AgentConfig` rather than a list (like reflection / structured
+ * output). The sandbox engine turns this config into allow/deny decisions for
+ * commands, network egress, filesystem access, and resource ceilings. It is the
+ * execution-safety pillar alongside Budget (cost) and Guardrails (content).
+ */
+export interface ResolvedSandboxConfig {
+  sandboxNodeId: string;
+  label: string;
+  enabled: boolean;
+  /** Isolation boundary the tools run inside. `none` runs in-process (no isolation). */
+  isolation: SandboxIsolationLevel;
+  /** Max CPU cores. 0 disables this ceiling. */
+  cpuLimit: number;
+  /** Max resident memory in MB. 0 disables this ceiling. */
+  memoryLimitMb: number;
+  /** Max wall-clock per operation in ms. 0 disables this ceiling. */
+  wallClockLimitMs: number;
+  /** Network egress policy: block all, restrict to `allowedHosts`, or unrestricted. */
+  networkPolicy: SandboxNetworkPolicy;
+  /** Host patterns permitted under `allowlist` (exact or a single leading `*.` wildcard). */
+  allowedHosts: string[];
+  /** Filesystem policy: read-only, scoped to `mountPath`, or unrestricted. */
+  filesystemPolicy: SandboxFilesystemPolicy;
+  /** Root the sandbox filesystem is scoped to under `scoped` / `read_only`. */
+  mountPath: string;
+  /** Executable allowlist. Empty permits any command not on the denylist. */
+  allowedCommands: string[];
+  /** Executable denylist. A match always denies (wins over the allowlist). */
+  blockedCommands: string[];
+  /** What the runtime does when a request violates the policy. */
+  onViolation: SandboxViolationPolicy;
+}
+
 // --- Agent Config interfaces ---
 
 export interface ResolvedCronConfig {
@@ -386,6 +430,13 @@ export interface AgentConfig {
    * graphs remain compatible without a backfill.
    */
   reflection?: ResolvedReflectionConfig | null;
+  /**
+   * Optional execution environment for code-running tools. When omitted or
+   * `null`, those tools run with no sandbox policy (today's behaviour). At most
+   * one sandbox node binds to an agent. Optional so existing AgentConfig
+   * fixtures and serialized graphs remain compatible without a backfill.
+   */
+  sandbox?: ResolvedSandboxConfig | null;
 
   /** Working directory for shell commands (exec tool). Independent of storage path. */
   workspacePath: string | null;

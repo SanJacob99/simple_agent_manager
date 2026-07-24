@@ -127,14 +127,38 @@ revisions. Pairs with the Evals node — the same rubric grades both.
   `reflection:below_threshold` events. Pairs with the Evals node (#2), which can
   share the rubric.
 
-## 10. Sandbox / Compute node — *proposed*
+## 10. Sandbox / Compute node — *scaffolded*
 
-Agents that run code need isolation. A `sandbox` node would define an execution
+Agents that run code need isolation. The `sandbox` node defines an execution
 environment (container/microVM/firecracker or a constrained local workdir), a
-resource ceiling (CPU/mem/wall-clock), a network egress policy, and a filesystem
-mount scope — resolved into `AgentConfig.sandbox` and consumed by the `exec` /
-`code_execution` tools instead of today's raw `workspacePath`. Complements the
-Budget node (cost safety) and Guardrails (content safety) with execution safety.
+resource ceiling (CPU/mem/wall-clock), a network egress policy, a filesystem
+mount scope, and command allow/deny lists — resolved into `AgentConfig.sandbox`
+and consumed by the `exec` / `code_execution` tools instead of today's raw
+`workspacePath`. Complements the Budget node (cost safety) and Guardrails
+(content safety) with execution safety.
+
+- Node: `sandbox` (`src/types/nodes.ts#SandboxNodeData`)
+- Resolved: `AgentConfig.sandbox` (`shared/agent-config.ts#ResolvedSandboxConfig`)
+- Engine: `server/runtime/sandbox-engine.ts` (dependency-free policy decisions
+  for commands, egress, filesystem containment, and resource ceilings; POSIX
+  path normalization without touching disk)
+- Doc: `docs/concepts/sandbox-node.md`
+- **Remaining:** gate the `exec` / `code_execution` adapters in
+  `server/tools/tool-factory.ts` through the engine (apply each
+  `SandboxDecision`, emit `sandbox:violation` on `warn`) and provision the real
+  isolation boundary (container / microVM / constrained workdir) in the tool
+  runtime.
+
+## 11. Human-in-the-loop / Approval node — *proposed*
+
+Autonomous agents that take consequential actions (spend money, send email,
+run destructive commands) increasingly need a human checkpoint. An `approval`
+node would pause a run before a matching tool call — by tool name, argument
+pattern, or estimated cost — and surface an approve/deny/edit prompt to the
+operator (in-app, webhook, or email), resolving into `AgentConfig.approvals`
+and enforced as a pre-tool hook. Pairs with the Sandbox node (#10) for a
+belt-and-suspenders gate: sandbox denies statically, approval escalates the
+grey area to a person.
 
 ---
 
@@ -150,5 +174,9 @@ Budget node (cost safety) and Guardrails (content safety) with execution safety.
 5. **Prompt-cache** (#7) is an incremental agent-node enhancement, land opportunistically.
 6. **Reflection** (#9) is scaffolded — next is wiring the critique/revise loop
    into the run-coordinator finalize step; it shares a rubric with **Evals** (#2).
-7. **A2A** (#8) and **Sandbox** (#10) are the next design wave — A2A for
-   cross-framework interop, Sandbox for execution safety.
+7. **Sandbox** (#10) is scaffolded — next is gating the `exec` / `code_execution`
+   adapters through the engine and provisioning the real isolation boundary; it
+   is the execution-safety pillar alongside Budget (cost) and Guardrails (content).
+8. **A2A** (#8) is the remaining cross-framework interop item, and
+   **Human-in-the-loop / Approval** (#11) is the next design wave for
+   consequential-action safety — it pairs with Sandbox as a runtime gate.

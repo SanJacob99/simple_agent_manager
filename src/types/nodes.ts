@@ -23,7 +23,8 @@ export type NodeType =
   | 'structuredOutput'
   | 'budget'
   | 'evals'
-  | 'reflection';
+  | 'reflection'
+  | 'sandbox';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -735,6 +736,78 @@ export interface ReflectionNodeData {
   injectRubricIntoPrompt: boolean;
 }
 
+// --- Sandbox / Compute Node ---
+
+/**
+ * Isolation boundary the agent's code-running tools execute inside.
+ * - `none`: no isolation — tools run in the server process (today's behaviour).
+ * - `workdir`: a constrained local working directory (no process isolation).
+ * - `container`: a container (e.g. Docker/OCI) with resource + network limits.
+ * - `microvm`: a microVM (e.g. Firecracker) for the strongest isolation.
+ */
+export type SandboxIsolationLevel = 'none' | 'workdir' | 'container' | 'microvm';
+
+/**
+ * Network egress policy for sandboxed operations.
+ * - `none`: block all outbound connections.
+ * - `allowlist`: permit only hosts matching `allowedHosts`.
+ * - `unrestricted`: permit all egress.
+ */
+export type SandboxNetworkPolicy = 'none' | 'allowlist' | 'unrestricted';
+
+/**
+ * Filesystem access policy for sandboxed operations.
+ * - `read_only`: reads within the mount are allowed; all writes are denied.
+ * - `scoped`: reads and writes are allowed but confined to `mountPath`.
+ * - `unrestricted`: full filesystem access.
+ */
+export type SandboxFilesystemPolicy = 'read_only' | 'scoped' | 'unrestricted';
+
+/**
+ * What the runtime does when an operation violates the sandbox policy.
+ * - `warn`: allow the operation and emit a `sandbox:violation` event.
+ * - `block`: deny the operation before it runs.
+ */
+export type SandboxViolationPolicy = 'warn' | 'block';
+
+/**
+ * Defines the execution environment an agent's code-running tools (`exec`,
+ * `code_execution`) operate inside: an isolation level, resource ceilings, a
+ * network-egress policy, a filesystem mount scope, and command allow/deny
+ * lists. Complements the Budget node (cost safety) and Guardrails node (content
+ * safety) with execution safety. Mirrors the isolation surfaces of E2B,
+ * Modal sandboxes, Cloudflare Workers, and container-per-agent runtimes.
+ */
+export interface SandboxNodeData {
+  [key: string]: unknown;
+  type: 'sandbox';
+  label: string;
+  /** Master toggle. When false the node is wired but no policy is enforced. */
+  enabled: boolean;
+  /** Isolation boundary the tools run inside. */
+  isolation: SandboxIsolationLevel;
+  /** Max CPU cores. 0 disables this ceiling. */
+  cpuLimit: number;
+  /** Max resident memory in MB. 0 disables this ceiling. */
+  memoryLimitMb: number;
+  /** Max wall-clock per operation in ms. 0 disables this ceiling. */
+  wallClockLimitMs: number;
+  /** Network egress policy. */
+  networkPolicy: SandboxNetworkPolicy;
+  /** Host patterns permitted under `allowlist` (exact or a single leading `*.` wildcard). */
+  allowedHosts: string[];
+  /** Filesystem access policy. */
+  filesystemPolicy: SandboxFilesystemPolicy;
+  /** Root the sandbox filesystem is scoped to under `scoped` / `read_only`. */
+  mountPath: string;
+  /** Executable allowlist. Empty permits any command not on the denylist. */
+  allowedCommands: string[];
+  /** Executable denylist. A match always denies (wins over the allowlist). */
+  blockedCommands: string[];
+  /** Behaviour when a request violates the policy. */
+  onViolation: SandboxViolationPolicy;
+}
+
 // --- Sub-Agent Node ---
 
 export interface SubAgentNodeData {
@@ -775,6 +848,7 @@ export type FlowNodeData =
   | StructuredOutputNodeData
   | BudgetNodeData
   | EvalsNodeData
-  | ReflectionNodeData;
+  | ReflectionNodeData
+  | SandboxNodeData;
 
 export type AppNode = Node<FlowNodeData>;

@@ -20,6 +20,7 @@ export const NODE_COLORS: Record<NodeType, string> = {
   budget: 'var(--c-node-budget)',
   evals: 'var(--c-node-evals)',
   reflection: 'var(--c-node-reflection)',
+  sandbox: 'var(--c-node-sandbox)',
 };
 
 export const NODE_PASTEL: Record<NodeType, { bg: string; fg: string }> = {
@@ -42,6 +43,7 @@ export const NODE_PASTEL: Record<NodeType, { bg: string; fg: string }> = {
   budget:         { bg: '#D7F0E4', fg: '#1F9D6B' },
   evals:          { bg: '#EADCF7', fg: '#7C3AED' },
   reflection:     { bg: '#FBE6D6', fg: '#D97A3D' },
+  sandbox:        { bg: '#D5DCE6', fg: '#4B5D78' },
 };
 
 export const NODE_LABELS: Record<NodeType, string> = {
@@ -64,4 +66,5 @@ export const NODE_LABELS: Record<NodeType, string> = {
   budget: 'Budget',
   evals: 'Evals',
   reflection: 'Reflection',
+  sandbox: 'Sandbox',
 };

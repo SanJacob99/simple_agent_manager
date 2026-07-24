@@ -1,6 +1,6 @@
 import type { AppNode } from '../types/nodes';
 import type { Edge } from '@xyflow/react';
-import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides, ResolvedGuardrailConfig, ResolvedTelemetryConfig, ResolvedStructuredOutputConfig, ResolvedBudgetConfig, ResolvedEvalsConfig, EvalGraderType, ResolvedReflectionConfig } from '../../shared/agent-config';
+import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides, ResolvedGuardrailConfig, ResolvedTelemetryConfig, ResolvedStructuredOutputConfig, ResolvedBudgetConfig, ResolvedEvalsConfig, EvalGraderType, ResolvedReflectionConfig, ResolvedSandboxConfig } from '../../shared/agent-config';
 import { resolveToolNames, IMPLEMENTED_TOOL_NAMES } from '../../shared/resolve-tool-names';
 import { buildSystemPrompt } from '../../shared/system-prompt-builder';
 import { eligibleBundledSkills } from '../../shared/default-tool-skills';
@@ -543,6 +543,32 @@ export function resolveAgentConfig(
         }
       : null;
 
+  // --- Sandbox / Compute ---
+  // At most one sandbox node binds to an agent; it defines the single execution
+  // environment its code-running tools operate inside, so the first connected
+  // node wins and resolves to a single optional value (or null) rather than a
+  // list, mirroring reflection and structured output.
+  const sandboxNode = connectedNodes.find((n) => n.data.type === 'sandbox');
+  const sandbox: ResolvedSandboxConfig | null =
+    sandboxNode && sandboxNode.data.type === 'sandbox'
+      ? {
+          sandboxNodeId: sandboxNode.id,
+          label: sandboxNode.data.label,
+          enabled: sandboxNode.data.enabled,
+          isolation: sandboxNode.data.isolation,
+          cpuLimit: sandboxNode.data.cpuLimit,
+          memoryLimitMb: sandboxNode.data.memoryLimitMb,
+          wallClockLimitMs: sandboxNode.data.wallClockLimitMs,
+          networkPolicy: sandboxNode.data.networkPolicy,
+          allowedHosts: sandboxNode.data.allowedHosts,
+          filesystemPolicy: sandboxNode.data.filesystemPolicy,
+          mountPath: sandboxNode.data.mountPath,
+          allowedCommands: sandboxNode.data.allowedCommands,
+          blockedCommands: sandboxNode.data.blockedCommands,
+          onViolation: sandboxNode.data.onViolation,
+        }
+      : null;
+
   // --- MCP Servers ---
   // Each MCP node resolves to a ResolvedMcpConfig. The node id is kept as
   // `mcpNodeId` so the server can push `mcp:status` events back to the UI
@@ -793,6 +819,7 @@ export function resolveAgentConfig(
     budgets,
     evals,
     reflection,
+    sandbox,
     // Exec tool cwd overrides agent-level workingDirectory when set
     workspacePath:
       (toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.exec?.cwd)
