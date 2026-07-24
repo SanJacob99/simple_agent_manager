@@ -3,7 +3,7 @@
 > Time-triggered agent runs on a configurable schedule.
 
 <!-- source: src/types/nodes.ts#CronNodeData -->
-<!-- last-verified: 2026-05-15 -->
+<!-- last-verified: 2026-07-24 -->
 
 ## Overview
 
@@ -18,9 +18,14 @@ weekday`) and is parsed by `node-cron`. Each cron node attached to an
 agent runs independently, so an agent can have several schedules with
 different prompts.
 
-Crons are real but kept off the default sidebar palette in some earlier
-builds because the runtime was being verified end-to-end. The scheduler,
-the queueing path, and tests are now in place — see Runtime Behavior.
+The node UI, defaults, and graph resolution into `AgentConfig.crons` are
+complete, and `cron` is in the default sidebar palette. A fully unit-tested
+[`CronScheduler`](../../server/scheduling/cron-scheduler.ts) implementation
+exists, but no server bootstrap path (`server/index.ts`,
+`server/agents/agent-manager.ts`) instantiates it — nothing currently
+reconciles an agent's resolved `crons` against a running scheduler, so
+schedules do not fire ticks in a running server today. Treat `cron` as
+config-only until that wiring lands; see Runtime Behavior.
 
 ## Configuration
 
@@ -42,9 +47,12 @@ Properties are derived from the TypeScript interface in
 
 `graph-to-agent.ts` resolves connected `cron` nodes into
 `ResolvedCronConfig[]` on the `AgentConfig`. The
-[`CronScheduler`](../../server/scheduling/cron-scheduler.ts) reconciles
-the current schedule list against running jobs whenever the agent config
-changes:
+[`CronScheduler`](../../server/scheduling/cron-scheduler.ts) class is able
+to reconcile a schedule list against running jobs, but nothing in the
+server currently calls `reconcile()` when an agent config changes — the
+class is only exercised by its own unit tests today. The behavior below
+describes what the class does, not something that currently happens in a
+running server:
 
 - New crons get a `node-cron` job registered.
 - Removed or disabled crons get their job stopped.
@@ -58,10 +66,9 @@ conversation. `sessionMode: 'ephemeral'` allocates a fresh session per
 tick — useful when each run should be independent (cron-driven ingest,
 report generation).
 
-`retentionDays` is read by the maintenance scheduler when present. The
-storage engine's pruning behavior is partial today (see
-[`docs/audit-2026-05-09.md`](../audit-2026-05-09.md) §2.5), so verify
-end-to-end retention if your deployment depends on it.
+`retentionDays` is not read anywhere outside this doc and the scheduler's
+own tests — no storage/maintenance code consumes it today. Treat it as a
+reserved field until the maintenance path is wired to honor it.
 
 ## Connections
 

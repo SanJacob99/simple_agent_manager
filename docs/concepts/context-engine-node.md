@@ -3,7 +3,7 @@
 > Manages token budgets, compaction, and transcript-aware context assembly so conversations stay inside the model's context window.
 
 <!-- source: src/types/nodes.ts#ContextEngineNodeData -->
-<!-- last-verified: 2026-05-29 -->
+<!-- last-verified: 2026-07-24 -->
 <!-- token-budget-inheritance, compaction-trigger-modes, tooltips -->
 
 ## Overview
@@ -11,6 +11,8 @@
 The Context Engine Node controls how an agent assembles prompt context, when it compacts older conversation state, and whether RAG content is allowed into that budget. It plugs into `pi-agent-core` through `transformContext`, so the agent can trim or summarize history before each model call.
 
 In the current implementation, compaction is no longer only an in-memory concern. When the runtime binds an active session transcript, summary-style compaction writes a real `compaction` entry into the session file through `SessionManager`. That allows resumed sessions to rebuild context from persisted compaction summaries instead of depending on a still-live process.
+
+A connected Context Engine node is also one of the conditions the chat drawer checks before it unblocks interactive chat (alongside a connected Storage node and a connected Provider node) — see `missingPeripherals` in `src/chat/ChatDrawer.tsx`. This is a client-side UI gate; the backend (`server/runtime/agent-runtime.ts`) treats `contextEngine` as fully optional and runs fine without one.
 
 ## Configuration
 
