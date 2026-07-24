@@ -3,11 +3,11 @@
 > Provides filesystem-based persistence for agent sessions, routed transcripts, and memory files.
 
 <!-- source: src/types/nodes.ts#StorageNodeData -->
-<!-- last-verified: 2026-05-29 -->
+<!-- last-verified: 2026-07-24 -->
 
 ## Overview
 
-The Storage Node defines where an agent's session metadata, transcript files, and memory documents live on disk. Without a connected Storage Node, the chat drawer is blocked because the backend has nowhere to persist routed sessions.
+The Storage Node defines where an agent's session metadata, transcript files, and memory documents live on disk. Without a connected Storage Node, the chat drawer blocks interactive chat — this is a client-side gate in `src/chat/ChatDrawer.tsx` (`missingPeripherals`), which also requires a connected Context Engine node and a connected Provider node before it unblocks. The backend itself (`server/agents/agent-manager.ts`, `server/runtime/agent-runtime.ts`) does not require `storage` to be set and will start and run an agent with `storage: null`; the requirement is a UI-level product decision, not a backend hard dependency.
 
 The default `storagePath` can be configured globally in **Settings -> Defaults** so that new storage nodes use a custom path automatically.
 
