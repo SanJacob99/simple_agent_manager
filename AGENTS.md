@@ -61,11 +61,18 @@ The schema currently defines:
 - `connectors`
 - `storage`
 - `vectorDatabase`
-- `cron`
-- `provider`
 - `mcp`
+- `provider`
+- `subAgent`
+- `guardrails`
+- `telemetry`
+- `structuredOutput`
+- `budget`
+- `evals`
+- `reflection`
+- `cron`
 
-The default sidebar palette currently exposes all of the above except `cron`. Treat `cron` as partial/in-progress unless you confirm the entire execution path.
+All of the above are on the default sidebar palette, including `cron`. `telemetry`, `structuredOutput`, `budget`, `evals`, and `reflection` ship with node UI, resolved config, and a unit-tested engine, but their run-coordinator wiring is still pending — treat them as extension surfaces until that path is verified end-to-end (see `docs/roadmap/2026-modernization.md`).
 
 ## Documentation maintenance
 
@@ -87,7 +94,7 @@ Steps:
 1. Read `docs/concepts/_manifest.json` to find the concept doc for the node you changed.
 2. Update the relevant sections, such as Configuration, Defaults, Runtime Behavior, or Examples.
 3. Update the `<!-- last-verified: YYYY-MM-DD -->` comment with today's date.
-4. If you change `cron`, create `docs/concepts/cron-node.md` from `docs/concepts/_template.md` and add it to the manifest first. The schema includes `cron`, but the manifest does not yet.
+4. If you add a new node type, create its concept doc from `docs/concepts/_template.md` and add an entry to the manifest first.
 
 ## Conventions
 
@@ -97,6 +104,6 @@ Steps:
 - Runtime classes under `server/runtime/` must stay free of React dependencies
 - All node data interfaces include a `[key: string]: unknown` index signature
 - Peripheral nodes connect to agent nodes only, not to other peripheral nodes
-- Tool resolution follows `profile -> groups -> enabledTools -> plugins` in `shared/resolve-tool-names.ts`
+- Tool resolution follows `enabledGroups (or profile as fallback) -> tool names -> enabledTools -> plugins` in `shared/resolve-tool-names.ts`; `enabledGroups` and the profile are mutually exclusive — when `enabledGroups` is non-empty the profile is ignored
 - `SkillsNode` entries and `ToolsNode.skills` are folded into system prompt content during `resolveAgentConfig()` and `buildSystemPrompt()`
 - Shared types that must work on both client and server should live in `shared/`, even if that means duplicating lightweight type aliases instead of importing from `src/`
