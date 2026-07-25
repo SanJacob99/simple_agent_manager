@@ -337,6 +337,25 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         onExhaustion: 'use_best',
         injectRubricIntoPrompt: false,
       };
+    case 'a2a':
+      return {
+        type: 'a2a',
+        label: 'A2A Interop',
+        enabled: true,
+        role: 'both',
+        agentName: 'Simple Agent',
+        agentDescription: 'An agent built with Simple Agent Manager.',
+        serverPath: '/a2a',
+        version: '0.1.0',
+        advertiseStreaming: true,
+        advertisePushNotifications: false,
+        inputModes: 'text/plain',
+        outputModes: 'text/plain',
+        authScheme: 'none',
+        skills: [],
+        remoteAgents: [],
+        forwardArtifacts: true,
+      };
     case 'subAgent':
       return {
         type: 'subAgent',
