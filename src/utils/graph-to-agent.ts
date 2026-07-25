@@ -1,6 +1,6 @@
 import type { AppNode } from '../types/nodes';
 import type { Edge } from '@xyflow/react';
-import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides, ResolvedGuardrailConfig, ResolvedTelemetryConfig, ResolvedStructuredOutputConfig, ResolvedBudgetConfig, ResolvedEvalsConfig, EvalGraderType, ResolvedReflectionConfig } from '../../shared/agent-config';
+import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides, ResolvedGuardrailConfig, ResolvedTelemetryConfig, ResolvedStructuredOutputConfig, ResolvedBudgetConfig, ResolvedEvalsConfig, EvalGraderType, ResolvedReflectionConfig, ResolvedA2AConfig, A2AAuthScheme } from '../../shared/agent-config';
 import { resolveToolNames, IMPLEMENTED_TOOL_NAMES } from '../../shared/resolve-tool-names';
 import { buildSystemPrompt } from '../../shared/system-prompt-builder';
 import { eligibleBundledSkills } from '../../shared/default-tool-skills';
@@ -543,6 +543,51 @@ export function resolveAgentConfig(
         }
       : null;
 
+  // --- Agent-to-Agent (A2A) interop ---
+  // At most one A2A node binds to an agent; it owns that agent's single
+  // published identity and delegate registry, so the first connected node wins
+  // and resolves to a single optional value (or null), mirroring reflection.
+  // Comma-separated mode / tag strings are split into arrays here so the
+  // resolved config matches the A2A AgentCard schema shape.
+  const splitCsv = (csv: string): string[] =>
+    csv
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+  const a2aNode = connectedNodes.find((n) => n.data.type === 'a2a');
+  const a2a: ResolvedA2AConfig | null =
+    a2aNode && a2aNode.data.type === 'a2a'
+      ? {
+          a2aNodeId: a2aNode.id,
+          label: a2aNode.data.label,
+          enabled: a2aNode.data.enabled,
+          role: a2aNode.data.role,
+          agentName: a2aNode.data.agentName,
+          agentDescription: a2aNode.data.agentDescription,
+          serverPath: a2aNode.data.serverPath,
+          version: a2aNode.data.version,
+          advertiseStreaming: a2aNode.data.advertiseStreaming,
+          advertisePushNotifications: a2aNode.data.advertisePushNotifications,
+          inputModes: splitCsv(a2aNode.data.inputModes),
+          outputModes: splitCsv(a2aNode.data.outputModes),
+          authScheme: a2aNode.data.authScheme,
+          skills: a2aNode.data.skills.map((s) => ({
+            id: s.id,
+            name: s.name,
+            description: s.description,
+            tags: splitCsv(s.tags),
+          })),
+          remoteAgents: a2aNode.data.remoteAgents.map((r) => ({
+            id: r.id,
+            name: r.name,
+            cardUrl: r.cardUrl,
+            authScheme: r.authScheme as A2AAuthScheme,
+          })),
+          forwardArtifacts: a2aNode.data.forwardArtifacts,
+        }
+      : null;
+
   // --- MCP Servers ---
   // Each MCP node resolves to a ResolvedMcpConfig. The node id is kept as
   // `mcpNodeId` so the server can push `mcp:status` events back to the UI
@@ -793,6 +838,7 @@ export function resolveAgentConfig(
     budgets,
     evals,
     reflection,
+    a2a,
     // Exec tool cwd overrides agent-level workingDirectory when set
     workspacePath:
       (toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.exec?.cwd)
