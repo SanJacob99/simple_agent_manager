@@ -88,7 +88,11 @@ safety) with cost safety. Consumes the same price table as the Telemetry node.
 `vectorDatabase` provides the store; there is no first-class ingestion surface.
 A `knowledge` node would own source definitions (files, URLs, git repos),
 chunking strategy, embedding config, and a refresh schedule — turning raw
-sources into vectors the context engine's RAG path already consumes.
+sources into vectors for retrieval. The context engine already carries
+`ragEnabled`/`ragTopK`/`ragMinScore` on its schema, but `server/runtime/context-engine.ts`
+has no retrieval logic yet — those fields are unread placeholders. This item
+would need to land the actual RAG path in the context engine alongside the
+ingestion surface.
 
 ## 7. Prompt-cache controls — *proposed (agent-node extension)*
 

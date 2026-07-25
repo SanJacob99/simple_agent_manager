@@ -3,12 +3,14 @@
 > Manages token budgets, compaction, and transcript-aware context assembly so conversations stay inside the model's context window.
 
 <!-- source: src/types/nodes.ts#ContextEngineNodeData -->
-<!-- last-verified: 2026-05-29 -->
+<!-- last-verified: 2026-07-25 -->
 <!-- token-budget-inheritance, compaction-trigger-modes, tooltips -->
 
 ## Overview
 
-The Context Engine Node controls how an agent assembles prompt context, when it compacts older conversation state, and whether RAG content is allowed into that budget. It plugs into `pi-agent-core` through `transformContext`, so the agent can trim or summarize history before each model call.
+The Context Engine Node controls how an agent assembles prompt context and when it compacts older conversation state. It plugs into `pi-agent-core` through `transformContext`, so the agent can trim or summarize history before each model call.
+
+> **Not yet implemented:** `ragEnabled`, `ragTopK`, and `ragMinScore` are resolved into the node's config but `server/runtime/context-engine.ts` has no RAG/retrieval logic — nothing reads them at runtime. Treat these three fields as a schema-level placeholder for the proposed Knowledge/Ingestion node (`docs/roadmap/2026-modernization.md` #6) until that path is wired.
 
 In the current implementation, compaction is no longer only an in-memory concern. When the runtime binds an active session transcript, summary-style compaction writes a real `compaction` entry into the session file through `SessionManager`. That allows resumed sessions to rebuild context from persisted compaction summaries instead of depending on a still-live process.
 
@@ -25,9 +27,9 @@ In the current implementation, compaction is no longer only an in-memory concern
 | `compactionThreshold` | `number` | `0.8` | In `threshold` mode, the 0–1 ratio of the post-reservation budget at which compaction fires. In `manual` mode, an absolute token count surfaced in the panel preview. Ignored in `auto` mode. |
 | `postCompactionTokenTarget` | `number` | `50000` | Token ceiling the assembled context should land at after compaction runs. Clamped to `tokenBudget - reservedForResponse`. |
 | `autoFlushBeforeCompact` | `boolean` | `true` | Flush pending buffers before compaction |
-| `ragEnabled` | `boolean` | `false` | Whether to enable RAG retrieval |
-| `ragTopK` | `number` | `5` | Number of RAG results to retrieve |
-| `ragMinScore` | `number` | `0.7` | Minimum similarity threshold for RAG results |
+| `ragEnabled` | `boolean` | `false` | **Not implemented at runtime** — reserved for the proposed Knowledge/Ingestion node |
+| `ragTopK` | `number` | `5` | **Not implemented at runtime** — reserved for the proposed Knowledge/Ingestion node |
+| `ragMinScore` | `number` | `0.7` | **Not implemented at runtime** — reserved for the proposed Knowledge/Ingestion node |
 
 ## Runtime Behavior
 
