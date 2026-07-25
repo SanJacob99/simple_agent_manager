@@ -3,7 +3,7 @@
 > Attaches a curated external integration to an agent — a named entry from the connector catalog that resolves into an MCP server under the hood.
 
 <!-- source: src/types/nodes.ts#ConnectorsNodeData -->
-<!-- last-verified: 2026-05-24 -->
+<!-- last-verified: 2026-07-25 -->
 
 ## Overview
 
@@ -35,9 +35,9 @@ During config resolution (`src/utils/graph-to-agent.ts`), each connector node co
    - `toolPrefix` = the catalog entry's `toolPrefix` (e.g. `github_`).
    - `allowedTools` = `[]` (no whitelist).
    - `autoConnect` = `true`.
-3. Appended to the same `mcps[]` the MCP node populates. The MCP runtime under `server/runtime/...` handles spawn, tool registration, and `mcp:status` events.
+3. Appended to the same `mcps[]` the MCP node populates.
 
-The connector node has no live connection-status indicator yet.
+Like the MCP node it shares `mcps[]` with, the actual MCP client (subprocess spawn, tool registration, `mcp:status` emission) is **not yet implemented at runtime** — see [MCP node § Runtime Behavior](mcp-node.md#runtime-behavior). The connector node has no live connection-status indicator yet.
 
 ## Catalog (v1)
 

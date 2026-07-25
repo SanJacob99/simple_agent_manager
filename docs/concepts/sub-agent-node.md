@@ -3,7 +3,7 @@
 > A peripheral that declares a named, one-shot sub-agent the parent agent can dispatch via `sessions_spawn`.
 
 <!-- source: src/types/nodes.ts#SubAgentNodeData -->
-<!-- last-verified: 2026-05-29 -->
+<!-- last-verified: 2026-07-25 -->
 
 ## Overview
 
@@ -24,7 +24,7 @@ The Sub-Agent Node attaches to an Agent Node as a peripheral. Each declared sub-
 | `overridableFields` | `SubAgentOverridableField[]` | `[]` | Fields the parent may override per-call (`modelId`, `thinkingLevel`, `systemPromptAppend`, `enabledTools`) |
 | `workingDirectoryMode` | `'derived' \| 'custom'` | `'derived'` | When `derived`, cwd is `<parentCwd>/subagent/<name>` |
 | `workingDirectory` | `string` | `""` | Honored only when `workingDirectoryMode === 'custom'` |
-| `recursiveSubAgentsEnabled` | `boolean` | `false` | When true, the sub may call `sessions_spawn` itself. Marked **Unstable** in the UI |
+| `recursiveSubAgentsEnabled` | `boolean` | `false` | Marked **Unstable** in the UI. Has no runtime effect in v1 — see Runtime Behavior §6: the child runtime always has `subAgents: []` and `sessions_spawn`/`sessions_yield`/`subagents` stripped, regardless of this flag |
 
 ## Connections
 
