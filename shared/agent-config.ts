@@ -286,6 +286,46 @@ export interface ResolvedReflectionConfig {
   injectRubricIntoPrompt: boolean;
 }
 
+// --- Agent-to-Agent (A2A) Interop ---
+
+export type A2AExposureMode = 'server' | 'client' | 'both';
+export type A2AAuthScheme = 'none' | 'apiKey' | 'bearer' | 'oauth2';
+
+/** A resolved remote A2A agent this agent can delegate tasks to. */
+export interface ResolvedA2ARemoteAgent {
+  id: string;
+  name: string;
+  url: string;
+  cardUrl: string;
+  skills: string[];
+  auth: A2AAuthScheme;
+  credentialEnvVar: string;
+  enabled: boolean;
+}
+
+/**
+ * Resolved A2A interop surface. At most one A2A node binds to an agent — one
+ * published card and one delegate registry — so this resolves to a single
+ * optional value on `AgentConfig` rather than a list (like reflection). The
+ * runtime exposes the agent as an A2A server, registers remote agents as
+ * callable delegates, or both, per `exposureMode`.
+ */
+export interface ResolvedA2AConfig {
+  a2aNodeId: string;
+  label: string;
+  enabled: boolean;
+  exposureMode: A2AExposureMode;
+  serverName: string;
+  serverDescription: string;
+  serverUrl: string;
+  advertisedSkills: string[];
+  supportsStreaming: boolean;
+  serverAuth: A2AAuthScheme;
+  remoteAgents: ResolvedA2ARemoteAgent[];
+  exposeDelegateTool: boolean;
+  taskTimeoutMs: number;
+}
+
 // --- Agent Config interfaces ---
 
 export interface ResolvedCronConfig {
@@ -386,6 +426,13 @@ export interface AgentConfig {
    * graphs remain compatible without a backfill.
    */
   reflection?: ResolvedReflectionConfig | null;
+  /**
+   * Optional Agent-to-Agent (A2A) interop surface. When omitted or `null`, the
+   * agent neither publishes an A2A card nor delegates to remote A2A agents. At
+   * most one A2A node binds to an agent. Optional so existing AgentConfig
+   * fixtures and serialized graphs remain compatible without a backfill.
+   */
+  a2a?: ResolvedA2AConfig | null;
 
   /** Working directory for shell commands (exec tool). Independent of storage path. */
   workspacePath: string | null;
