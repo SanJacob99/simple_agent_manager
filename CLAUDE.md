@@ -6,7 +6,7 @@ Simple Agent Manager is a node-based visual AI agent builder. The React app lets
 
 Important current behavior:
 
-- Interactive chat requires both a connected `contextEngine` node and a connected `storage` node.
+- Interactive chat requires a connected `provider` node, a connected `contextEngine` node, and a connected `storage` node.
 - `src/runtime/` is browser-side support code. The actual agent runtime lives under `server/runtime/`.
 - Some schema surfaces are ahead of product wiring. Verify `connectors`, `vectorDatabase`, `cron`, and `mcp` behavior in code before documenting them as fully implemented.
 
@@ -67,7 +67,6 @@ Concept docs live in `docs/concepts/` with one file per documented node type. Th
 1. Read `docs/concepts/_manifest.json` to find the concept doc for the changed node type
 2. Update the relevant sections (Configuration table, Defaults, Runtime Behavior, or Examples)
 3. Update the `<!-- last-verified: YYYY-MM-DD -->` comment with today's date
-4. If you change `cron`, create `docs/concepts/cron-node.md` from `docs/concepts/_template.md` and add it to the manifest first. The schema includes `cron`, but the manifest does not yet.
 
 ## Conventions
 
