@@ -3,7 +3,7 @@
 > Manages token budgets, compaction, and transcript-aware context assembly so conversations stay inside the model's context window.
 
 <!-- source: src/types/nodes.ts#ContextEngineNodeData -->
-<!-- last-verified: 2026-05-29 -->
+<!-- last-verified: 2026-07-26 -->
 <!-- token-budget-inheritance, compaction-trigger-modes, tooltips -->
 
 ## Overview
@@ -25,9 +25,9 @@ In the current implementation, compaction is no longer only an in-memory concern
 | `compactionThreshold` | `number` | `0.8` | In `threshold` mode, the 0–1 ratio of the post-reservation budget at which compaction fires. In `manual` mode, an absolute token count surfaced in the panel preview. Ignored in `auto` mode. |
 | `postCompactionTokenTarget` | `number` | `50000` | Token ceiling the assembled context should land at after compaction runs. Clamped to `tokenBudget - reservedForResponse`. |
 | `autoFlushBeforeCompact` | `boolean` | `true` | Flush pending buffers before compaction |
-| `ragEnabled` | `boolean` | `false` | Whether to enable RAG retrieval |
-| `ragTopK` | `number` | `5` | Number of RAG results to retrieve |
-| `ragMinScore` | `number` | `0.7` | Minimum similarity threshold for RAG results |
+| `ragEnabled` | `boolean` | `false` | Whether to enable RAG retrieval. **Not read by the runtime** — `server/runtime/context-engine.ts` has no RAG logic; this field is stored but has no effect |
+| `ragTopK` | `number` | `5` | Number of RAG results to retrieve. **Not read by the runtime**, same as above |
+| `ragMinScore` | `number` | `0.7` | Minimum similarity threshold for RAG results. **Not read by the runtime**, same as above |
 
 ## Runtime Behavior
 

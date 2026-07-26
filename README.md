@@ -19,7 +19,7 @@ The project is built with React 19, TypeScript, `@xyflow/react`, and `@mariozech
 
 ## Current scope and caveats
 
-- Interactive chat is blocked unless an agent has both a connected `Context Engine` node and a connected `Storage` node.
+- Interactive chat is blocked unless an agent has a connected `Provider` node, a connected `Context Engine` node, and a connected `Storage` node.
 - OpenRouter model discovery is live; the other providers currently use curated static model lists in the UI.
 - Several node types and tool names are still extension surfaces rather than fully wired product features. In particular, `connectors`, `vectorDatabase`, and `cron` need runtime inspection before you treat them as end-to-end features. Peer-to-peer agent comms (`agentComm`) is wired in v1 with safety and loop controls (turn/depth/token limits, rate limiting, channel-session isolation).
 - The current built-in tool surface includes real implementations for `calculator`, `web_fetch`, memory tools, and session tools. Many other named tools are placeholders/stubs.
@@ -39,14 +39,18 @@ The default sidebar currently exposes these draggable nodes:
 | `connectors` | Configuration surface for external connector metadata |
 | `storage` | Session persistence, retention, maintenance, and memory file settings |
 | `vectorDatabase` | Configuration surface for vector-store metadata |
+| `mcp` | Attaches an agent to a Model Context Protocol server (local subprocess or remote HTTP/SSE) |
+| `provider` | Model provider identity, auth, and base URL resolution for the connected agent |
+| `subAgent` | Declares a named, one-shot sub-agent the parent agent can dispatch via `sessions_spawn` |
+| `guardrails` | Input/output safety checks that block or warn before/after a model turn |
 | `telemetry` | Observability instrumentation: per-run/turn/tool spans (tokens, cost, latency) exported to console, file, or an OTLP collector |
 | `structuredOutput` | Constrains the agent's final reply to a JSON Schema, with native provider enforcement, prompt injection, and a repair/warn/block policy on validation failure |
 | `budget` | Spend and rate governance: USD per run/day, tokens and tool calls per run, runs per minute, with a warn / downshift / block degrade policy |
+| `evals` | Attaches a dataset of input → expected cases and scores replies with deterministic graders or an LLM judge |
 | `reflection` | Reflexion-style draft → critique → revise loop: a critic scores each draft against a rubric and feeds the critique back for up to *N* revisions, with a use-best / use-last / warn exhaustion policy |
+| `cron` | Schedules recurring agent runs on a cron expression, with persistent/ephemeral session modes |
 
-The codebase also contains a `cron` node type and editor, but it is not part of the default palette and should be treated as in-progress unless you verify the full execution path.
-
-> **Scaffolding note:** `telemetry`, `structuredOutput`, `budget`, and `reflection` ship with node UI, resolved config, and a unit-tested engine, but the run-coordinator wiring is still pending — treat them as extension surfaces until that path is verified end-to-end. See `docs/roadmap/2026-modernization.md`.
+> **Scaffolding note:** `telemetry`, `structuredOutput`, `budget`, `evals`, and `reflection` ship with node UI, resolved config, and a unit-tested engine, but the run-coordinator wiring is still pending — treat them as extension surfaces until that path is verified end-to-end. See `docs/roadmap/2026-modernization.md`.
 
 ## Architecture
 
