@@ -3,7 +3,7 @@
 > Time-triggered agent runs on a configurable schedule.
 
 <!-- source: src/types/nodes.ts#CronNodeData -->
-<!-- last-verified: 2026-05-15 -->
+<!-- last-verified: 2026-07-27 -->
 
 ## Overview
 
@@ -18,9 +18,16 @@ weekday`) and is parsed by `node-cron`. Each cron node attached to an
 agent runs independently, so an agent can have several schedules with
 different prompts.
 
-Crons are real but kept off the default sidebar palette in some earlier
-builds because the runtime was being verified end-to-end. The scheduler,
-the queueing path, and tests are now in place — see Runtime Behavior.
+The `CronScheduler` class (`server/scheduling/cron-scheduler.ts`) implements
+the reconcile/dispatch logic described below and is unit-tested in
+isolation, but it is **not currently instantiated anywhere in the running
+server** — `server/index.ts`, `server/agents/agent-manager.ts`, and
+`server/agents/run-coordinator.ts` have no references to `CronScheduler`,
+and nothing calls `.reconcile()` when an agent config changes.
+`AgentConfig.crons` is populated correctly by `graph-to-agent.ts`, but no
+tick is ever dispatched at runtime today. Treat `cron` the same way
+CLAUDE.md flags `connectors`, `vectorDatabase`, and `mcp`: schema and
+engine are ready, product wiring is not — see Runtime Behavior.
 
 ## Configuration
 
@@ -42,9 +49,9 @@ Properties are derived from the TypeScript interface in
 
 `graph-to-agent.ts` resolves connected `cron` nodes into
 `ResolvedCronConfig[]` on the `AgentConfig`. The
-[`CronScheduler`](../../server/scheduling/cron-scheduler.ts) reconciles
-the current schedule list against running jobs whenever the agent config
-changes:
+[`CronScheduler`](../../server/scheduling/cron-scheduler.ts) class
+implements reconciliation of the current schedule list against running
+jobs when invoked:
 
 - New crons get a `node-cron` job registered.
 - Removed or disabled crons get their job stopped.
@@ -52,16 +59,25 @@ changes:
   with the cron's `prompt` and `sessionMode`, and a per-run timeout
   derived from `maxRunDurationMs`.
 
+**None of this runs today.** No production code path constructs a
+`CronScheduler` or calls `reconcile()` on agent-config changes, so cron
+nodes attached to a graph do not currently fire. The behavior above is
+verified only by the class's own unit tests
+(`server/scheduling/cron-scheduler.test.ts`), not by integration with the
+live server.
+
 `sessionMode: 'persistent'` keeps the cron's session-key stable across
 ticks, so the agent's context engine and memory see one continuous
 conversation. `sessionMode: 'ephemeral'` allocates a fresh session per
 tick — useful when each run should be independent (cron-driven ingest,
 report generation).
 
-`retentionDays` is read by the maintenance scheduler when present. The
-storage engine's pruning behavior is partial today (see
-[`docs/audit-2026-05-09.md`](../audit-2026-05-09.md) §2.5), so verify
-end-to-end retention if your deployment depends on it.
+`retentionDays` is defined on the type and default-node factory but is
+**not read by any runtime code today**. Neither
+`server/storage/storage-engine.ts` nor any scheduling module references
+it — the storage engine's `cleanResetArchives()` takes its own unrelated
+retention parameter. Treat `retentionDays` as reserved for a future
+maintenance pass, not an active setting.
 
 ## Connections
 

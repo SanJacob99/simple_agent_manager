@@ -3,7 +3,7 @@
 > A peripheral that declares a named, one-shot sub-agent the parent agent can dispatch via `sessions_spawn`.
 
 <!-- source: src/types/nodes.ts#SubAgentNodeData -->
-<!-- last-verified: 2026-05-29 -->
+<!-- last-verified: 2026-07-27 -->
 
 ## Overview
 
@@ -24,13 +24,13 @@ The Sub-Agent Node attaches to an Agent Node as a peripheral. Each declared sub-
 | `overridableFields` | `SubAgentOverridableField[]` | `[]` | Fields the parent may override per-call (`modelId`, `thinkingLevel`, `systemPromptAppend`, `enabledTools`) |
 | `workingDirectoryMode` | `'derived' \| 'custom'` | `'derived'` | When `derived`, cwd is `<parentCwd>/subagent/<name>` |
 | `workingDirectory` | `string` | `""` | Honored only when `workingDirectoryMode === 'custom'` |
-| `recursiveSubAgentsEnabled` | `boolean` | `false` | When true, the sub may call `sessions_spawn` itself. Marked **Unstable** in the UI |
+| `recursiveSubAgentsEnabled` | `boolean` | `false` | When true, the sub may call `sessions_spawn` itself, though recursive fan-out is disabled at runtime regardless (see Runtime Behavior #6). The property editor labels this "Off by default. Recursion is disabled until product is ready." |
 
 ## Connections
 
 - Receives from: Provider (optional), Tools (REQUIRED), Skills (any), MCP (any)
 - Sends to: Agent Node only (peripheral→agent edge)
-- Multiple Sub-Agent Nodes may attach to one agent; names must be unique per agent
+- Multiple Sub-Agent Nodes may attach to one agent. Names are not validated for uniqueness — if two Sub-Agent Nodes share a `name`, `resolveAgentConfig()` silently drops every node with the duplicated name from the resolved `AgentConfig.subAgents` list (`src/utils/graph-to-agent.ts`), with no error surfaced in the UI
 
 ## Runtime Behavior
 
