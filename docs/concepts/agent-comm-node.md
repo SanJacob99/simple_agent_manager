@@ -3,7 +3,7 @@
 > Wakes a peer agent on send. Bounded by per-pair turn/depth/token limits and per-sender rate limits.
 
 <!-- source: src/types/nodes.ts#AgentCommNodeData -->
-<!-- last-verified: 2026-05-29 -->
+<!-- last-verified: 2026-07-27 -->
 
 ## Overview
 
@@ -33,7 +33,7 @@ Workspace-level defaults can be overridden in `Settings → Agent Comm Defaults`
 
 1. `resolveAgentConfig()` walks each agent's connected comm nodes and produces `ResolvedAgentCommConfig[]` with `commNodeId`, `targetAgentName`, and the v1 limit/safety fields.
 2. `AgentManager` registers each managed agent with the singleton `AgentCommBus`.
-3. When an agent's `agentComm.length > 0`, its tool surface auto-includes `agent_send` (per direct peers), `agent_channel_history`, and (when a broadcast comm node is attached) `agent_broadcast`.
+3. When an agent's `agentComm.length > 0`, its tool surface auto-includes `agent_send` (per direct peers) and `agent_channel_history`. `agent_broadcast` is added only when the agent has **both** a broadcast comm node attached **and** at least one direct peer (`server/comms/agent-comm-tools.ts`) — a broadcast node with no direct peers grants no comm tools at all.
 4. `agent_send` runs eight pre-flight checks in order — topology → direction → message size → rate → channel state → token budget → depth → turn count — then appends a user-role message to `channel:<lo>:<hi>`, emits an audit event, and (unless `end:true`) wakes the receiver via `RunCoordinator.dispatchChannel`.
 5. The receiver runs in **channel mode**: its system prompt is augmented with a channel-context block; the inbound message is the most-recent transcript event; tool calls (including more `agent_send`) are accepted up to the limits.
 6. Reaching `maxTurns` or exhausting `tokenBudget` seals the channel. Further sends return `channel_sealed`. Reaching `maxDepth` returns `depth_exceeded` without sealing. Exceeding `rateLimitPerMinute` returns `rate_limited` without sealing.
@@ -43,7 +43,7 @@ Workspace-level defaults can be overridden in `Settings → Agent Comm Defaults`
 ## Connections
 
 - **Direct comm node:** requires reciprocal `direct` comm nodes on BOTH endpoints (one-sided contracts fail at runtime as `topology_violation`).
-- **Broadcast comm node:** a single broadcast node attached to an agent enables `agent_broadcast`, which fans out to that agent's direct peers.
+- **Broadcast comm node:** enables `agent_broadcast` only when the agent also has at least one direct peer declared — broadcast fans out to those direct peers. A broadcast node with zero direct peers grants no comm tools.
 - **Sub-agents do not receive comm tools**, even when the parent declares peers.
 
 ## Tools (auto-injected)

@@ -3,7 +3,7 @@
 > Configures which tools an agent can use through profiles, groups, direct enables, skills, and plugins.
 
 <!-- source: src/types/nodes.ts#ToolsNodeData -->
-<!-- last-verified: 2026-05-29 -->
+<!-- last-verified: 2026-07-27 -->
 
 ## Overview
 
@@ -14,7 +14,7 @@ The Tool Node defines the capabilities available to an agent at runtime. Rather 
 - individual tools opt specific names in
 - tool plugins add extra tools and skills
 
-Skills stored on the Tool Node are merged into system prompt content during graph resolution. The resolved tool names are then instantiated by `createAgentTools()` in `server/runtime/tool-factory.ts`.
+Skills stored on the Tool Node are merged into system prompt content during graph resolution. The resolved tool names are then instantiated by `createAgentTools()` in `server/tools/tool-factory.ts`.
 
 ## Configuration
 
@@ -80,7 +80,7 @@ Skills stored on the Tool Node are merged into system prompt content during grap
 | `toolSettings.browser.cdpEndpoint` | `string` | `""` | CDP URL (e.g. `http://127.0.0.1:9222`). When set, attaches to a user-launched Chrome instead of spawning one |
 | `toolSettings.browser.skill` | `string` | `""` | Optional inline markdown override for the browser skill. See [browser-tool.md](browser-tool.md) for the full reference |
 
-> **Deprecated.** `subAgentSpawning` and `maxSubAgents` are no longer used by the runtime. Sub-agent capability is now declared via the [Sub-Agent Node](sub-agent-node.md). Existing graphs continue to load, but these fields have no effect.
+> **Deprecated.** `maxSubAgents` is no longer used by the runtime — sub-agent capability is now declared via the [Sub-Agent Node](sub-agent-node.md), and this field has no effect. `subAgentSpawning` is a legacy back-compat shim: `server/sessions/session-tools.ts` still honors it (`hasDeclaredSubAgents || ctx.subAgentSpawning`) to gate exposure of the `sessions_yield`/`subagents` session tools for graphs with no Sub-Agent Nodes attached but the old toggle still on. New graphs should rely on Sub-Agent Node presence instead of this flag.
 
 ## Runtime Behavior
 
@@ -92,7 +92,7 @@ Tool name resolution happens in `shared/resolve-tool-names.ts` in this order:
 4. Add tools contributed by enabled tool plugins
 5. Deduplicate via a Set (canonical names only; aliases never survive into the final list)
 
-`server/runtime/tool-factory.ts` then instantiates concrete `AgentTool` objects:
+`server/tools/tool-factory.ts` then instantiates concrete `AgentTool` objects:
 
 - memory tools are skipped there because `MemoryEngine` provides them separately
 - session tools are skipped because they are injected later by the run coordinator

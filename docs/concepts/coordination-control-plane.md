@@ -2,8 +2,8 @@
 
 > Durable manager-led workflow coordination for canvas agents.
 
-<!-- source: server/coordination/coordination-service.ts -->
-<!-- last-verified: 2026-05-12 -->
+<!-- source: server/coordination/coordination-service.ts, shared/coordination-types.ts -->
+<!-- last-verified: 2026-07-27 -->
 
 ## Overview
 
@@ -28,8 +28,13 @@ Agent roles live on `AgentNodeData.coordination` and resolve into `AgentConfig.c
 3. Manager-role runs receive workflow lifecycle tools such as `coordination_create_workflow`, `coordination_assign_task`, `coordination_stop_workflow`, and trace/report tools.
 4. Lead and Specialist runs receive only task tools: `coordination_task_update`, `coordination_task_blocked`, and `coordination_task_complete`.
 5. Assigned tasks dispatch through `AgentManager.dispatch()` using session keys shaped like `agent:<agentId>:workflow:<workflowId>:task:<taskId>`.
-6. `CoordinationService` subscribes to the assigned run's coordinator events and appends trace events for run start/end, model calls, tool calls, task completion/failure, budget warnings, and reports.
+6. `CoordinationService` subscribes to the assigned run's coordinator events and appends trace events for run start/end, model calls, tool calls, task completion/failure, budget warnings, and reports. Budget enforcement is not just logging: `enforceBudgets()` pauses the workflow and aborts the active run when `maxAgentTurns` or `maxToolCalls` is exceeded, in addition to appending the `budget_warning` event.
 7. Stop marks the workflow `stop_requested`, aborts active assigned runs through `RunCoordinator.abort()`, cancels open tasks, writes a stop report, and marks the workflow `stopped_by_user`.
+8. A workflow-level watchdog (`armWatchdog` / `triggerWatchdog` / `clearWatchdog`) is armed on `startWorkflow` and `resumeWorkflow`, driven by `workflow.budget.maxRuntimeSeconds` (default 3600s). On timeout it aborts every active run for the workflow, force-cancels all open tasks, and marks the workflow `stopped_by_watchdog`.
+
+### Workflow status values
+
+`WorkflowStatus` (`shared/coordination-types.ts`) includes more terminal and in-flight states than the stop path above: `stop_requested`, `stopped_by_user`, `stopped_by_watchdog` (watchdog timeout, see step 8), `needs_human_input` (set by `taskBlocked()` when an assigned task reports it needs a human), and `failed` (set by `completeWorkflowIfDone()` when any task ends `failed`/`cancelled` rather than every task completing successfully).
 
 ## Persistence
 

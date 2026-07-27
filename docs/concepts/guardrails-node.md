@@ -3,7 +3,7 @@
 > Configurable input/output safety checks that block or warn before a turn reaches the model and after the assistant replies.
 
 <!-- source: src/types/nodes.ts#GuardrailsNodeData -->
-<!-- last-verified: 2026-05-15 -->
+<!-- last-verified: 2026-07-27 -->
 
 ## Overview
 
@@ -31,7 +31,7 @@ Properties are derived from `src/types/nodes.ts#GuardrailsNodeData` and defaults
 
 ## Runtime Behavior
 
-`src/utils/graph-to-agent.ts` resolves each connected Guardrails node into a `ResolvedGuardrailConfig` entry on `AgentConfig.guardrails` (`shared/agent-config.ts`). The list is optional — agents without a Guardrails node have `guardrails === undefined` and the runtime short-circuits.
+`src/utils/graph-to-agent.ts` resolves each connected Guardrails node into a `ResolvedGuardrailConfig` entry on `AgentConfig.guardrails` (`shared/agent-config.ts`). `AgentConfig.guardrails` is always an array — agents without a Guardrails node resolve to `guardrails: []`, not `undefined`. The type is optional (`guardrails?: ResolvedGuardrailConfig[]`) for backward-compat with older fixtures, but `resolveAgentConfig()` always produces an array; `guardrails-engine.ts` treats an empty array the same as a missing one and short-circuits with no checks.
 
 `server/runtime/guardrails-engine.ts` evaluates the rules:
 
