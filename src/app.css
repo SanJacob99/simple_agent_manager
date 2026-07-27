@@ -99,6 +99,7 @@
   --color-node-budget: var(--c-node-budget);
   --color-node-evals: var(--c-node-evals);
   --color-node-reflection: var(--c-node-reflection);
+  --color-node-a2a: var(--c-node-a2a);
 }
 
 :root {
@@ -185,6 +186,7 @@
   --c-node-budget: #1f9d6b;     /* green — cost/spend governance */
   --c-node-evals: #7c3aed;      /* violet — evaluation/scoring */
   --c-node-reflection: #d97a3d; /* amber — iterate/critique/revise */
+  --c-node-a2a: #d01f52;        /* rose — cross-framework agent interop */
 
   /* Surface colors that bypass the Tailwind palette */
   --c-code-bg: #0d1117;
