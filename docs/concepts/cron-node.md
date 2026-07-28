@@ -3,7 +3,7 @@
 > Time-triggered agent runs on a configurable schedule.
 
 <!-- source: src/types/nodes.ts#CronNodeData -->
-<!-- last-verified: 2026-05-15 -->
+<!-- last-verified: 2026-07-28 -->
 
 ## Overview
 
@@ -18,9 +18,14 @@ weekday`) and is parsed by `node-cron`. Each cron node attached to an
 agent runs independently, so an agent can have several schedules with
 different prompts.
 
-Crons are real but kept off the default sidebar palette in some earlier
-builds because the runtime was being verified end-to-end. The scheduler,
-the queueing path, and tests are now in place — see Runtime Behavior.
+**Status: scaffolded, not wired into server startup.** `CronScheduler`
+(`server/scheduling/cron-scheduler.ts`) is a fully implemented, unit-tested
+class — reconciliation, tick dispatch, and stop-all are all there — but
+nothing in `server/index.ts` or the rest of the server ever constructs a
+`CronScheduler` or calls `reconcile()`. The class is exercised only by its
+own test file today, so a configured cron node's schedule is resolved into
+`AgentConfig` but never actually ticks in a running server. Treat this node
+as an extension surface until that wiring lands.
 
 ## Configuration
 
@@ -42,9 +47,12 @@ Properties are derived from the TypeScript interface in
 
 `graph-to-agent.ts` resolves connected `cron` nodes into
 `ResolvedCronConfig[]` on the `AgentConfig`. The
-[`CronScheduler`](../../server/scheduling/cron-scheduler.ts) reconciles
-the current schedule list against running jobs whenever the agent config
-changes:
+[`CronScheduler`](../../server/scheduling/cron-scheduler.ts) class is
+built to reconcile the current schedule list against running jobs
+whenever the agent config changes, but as noted above it is never
+instantiated by the running server — the description below is what it
+does when driven directly (as its tests do), not what happens today when
+you save a cron node in the app:
 
 - New crons get a `node-cron` job registered.
 - Removed or disabled crons get their job stopped.
