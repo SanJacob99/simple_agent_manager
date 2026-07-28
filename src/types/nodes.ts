@@ -23,7 +23,8 @@ export type NodeType =
   | 'structuredOutput'
   | 'budget'
   | 'evals'
-  | 'reflection';
+  | 'reflection'
+  | 'a2a';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -735,6 +736,82 @@ export interface ReflectionNodeData {
   injectRubricIntoPrompt: boolean;
 }
 
+// --- Agent-to-Agent (A2A) Node ---
+
+/**
+ * Which side(s) of the A2A protocol this node turns on.
+ * - `server`: publish an agent card and accept remote tasks.
+ * - `client`: register remote A2A agents as callable delegates.
+ * - `both`: do both from one node.
+ */
+export type A2ARole = 'server' | 'client' | 'both';
+
+/** A2A transport binding. The spec defines JSON-RPC, gRPC, and HTTP+JSON. */
+export type A2ATransport = 'jsonrpc' | 'grpc' | 'http+json';
+
+/** How the endpoint authenticates callers / how a remote endpoint is called. */
+export type A2AAuthScheme = 'none' | 'apiKey' | 'bearer' | 'oauth2';
+
+/** A capability advertised on this agent's A2A agent card (server role). */
+export interface A2ASkillAdvertisement {
+  id: string;
+  name: string;
+  description: string;
+  /** Free-form tags used by remote clients to match this skill. */
+  tags: string[];
+}
+
+/** A remote A2A agent this agent can delegate tasks to (client role). */
+export interface A2ARemoteAgent {
+  id: string;
+  name: string;
+  /** URL of the remote agent card (e.g. `https://host/.well-known/agent-card.json`). */
+  cardUrl: string;
+  transport: A2ATransport;
+  authScheme: A2AAuthScheme;
+  /**
+   * Name of a server-side credential used to call the remote agent — a reference
+   * only, never the secret value (which never enters the serialized graph).
+   */
+  authRef: string;
+  /** Expose this remote agent to the model as a callable delegate tool. */
+  exposeAsTool: boolean;
+}
+
+/**
+ * Agent-to-Agent interop node. Exposes this agent as an A2A server (publishes an
+ * agent card, accepts remote tasks) and/or registers remote A2A agents as
+ * callable delegates. The emerging A2A protocol (agent cards, task/message
+ * envelopes, streaming updates) is becoming the cross-framework lingua franca
+ * for agent interop, much as MCP standardized tools. Complements the in-process
+ * `agentComm` bus and in-tree `subAgent` with a network-standard boundary.
+ */
+export interface A2ANodeData {
+  [key: string]: unknown;
+  type: 'a2a';
+  label: string;
+  /** Master toggle. When false the node is wired but neither side is active. */
+  enabled: boolean;
+  role: A2ARole;
+  // --- Server role: the agent card this agent publishes ---
+  /** Card `name`. Empty falls back to the agent's own name at serve time. */
+  agentName: string;
+  agentDescription: string;
+  /** Base URL the card and task endpoint are served from. */
+  serverUrl: string;
+  cardVersion: string;
+  advertisedSkills: A2ASkillAdvertisement[];
+  /** Advertise Server-Sent-Events streaming support on the card. */
+  streaming: boolean;
+  /** Advertise push-notification (webhook) support on the card. */
+  pushNotifications: boolean;
+  serverAuthScheme: A2AAuthScheme;
+  // --- Client role: remote agents this agent can delegate to ---
+  remoteAgents: A2ARemoteAgent[];
+  /** Transport used for remote agents that do not pin their own. */
+  defaultTransport: A2ATransport;
+}
+
 // --- Sub-Agent Node ---
 
 export interface SubAgentNodeData {
@@ -775,6 +852,7 @@ export type FlowNodeData =
   | StructuredOutputNodeData
   | BudgetNodeData
   | EvalsNodeData
-  | ReflectionNodeData;
+  | ReflectionNodeData
+  | A2ANodeData;
 
 export type AppNode = Node<FlowNodeData>;
