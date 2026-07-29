@@ -60,13 +60,24 @@ finalize step.
   finalize step (repair/warn/block per policy) and add the native
   `response_format`/strict-tool path in `server/runtime/model-resolver.ts`.
 
-## 4. Triggers node (event-driven beyond cron) — *proposed*
+## 4. Triggers node (event-driven beyond cron) — *scaffolded*
 
 `cron` covers time. Modern agents also fire on webhooks, file changes, inbound
-email, and queue messages. A `trigger` node would generalize the scheduler into
-an event source registry (`webhook`, `fileWatch`, `queue`, `manual`), feeding the
-same headless-run path the cron scheduler already uses
-(`server/scheduling/`).
+email, and queue messages. The `trigger` node generalizes the scheduler into an
+event source registry (`webhook`, `fileWatch`, `queue`, `manual`), feeding the
+same headless-run path the cron scheduler already uses (`server/scheduling/`).
+Multiple trigger nodes bind to one agent, each registering its own source.
+
+- Node: `trigger` (`src/types/nodes.ts#TriggerNodeData`)
+- Resolved: `AgentConfig.triggers` (`shared/agent-config.ts#ResolvedTriggerConfig`)
+- Engine: `server/scheduling/trigger-registry.ts` (dependency-free `TriggerRegistry`
+  with clock-injected debounce, webhook signature check, config validation, and
+  run-prompt composition)
+- Doc: `docs/concepts/trigger-node.md`
+- **Remaining:** register the sources in `server/scheduling/` alongside
+  `CronScheduler` — mount webhook receivers, start filesystem watchers, drain
+  queues — and route each `TriggerRegistry.fire()` result into the same
+  headless-run path the cron scheduler feeds (`RunCoordinator`).
 
 ## 5. Budget / Rate-Governance node — *scaffolded*
 
@@ -146,7 +157,10 @@ Budget node (cost safety) and Guardrails (content safety) with execution safety.
 3. **Evals** (#2) is scaffolded — wire `EvalRunner` into a headless replay path and
    add the `sam eval` subcommand; it pairs with Telemetry for cost-aware scoring and
    with **Reflection** (#9), which can share its rubric.
-4. **Triggers** (#4) and **Knowledge** (#6) are larger; schedule after the above.
+4. **Triggers** (#4) is scaffolded — next is registering the sources in
+   `server/scheduling/` (webhook mount, fs watcher, queue drain) and routing each
+   `TriggerRegistry.fire()` into the `RunCoordinator`. **Knowledge** (#6) is
+   larger; schedule after.
 5. **Prompt-cache** (#7) is an incremental agent-node enhancement, land opportunistically.
 6. **Reflection** (#9) is scaffolded — next is wiring the critique/revise loop
    into the run-coordinator finalize step; it shares a rubric with **Evals** (#2).

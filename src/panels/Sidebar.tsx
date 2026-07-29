@@ -17,6 +17,7 @@ import {
   Wallet,
   ClipboardCheck,
   RefreshCw,
+  Zap,
 } from 'lucide-react';
 import type { NodeType } from '../types/nodes';
 import { NODE_COLORS, NODE_LABELS, NODE_PASTEL } from '../utils/theme';
@@ -82,6 +83,7 @@ const PERIPHERAL_ITEMS: PaletteItem[] = [
   { type: 'evals', icon: <ClipboardCheck size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
   { type: 'reflection', icon: <RefreshCw size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
   { type: 'cron', icon: <CalendarClock size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
+  { type: 'trigger', icon: <Zap size={ICON_SIZE} strokeWidth={ICON_STROKE} /> },
 ];
 
 const TILE_SHADOW =

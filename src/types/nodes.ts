@@ -23,7 +23,8 @@ export type NodeType =
   | 'structuredOutput'
   | 'budget'
   | 'evals'
-  | 'reflection';
+  | 'reflection'
+  | 'trigger';
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -735,6 +736,58 @@ export interface ReflectionNodeData {
   injectRubricIntoPrompt: boolean;
 }
 
+// --- Trigger Node (event-driven beyond cron) ---
+
+/**
+ * Kind of event source a trigger node listens on. `cron` covers time; these
+ * cover the other ways modern agents fire.
+ * - `webhook`: an inbound HTTP request mounted at `webhookPath`.
+ * - `fileWatch`: a filesystem change under `watchPaths` in the workspace.
+ * - `queue`: a message drained from a named in-process queue.
+ * - `manual`: fired only by an explicit API/UI call — useful for testing and
+ *   for one-button "run now" surfaces.
+ */
+export type TriggerSourceKind = 'webhook' | 'fileWatch' | 'queue' | 'manual';
+
+/** Filesystem events a `fileWatch` trigger reacts to. */
+export type TriggerFileEvent = 'add' | 'change' | 'unlink';
+
+/**
+ * Generalizes the cron scheduler into an event-source registry: webhooks, file
+ * changes, queue messages, and manual fires all feed the same headless-run path
+ * the cron node already uses. Multiple trigger nodes can bind to one agent, each
+ * registering its own source, mirroring how the scheduler manages cron jobs.
+ */
+export interface TriggerNodeData {
+  [key: string]: unknown;
+  type: 'trigger';
+  label: string;
+  /** Master toggle. When false the source is registered but never fires. */
+  enabled: boolean;
+  /** Which kind of event source this node listens on. */
+  kind: TriggerSourceKind;
+  /** Prompt fed to the headless run when the trigger fires; the event payload is appended. */
+  prompt: string;
+  /** Whether a fire reuses a persistent session or spins an ephemeral one (mirrors cron). */
+  sessionMode: 'persistent' | 'ephemeral';
+  /** `webhook`: path suffix the server mounts the receiver at, e.g. `/deploy`. */
+  webhookPath: string;
+  /** `webhook`: shared secret required in the `X-Signature` header. Empty disables the check. */
+  webhookSecret: string;
+  /** `fileWatch`: comma-separated globs under the workspace to watch. */
+  watchPaths: string;
+  /** `fileWatch`: which filesystem events fire the trigger. */
+  watchEvents: TriggerFileEvent[];
+  /** `queue`: name of the in-process queue this trigger drains. */
+  queueName: string;
+  /** Minimum ms between fires; bursts inside the window collapse into a single run. 0 disables debounce. */
+  debounceMs: number;
+  /** Hard ceiling on a single triggered run's wall-clock. */
+  maxRunDurationMs: number;
+  /** How many days of fire history to retain. */
+  retentionDays: number;
+}
+
 // --- Sub-Agent Node ---
 
 export interface SubAgentNodeData {
@@ -775,6 +828,7 @@ export type FlowNodeData =
   | StructuredOutputNodeData
   | BudgetNodeData
   | EvalsNodeData
-  | ReflectionNodeData;
+  | ReflectionNodeData
+  | TriggerNodeData;
 
 export type AppNode = Node<FlowNodeData>;

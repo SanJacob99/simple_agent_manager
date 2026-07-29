@@ -286,6 +286,36 @@ export interface ResolvedReflectionConfig {
   injectRubricIntoPrompt: boolean;
 }
 
+// --- Triggers (event-driven beyond cron) ---
+
+export type TriggerSourceKind = 'webhook' | 'fileWatch' | 'queue' | 'manual';
+export type TriggerFileEvent = 'add' | 'change' | 'unlink';
+
+/**
+ * Resolved event-source trigger. Generalizes `ResolvedCronConfig` beyond time:
+ * webhooks, file changes, queue messages, and manual fires all resolve into
+ * this shape and feed the same headless-run path the cron scheduler uses.
+ * Multiple trigger nodes can bind to one agent, so this resolves to a list on
+ * `AgentConfig.triggers` (like crons/telemetry/budgets) rather than a single
+ * optional value.
+ */
+export interface ResolvedTriggerConfig {
+  triggerNodeId: string;
+  label: string;
+  enabled: boolean;
+  kind: TriggerSourceKind;
+  prompt: string;
+  sessionMode: 'persistent' | 'ephemeral';
+  webhookPath: string;
+  webhookSecret: string;
+  watchPaths: string;
+  watchEvents: TriggerFileEvent[];
+  queueName: string;
+  debounceMs: number;
+  maxRunDurationMs: number;
+  retentionDays: number;
+}
+
 // --- Agent Config interfaces ---
 
 export interface ResolvedCronConfig {
@@ -386,6 +416,13 @@ export interface AgentConfig {
    * graphs remain compatible without a backfill.
    */
   reflection?: ResolvedReflectionConfig | null;
+  /**
+   * Optional event-source triggers (webhook / fileWatch / queue / manual) that
+   * generalize the cron scheduler beyond time. When omitted or empty, the agent
+   * fires only on cron and interactive input. Optional so existing AgentConfig
+   * fixtures and serialized graphs remain compatible without a backfill.
+   */
+  triggers?: ResolvedTriggerConfig[];
 
   /** Working directory for shell commands (exec tool). Independent of storage path. */
   workspacePath: string | null;
