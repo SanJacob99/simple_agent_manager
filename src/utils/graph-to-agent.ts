@@ -1,6 +1,6 @@
 import type { AppNode } from '../types/nodes';
 import type { Edge } from '@xyflow/react';
-import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides, ResolvedGuardrailConfig, ResolvedTelemetryConfig, ResolvedStructuredOutputConfig, ResolvedBudgetConfig, ResolvedEvalsConfig, EvalGraderType, ResolvedReflectionConfig } from '../../shared/agent-config';
+import type { AgentConfig, ResolvedProviderConfig, ResolvedAgentCommConfig, SystemPromptMode, ResolvedSubAgentConfig, ResolvedToolsConfig, ResolvedMcpConfig, SkillDefinition, ModelCapabilityOverrides, ResolvedGuardrailConfig, ResolvedTelemetryConfig, ResolvedStructuredOutputConfig, ResolvedBudgetConfig, ResolvedEvalsConfig, EvalGraderType, ResolvedReflectionConfig, ResolvedTriggerConfig } from '../../shared/agent-config';
 import { resolveToolNames, IMPLEMENTED_TOOL_NAMES } from '../../shared/resolve-tool-names';
 import { buildSystemPrompt } from '../../shared/system-prompt-builder';
 import { eligibleBundledSkills } from '../../shared/default-tool-skills';
@@ -543,6 +543,33 @@ export function resolveAgentConfig(
         }
       : null;
 
+  // --- Triggers (event-driven beyond cron) ---
+  // Each connected trigger node registers its own event source (webhook,
+  // fileWatch, queue, or manual). Multiple can bind to one agent, so this
+  // resolves to a list like crons/telemetry/budgets. The node id is kept as
+  // `triggerNodeId` so a fire can be attributed back to a specific source.
+  const triggers: ResolvedTriggerConfig[] = connectedNodes
+    .filter((n) => n.data.type === 'trigger')
+    .map((n) => {
+      if (n.data.type !== 'trigger') throw new Error('unreachable');
+      return {
+        triggerNodeId: n.id,
+        label: n.data.label,
+        enabled: n.data.enabled,
+        kind: n.data.kind,
+        prompt: n.data.prompt,
+        sessionMode: n.data.sessionMode,
+        webhookPath: n.data.webhookPath,
+        webhookSecret: n.data.webhookSecret,
+        watchPaths: n.data.watchPaths,
+        watchEvents: [...n.data.watchEvents],
+        queueName: n.data.queueName,
+        debounceMs: n.data.debounceMs,
+        maxRunDurationMs: n.data.maxRunDurationMs,
+        retentionDays: n.data.retentionDays,
+      };
+    });
+
   // --- MCP Servers ---
   // Each MCP node resolves to a ResolvedMcpConfig. The node id is kept as
   // `mcpNodeId` so the server can push `mcp:status` events back to the UI
@@ -793,6 +820,7 @@ export function resolveAgentConfig(
     budgets,
     evals,
     reflection,
+    triggers,
     // Exec tool cwd overrides agent-level workingDirectory when set
     workspacePath:
       (toolsNode?.data.type === 'tools' && toolsNode.data.toolSettings?.exec?.cwd)

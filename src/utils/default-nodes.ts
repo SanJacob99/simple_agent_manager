@@ -337,6 +337,23 @@ export function getDefaultNodeData(nodeType: NodeType): FlowNodeData {
         onExhaustion: 'use_best',
         injectRubricIntoPrompt: false,
       };
+    case 'trigger':
+      return {
+        type: 'trigger',
+        label: 'Trigger',
+        enabled: true,
+        kind: 'webhook',
+        prompt: 'A trigger fired. Handle the event described below.',
+        sessionMode: 'ephemeral',
+        webhookPath: '/hook',
+        webhookSecret: '',
+        watchPaths: '',
+        watchEvents: ['add', 'change'],
+        queueName: '',
+        debounceMs: 0,
+        maxRunDurationMs: 300000,
+        retentionDays: 7,
+      };
     case 'subAgent':
       return {
         type: 'subAgent',
