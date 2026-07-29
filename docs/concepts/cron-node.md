@@ -3,24 +3,31 @@
 > Time-triggered agent runs on a configurable schedule.
 
 <!-- source: src/types/nodes.ts#CronNodeData -->
-<!-- last-verified: 2026-05-15 -->
+<!-- last-verified: 2026-07-29 -->
 
 ## Overview
 
-A `cron` node attaches a recurring schedule to an agent. When the schedule
-fires, the backend dispatches a run with a fixed prompt to the connected
-agent — without any user message in the chat drawer. This lets an agent
-behave like a daemon: a daily summary, a periodic ingestion, an hourly
-health check.
+A `cron` node attaches a recurring schedule to an agent. When wired,
+the intent is that the backend dispatches a run with a fixed prompt to
+the connected agent on schedule — without any user message in the chat
+drawer — so an agent can behave like a daemon: a daily summary, a
+periodic ingestion, an hourly health check.
 
 The schedule string follows standard cron syntax (`minute hour day month
 weekday`) and is parsed by `node-cron`. Each cron node attached to an
-agent runs independently, so an agent can have several schedules with
-different prompts.
+agent is meant to run independently, so an agent can have several
+schedules with different prompts.
 
-Crons are real but kept off the default sidebar palette in some earlier
-builds because the runtime was being verified end-to-end. The scheduler,
-the queueing path, and tests are now in place — see Runtime Behavior.
+`cron` is now part of the default sidebar palette (`src/panels/Sidebar.tsx`),
+but that only means the node, its editor, and graph resolution are done.
+
+> **Status:** the node, resolved config, and `CronScheduler`
+> (`server/scheduling/cron-scheduler.ts`) are scaffolded and unit-tested,
+> but nothing constructs a `CronScheduler` outside its own test file —
+> `server/index.ts` never instantiates one. Wiring a cron node today
+> updates `AgentConfig.crons`, but no tick is ever dispatched: there is
+> no live schedule, no queued run, and no transcript entry. Treat this as
+> an extension surface until server startup wires `CronScheduler` in.
 
 ## Configuration
 
@@ -41,14 +48,18 @@ Properties are derived from the TypeScript interface in
 ## Runtime Behavior
 
 `graph-to-agent.ts` resolves connected `cron` nodes into
-`ResolvedCronConfig[]` on the `AgentConfig`. The
-[`CronScheduler`](../../server/scheduling/cron-scheduler.ts) reconciles
-the current schedule list against running jobs whenever the agent config
-changes:
+`ResolvedCronConfig[]` on the `AgentConfig` — this part is live.
 
-- New crons get a `node-cron` job registered.
-- Removed or disabled crons get their job stopped.
-- Each tick calls into the [`RunCoordinator`](../../server/agents/run-coordinator.ts)
+[`CronScheduler`](../../server/scheduling/cron-scheduler.ts) implements the
+dispatch side and is covered by unit tests, but it is only ever
+constructed in `cron-scheduler.test.ts`; no server startup path
+instantiates it, so none of the following actually runs today. Once
+wired, per its unit tests, it is designed to:
+
+- reconcile the current schedule list against running jobs whenever the
+  agent config changes — new crons get a `node-cron` job registered,
+  removed or disabled crons get their job stopped;
+- on each tick, call into the [`RunCoordinator`](../../server/agents/run-coordinator.ts)
   with the cron's `prompt` and `sessionMode`, and a per-run timeout
   derived from `maxRunDurationMs`.
 

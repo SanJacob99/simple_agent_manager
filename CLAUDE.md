@@ -8,7 +8,7 @@ Important current behavior:
 
 - Interactive chat requires both a connected `contextEngine` node and a connected `storage` node.
 - `src/runtime/` is browser-side support code. The actual agent runtime lives under `server/runtime/`.
-- Some schema surfaces are ahead of product wiring. Verify `connectors`, `vectorDatabase`, `cron`, and `mcp` behavior in code before documenting them as fully implemented.
+- Some schema surfaces are ahead of product wiring. `connectors`, `cron`, and `mcp` resolve into config but have no live runtime yet (no MCP client, no cron dispatch loop). `evals` and `reflection` ship a real, unit-tested engine that nothing in `server/agents/run-coordinator.ts` calls yet. Verify each in code before documenting it as fully implemented. `vectorDatabase` (auto-attached vector tools via `server/runtime/agent-runtime.ts`) is wired end-to-end and not part of this caveat.
 
 ## Architecture Split
 
