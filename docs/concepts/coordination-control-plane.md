@@ -3,7 +3,7 @@
 > Durable manager-led workflow coordination for canvas agents.
 
 <!-- source: server/coordination/coordination-service.ts -->
-<!-- last-verified: 2026-05-12 -->
+<!-- last-verified: 2026-07-01 -->
 
 ## Overview
 
@@ -13,7 +13,7 @@ This layer does not replace `AgentManager` or `RunCoordinator`. It stores workfl
 
 ## Configuration
 
-Agent roles live on `AgentNodeData.coordination` and resolve into `AgentConfig.coordination`.
+Agent roles live on `AgentNodeData.coordination` and resolve into `AgentConfig.coordination` (shape defined in `shared/coordination-types.ts` as `AgentCoordinationConfig`).
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
@@ -27,9 +27,10 @@ Agent roles live on `AgentNodeData.coordination` and resolve into `AgentConfig.c
 2. `CoordinationService` validates each synced config. An agent is unavailable when it lacks a Provider, Storage, Context Engine, or a coordination role.
 3. Manager-role runs receive workflow lifecycle tools such as `coordination_create_workflow`, `coordination_assign_task`, `coordination_stop_workflow`, and trace/report tools.
 4. Lead and Specialist runs receive only task tools: `coordination_task_update`, `coordination_task_blocked`, and `coordination_task_complete`.
-5. Assigned tasks dispatch through `AgentManager.dispatch()` using session keys shaped like `agent:<agentId>:workflow:<workflowId>:task:<taskId>`.
-6. `CoordinationService` subscribes to the assigned run's coordinator events and appends trace events for run start/end, model calls, tool calls, task completion/failure, budget warnings, and reports.
-7. Stop marks the workflow `stop_requested`, aborts active assigned runs through `RunCoordinator.abort()`, cancels open tasks, writes a stop report, and marks the workflow `stopped_by_user`.
+5. This injection happens per-run in `RunCoordinator` (`server/agents/run-coordinator.ts`): whenever a `coordinationService` is wired and `config.coordination.role` is not `'none'`, `createCoordinationTools()` is called and its tools are appended to that run's tool list alongside session/comm tools.
+6. Assigned tasks dispatch through `AgentManager.dispatch()` using session keys shaped like `agent:<agentId>:workflow:<workflowId>:task:<taskId>`.
+7. `CoordinationService` subscribes to the assigned run's coordinator events and appends trace events for run start/end, model calls, tool calls, task completion/failure, budget warnings, and reports.
+8. Stop marks the workflow `stop_requested`, aborts active assigned runs through `RunCoordinator.abort()`, cancels open tasks, writes a stop report, and marks the workflow `stopped_by_user`.
 
 ## Persistence
 
