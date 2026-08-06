@@ -407,10 +407,22 @@ export class StorageEngine {
         if (currentUsage <= highWaterBytes) break;
         const session = sessions[i];
         evicted.push(session.sessionKey);
+
+        let fileSize = 0;
+        try {
+          const stat = await fs.stat(this.resolveTranscriptPath(session));
+          fileSize = stat.size;
+        } catch {
+          // Ignore missing files
+        }
+
         if (!dryRun) {
           await this.deleteSession(session.sessionKey);
         }
-        currentUsage = await this.getDiskUsage();
+
+        // ⚡ Bolt Optimization: Subtract individual file size from total usage instead of
+        // repeatedly calling getDiskUsage() to avoid O(N^2) I/O bottleneck and support dryRun mode.
+        currentUsage -= fileSize;
       }
     }
 
