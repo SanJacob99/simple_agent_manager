@@ -406,11 +406,35 @@ export class StorageEngine {
       for (let i = sessions.length - 1; i >= 0; i--) {
         if (currentUsage <= highWaterBytes) break;
         const session = sessions[i];
+
+        // ⚡ Bolt Optimization: Calculate the size of the transcript file before deletion,
+        // rather than stat-ing the entire directory via `getDiskUsage()` repeatedly in the loop.
+        // This avoids O(N^2) I/O operations and properly supports dry runs where files are not actually deleted.
+        let fileSize = 0;
+        const transcriptPath = this.resolveTranscriptPath(session);
+
+        // getDiskUsage() only counts files directly inside sessionsDir, so we must
+        // verify the file resides there before counting its size towards the eviction budget.
+        const normalizedTranscript = path.normalize(transcriptPath);
+        const sessionsDirPrefix = path.normalize(this.sessionsDir) + path.sep;
+
+        if (normalizedTranscript.startsWith(sessionsDirPrefix) || normalizedTranscript === path.normalize(this.sessionsDir)) {
+           try {
+             const stat = await fs.stat(transcriptPath);
+             if (stat.isFile()) {
+               fileSize = stat.size;
+             }
+           } catch {
+             // Ignore missing files
+           }
+        }
+
         evicted.push(session.sessionKey);
         if (!dryRun) {
           await this.deleteSession(session.sessionKey);
         }
-        currentUsage = await this.getDiskUsage();
+
+        currentUsage -= fileSize;
       }
     }
 
