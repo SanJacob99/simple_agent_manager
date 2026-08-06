@@ -97,13 +97,31 @@ export function buildDocTools(repoRoot: string): AgentTool[] {
       for (const rel of candidates) {
         const abs = join(repoRoot, rel);
         if (!existsSync(abs)) continue;
-        const lines = readFileSync(abs, 'utf-8').split('\n');
-        for (let i = 0; i < lines.length; i++) {
-          if (lines[i].toLowerCase().includes(query)) {
-            hits.push(`${rel}:${i + 1}: ${lines[i].trim()}`);
+        const raw = readFileSync(abs, 'utf-8');
+
+        // ⚡ Bolt Optimization: Replace full string split with single-pass indexOf.
+        // Prevents massive intermediate array allocations on large document files.
+        let startIdx = 0;
+        let newlineIdx = raw.indexOf('\n');
+        let lineNum = 1;
+
+        while (newlineIdx !== -1) {
+          const lineStr = raw.substring(startIdx, newlineIdx);
+          if (lineStr.toLowerCase().includes(query)) {
+            hits.push(`${rel}:${lineNum}: ${lineStr.trim()}`);
             if (hits.length >= 30) break;
           }
+          startIdx = newlineIdx + 1;
+          newlineIdx = raw.indexOf('\n', startIdx);
+          lineNum++;
         }
+        if (hits.length < 30 && startIdx < raw.length) {
+          const lineStr = raw.substring(startIdx);
+          if (lineStr.toLowerCase().includes(query)) {
+            hits.push(`${rel}:${lineNum}: ${lineStr.trim()}`);
+          }
+        }
+
         if (hits.length >= 30) break;
       }
       return textResult(hits.length === 0 ? `no matches for '${query}'` : hits.join('\n'));
