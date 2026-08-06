@@ -194,10 +194,9 @@ export class StorageEngine {
       return this._safeJoin(this.sessionsDir, `${entry.sessionId}.jsonl`);
     }
 
-    if (path.isAbsolute(entry.sessionFile)) {
-      return entry.sessionFile;
-    }
-
+    // 🛡️ Sentinel: Enforce safe base directory constraints even for absolute paths.
+    // By passing the absolute path to _safeJoin, we ensure it resolves within this.agentDir,
+    // thereby preventing path traversal vulnerabilities (e.g. bypassing sandboxes via absolute paths).
     return this._safeJoin(this.agentDir, entry.sessionFile);
   }
 
