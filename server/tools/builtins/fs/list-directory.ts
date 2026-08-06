@@ -57,23 +57,32 @@ export function createListDirectoryTool(ctx: FsToolContext): AgentTool<TSchema> 
       });
 
       const lines: string[] = [];
-      for (const entry of sorted) {
-        const entryPath = path.join(resolved, entry.name);
-        if (entry.isDirectory()) {
-          lines.push(`📁 ${entry.name}/`);
-        } else {
-          try {
-            const s = await fs.stat(entryPath);
-            const size = s.size < 1024
-              ? `${s.size} B`
-              : s.size < 1024 * 1024
-                ? `${(s.size / 1024).toFixed(1)} KB`
-                : `${(s.size / (1024 * 1024)).toFixed(1)} MB`;
-            lines.push(`   ${entry.name} (${size})`);
-          } catch {
-            lines.push(`   ${entry.name}`);
-          }
-        }
+      // ⚡ Bolt Optimization: Use Promise.all with chunks to fetch file stats concurrently
+      // instead of a sequential for...of loop. This eliminates N+1 I/O overhead while preventing EMFILE limits.
+      const CHUNK_SIZE = 50;
+      for (let i = 0; i < sorted.length; i += CHUNK_SIZE) {
+        const chunk = sorted.slice(i, i + CHUNK_SIZE);
+        const results = await Promise.all(
+          chunk.map(async (entry) => {
+            const entryPath = path.join(resolved, entry.name);
+            if (entry.isDirectory()) {
+              return `📁 ${entry.name}/`;
+            } else {
+              try {
+                const s = await fs.stat(entryPath);
+                const size = s.size < 1024
+                  ? `${s.size} B`
+                  : s.size < 1024 * 1024
+                    ? `${(s.size / 1024).toFixed(1)} KB`
+                    : `${(s.size / (1024 * 1024)).toFixed(1)} MB`;
+                return `   ${entry.name} (${size})`;
+              } catch {
+                return `   ${entry.name}`;
+              }
+            }
+          })
+        );
+        lines.push(...results);
       }
 
       return textResult(lines.join('\n'));
