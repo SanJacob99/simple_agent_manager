@@ -194,10 +194,6 @@ export class StorageEngine {
       return this._safeJoin(this.sessionsDir, `${entry.sessionId}.jsonl`);
     }
 
-    if (path.isAbsolute(entry.sessionFile)) {
-      return entry.sessionFile;
-    }
-
     return this._safeJoin(this.agentDir, entry.sessionFile);
   }
 
