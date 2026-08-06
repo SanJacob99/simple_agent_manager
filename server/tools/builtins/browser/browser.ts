@@ -188,11 +188,16 @@ function instanceKey(ctx: BrowserToolContext): string {
 }
 
 function resolveUserDataDir(ctx: BrowserToolContext): string {
-  const base = ctx.cwd || process.cwd();
+  const base = path.resolve(ctx.cwd || process.cwd());
   if (!ctx.userDataDir) return path.resolve(base, DEFAULT_PROFILE_DIR);
-  return path.isAbsolute(ctx.userDataDir)
+  const resolved = path.isAbsolute(ctx.userDataDir)
     ? ctx.userDataDir
     : path.resolve(base, ctx.userDataDir);
+
+  if (!resolved.startsWith(base + path.sep) && resolved !== base) {
+    throw new Error('Path escape detected for user data directory.');
+  }
+  return resolved;
 }
 
 async function installNameShim(context: BrowserContext): Promise<void> {
