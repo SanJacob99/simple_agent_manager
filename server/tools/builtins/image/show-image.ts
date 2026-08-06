@@ -2,6 +2,8 @@ import fs from 'fs/promises';
 import path from 'path';
 import { Type, type TSchema } from '@sinclair/typebox';
 import type { AgentTool, AgentToolResult } from '@mariozechner/pi-agent-core';
+import { fetchSafeUrl } from '../web/url-validator';
+
 
 const SUPPORTED_MIME: Record<string, string> = {
   '.png': 'image/png',
@@ -63,7 +65,7 @@ export function createShowImageTool(ctx: ShowImageContext): AgentTool<TSchema> {
 
       // Remote URL — fetch and embed
       if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
-        const resp = await fetch(imagePath);
+        const resp = await fetchSafeUrl(imagePath);
         if (!resp.ok) throw new Error(`Failed to fetch image: ${resp.status}`);
         const contentType = resp.headers.get('content-type') ?? 'image/png';
         const buffer = Buffer.from(await resp.arrayBuffer());
