@@ -407,10 +407,26 @@ export class StorageEngine {
         if (currentUsage <= highWaterBytes) break;
         const session = sessions[i];
         evicted.push(session.sessionKey);
+
+        // ⚡ Bolt Optimization: Avoid O(N^2) directory scanning in this loop.
+        // Instead of re-calculating the entire directory size, we check the specific file's size
+        // and subtract it from the running total. This also fixes dryRun mode where files aren't
+        // actually deleted, preventing an infinite loop of never decreasing currentUsage.
+        const transcriptPath = this.resolveTranscriptPath(session);
+        if (transcriptPath === this.sessionsDir || transcriptPath.startsWith(this.sessionsDir + path.sep)) {
+          try {
+            const stat = await fs.stat(transcriptPath);
+            if (stat.isFile()) {
+              currentUsage -= stat.size;
+            }
+          } catch {
+             // File might already be gone or inaccessible
+          }
+        }
+
         if (!dryRun) {
           await this.deleteSession(session.sessionKey);
         }
-        currentUsage = await this.getDiskUsage();
       }
     }
 
