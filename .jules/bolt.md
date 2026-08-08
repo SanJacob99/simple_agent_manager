@@ -20,3 +20,6 @@
 ## 2024-05-19 - JSONL backward search for tailing
 **Learning:** Using chained `.split('\n').map().filter()` to process large string files (like JSONL transcripts) creates massive intermediate arrays and memory churn. When only extracting the last N lines (tailing), parsing the entire string is inefficient.
 **Action:** Use a backward search loop with `lastIndexOf('\n')` to extract only the required lines directly from the string, bypassing full file parsing and intermediate array allocations.
+## 2025-02-12 - Avoid O(N^2) file system I/O in eviction loops
+**Learning:** In `StorageEngine`, repeatedly calling aggregate disk usage functions like `getDiskUsage()` during an eviction loop triggers O(N^2) file system I/O, which is a major performance bottleneck for large directories. Avoid recalculating the full directory size on each iteration.
+**Action:** When tracking freed disk space during an eviction loop, do not predict it with `fs.stat()` before deletion or recalculate the entire directory size. Have the deletion functions (`deleteSession`, `deleteTranscriptFile`) measure and return the exact number of bytes successfully freed, and subtract this from the running total directly.

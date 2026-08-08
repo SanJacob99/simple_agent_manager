@@ -153,7 +153,7 @@ export class StorageEngine {
     });
   }
 
-  async deleteSession(sessionKey: string): Promise<void> {
+  async deleteSession(sessionKey: string): Promise<number> {
     const existing = await this.storeLock.run(async () => {
       const store = await this.readStore();
       const found = store[sessionKey];
@@ -169,8 +169,9 @@ export class StorageEngine {
     // Transcript file removal is independent of the store lock — keep the
     // critical section limited to the index mutation.
     if (existing) {
-      await this.deleteTranscriptFile(existing);
+      return await this.deleteTranscriptFile(existing);
     }
+    return 0;
   }
 
   async deleteAllSessions(): Promise<void> {
@@ -403,14 +404,16 @@ export class StorageEngine {
       // ⚡ Bolt Optimization: iterating backwards avoids the memory allocation and copying
       // of [...sessions].reverse(), which can be costly on large datasets.
 
+      // ⚡ Bolt Optimization: Avoid O(N^2) I/O bottleneck by tracking freed bytes directly
+      // instead of re-calculating the entire directory size on every eviction.
       for (let i = sessions.length - 1; i >= 0; i--) {
         if (currentUsage <= highWaterBytes) break;
         const session = sessions[i];
         evicted.push(session.sessionKey);
         if (!dryRun) {
-          await this.deleteSession(session.sessionKey);
+          const freedBytes = await this.deleteSession(session.sessionKey);
+          currentUsage -= freedBytes;
         }
-        currentUsage = await this.getDiskUsage();
       }
     }
 
@@ -530,13 +533,20 @@ export class StorageEngine {
     }
   }
 
-  private async deleteTranscriptFile(entry: Pick<SessionStoreEntry, 'sessionId' | 'sessionFile'>): Promise<void> {
+  private async deleteTranscriptFile(entry: Pick<SessionStoreEntry, 'sessionId' | 'sessionFile'>): Promise<number> {
     const transcriptPath = this.resolveTranscriptPath(entry);
 
+    let bytesFreed = 0;
     try {
+      if (transcriptPath.startsWith(this.sessionsDir)) {
+        const stat = await fs.stat(transcriptPath);
+        bytesFreed = stat.size;
+      }
       await fs.unlink(transcriptPath);
+      return bytesFreed;
     } catch {
       // Ignore missing files so metadata cleanup stays idempotent.
+      return 0;
     }
   }
 }
