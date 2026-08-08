@@ -194,10 +194,8 @@ export class StorageEngine {
       return this._safeJoin(this.sessionsDir, `${entry.sessionId}.jsonl`);
     }
 
-    if (path.isAbsolute(entry.sessionFile)) {
-      return entry.sessionFile;
-    }
-
+    // 🛡️ Sentinel: [CRITICAL] Prevent absolute path bypass in resolveTranscriptPath
+    // Even if path is absolute, it must be verified to be within the agentDir sandbox.
     return this._safeJoin(this.agentDir, entry.sessionFile);
   }
 
