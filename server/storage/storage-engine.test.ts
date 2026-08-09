@@ -231,8 +231,8 @@ describe('StorageEngine', () => {
     });
 
     it('uses sessionFile when explicitly set', () => {
-      const result = engine.resolveTranscriptPath(makeEntry({ sessionFile: '/custom/path/transcript.jsonl' }));
-      expect(result).toBe('/custom/path/transcript.jsonl');
+      const result = engine.resolveTranscriptPath(makeEntry({ sessionFile: engine.getAgentDir() + '/custom/path/transcript.jsonl' }));
+      expect(result).toBe(engine.getAgentDir() + '/custom/path/transcript.jsonl');
     });
 
     it('throws error when sessionFile explicitly set to path traversing out', () => {
