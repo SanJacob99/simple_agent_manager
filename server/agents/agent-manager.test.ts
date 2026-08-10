@@ -63,10 +63,7 @@ vi.mock('../storage/storage-engine', () => {
       if (!entry.sessionFile) {
         return path.join(os.tmpdir(), `${entry.sessionId}.jsonl`);
       }
-
-      return path.isAbsolute(entry.sessionFile)
-        ? entry.sessionFile
-        : path.join(os.tmpdir(), entry.sessionFile);
+      return path.join(os.tmpdir(), entry.sessionFile);
     });
   }
   return { StorageEngine: MockStorageEngine };
