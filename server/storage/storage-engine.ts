@@ -153,7 +153,7 @@ export class StorageEngine {
     });
   }
 
-  async deleteSession(sessionKey: string): Promise<void> {
+  async deleteSession(sessionKey: string): Promise<number> {
     const existing = await this.storeLock.run(async () => {
       const store = await this.readStore();
       const found = store[sessionKey];
@@ -169,8 +169,9 @@ export class StorageEngine {
     // Transcript file removal is independent of the store lock — keep the
     // critical section limited to the index mutation.
     if (existing) {
-      await this.deleteTranscriptFile(existing);
+      return await this.deleteTranscriptFile(existing);
     }
+    return 0;
   }
 
   async deleteAllSessions(): Promise<void> {
@@ -408,9 +409,21 @@ export class StorageEngine {
         const session = sessions[i];
         evicted.push(session.sessionKey);
         if (!dryRun) {
-          await this.deleteSession(session.sessionKey);
+          const freedBytes = await this.deleteSession(session.sessionKey);
+          currentUsage -= freedBytes;
+        } else {
+          // In warn mode, we do a slow stat to decrement currentUsage without deleting
+          const transcriptPath = this.resolveTranscriptPath(session);
+          try {
+            const stat = await fs.stat(transcriptPath);
+            const isManaged = transcriptPath.startsWith(this.sessionsDir + path.sep);
+            if (isManaged && stat.isFile()) {
+              currentUsage -= stat.size;
+            }
+          } catch {
+            // Ignore missing files
+          }
         }
-        currentUsage = await this.getDiskUsage();
       }
     }
 
@@ -530,13 +543,20 @@ export class StorageEngine {
     }
   }
 
-  private async deleteTranscriptFile(entry: Pick<SessionStoreEntry, 'sessionId' | 'sessionFile'>): Promise<void> {
+  private async deleteTranscriptFile(entry: Pick<SessionStoreEntry, 'sessionId' | 'sessionFile'>): Promise<number> {
     const transcriptPath = this.resolveTranscriptPath(entry);
 
     try {
+      // Only count files within this.sessionsDir towards the budget
+      const stat = await fs.stat(transcriptPath);
+      const isManagedFile = transcriptPath.startsWith(this.sessionsDir + path.sep);
+      const freedBytes = isManagedFile && stat.isFile() ? stat.size : 0;
+
       await fs.unlink(transcriptPath);
+      return freedBytes;
     } catch {
       // Ignore missing files so metadata cleanup stays idempotent.
+      return 0;
     }
   }
 }
