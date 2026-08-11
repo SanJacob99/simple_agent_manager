@@ -189,10 +189,19 @@ function instanceKey(ctx: BrowserToolContext): string {
 
 function resolveUserDataDir(ctx: BrowserToolContext): string {
   const base = ctx.cwd || process.cwd();
-  if (!ctx.userDataDir) return path.resolve(base, DEFAULT_PROFILE_DIR);
-  return path.isAbsolute(ctx.userDataDir)
-    ? ctx.userDataDir
-    : path.resolve(base, ctx.userDataDir);
+  const resolvedBase = path.resolve(base);
+
+  if (!ctx.userDataDir) return path.resolve(resolvedBase, DEFAULT_PROFILE_DIR);
+
+  const resolvedTarget = path.isAbsolute(ctx.userDataDir)
+    ? path.resolve(ctx.userDataDir)
+    : path.resolve(resolvedBase, ctx.userDataDir);
+
+  if (!resolvedTarget.startsWith(resolvedBase + path.sep) && resolvedTarget !== resolvedBase) {
+    throw new Error(`Path escape detected. Access denied.`);
+  }
+
+  return resolvedTarget;
 }
 
 async function installNameShim(context: BrowserContext): Promise<void> {
