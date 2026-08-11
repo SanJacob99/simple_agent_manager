@@ -153,7 +153,7 @@ export class StorageEngine {
     });
   }
 
-  async deleteSession(sessionKey: string): Promise<void> {
+  async deleteSession(sessionKey: string): Promise<number> {
     const existing = await this.storeLock.run(async () => {
       const store = await this.readStore();
       const found = store[sessionKey];
@@ -166,11 +166,14 @@ export class StorageEngine {
       return found;
     });
 
+    let freedBytes = 0;
     // Transcript file removal is independent of the store lock — keep the
     // critical section limited to the index mutation.
     if (existing) {
-      await this.deleteTranscriptFile(existing);
+      freedBytes = await this.deleteTranscriptFile(existing);
     }
+
+    return freedBytes;
   }
 
   async deleteAllSessions(): Promise<void> {
@@ -408,9 +411,19 @@ export class StorageEngine {
         const session = sessions[i];
         evicted.push(session.sessionKey);
         if (!dryRun) {
-          await this.deleteSession(session.sessionKey);
+          const freedBytes = await this.deleteSession(session.sessionKey);
+          currentUsage -= freedBytes;
+        } else {
+          try {
+            const transcriptPath = this.resolveTranscriptPath(session);
+            const stat = await fs.stat(transcriptPath);
+            if (transcriptPath.startsWith(this.sessionsDir + path.sep)) {
+              currentUsage -= stat.size;
+            }
+          } catch {
+            // Ignore missing files
+          }
         }
-        currentUsage = await this.getDiskUsage();
       }
     }
 
@@ -530,13 +543,21 @@ export class StorageEngine {
     }
   }
 
-  private async deleteTranscriptFile(entry: Pick<SessionStoreEntry, 'sessionId' | 'sessionFile'>): Promise<void> {
+  private async deleteTranscriptFile(entry: Pick<SessionStoreEntry, 'sessionId' | 'sessionFile'>): Promise<number> {
     const transcriptPath = this.resolveTranscriptPath(entry);
+    let freedBytes = 0;
 
     try {
+      const stat = await fs.stat(transcriptPath);
       await fs.unlink(transcriptPath);
+
+      if (transcriptPath.startsWith(this.sessionsDir + path.sep)) {
+        freedBytes = stat.size;
+      }
     } catch {
       // Ignore missing files so metadata cleanup stays idempotent.
     }
+
+    return freedBytes;
   }
 }
