@@ -195,7 +195,7 @@ export class StorageEngine {
     }
 
     if (path.isAbsolute(entry.sessionFile)) {
-      return entry.sessionFile;
+      return this._safeJoin(this.agentDir, entry.sessionFile);
     }
 
     return this._safeJoin(this.agentDir, entry.sessionFile);
