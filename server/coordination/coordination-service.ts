@@ -742,8 +742,16 @@ export class CoordinationService {
         : {
             reason: 'tasks_failed',
             status,
-            failedTasks: tasks.filter((task) => task.status === 'failed').map((task) => task.id),
-            cancelledTasks: tasks.filter((task) => task.status === 'cancelled').map((task) => task.id),
+            // ⚡ Bolt Optimization: Replace chained .filter().map() with reduce
+            // to avoid allocating intermediate arrays for better performance.
+            failedTasks: tasks.reduce<string[]>((acc, task) => {
+              if (task.status === 'failed') acc.push(task.id);
+              return acc;
+            }, []),
+            cancelledTasks: tasks.reduce<string[]>((acc, task) => {
+              if (task.status === 'cancelled') acc.push(task.id);
+              return acc;
+            }, []),
           },
     });
   }

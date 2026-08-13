@@ -516,7 +516,14 @@ export class CoordinationStore {
 
   listReadyPendingTasks(workflowId: string): Task[] {
     const tasks = this.listTasks(workflowId);
-    const completed = new Set(tasks.filter((t) => t.status === 'completed').map((t) => t.id));
+    // ⚡ Bolt Optimization: Use reduce to populate an array for the Set in a single pass,
+    // avoiding the intermediate array allocation of .filter().map()
+    const completed = new Set(
+      tasks.reduce<string[]>((acc, t) => {
+        if (t.status === 'completed') acc.push(t.id);
+        return acc;
+      }, [])
+    );
     return tasks.filter(
       (task) =>
         task.status === 'pending'
