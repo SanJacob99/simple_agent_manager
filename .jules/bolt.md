@@ -20,3 +20,7 @@
 ## 2024-05-19 - JSONL backward search for tailing
 **Learning:** Using chained `.split('\n').map().filter()` to process large string files (like JSONL transcripts) creates massive intermediate arrays and memory churn. When only extracting the last N lines (tailing), parsing the entire string is inefficient.
 **Action:** Use a backward search loop with `lastIndexOf('\n')` to extract only the required lines directly from the string, bypassing full file parsing and intermediate array allocations.
+
+## 2024-05-19 - Using reduce() over chained methods
+**Learning:** Chained array methods like `.filter().map()` iterate arrays twice and create transient intermediate arrays that put pressure on the garbage collector. While raw `for` loops are fastest, they can clutter code and harm readability inside object literals.
+**Action:** Use `.reduce()` to perform single-pass filtering and mapping in a more functional and readable way than raw loops, avoiding intermediate array creation without sacrificing maintainability.
