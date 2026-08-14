@@ -153,7 +153,7 @@ export class StorageEngine {
     });
   }
 
-  async deleteSession(sessionKey: string): Promise<void> {
+  async deleteSession(sessionKey: string): Promise<number> {
     const existing = await this.storeLock.run(async () => {
       const store = await this.readStore();
       const found = store[sessionKey];
@@ -169,8 +169,9 @@ export class StorageEngine {
     // Transcript file removal is independent of the store lock — keep the
     // critical section limited to the index mutation.
     if (existing) {
-      await this.deleteTranscriptFile(existing);
+      return await this.deleteTranscriptFile(existing);
     }
+    return 0;
   }
 
   async deleteAllSessions(): Promise<void> {
@@ -407,10 +408,26 @@ export class StorageEngine {
         if (currentUsage <= highWaterBytes) break;
         const session = sessions[i];
         evicted.push(session.sessionKey);
+
+        // ⚡ Bolt Optimization: Track freed disk space directly instead of recalculating
+        // the entire directory size on each iteration. This prevents O(N^2) file system
+        // I/O overhead and significantly improves performance during large evictions.
         if (!dryRun) {
-          await this.deleteSession(session.sessionKey);
+          const freed = await this.deleteSession(session.sessionKey);
+          currentUsage -= freed;
+        } else {
+          const transcriptPath = this.resolveTranscriptPath(session);
+          if (transcriptPath.startsWith(this.sessionsDir + path.sep)) {
+            try {
+              const stat = await fs.stat(transcriptPath);
+              if (stat.isFile()) {
+                currentUsage -= stat.size;
+              }
+            } catch {
+              // Ignore
+            }
+          }
         }
-        currentUsage = await this.getDiskUsage();
       }
     }
 
@@ -530,13 +547,27 @@ export class StorageEngine {
     }
   }
 
-  private async deleteTranscriptFile(entry: Pick<SessionStoreEntry, 'sessionId' | 'sessionFile'>): Promise<void> {
+  private async deleteTranscriptFile(entry: Pick<SessionStoreEntry, 'sessionId' | 'sessionFile'>): Promise<number> {
     const transcriptPath = this.resolveTranscriptPath(entry);
+
+    let size = 0;
+    if (transcriptPath.startsWith(this.sessionsDir + path.sep)) {
+      try {
+        const stat = await fs.stat(transcriptPath);
+        if (stat.isFile()) {
+          size = stat.size;
+        }
+      } catch {
+        // Ignore
+      }
+    }
 
     try {
       await fs.unlink(transcriptPath);
+      return size;
     } catch {
       // Ignore missing files so metadata cleanup stays idempotent.
+      return 0;
     }
   }
 }
