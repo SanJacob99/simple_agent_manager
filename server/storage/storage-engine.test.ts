@@ -231,8 +231,16 @@ describe('StorageEngine', () => {
     });
 
     it('uses sessionFile when explicitly set', () => {
-      const result = engine.resolveTranscriptPath(makeEntry({ sessionFile: '/custom/path/transcript.jsonl' }));
-      expect(result).toBe('/custom/path/transcript.jsonl');
+      const result = engine.resolveTranscriptPath(makeEntry({ sessionFile: 'custom/path/transcript.jsonl' }));
+      // should resolve securely inside agentDir
+      expect(result.endsWith('custom/path/transcript.jsonl')).toBe(true);
+      expect(result.includes('..')).toBe(false);
+    });
+
+    it('throws error when sessionFile explicitly set to an absolute path that escapes bounds', () => {
+      expect(() => {
+        engine.resolveTranscriptPath(makeEntry({ sessionFile: '/custom/path/transcript.jsonl' }));
+      }).toThrow('Path traversal detected');
     });
 
     it('throws error when sessionFile explicitly set to path traversing out', () => {
