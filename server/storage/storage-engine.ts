@@ -431,7 +431,9 @@ export class StorageEngine {
     if (!dryRun && this.config.maxEntries > 0) {
       const sessions = await this.listSessions();
       if (sessions.length > this.config.maxEntries) {
-        const overflow = [...sessions].reverse().slice(0, sessions.length - this.config.maxEntries);
+        // ⚡ Bolt Optimization: sessions.slice(maxEntries) directly gets the oldest elements
+        // without the memory allocation of [...sessions].reverse()
+        const overflow = sessions.slice(this.config.maxEntries);
         for (const session of overflow) {
           await this.deleteSession(session.sessionKey);
         }

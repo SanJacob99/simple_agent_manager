@@ -20,3 +20,7 @@
 ## 2024-05-19 - JSONL backward search for tailing
 **Learning:** Using chained `.split('\n').map().filter()` to process large string files (like JSONL transcripts) creates massive intermediate arrays and memory churn. When only extracting the last N lines (tailing), parsing the entire string is inefficient.
 **Action:** Use a backward search loop with `lastIndexOf('\n')` to extract only the required lines directly from the string, bypassing full file parsing and intermediate array allocations.
+
+## 2025-10-18 - Avoid array reverse and copying
+**Learning:** Using `[...array].reverse()` creates a shallow copy of the entire array and reverses it, which incurs costly memory allocation and copying.
+**Action:** For performance optimization when processing arrays in reverse order or tailing elements, use a decrementing `for` loop (`for (let i = array.length - 1; i >= 0; i--)`) or extract elements natively via `array.slice(maxEntries)`.
