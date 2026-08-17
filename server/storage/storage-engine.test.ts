@@ -67,6 +67,19 @@ describe('StorageEngine', () => {
     await fs.rm(config.storagePath, { recursive: true, force: true });
   });
 
+  describe('path traversal prevention', () => {
+    it('should reject absolute paths outside the base directory', () => {
+      expect(() => {
+        engine.resolveTranscriptPath({ sessionId: '1', sessionFile: '/etc/passwd' } as any);
+      }).toThrow('Path traversal detected');
+    });
+
+    it('should resolve absolute paths inside the base directory', () => {
+      const validPath = path.join(engine.agentDir, 'valid.jsonl');
+      expect(engine.resolveTranscriptPath({ sessionId: '1', sessionFile: validPath } as any)).toBe(validPath);
+    });
+  });
+
   describe('directory structure', () => {
     it('creates agent sessions and memory directories on init', async () => {
       const sessionsDir = path.join(config.storagePath, 'test-agent', 'sessions');
@@ -231,8 +244,8 @@ describe('StorageEngine', () => {
     });
 
     it('uses sessionFile when explicitly set', () => {
-      const result = engine.resolveTranscriptPath(makeEntry({ sessionFile: '/custom/path/transcript.jsonl' }));
-      expect(result).toBe('/custom/path/transcript.jsonl');
+      const result = engine.resolveTranscriptPath(makeEntry({ sessionFile: 'custom/path/transcript.jsonl' }));
+      expect(result).toBe(path.join(engine.agentDir, 'custom/path/transcript.jsonl'));
     });
 
     it('throws error when sessionFile explicitly set to path traversing out', () => {
